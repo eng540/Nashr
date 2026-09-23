@@ -1,0 +1,40 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature/vertical-slice-1
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: nashr
+          POSTGRES_USER: nashr
+          POSTGRES_PASSWORD: nashr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nashr -d nashr"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://nashr:nashr@localhost:5432/nashr
+      STORAGE_PATH: ./storage/test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install ".[test]"
+      - name: Apply migrations
+        run: alembic upgrade head
+      - name: Run tests
+        run: pytest -q
