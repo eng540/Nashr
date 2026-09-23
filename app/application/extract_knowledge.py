@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.extraction import IExtractor
 from app.domain.knowledge import KnowledgeUnit
-from app.infrastructure.database.models import KnowledgeUnitModel
+from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
 
 
 class ExtractKnowledge:
@@ -17,16 +17,10 @@ class ExtractKnowledge:
 
     async def execute(self, session: AsyncSession, source_id: UUID) -> list[KnowledgeUnit]:
         """Extract exactly five ideas and persist their knowledge units."""
-        result = await session.execute(
-            select(KnowledgeUnitModel.__table__.metadata.tables["sources"].c.id).where(
-                KnowledgeUnitModel.__table__.metadata.tables["sources"].c.id == source_id
-            )
-        )
-        if result.first() is None:
-            raise ValueError("Source not found.")
-        from app.infrastructure.database.models import SourceModel
         source_result = await session.execute(select(SourceModel).where(SourceModel.id == source_id))
-        source_model = source_result.scalar_one()
+        source_model = source_result.scalar_one_or_none()
+        if source_model is None:
+            raise ValueError("Source not found.")
         ideas = await self.extractor.extract(source_model.to_domain())
         if len(ideas) != 5 or [idea.position for idea in ideas] != [1, 2, 3, 4, 5]:
             raise ValueError("Extractor must return exactly five ideas with positions 1 through 5.")
