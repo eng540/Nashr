@@ -6,6 +6,11 @@ from sqlalchemy.pool import NullPool
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://nashr:nashr@localhost:5432/nashr")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL[len("postgres://") :]
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL[len("postgresql://") :]
+
 engine = create_async_engine(DATABASE_URL, poolclass=NullPool)
 SessionFactory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
