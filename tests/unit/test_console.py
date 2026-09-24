@@ -1,4 +1,4 @@
-from fastapi import HTMLResponse
+from starlette.responses import HTMLResponse
 
 from app.api.routes import console
 
