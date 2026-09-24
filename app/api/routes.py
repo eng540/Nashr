@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.extraction.gemini import GeminiExtractor
+from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.extract_knowledge import ExtractKnowledge
 from app.application.ingest_pdf import IngestPdf
+from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.infrastructure.database.session import get_session
 from app.infrastructure.storage import LocalFileStorage
 
@@ -29,6 +31,16 @@ def get_ingest_pdf() -> IngestPdf:
 def get_extract_knowledge() -> ExtractKnowledge:
     """Build the Gemini knowledge extraction use case."""
     return ExtractKnowledge(GeminiExtractor())
+
+
+def get_create_telegram_draft() -> CreateTelegramDraft:
+    """Build the Telegram draft use case."""
+    return CreateTelegramDraft()
+
+
+def get_approve_and_publish() -> ApproveAndPublish:
+    """Build the Telegram publishing use case."""
+    return ApproveAndPublish(TelegramPublisher())
 
 
 @router.post("/sources")
@@ -63,6 +75,50 @@ async def extract_source(
             "source_id": str(source_id),
             "knowledge_unit_ids": [str(unit.id) for unit in units],
             "count": len(units),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/knowledge-units/{knowledge_unit_id}/draft")
+async def create_telegram_draft(
+    knowledge_unit_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    use_case: CreateTelegramDraft = Depends(get_create_telegram_draft),
+) -> dict[str, Any]:
+    """Create a Telegram publication draft for a knowledge unit."""
+    destination = os.getenv("TELEGRAM_DESTINATION_ID", "")
+    if not destination:
+        raise HTTPException(status_code=500, detail="TELEGRAM_DESTINATION_ID is required.")
+    try:
+        publication = await use_case.execute(session, knowledge_unit_id, destination)
+        return {
+            "id": str(publication.id),
+            "knowledge_unit_id": str(publication.knowledge_unit_id),
+            "platform": publication.platform,
+            "destination": publication.destination,
+            "status": publication.status.value,
+            "content": publication.content,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/publications/{publication_id}/publish")
+async def publish_telegram(
+    publication_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    use_case: ApproveAndPublish = Depends(get_approve_and_publish),
+) -> dict[str, Any]:
+    """Approve and publish a Telegram publication through the real adapter."""
+    try:
+        publication = await use_case.execute(session, publication_id)
+        return {
+            "id": str(publication.id),
+            "status": publication.status.value,
+            "external_id": publication.external_id,
+            "error_message": publication.error_message,
+            "published_at": publication.published_at,
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
