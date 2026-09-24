@@ -1,6 +1,5 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "python -m pip install ."
 
 [deploy]
 startCommand = "sh -c 'python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
