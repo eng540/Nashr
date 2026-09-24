@@ -1,23 +1,35 @@
 from pathlib import Path
+from uuid import UUID, uuid4
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.domain.sources import Source
+
+from app.domain.sources import Source, SourceStatus
 from app.infrastructure.database.models import SourceModel
 from app.infrastructure.storage import LocalFileStorage
 
+
 class IngestPdf:
-    """Validate, store, and register an uploaded PDF source."""
+    """Store a PDF and register its source metadata."""
 
     def __init__(self, storage: LocalFileStorage) -> None:
-        """Initialize the PDF ingestion use case."""
+        """Initialize PDF ingestion with file storage."""
         self.storage = storage
 
     async def execute(self, session: AsyncSession, filename: str, mime_type: str, content: bytes) -> Source:
-        """Store a PDF and persist its source record as STORED."""
-        if mime_type != "application/pdf" or not content.startswith(b"%PDF-"):
-            raise ValueError("Only valid PDF uploads are supported.")
-        safe_name = Path(filename).name
-        storage_path = await self.storage.save(safe_name, content)
-        source = Source.stored(safe_name, mime_type, storage_path, len(content))
-        session.add(SourceModel(id=source.id, filename=source.filename, mime_type=source.mime_type, storage_path=source.storage_path, size_bytes=source.size_bytes, status=source.status.value, created_at=source.created_at))
+        """Validate, store, and persist a PDF source."""
+        if mime_type != "application/pdf" and not filename.lower().endswith(".pdf"):
+            raise ValueError("Only PDF files are supported.")
+        source_id = uuid4()
+        storage_path = await self.storage.save(filename, content, prefix=str(source_id))
+        row = SourceModel(
+            id=source_id,
+            filename=filename,
+            mime_type=mime_type or "application/pdf",
+            storage_path=storage_path,
+            size_bytes=len(content),
+            status=SourceStatus.STORED.value,
+        )
+        session.add(row)
         await session.commit()
-        return source
+        await session.refresh(row)
+        return row.to_domain()
