@@ -15,6 +15,12 @@ from app.infrastructure.storage import LocalFileStorage
 router = APIRouter()
 
 
+@router.get("/health", tags=["system"])
+async def health() -> dict[str, str]:
+    """Report that the HTTP application is alive."""
+    return {"status": "ok"}
+
+
 def get_ingest_pdf() -> IngestPdf:
     """Build the PDF ingestion use case."""
     return IngestPdf(LocalFileStorage(os.getenv("STORAGE_PATH", "./storage")))
