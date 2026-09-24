@@ -10,10 +10,11 @@ class LocalFileStorage:
         self.root = Path(root)
 
     async def save(self, filename: str, content: bytes, prefix: str | None = None) -> str:
-        """Save file bytes using an optional source identifier to prevent collisions."""
+        """Save file bytes under an ASCII-safe unique name while preserving the original filename in the source record."""
         self.root.mkdir(parents=True, exist_ok=True)
-        safe_name = Path(filename).name
-        unique_name = f"{prefix}_{safe_name}" if prefix else f"{uuid4()}_{safe_name}"
+        extension = Path(filename).suffix.lower() or ".pdf"
+        unique_prefix = prefix or str(uuid4())
+        unique_name = f"{unique_prefix}_source{extension}"
         path = self.root / unique_name
         path.write_bytes(content)
         return str(path)
