@@ -2,7 +2,8 @@ import os
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTMLResponse, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.extraction.gemini import GeminiExtractor
@@ -81,7 +82,15 @@ async def extract_source(
         return {
             "source_id": str(source_id),
             "knowledge_unit_ids": [str(unit.id) for unit in units],
-            "knowledge_units": [{"id": str(unit.id), "position": unit.position, "title": unit.title, "content": unit.content} for unit in units],
+            "knowledge_units": [
+                {
+                    "id": str(unit.id),
+                    "position": unit.position,
+                    "title": unit.title,
+                    "content": unit.content,
+                }
+                for unit in units
+            ],
             "count": len(units),
         }
     except ValueError as exc:
