@@ -1,11 +1,8 @@
 [build]
 builder = "RAILPACK"
+buildCommand = "python -m pip install ."
 
 [deploy]
-# IMPORTANT: `alembic` and any pip-installed console scripts are NOT on PATH
-# inside the Railpack/mise runtime. We invoke Alembic via its programmatic
-# API in scripts/migrate.py instead. `python -m uvicorn` works because
-# uvicorn ships a __main__.py; alembic does not.
 startCommand = "sh -c 'python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
