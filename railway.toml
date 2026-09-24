@@ -2,8 +2,8 @@
 builder = "RAILPACK"
 
 [deploy]
-startCommand = "sh -c 'python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
+startCommand = "sh -c 'python -m pip install --no-cache-dir --disable-pip-version-check . && python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
