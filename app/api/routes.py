@@ -81,6 +81,7 @@ async def extract_source(
         return {
             "source_id": str(source_id),
             "knowledge_unit_ids": [str(unit.id) for unit in units],
+            "knowledge_units": [{"id": str(unit.id), "position": unit.position, "title": unit.title, "content": unit.content} for unit in units],
             "count": len(units),
         }
     except ValueError as exc:
