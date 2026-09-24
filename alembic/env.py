@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 from alembic import context
 from sqlalchemy import pool
@@ -8,6 +9,14 @@ from app.infrastructure.database.models import Base
 
 
 config = context.config
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    config.set_main_option("sqlalchemy.url", database_url)
+
 target_metadata = Base.metadata
 
 
