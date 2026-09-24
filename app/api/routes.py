@@ -2,7 +2,7 @@ import os
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTMLResponse, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.extraction.gemini import GeminiExtractor
@@ -10,6 +10,7 @@ from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.extract_knowledge import ExtractKnowledge
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
+from app.api.console import NASHR_CONSOLE_HTML
 from app.infrastructure.database.session import get_session
 from app.infrastructure.storage import LocalFileStorage
 
@@ -41,6 +42,12 @@ def get_create_telegram_draft() -> CreateTelegramDraft:
 def get_approve_and_publish() -> ApproveAndPublish:
     """Build the Telegram publishing use case."""
     return ApproveAndPublish(TelegramPublisher())
+
+
+@router.get("/console", response_class=HTMLResponse, include_in_schema=False)
+async def console() -> HTMLResponse:
+    """Render the lightweight Nashr test console."""
+    return HTMLResponse(content=NASHR_CONSOLE_HTML)
 
 
 @router.post("/sources")
