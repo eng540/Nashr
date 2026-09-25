@@ -18,7 +18,8 @@ async def test_vertical_slice_e2e() -> None:
         units = await ExtractKnowledge(FakeExtractor()).execute(session, source.id)
         assert len(units) == 5
         draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, units[0].id, "@test")
-        edited_content = "**تحرير المستخدم**\\n\\nالنص النهائي.\\n\\n📚 e2e.pdf\\n#اختبار"\n        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
+        edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 p.pdf\\n#اختبار"
+        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
         assert published.status.value == "PUBLISHED"
         assert published.external_id == "test_msg_999"\n        assert published.content == edited_content
         row = (await session.execute(select(PublicationModel).where(PublicationModel.id == draft.id))).scalar_one()
