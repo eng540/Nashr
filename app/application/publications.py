@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.editorial import IEditorialDrafter
@@ -23,7 +24,7 @@ class CreateTelegramDraft:
 
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID, destination: str) -> Publication:
         """Create a DRAFT publication from an editorially generated post."""
-        result = await session.execute(select(KnowledgeUnitModel).where(KnowledgeUnitModel.id == knowledge_unit_id))
+        result = await session.execute(select(KnowledgeUnitModel).options(selectinload(KnowledgeUnitModel.source)).where(KnowledgeUnitModel.id == knowledge_unit_id))
         unit = result.scalar_one_or_none()
         if unit is None:
             raise ValueError("Knowledge unit not found.")
