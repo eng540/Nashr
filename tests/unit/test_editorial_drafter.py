@@ -32,6 +32,5 @@ def test_editorial_drafter_returns_structured_markdown() -> None:
     assert result.startswith("**افتتاحية**")
     call = client.models.calls[0]
     assert call["config"]["response_mime_type"] == "application/json"
-    assert "الفهارس" in call["contents"][0] or "الفهارس" in call["contents"][0]
-    assert "المراجع" in call["contents"][0]
-    assert "مقدمات التحقيق" in call["contents"][0]
+    assert "اسم الكتاب:" in call["contents"][1]
+    assert "المادة المصدرية:" in call["contents"][1]
