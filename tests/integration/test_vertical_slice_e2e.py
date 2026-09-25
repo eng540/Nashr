@@ -21,8 +21,10 @@ async def test_vertical_slice_e2e() -> None:
         edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 p.pdf\\n#اختبار"
         published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
         assert published.status.value == "PUBLISHED"
-        assert published.external_id == "test_msg_999"\n        assert published.content == edited_content
+        assert published.external_id == "test_msg_999"
+        assert published.content == edited_content
         row = (await session.execute(select(PublicationModel).where(PublicationModel.id == draft.id))).scalar_one()
         assert row.status == "PUBLISHED"
-        assert row.external_id == "test_msg_999"\n        assert row.content == edited_content
+        assert row.external_id == "test_msg_999"
+        assert row.content == edited_content
         assert row.published_at is not None
