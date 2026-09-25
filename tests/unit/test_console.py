@@ -10,3 +10,5 @@ async def test_console_returns_html_response() -> None:
     assert "Nashr Console" in body
     assert "/sources/" in body
     assert "/publications/" in body
+    assert '<textarea id="draft-content"' in body
+    assert "JSON.stringify({ content: $('draft-content').value })" in body
