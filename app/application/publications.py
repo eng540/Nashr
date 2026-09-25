@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.editorial import IEditorialDrafter
 from app.domain.publications import IPublisher, Publication, PublicationStatus
 from app.infrastructure.database.models import KnowledgeUnitModel, PublicationModel
 
@@ -16,13 +17,19 @@ def _to_domain(row: PublicationModel) -> Publication:
 class CreateTelegramDraft:
     """Create a Telegram publication draft from one knowledge unit."""
 
+    def __init__(self, drafter: IEditorialDrafter) -> None:
+        """Initialize the editorial drafter."""
+        self.drafter = drafter
+
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID, destination: str) -> Publication:
-        """Create a DRAFT publication for the selected knowledge unit."""
+        """Create a DRAFT publication from an editorially generated post."""
         result = await session.execute(select(KnowledgeUnitModel).where(KnowledgeUnitModel.id == knowledge_unit_id))
         unit = result.scalar_one_or_none()
         if unit is None:
             raise ValueError("Knowledge unit not found.")
-        row = PublicationModel(id=uuid4(), knowledge_unit_id=unit.id, platform="telegram", destination=destination, content=unit.content, status=PublicationStatus.DRAFT.value)
+        source_name = unit.source.filename if unit.source is not None else "المصدر"
+        content = await self.drafter.draft(title=unit.title, content=unit.content, source_name=source_name)
+        row = PublicationModel(id=uuid4(), knowledge_unit_id=unit.id, platform="telegram", destination=destination, content=content, status=PublicationStatus.DRAFT.value)
         session.add(row)
         await session.commit()
         await session.refresh(row)
@@ -36,8 +43,17 @@ class ApproveAndPublish:
         """Initialize the publisher."""
         self.publisher = publisher
 
-    async def execute(self, session: AsyncSession, publication_id: UUID) -> Publication:
-        """Publish a draft and record success or failure in the ledger."""
+    async def execute(self, session: AsyncSession, publication_id: UUID, content: str | None = None) -> Publication:
+        """Persist optional user edits, then publish and record the final content."""
+        if content is not None:
+            content = content.strip()
+            if not content:
+                raise ValueError("Publication content cannot be empty.")
+            edited = await session.execute(update(PublicationModel).where(PublicationModel.id == publication_id, PublicationModel.status == PublicationStatus.DRAFT.value).values(content=content))
+            if edited.rowcount != 1:
+                raise ValueError("Publication is not a DRAFT.")
+            await session.commit()
+
         claimed = await session.execute(update(PublicationModel).where(PublicationModel.id == publication_id, PublicationModel.status == PublicationStatus.DRAFT.value).values(status=PublicationStatus.READY.value))
         if claimed.rowcount != 1:
             raise ValueError("Publication is not a DRAFT.")
