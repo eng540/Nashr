@@ -4,8 +4,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.extraction.gemini import GeminiExtractor
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.extract_knowledge import ExtractKnowledge
@@ -17,6 +19,11 @@ from app.infrastructure.storage import LocalFileStorage
 
 
 router = APIRouter()
+
+
+class PublishTelegramRequest(BaseModel):
+    """Define the final user-edited Telegram content."""
+    content: str = Field(min_length=1)
 
 
 @router.get("/health", tags=["system"])
@@ -36,8 +43,8 @@ def get_extract_knowledge() -> ExtractKnowledge:
 
 
 def get_create_telegram_draft() -> CreateTelegramDraft:
-    """Build the Telegram draft use case."""
-    return CreateTelegramDraft()
+    """Build the Telegram editorial drafting use case."""
+    return CreateTelegramDraft(GeminiEditorialDrafter())
 
 
 def get_approve_and_publish() -> ApproveAndPublish:
@@ -59,83 +66,40 @@ async def create_source(
 ) -> dict[str, Any]:
     """Receive a PDF and register it as a stored source."""
     try:
-        source = await use_case.execute(
-            session,
-            file.filename or "upload.pdf",
-            file.content_type or "",
-            await file.read(),
-        )
+        source = await use_case.execute(session, file.filename or "upload.pdf", file.content_type or "", await file.read())
         return {"id": str(source.id), "status": source.status.value}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/sources/{source_id}/extract")
-async def extract_source(
-    source_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    use_case: ExtractKnowledge = Depends(get_extract_knowledge),
-) -> dict[str, Any]:
+async def extract_source(source_id: UUID, session: AsyncSession = Depends(get_session), use_case: ExtractKnowledge = Depends(get_extract_knowledge)) -> dict[str, Any]:
     """Extract and persist five knowledge units for a source."""
     try:
         units = await use_case.execute(session, source_id)
-        return {
-            "source_id": str(source_id),
-            "knowledge_unit_ids": [str(unit.id) for unit in units],
-            "knowledge_units": [
-                {
-                    "id": str(unit.id),
-                    "position": unit.position,
-                    "title": unit.title,
-                    "content": unit.content,
-                }
-                for unit in units
-            ],
-            "count": len(units),
-        }
+        return {"source_id": str(source_id), "knowledge_unit_ids": [str(unit.id) for unit in units], "knowledge_units": [{"id": str(unit.id), "position": unit.position, "title": unit.title, "content": unit.content} for unit in units], "count": len(units)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/knowledge-units/{knowledge_unit_id}/draft")
-async def create_telegram_draft(
-    knowledge_unit_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    use_case: CreateTelegramDraft = Depends(get_create_telegram_draft),
-) -> dict[str, Any]:
-    """Create a Telegram publication draft for a knowledge unit."""
+async def create_telegram_draft(knowledge_unit_id: UUID, session: AsyncSession = Depends(get_session), use_case: CreateTelegramDraft = Depends(get_create_telegram_draft)) -> dict[str, Any]:
+    """Create an editorially drafted Telegram publication."""
     destination = os.getenv("TELEGRAM_DESTINATION_ID", "")
     if not destination:
         raise HTTPException(status_code=500, detail="TELEGRAM_DESTINATION_ID is required.")
     try:
         publication = await use_case.execute(session, knowledge_unit_id, destination)
-        return {
-            "id": str(publication.id),
-            "knowledge_unit_id": str(publication.knowledge_unit_id),
-            "platform": publication.platform,
-            "destination": publication.destination,
-            "status": publication.status.value,
-            "content": publication.content,
-        }
+        return {"id": str(publication.id), "knowledge_unit_id": str(publication.knowledge_unit_id), "platform": publication.platform, "destination": publication.destination, "status": publication.status.value, "content": publication.content}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/publications/{publication_id}/publish")
-async def publish_telegram(
-    publication_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    use_case: ApproveAndPublish = Depends(get_approve_and_publish),
-) -> dict[str, Any]:
-    """Approve and publish a Telegram publication through the real adapter."""
+async def publish_telegram(publication_id: UUID, payload: PublishTelegramRequest, session: AsyncSession = Depends(get_session), use_case: ApproveAndPublish = Depends(get_approve_and_publish)) -> dict[str, Any]:
+    """Persist the reviewed content, then publish it through the real adapter."""
     try:
-        publication = await use_case.execute(session, publication_id)
-        return {
-            "id": str(publication.id),
-            "status": publication.status.value,
-            "external_id": publication.external_id,
-            "error_message": publication.error_message,
-            "published_at": publication.published_at,
-        }
+        publication = await use_case.execute(session, publication_id, payload.content)
+        return {"id": str(publication.id), "status": publication.status.value, "external_id": publication.external_id, "error_message": publication.error_message, "published_at": publication.published_at}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
