@@ -32,8 +32,16 @@ class GeminiEditorialDrafter(IEditorialDrafter):
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
         """Initialize the Gemini client and model configuration."""
-        self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self._client = client
+
         self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+
+    @property
+    def client(self) -> genai.Client:
+        """Create the Gemini client only when a real draft is requested."""
+        if self._client is None:
+            self._client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        return self._client
 
     async def draft(self, *, title: str, content: str, source_name: str) -> str:
         """Generate a complete Telegram post without blocking the event loop."""
