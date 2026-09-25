@@ -11,6 +11,7 @@ import asyncio
 import os
 from pathlib import Path
 
+from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.extraction.gemini import GeminiExtractor
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.extract_knowledge import ExtractKnowledge
@@ -70,7 +71,7 @@ async def run(pdf_path: Path) -> None:
 
         selected = units[0]
         print(f"[3/5] Selecting Knowledge Unit #1: {selected.id}")
-        draft = await CreateTelegramDraft().execute(
+        draft = await CreateTelegramDraft(GeminiEditorialDrafter()).execute(
             session,
             selected.id,
             destination,

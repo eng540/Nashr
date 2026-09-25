@@ -24,6 +24,15 @@ class GeminiIdeas(BaseModel):
 class GeminiExtractor(IExtractor):
     """Extract exactly five ideas from a PDF using Gemini structured output."""
 
+    SYSTEM_PROMPT = """أنت مستخرج أفكار من الكتب، ولست ملخّصاً للفهرس أو الوصف الببليوغرافي.
+
+استخرج بالضبط خمس أفكار جوهرية ومتمايزة من متن الكتاب، مع الحفاظ على معنى المصدر.
+تجاهل صراحةً ولا تعتبر مصدراً للأفكار: صفحات الفهارس، قوائم المراجع والمصادر، ومقدمات التحقيق والتقديمات التحريرية الخاصة بالمحقق أو الناشر.
+ركّز على الدرر الفكرية، والحجج والمعاني الجوهرية، والمواقف العملية المباشرة التي يمكن تحويلها إلى معرفة نافعة للقارئ.
+تجنّب الملخصات الوصفية العامة من نوع "يتحدث الكتاب عن..."، ولا تستخرج عناوين الفصول أو موضوعات الفهرس بدلاً من الفكرة نفسها.
+لا تخترع معلومات أو اقتباسات غير مدعومة بالمصدر.
+Return positions 1 through 5."""
+
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
         """Initialize the Gemini client and model configuration."""
         self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -42,10 +51,7 @@ class GeminiExtractor(IExtractor):
         uploaded_file = self.client.files.upload(file=source.storage_path)
         response = self.client.models.generate_content(
             model=self.model,
-            contents=[
-                "Extract exactly five distinct main ideas from this PDF. Preserve the source meaning. Return positions 1 through 5.",
-                uploaded_file,
-            ],
+            contents=[self.SYSTEM_PROMPT, uploaded_file],
             config={
                 "response_mime_type": "application/json",
                 "response_schema": GeminiIdeas,

@@ -1,5 +1,6 @@
 from uuid import UUID, uuid4
 
+from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.adapters.publishing.fake import FakePublisher
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
@@ -20,11 +21,13 @@ async def test_create_and_publish_with_fake_publisher() -> None:
     """Verify draft approval and publication ledger success."""
     unit_id = await _knowledge_unit()
     async with SessionFactory() as session:
-        draft = await CreateTelegramDraft().execute(session, unit_id, "@test")
+        draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit_id, "@test")
         assert draft.status.value == "DRAFT"
-        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id)
+        edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 p.pdf\\n#اختبار"
+        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
         assert published.status.value == "PUBLISHED"
         assert published.external_id == "test_msg_999"
+        assert published.content == edited_content
 
 
 class FailingPublisher(FakePublisher):
@@ -39,7 +42,7 @@ async def test_publish_failure_is_recorded() -> None:
     """Verify publisher failure becomes FAILED without escaping the use case."""
     unit_id = await _knowledge_unit()
     async with SessionFactory() as session:
-        draft = await CreateTelegramDraft().execute(session, unit_id, "@test")
+        draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit_id, "@test")
         result = await ApproveAndPublish(FailingPublisher()).execute(session, draft.id)
         assert result.status.value == "FAILED"
         assert result.error_message == "telegram unavailable"
