@@ -23,7 +23,8 @@ async def test_create_and_publish_with_fake_publisher() -> None:
     async with SessionFactory() as session:
         draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit_id, "@test")
         assert draft.status.value == "DRAFT"
-        edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 p.pdf\\n#اختبار"\n        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
+        edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 p.pdf\\n#اختبار"
+        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
         assert published.status.value == "PUBLISHED"
         assert published.external_id == "test_msg_999"\n        assert published.content == edited_content
 
