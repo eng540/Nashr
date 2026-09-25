@@ -51,7 +51,7 @@ NASHR_CONSOLE_HTML = """<!DOCTYPE html>
     <section id="draft-section" class="mt-8 hidden">
       <div class="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 dark:border-indigo-900 dark:bg-indigo-950/30">
         <h2 class="text-xl font-bold">معاينة المسودة</h2>
-        <div id="draft-content" class="mt-4 whitespace-pre-wrap rounded-xl border border-indigo-100 bg-white p-4 text-sm leading-7 dark:border-indigo-900 dark:bg-slate-950"></div>
+        <textarea id="draft-content" dir="rtl" class="mt-4 min-h-80 w-full rounded-xl border border-indigo-100 bg-white p-4 text-sm leading-7 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-indigo-900 dark:bg-slate-950" aria-label="محتوى المنشور"></textarea>
         <button id="publish-btn" class="mt-5 w-full rounded-xl bg-emerald-600 px-6 py-4 text-lg font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50">🚀 نشر في تيليجرام</button>
       </div>
     </section>
@@ -134,7 +134,7 @@ NASHR_CONSOLE_HTML = """<!DOCTYPE html>
       try {
         const d = await request('/knowledge-units/' + id + '/draft', { method: 'POST' });
         state.publicationId = d.id;
-        $('draft-content').textContent = d.content || '';
+        $('draft-content').value = d.content || '';
         $('draft-section').classList.remove('hidden');$('draft-section').scrollIntoView({ behavior: 'smooth' });
       } catch (e) {
         error(e.message);
@@ -178,7 +178,7 @@ NASHR_CONSOLE_HTML = """<!DOCTYPE html>
       clearError();
       busy(true, 'جاري النشر في قناة تيليجرام...');
       try {
-        const result = await request('/publications/' + state.publicationId + '/publish', { method: 'POST' });
+        const result = await request('/publications/' + state.publicationId + '/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: $('draft-content').value }) });
         if (result.status !== 'PUBLISHED') throw Error(result.error_message || 'تعذر تأكيد النشر.');
         $('external-id').textContent = result.external_id || 'غير متاح';
         $('success-section').classList.remove('hidden');$('success-section').scrollIntoView({ behavior: 'smooth' });
