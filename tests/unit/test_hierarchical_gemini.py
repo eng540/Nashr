@@ -2,7 +2,14 @@ from app.adapters.extraction.gemini import GeminiBookMap, GeminiIdeas, GeminiTop
 
 
 def test_book_map_schema_does_not_limit_topic_count_or_taxonomy() -> None:
-    payload = GeminiBookMap(title="Book", description="Desc", topics=[GeminiTopic(position=i, title=f"Topic {i}", description="d") for i in range(1, 9)])
+    payload = GeminiBookMap(
+        title="Book",
+        description="Desc",
+        topics=[
+            GeminiTopic(position=i, title=f"Topic {i}", description="d", page_start=i, page_end=i)
+            for i in range(1, 9)
+        ],
+    )
     assert len(payload.topics) == 8
 
 

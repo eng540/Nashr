@@ -4,17 +4,28 @@ from uuid import UUID, uuid4
 
 @dataclass(frozen=True)
 class BookTopic:
-    """Represent one meaningful navigational topic discovered in a book."""
+    """Represent one meaningful navigational topic with evidence-backed page bounds."""
     id: UUID
     source_id: UUID
     position: int
     title: str
     description: str
     source_reference: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
 
     @classmethod
-    def create(cls, source_id: UUID, position: int, title: str, description: str, source_reference: str | None = None) -> "BookTopic":
-        return cls(uuid4(), source_id, position, title, description, source_reference)
+    def create(
+        cls,
+        source_id: UUID,
+        position: int,
+        title: str,
+        description: str,
+        source_reference: str | None = None,
+        page_start: int | None = None,
+        page_end: int | None = None,
+    ) -> "BookTopic":
+        return cls(uuid4(), source_id, position, title, description, source_reference, page_start, page_end)
 
 
 @dataclass(frozen=True)
