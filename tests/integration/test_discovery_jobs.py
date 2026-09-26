@@ -9,8 +9,8 @@ from app.application.discovery_jobs import (
     retry_discovery_job,
 )
 from app.domain.book_map import BookMap, BookTopic
-from app.domain.extraction import DocumentReference, ExtractedIdea
-from app.infrastructure.database.models import DiscoveryJobModel, KnowledgeUnitModel, SourceModel, TopicModel
+from app.domain.extraction import DiscoverySpan, DocumentReference, ExtractedIdea
+from app.infrastructure.database.models import DiscoveryJobModel, DiscoveryChunkModel, KnowledgeUnitModel, SourceModel, TopicModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -24,8 +24,8 @@ class TwoTopicMapper:
             source.filename,
             "Two topic test book",
             [
-                BookTopic.create(source.id, 1, "Topic 1", "First"),
-                BookTopic.create(source.id, 2, "Topic 2", "Second"),
+                BookTopic.create(source.id, 1, "Topic 1", "First", "pages 1-1", 1, 1),
+                BookTopic.create(source.id, 2, "Topic 2", "Second", "pages 2-3", 2, 3),
             ],
         )
 
@@ -33,8 +33,10 @@ class TwoTopicMapper:
 class ToggleDiscoverer:
     def __init__(self):
         self.fail_on_second = True
+        self.spans: list[DiscoverySpan] = []
 
-    async def discover_topic(self, source, topic, document):
+    async def discover_topic(self, source, topic, document, span):
+        self.spans.append(span)
         if topic.position == 2 and self.fail_on_second:
             raise RuntimeError("simulated topic failure")
         return [
@@ -43,7 +45,7 @@ class ToggleDiscoverer:
                 title=f"Material {topic.position}",
                 content=f"Content {topic.position}",
                 original_text=f"Original {topic.position}",
-                source_reference=f"page {topic.position}",
+                source_reference=f"pages {span.page_start}-{span.page_end}",
                 kind="نوع مكتشف",
             )
         ]
@@ -79,13 +81,16 @@ async def test_discovery_job_checkpoints_failure_and_resumes() -> None:
     async with SessionFactory() as session:
         failed_job = (await session.execute(select(DiscoveryJobModel).where(DiscoveryJobModel.id == job.id))).scalar_one()
         topics = (await session.execute(select(TopicModel).where(TopicModel.source_id == source_id).order_by(TopicModel.position))).scalars().all()
+        chunks = (await session.execute(select(DiscoveryChunkModel).join(TopicModel))).scalars().all()
         units = (await session.execute(select(KnowledgeUnitModel).where(KnowledgeUnitModel.source_id == source_id))).scalars().all()
 
         assert failed_job.status == DiscoveryJobStatus.FAILED
         assert failed_job.topics_total == 2
+        assert failed_job.chunks_total == 2
         assert topics[0].discovery_status == "COMPLETED"
         assert topics[1].discovery_status == "FAILED"
         assert len(units) == 1
+        assert [chunk.status for chunk in sorted(chunks, key=lambda item: item.chunk_index)] == ["COMPLETED", "FAILED"]
 
     discoverer.fail_on_second = False
     async with SessionFactory() as session:
@@ -98,11 +103,19 @@ async def test_discovery_job_checkpoints_failure_and_resumes() -> None:
     async with SessionFactory() as session:
         final_job = (await session.execute(select(DiscoveryJobModel).where(DiscoveryJobModel.id == job.id))).scalar_one()
         topics = (await session.execute(select(TopicModel).where(TopicModel.source_id == source_id).order_by(TopicModel.position))).scalars().all()
+        chunks = (await session.execute(select(DiscoveryChunkModel).join(TopicModel))).scalars().all()
         units = (await session.execute(select(KnowledgeUnitModel).where(KnowledgeUnitModel.source_id == source_id))).scalars().all()
 
         assert final_job.status == DiscoveryJobStatus.COMPLETED
         assert final_job.attempts == 2
         assert final_job.topics_completed == 2
+        assert final_job.chunks_completed == 2
         assert final_job.materials_discovered == 2
         assert [topic.discovery_status for topic in topics] == ["COMPLETED", "COMPLETED"]
+        assert [chunk.status for chunk in sorted(chunks, key=lambda item: item.chunk_index)] == ["COMPLETED", "COMPLETED"]
         assert len(units) == 2
+        assert discoverer.spans == [
+            DiscoverySpan(1, 1, 1),
+            DiscoverySpan(2, 3, 1),
+            DiscoverySpan(2, 3, 1),
+        ]
