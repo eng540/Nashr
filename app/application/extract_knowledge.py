@@ -9,25 +9,36 @@ from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
 
 
 class ExtractKnowledge:
-    """Extract and persist exactly five knowledge units for a source."""
+    """Discover and persist zero or more knowledge units for a source."""
 
     def __init__(self, extractor: IExtractor) -> None:
-        """Initialize the knowledge extraction use case."""
+        """Initialize the knowledge discovery use case."""
         self.extractor = extractor
 
     async def execute(self, session: AsyncSession, source_id: UUID) -> list[KnowledgeUnit]:
-        """Extract exactly five ideas and persist their knowledge units."""
+        """Discover and persist all materials returned by the extractor."""
         source_result = await session.execute(select(SourceModel).where(SourceModel.id == source_id))
         source_model = source_result.scalar_one_or_none()
         if source_model is None:
             raise ValueError("Source not found.")
         ideas = await self.extractor.extract(source_model.to_domain())
-        if len(ideas) != 5 or [idea.position for idea in ideas] != [1, 2, 3, 4, 5]:
-            raise ValueError("Extractor must return exactly five ideas with positions 1 through 5.")
+        positions = [idea.position for idea in ideas]
+        if positions != list(range(1, len(ideas) + 1)):
+            raise ValueError("Extractor must return materials with positions starting at 1 in discovery order.")
         existing = await session.execute(select(KnowledgeUnitModel).where(KnowledgeUnitModel.source_id == source_id))
         if existing.scalars().first() is not None:
             raise ValueError("Knowledge units already exist for this source.")
-        units = [KnowledgeUnit.from_extracted(source_id, idea.position, idea.title, idea.content) for idea in ideas]
+        units = [
+            KnowledgeUnit.from_extracted(
+                source_id,
+                idea.position,
+                idea.title,
+                idea.content,
+                idea.original_text,
+                idea.source_reference,
+            )
+            for idea in ideas
+        ]
         session.add_all([
             KnowledgeUnitModel(
                 id=unit.id,
@@ -35,6 +46,8 @@ class ExtractKnowledge:
                 position=unit.position,
                 title=unit.title,
                 content=unit.content,
+                original_text=unit.original_text,
+                source_reference=unit.source_reference,
                 created_at=unit.created_at,
             )
             for unit in units

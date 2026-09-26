@@ -74,10 +74,10 @@ async def create_source(
 
 @router.post("/sources/{source_id}/extract")
 async def extract_source(source_id: UUID, session: AsyncSession = Depends(get_session), use_case: ExtractKnowledge = Depends(get_extract_knowledge)) -> dict[str, Any]:
-    """Extract and persist five knowledge units for a source."""
+    """Discover and persist zero or more materials for a source."""
     try:
         units = await use_case.execute(session, source_id)
-        return {"source_id": str(source_id), "knowledge_unit_ids": [str(unit.id) for unit in units], "knowledge_units": [{"id": str(unit.id), "position": unit.position, "title": unit.title, "content": unit.content} for unit in units], "count": len(units)}
+        return {"source_id": str(source_id), "knowledge_unit_ids": [str(unit.id) for unit in units], "knowledge_units": [{"id": str(unit.id), "position": unit.position, "title": unit.title, "content": unit.content, "original_text": unit.original_text, "source_reference": unit.source_reference} for unit in units], "count": len(units)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
