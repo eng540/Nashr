@@ -1,16 +1,23 @@
 import logging
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.extraction.gemini import GeminiBookMapper, GeminiTopicMaterialDiscoverer
+from app.adapters.extraction.gemini import GeminiBookMapper, GeminiOperationError, GeminiTopicMaterialDiscoverer
 from app.application.discover_book import DiscoverBook
 from app.domain.extraction import DocumentReference
 from app.domain.sources import SourceStatus
-from app.infrastructure.database.models import DiscoveryJobModel, KnowledgeUnitModel, SourceModel, TopicModel
+from app.infrastructure.database.models import (
+    DiscoveryChunkModel,
+    DiscoveryJobModel,
+    KnowledgeUnitModel,
+    SourceModel,
+    TopicModel,
+)
 from app.infrastructure.database.session import SessionFactory
 
 logger = logging.getLogger(__name__)
@@ -31,32 +38,35 @@ class DiscoveryJobStage:
 
 
 async def create_discovery_job(session: AsyncSession, source_id: UUID) -> DiscoveryJobModel:
-    source_result = await session.execute(select(SourceModel).where(SourceModel.id == source_id))
-    source = source_result.scalar_one_or_none()
+    source = (
+        await session.execute(select(SourceModel).where(SourceModel.id == source_id))
+    ).scalar_one_or_none()
     if source is None:
         raise ValueError("Source not found.")
 
-    active_result = await session.execute(
-        select(DiscoveryJobModel)
-        .where(
-            DiscoveryJobModel.source_id == source_id,
-            DiscoveryJobModel.status.in_([DiscoveryJobStatus.QUEUED, DiscoveryJobStatus.RUNNING]),
+    active = (
+        await session.execute(
+            select(DiscoveryJobModel)
+            .where(
+                DiscoveryJobModel.source_id == source_id,
+                DiscoveryJobModel.status.in_([DiscoveryJobStatus.QUEUED, DiscoveryJobStatus.RUNNING]),
+            )
+            .order_by(DiscoveryJobModel.created_at.desc())
         )
-        .order_by(DiscoveryJobModel.created_at.desc())
-    )
-    active = active_result.scalars().first()
+    ).scalars().first()
     if active is not None:
         return active
 
-    completed_result = await session.execute(
-        select(DiscoveryJobModel)
-        .where(
-            DiscoveryJobModel.source_id == source_id,
-            DiscoveryJobModel.status == DiscoveryJobStatus.COMPLETED,
+    completed = (
+        await session.execute(
+            select(DiscoveryJobModel)
+            .where(
+                DiscoveryJobModel.source_id == source_id,
+                DiscoveryJobModel.status == DiscoveryJobStatus.COMPLETED,
+            )
+            .order_by(DiscoveryJobModel.created_at.desc())
         )
-        .order_by(DiscoveryJobModel.created_at.desc())
-    )
-    completed = completed_result.scalars().first()
+    ).scalars().first()
     if completed is not None:
         return completed
 
@@ -73,43 +83,47 @@ async def create_discovery_job(session: AsyncSession, source_id: UUID) -> Discov
         await session.commit()
     except IntegrityError:
         await session.rollback()
-        active_result = await session.execute(
-            select(DiscoveryJobModel)
-            .where(
-                DiscoveryJobModel.source_id == source_id,
-                DiscoveryJobModel.status.in_([DiscoveryJobStatus.QUEUED, DiscoveryJobStatus.RUNNING]),
+        active = (
+            await session.execute(
+                select(DiscoveryJobModel)
+                .where(
+                    DiscoveryJobModel.source_id == source_id,
+                    DiscoveryJobModel.status.in_([DiscoveryJobStatus.QUEUED, DiscoveryJobStatus.RUNNING]),
+                )
+                .order_by(DiscoveryJobModel.created_at.desc())
             )
-            .order_by(DiscoveryJobModel.created_at.desc())
-        )
-        active = active_result.scalars().first()
+        ).scalars().first()
         if active is None:
             raise
         return active
     await session.refresh(job)
+    logger.info("event=DISCOVERY_CREATED job_id=%s source_id=%s", job.id, source_id)
     return job
 
 
 async def retry_discovery_job(session: AsyncSession, source_id: UUID) -> DiscoveryJobModel:
-    result = await session.execute(
-        select(DiscoveryJobModel)
-        .where(
-            DiscoveryJobModel.source_id == source_id,
-            DiscoveryJobModel.status == DiscoveryJobStatus.FAILED,
+    job = (
+        await session.execute(
+            select(DiscoveryJobModel)
+            .where(
+                DiscoveryJobModel.source_id == source_id,
+                DiscoveryJobModel.status == DiscoveryJobStatus.FAILED,
+            )
+            .order_by(DiscoveryJobModel.created_at.desc())
         )
-        .order_by(DiscoveryJobModel.created_at.desc())
-    )
-    job = result.scalars().first()
+    ).scalars().first()
     if job is None:
         raise ValueError("No failed discovery job exists for this source.")
 
-    active_result = await session.execute(
-        select(DiscoveryJobModel)
-        .where(
-            DiscoveryJobModel.source_id == source_id,
-            DiscoveryJobModel.status.in_([DiscoveryJobStatus.QUEUED, DiscoveryJobStatus.RUNNING]),
+    active = (
+        await session.execute(
+            select(DiscoveryJobModel).where(
+                DiscoveryJobModel.source_id == source_id,
+                DiscoveryJobModel.status.in_([DiscoveryJobStatus.QUEUED, DiscoveryJobStatus.RUNNING]),
+            )
         )
-    )
-    if active_result.scalars().first() is not None:
+    ).scalars().first()
+    if active is not None:
         raise ValueError("A discovery job is already running for this source.")
 
     await session.execute(
@@ -120,15 +134,76 @@ async def retry_discovery_job(session: AsyncSession, source_id: UUID) -> Discove
         )
         .values(discovery_status="PENDING", discovery_error=None)
     )
+    await session.execute(
+        update(DiscoveryChunkModel)
+        .where(
+            DiscoveryChunkModel.topic_id.in_(
+                select(TopicModel.id).where(TopicModel.source_id == source_id)
+            ),
+            DiscoveryChunkModel.status.in_(["FAILED", "RUNNING"]),
+        )
+        .values(status="PENDING", error_code=None, error_message=None)
+    )
     job.status = DiscoveryJobStatus.QUEUED
     job.stage = DiscoveryJobStage.PREPARING_DOCUMENT
+    job.error_code = None
     job.error_message = None
     job.retryable = True
     job.current_topic_id = None
+    job.current_chunk_id = None
+    job.completed_at = None
     job.updated_at = datetime.now(timezone.utc)
     await session.commit()
     await session.refresh(job)
+    logger.info("event=DISCOVERY_RETRY job_id=%s source_id=%s", job.id, source_id)
     return job
+
+
+async def recover_stale_jobs() -> list[UUID]:
+    threshold = datetime.now(timezone.utc) - timedelta(
+        seconds=int(os.getenv("NASHR_DISCOVERY_STALE_SECONDS", "900"))
+    )
+    recovered: list[UUID] = []
+    async with SessionFactory() as session:
+        jobs = (
+            await session.execute(
+                select(DiscoveryJobModel).where(
+                    DiscoveryJobModel.status == DiscoveryJobStatus.RUNNING,
+                    DiscoveryJobModel.updated_at < threshold,
+                )
+            )
+        ).scalars().all()
+        for job in jobs:
+            await session.execute(
+                update(DiscoveryChunkModel)
+                .where(
+                    DiscoveryChunkModel.topic_id.in_(
+                        select(TopicModel.id).where(TopicModel.source_id == job.source_id)
+                    ),
+                    DiscoveryChunkModel.status == "RUNNING",
+                )
+                .values(status="PENDING", error_code=None, error_message=None)
+            )
+            await session.execute(
+                update(TopicModel)
+                .where(
+                    TopicModel.source_id == job.source_id,
+                    TopicModel.discovery_status == "RUNNING",
+                )
+                .values(discovery_status="PENDING", discovery_error=None)
+            )
+            job.status = DiscoveryJobStatus.QUEUED
+            job.current_topic_id = None
+            job.current_chunk_id = None
+            job.error_code = "DISCOVERY_RECOVERED_AFTER_PROCESS_STALE"
+            job.error_message = "Recovered after the previous process stopped before completion."
+            job.retryable = True
+            job.updated_at = datetime.now(timezone.utc)
+            recovered.append(job.id)
+        await session.commit()
+    for job_id in recovered:
+        logger.warning("event=DISCOVERY_RECOVERED job_id=%s", job_id)
+    return recovered
 
 
 async def _claim_job(job_id: UUID) -> bool:
@@ -145,6 +220,7 @@ async def _claim_job(job_id: UUID) -> bool:
                 attempts=DiscoveryJobModel.attempts + 1,
                 started_at=func.now(),
                 updated_at=func.now(),
+                error_code=None,
                 error_message=None,
             )
         )
@@ -159,24 +235,49 @@ async def _update_job(job_id: UUID, **values) -> None:
         await session.commit()
 
 
-async def _progress(job_id: UUID, source_id: UUID, current_topic_id: UUID | None = None) -> None:
+async def _progress(job_id: UUID, source_id: UUID, current_topic_id: UUID | None = None, current_chunk_id: UUID | None = None) -> None:
     async with SessionFactory() as session:
-        completed_result = await session.execute(
-            select(func.count(TopicModel.id)).where(
-                TopicModel.source_id == source_id,
-                TopicModel.discovery_status == "COMPLETED",
-            )
+        topics_completed = int(
+            (
+                await session.execute(
+                    select(func.count(TopicModel.id)).where(
+                        TopicModel.source_id == source_id,
+                        TopicModel.discovery_status == "COMPLETED",
+                    )
+                )
+            ).scalar_one()
+            or 0
         )
-        material_result = await session.execute(
-            select(func.count(KnowledgeUnitModel.id)).where(KnowledgeUnitModel.source_id == source_id)
+        chunks_completed = int(
+            (
+                await session.execute(
+                    select(func.count(DiscoveryChunkModel.id))
+                    .join(TopicModel, TopicModel.id == DiscoveryChunkModel.topic_id)
+                    .where(
+                        TopicModel.source_id == source_id,
+                        DiscoveryChunkModel.status == "COMPLETED",
+                    )
+                )
+            ).scalar_one()
+            or 0
+        )
+        materials = int(
+            (
+                await session.execute(
+                    select(func.count(KnowledgeUnitModel.id)).where(KnowledgeUnitModel.source_id == source_id)
+                )
+            ).scalar_one()
+            or 0
         )
         await session.execute(
             update(DiscoveryJobModel)
             .where(DiscoveryJobModel.id == job_id)
             .values(
-                topics_completed=int(completed_result.scalar_one() or 0),
-                materials_discovered=int(material_result.scalar_one() or 0),
+                topics_completed=topics_completed,
+                chunks_completed=chunks_completed,
+                materials_discovered=materials,
                 current_topic_id=current_topic_id,
+                current_chunk_id=current_chunk_id,
                 updated_at=datetime.now(timezone.utc),
             )
         )
@@ -184,7 +285,7 @@ async def _progress(job_id: UUID, source_id: UUID, current_topic_id: UUID | None
 
 
 class DiscoveryJobRunner:
-    """Run durable discovery work independently of the HTTP request lifecycle."""
+    """Run durable sequential discovery work independently of the HTTP request lifecycle."""
 
     def __init__(self, mapper, material_discoverer) -> None:
         self.discoverer = DiscoverBook(mapper, material_discoverer)
@@ -192,16 +293,19 @@ class DiscoveryJobRunner:
     async def run(self, job_id: UUID) -> None:
         if not await _claim_job(job_id):
             return
+        logger.info("event=DISCOVERY_STARTED job_id=%s", job_id)
 
         try:
             async with SessionFactory() as session:
-                job_result = await session.execute(select(DiscoveryJobModel).where(DiscoveryJobModel.id == job_id))
-                job = job_result.scalar_one_or_none()
+                job = (
+                    await session.execute(select(DiscoveryJobModel).where(DiscoveryJobModel.id == job_id))
+                ).scalar_one_or_none()
                 if job is None:
                     return
                 source_id = job.source_id
-                source_result = await session.execute(select(SourceModel).where(SourceModel.id == source_id))
-                source = source_result.scalar_one()
+                source = (
+                    await session.execute(select(SourceModel).where(SourceModel.id == source_id))
+                ).scalar_one()
                 source.status = SourceStatus.EXTRACTING.value
                 await session.commit()
 
@@ -212,34 +316,52 @@ class DiscoveryJobRunner:
             await _update_job(job_id, stage=DiscoveryJobStage.BUILDING_BOOK_MAP)
             async with SessionFactory() as session:
                 book_map = await self.discoverer.build_book_map(session, source_id, document)
-            await _update_job(job_id, topics_total=len(book_map.topics))
 
-            await _update_job(job_id, stage=DiscoveryJobStage.DISCOVERING_MATERIALS)
+            topics_total = len(book_map.topics)
+            chunks_total = 0
             for topic in book_map.topics:
                 async with SessionFactory() as session:
-                    topic_row = (
-                        await session.execute(
-                            select(TopicModel).where(TopicModel.id == topic.id, TopicModel.source_id == source_id)
-                        )
-                    ).scalar_one()
+                    chunks = await self.discoverer.ensure_topic_chunks(session, topic.id)
+                    chunks_total += len(chunks)
+            await _update_job(
+                job_id,
+                topics_total=topics_total,
+                chunks_total=chunks_total,
+                stage=DiscoveryJobStage.DISCOVERING_MATERIALS,
+            )
 
-                if topic_row.discovery_status == "COMPLETED":
-                    await _progress(job_id, source_id, None)
-                    continue
-
-                await _update_job(job_id, current_topic_id=topic.id)
+            for topic in book_map.topics:
                 async with SessionFactory() as session:
-                    await self.discoverer.discover_topic(session, source_id, topic.id, document)
-                await _progress(job_id, source_id, None)
+                    chunks = await self.discoverer.ensure_topic_chunks(session, topic.id)
+                for chunk in chunks:
+                    if chunk.status == "COMPLETED":
+                        await _progress(job_id, source_id)
+                        continue
+                    await _update_job(
+                        job_id,
+                        current_topic_id=topic.id,
+                        current_chunk_id=chunk.id,
+                    )
+                    async with SessionFactory() as session:
+                        await self.discoverer.discover_chunk(
+                            session,
+                            source_id,
+                            topic.id,
+                            chunk.id,
+                            document,
+                        )
+                    await _progress(job_id, source_id)
 
             await _update_job(
                 job_id,
                 stage=DiscoveryJobStage.FINALIZING,
                 current_topic_id=None,
+                current_chunk_id=None,
             )
             async with SessionFactory() as session:
-                source_result = await session.execute(select(SourceModel).where(SourceModel.id == source_id))
-                source = source_result.scalar_one()
+                source = (
+                    await session.execute(select(SourceModel).where(SourceModel.id == source_id))
+                ).scalar_one()
                 source.status = SourceStatus.EXTRACTED.value
                 await session.commit()
 
@@ -247,46 +369,66 @@ class DiscoveryJobRunner:
                 job_id,
                 status=DiscoveryJobStatus.COMPLETED,
                 stage=DiscoveryJobStage.FINALIZING,
-                current_topic_id=None,
                 completed_at=datetime.now(timezone.utc),
+                error_code=None,
                 error_message=None,
                 retryable=False,
+                current_topic_id=None,
+                current_chunk_id=None,
             )
-            logger.info("discovery_job_completed job_id=%s source_id=%s", job_id, source_id)
+            logger.info("event=DISCOVERY_COMPLETED job_id=%s source_id=%s", job_id, source_id)
         except Exception as exc:
-            logger.exception("discovery_job_failed job_id=%s", job_id)
+            logger.exception("event=DISCOVERY_FAILED job_id=%s", job_id)
+            code = getattr(exc, "code", None)
+            retryable = getattr(exc, "retryable", None)
+            if code is None:
+                if isinstance(exc, (ValueError, FileNotFoundError)):
+                    code, retryable = "DISCOVERY_DATA_ERROR", False
+                else:
+                    code, retryable = "UNKNOWN", True
             async with SessionFactory() as session:
-                job_result = await session.execute(select(DiscoveryJobModel).where(DiscoveryJobModel.id == job_id))
-                job = job_result.scalar_one_or_none()
-                if job is not None:
-                    retryable = not isinstance(exc, (ValueError, FileNotFoundError))
-                    if job.current_topic_id:
-                        await session.execute(
-                            update(TopicModel)
-                            .where(TopicModel.id == job.current_topic_id)
-                            .values(
-                                discovery_status="FAILED",
-                                discovery_error=f"Discovery failed during {job.stage}.",
-                            )
-                        )
+                job = (
+                    await session.execute(select(DiscoveryJobModel).where(DiscoveryJobModel.id == job_id))
+                ).scalar_one_or_none()
+                if job is None:
+                    return
+                if job.current_chunk_id:
                     await session.execute(
-                        update(SourceModel)
-                        .where(SourceModel.id == job.source_id)
-                        .values(status=SourceStatus.FAILED.value)
-                    )
-                    await session.execute(
-                        update(DiscoveryJobModel)
-                        .where(DiscoveryJobModel.id == job_id)
+                        update(DiscoveryChunkModel)
+                        .where(DiscoveryChunkModel.id == job.current_chunk_id)
                         .values(
-                            status=DiscoveryJobStatus.FAILED,
-                            error_message=f"تعذر إكمال الاستكشاف أثناء المرحلة الحالية. يمكن إعادة المحاولة: {'نعم' if retryable else 'لا'}.",
-                            retryable=retryable,
-                            updated_at=datetime.now(timezone.utc),
+                            status="FAILED",
+                            error_code=code,
+                            error_message=str(exc),
                         )
                     )
-                    await session.commit()
+                if job.current_topic_id:
+                    await session.execute(
+                        update(TopicModel)
+                        .where(TopicModel.id == job.current_topic_id)
+                        .values(
+                            discovery_status="FAILED",
+                            discovery_error=f"Discovery failed: {code}.",
+                        )
+                    )
+                await session.execute(
+                    update(SourceModel)
+                    .where(SourceModel.id == job.source_id)
+                    .values(status=SourceStatus.FAILED.value)
+                )
+                await session.execute(
+                    update(DiscoveryJobModel)
+                    .where(DiscoveryJobModel.id == job_id)
+                    .values(
+                        status=DiscoveryJobStatus.FAILED,
+                        error_code=code,
+                        error_message=f"Discovery failed with {code}. Retryable: {'yes' if retryable else 'no'}.",
+                        retryable=bool(retryable),
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                )
+                await session.commit()
 
 
 async def run_discovery_job(job_id: UUID) -> None:
-    """Default production executor; creates its own adapters and DB resources."""
     await DiscoveryJobRunner(GeminiBookMapper(), GeminiTopicMaterialDiscoverer()).run(job_id)
