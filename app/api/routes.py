@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.discovery_jobs import (
-    DiscoveryJobStage,
     DiscoveryJobStatus,
     create_discovery_job,
     retry_discovery_job,
@@ -36,7 +35,6 @@ def get_ingest_pdf() -> IngestPdf:
 
 
 def get_create_telegram_draft() -> CreateTelegramDraft:
-    from app.adapters.drafting.gemini import GeminiEditorialDrafter
     return CreateTelegramDraft(GeminiEditorialDrafter())
 
 
