@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.extraction.gemini import GeminiBookMapper, GeminiTopicMaterialDiscoverer
@@ -68,7 +69,22 @@ async def create_discovery_job(session: AsyncSession, source_id: UUID) -> Discov
     )
     source.status = SourceStatus.STORED.value
     session.add(job)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        active_result = await session.execute(
+            select(DiscoveryJobModel)
+            .where(
+                DiscoveryJobModel.source_id == source_id,
+                DiscoveryJobModel.status.in_([DiscoveryJobStatus.QUEUED, DiscoveryJobStatus.RUNNING]),
+            )
+            .order_by(DiscoveryJobModel.created_at.desc())
+        )
+        active = active_result.scalars().first()
+        if active is None:
+            raise
+        return active
     await session.refresh(job)
     return job
 
