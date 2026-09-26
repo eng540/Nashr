@@ -50,8 +50,12 @@ def _job_payload(job: DiscoveryJobModel) -> dict[str, Any]:
         "stage": job.stage,
         "topics_total": job.topics_total,
         "topics_completed": job.topics_completed,
+        "chunks_total": job.chunks_total,
+        "chunks_completed": job.chunks_completed,
         "materials_discovered": job.materials_discovered,
         "current_topic_id": str(job.current_topic_id) if job.current_topic_id else None,
+        "current_chunk_id": str(job.current_chunk_id) if job.current_chunk_id else None,
+        "error_code": job.error_code,
         "error": job.error_message,
         "retryable": job.retryable,
         "attempts": job.attempts,
@@ -69,6 +73,8 @@ def _topic_payload(topic: TopicModel, units: list[KnowledgeUnitModel]) -> dict[s
         "title": topic.title,
         "description": topic.description,
         "source_reference": topic.source_reference,
+        "page_start": topic.page_start,
+        "page_end": topic.page_end,
         "discovery_status": topic.discovery_status,
         "discovery_error": topic.discovery_error,
         "materials": [
@@ -80,6 +86,9 @@ def _topic_payload(topic: TopicModel, units: list[KnowledgeUnitModel]) -> dict[s
                 "content": unit.content,
                 "original_text": unit.original_text,
                 "source_reference": unit.source_reference,
+                "discovery_page_start": unit.discovery_page_start,
+                "discovery_page_end": unit.discovery_page_end,
+                "discovery_chunk_index": unit.discovery_chunk_index,
             }
             for unit in sorted(units, key=lambda item: item.position)
         ],
