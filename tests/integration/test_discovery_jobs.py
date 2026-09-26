@@ -81,7 +81,7 @@ async def test_discovery_job_checkpoints_failure_and_resumes() -> None:
     async with SessionFactory() as session:
         failed_job = (await session.execute(select(DiscoveryJobModel).where(DiscoveryJobModel.id == job.id))).scalar_one()
         topics = (await session.execute(select(TopicModel).where(TopicModel.source_id == source_id).order_by(TopicModel.position))).scalars().all()
-        chunks = (await session.execute(select(DiscoveryChunkModel).join(TopicModel))).scalars().all()
+        chunks = (await session.execute(select(DiscoveryChunkModel).join(TopicModel).where(TopicModel.source_id == source_id))).scalars().all()
         units = (await session.execute(select(KnowledgeUnitModel).where(KnowledgeUnitModel.source_id == source_id))).scalars().all()
 
         assert failed_job.status == DiscoveryJobStatus.FAILED
