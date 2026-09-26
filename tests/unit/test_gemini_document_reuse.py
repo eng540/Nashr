@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -41,13 +42,11 @@ async def test_gemini_document_reference_is_reused_without_upload(tmp_path: Path
     pdf = tmp_path / "book.pdf"
     pdf.write_bytes(b"%PDF-test")
     source = Source.stored("book.pdf", "application/pdf", str(pdf), pdf.stat().st_size)
-    source = Source(
-        **{
-            **source.__dict__,
-            "content_sha256": "same-hash",
-            "gemini_file_name": "files/existing",
-            "gemini_file_source_sha256": "same-hash",
-        }
+    source = replace(
+        source,
+        content_sha256="same-hash",
+        gemini_file_name="files/existing",
+        gemini_file_source_sha256="same-hash",
     )
 
     client = FakeClient(FakeFile(name="files/existing"))
