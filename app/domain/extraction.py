@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 from app.domain.sources import Source
-from app.domain.book_map import BookTopic
+from app.domain.book_map import BookMap, BookTopic
 
 
 @dataclass(frozen=True)
