@@ -156,7 +156,11 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
 
     def _wait_for_active(self, file_name: str, source_id) -> DocumentReference:
         deadline = time.monotonic() + float(os.getenv("GEMINI_FILE_READY_TIMEOUT_SECONDS", "180"))
-        current = self.client.files.get(name=file_name)
+        try:
+            current = self.client.files.get(name=file_name)
+        except Exception as exc:
+            code, retryable = classify_gemini_error(exc)
+            raise GeminiOperationError(code, "Gemini file state lookup failed.", retryable, exc) from exc
         while True:
             state = getattr(getattr(current, "state", None), "name", None)
             if state in (None, "ACTIVE"):
