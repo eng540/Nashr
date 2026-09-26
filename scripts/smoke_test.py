@@ -77,3 +77,7 @@ async def run(pdf_path: Path) -> None:
             raise SystemExit("LIVE SMOKE TEST FAILED: publication or provenance verification failed.")
 
         print("[7] LIVE SMOKE TEST PASSED: source -> job -> Gemini -> map -> topics -> materials -> draft -> Telegram")
+
+
+if __name__ == "__main__":
+    asyncio.run(run(parse_args().pdf))
