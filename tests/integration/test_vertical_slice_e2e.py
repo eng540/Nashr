@@ -15,8 +15,8 @@ async def test_vertical_slice_e2e() -> None:
     pdf = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
     async with SessionFactory() as session:
         source = await IngestPdf(LocalFileStorage("./storage/test")).execute(session, "e2e.pdf", "application/pdf", pdf)
-        units = await ExtractKnowledge(FakeExtractor()).execute(session, source.id)
-        assert len(units) == 5
+        units = await ExtractKnowledge(FakeExtractor(6)).execute(session, source.id)
+        assert len(units) == 6
         selected = units[0]
         assert selected.source_id == source.id
         assert selected.original_text is not None

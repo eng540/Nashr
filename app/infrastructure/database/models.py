@@ -9,11 +9,10 @@ from app.domain.sources import Source
 
 
 class Base(DeclarativeBase):
-    """Provide the SQLAlchemy declarative base."""
+    pass
 
 
 class SourceModel(Base):
-    """Persist a source file and its storage metadata."""
     __tablename__ = "sources"
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -22,34 +21,51 @@ class SourceModel(Base):
     storage_path: Mapped[str] = mapped_column(String(1000), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="STORED")
+    book_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    book_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     knowledge_units: Mapped[list["KnowledgeUnitModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+    topics: Mapped[list["TopicModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
 
     def to_domain(self) -> Source:
-        """Convert the persistence model into the domain source."""
         from app.domain.sources import SourceStatus
         return Source(id=self.id, filename=self.filename, mime_type=self.mime_type, storage_path=self.storage_path, size_bytes=self.size_bytes, status=SourceStatus(self.status), created_at=self.created_at)
 
 
-class KnowledgeUnitModel(Base):
-    """Persist one discovered material."""
-    __tablename__ = "knowledge_units"
-    __table_args__ = (UniqueConstraint("source_id", "position", name="uq_knowledge_units_source_position"),)
+class TopicModel(Base):
+    __tablename__ = "topics"
+    __table_args__ = (UniqueConstraint("source_id", "position", name="uq_topics_source_position"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    source_reference: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    source: Mapped[SourceModel] = relationship(back_populates="topics")
+    knowledge_units: Mapped[list["KnowledgeUnitModel"]] = relationship(back_populates="topic")
+
+
+class KnowledgeUnitModel(Base):
+    __tablename__ = "knowledge_units"
+    __table_args__ = (UniqueConstraint("source_id", "position", name="uq_knowledge_units_source_position"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
+    topic_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    kind: Mapped[str | None] = mapped_column(String(200), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     original_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_reference: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     source: Mapped[SourceModel] = relationship(back_populates="knowledge_units")
+    topic: Mapped[TopicModel | None] = relationship(back_populates="knowledge_units")
     publications: Mapped[list["PublicationModel"]] = relationship(back_populates="knowledge_unit", cascade="save-update, merge")
 
 
 class PublicationModel(Base):
-    """Persist one publication ledger entry."""
     __tablename__ = "publications"
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
