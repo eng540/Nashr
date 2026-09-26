@@ -32,7 +32,7 @@ class SourceModel(Base):
 
 
 class KnowledgeUnitModel(Base):
-    """Persist one extracted knowledge unit."""
+    """Persist one discovered material."""
     __tablename__ = "knowledge_units"
     __table_args__ = (UniqueConstraint("source_id", "position", name="uq_knowledge_units_source_position"),)
 
@@ -41,6 +41,8 @@ class KnowledgeUnitModel(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    original_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_reference: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     source: Mapped[SourceModel] = relationship(back_populates="knowledge_units")
     publications: Mapped[list["PublicationModel"]] = relationship(back_populates="knowledge_unit", cascade="save-update, merge")
