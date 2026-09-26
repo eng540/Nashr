@@ -200,6 +200,10 @@ class DiscoveryJobRunner:
                 if job is None:
                     return
                 source_id = job.source_id
+                source_result = await session.execute(select(SourceModel).where(SourceModel.id == source_id))
+                source = source_result.scalar_one()
+                source.status = SourceStatus.EXTRACTING.value
+                await session.commit()
 
             await _update_job(job_id, stage=DiscoveryJobStage.PREPARING_DOCUMENT)
             async with SessionFactory() as session:
