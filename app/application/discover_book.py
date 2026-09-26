@@ -1,18 +1,20 @@
 import hashlib
+import os
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.extraction.gemini import GeminiOperationError
 from app.domain.book_map import BookMap, BookTopic
-from app.domain.extraction import DocumentReference, ExtractedIdea
+from app.domain.extraction import DiscoverySpan, DocumentReference, ExtractedIdea
 from app.domain.knowledge import KnowledgeUnit
-from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel, TopicModel
+from app.infrastructure.database.models import DiscoveryChunkModel, KnowledgeUnitModel, SourceModel, TopicModel
 
 
 class DiscoverBook:
-    """Build a durable hierarchical inventory with reusable document input and checkpoints."""
+    """Build a durable hierarchical inventory with bounded document checkpoints."""
 
     def __init__(self, mapper, material_discoverer) -> None:
         self.mapper = mapper
@@ -45,85 +47,194 @@ class DiscoverBook:
 
     async def build_book_map(self, session: AsyncSession, source_id: UUID, document: DocumentReference) -> BookMap:
         source = await self.get_source(session, source_id)
-        existing_result = await session.execute(
-            select(TopicModel).where(TopicModel.source_id == source_id).order_by(TopicModel.position)
-        )
-        existing = existing_result.scalars().all()
-        if existing:
+        existing = (
+            await session.execute(
+                select(TopicModel).where(TopicModel.source_id == source_id).order_by(TopicModel.position)
+            )
+        ).scalars().all()
+
+        if existing and all(topic.page_start and topic.page_end for topic in existing):
             return BookMap(
                 source_id=source_id,
                 title=source.book_title or source.filename,
                 description=source.book_description or "",
                 topics=[
-                    BookTopic(topic.id, topic.source_id, topic.position, topic.title, topic.description, topic.source_reference)
+                    BookTopic(
+                        topic.id,
+                        topic.source_id,
+                        topic.position,
+                        topic.title,
+                        topic.description,
+                        topic.source_reference,
+                        topic.page_start,
+                        topic.page_end,
+                    )
                     for topic in existing
                 ],
             )
 
         mapped = await self.mapper.map_book(source.to_domain(), document)
         if [topic.position for topic in mapped.topics] != list(range(1, len(mapped.topics) + 1)):
-            raise ValueError("Gemini returned invalid topic positions.")
+            raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned invalid topic positions.")
+        if any(topic.page_start is None or topic.page_end is None for topic in mapped.topics):
+            raise GeminiOperationError(
+                "GEMINI_PROVENANCE_UNAVAILABLE",
+                "Gemini did not provide evidence-backed page bounds for every topic.",
+            )
+
+        existing_units = int(
+            (await session.execute(select(func.count(KnowledgeUnitModel.id)).where(KnowledgeUnitModel.source_id == source_id))).scalar_one()
+            or 0
+        )
+        if existing and existing_units and len(existing) != len(mapped.topics):
+            raise GeminiOperationError(
+                "DISCOVERY_DATA_ERROR",
+                "Existing material inventory cannot be safely reconciled with a changed topic map.",
+            )
 
         source.book_title = mapped.title
         source.book_description = mapped.description
-        for item in mapped.topics:
-            session.add(
-                TopicModel(
-                    id=item.id,
-                    source_id=source_id,
-                    position=item.position,
-                    title=item.title,
-                    description=item.description,
-                    source_reference=item.source_reference,
-                    discovery_status="PENDING",
+        if existing:
+            by_position = {topic.position: topic for topic in existing}
+            for item in mapped.topics:
+                row = by_position.get(item.position)
+                if row is None:
+                    raise GeminiOperationError("DISCOVERY_DATA_ERROR", "Topic map changed incompatibly.")
+                row.title = item.title
+                row.description = item.description
+                row.source_reference = item.source_reference
+                row.page_start = item.page_start
+                row.page_end = item.page_end
+                row.discovery_status = "PENDING" if not row.discovery_status == "COMPLETED" else row.discovery_status
+        else:
+            for item in mapped.topics:
+                session.add(
+                    TopicModel(
+                        id=item.id,
+                        source_id=source_id,
+                        position=item.position,
+                        title=item.title,
+                        description=item.description,
+                        source_reference=item.source_reference,
+                        page_start=item.page_start,
+                        page_end=item.page_end,
+                        discovery_status="PENDING",
+                    )
                 )
-            )
         await session.commit()
         return mapped
 
-    async def discover_topic(
+    async def ensure_topic_chunks(self, session: AsyncSession, topic_id: UUID) -> list[DiscoveryChunkModel]:
+        topic = (
+            await session.execute(select(TopicModel).where(TopicModel.id == topic_id))
+        ).scalar_one_or_none()
+        if topic is None:
+            raise ValueError("Topic not found.")
+        if not topic.page_start or not topic.page_end or topic.page_start > topic.page_end:
+            raise GeminiOperationError("GEMINI_PROVENANCE_UNAVAILABLE", "Topic has no valid page bounds.")
+
+        existing = (
+            await session.execute(
+                select(DiscoveryChunkModel)
+                .where(DiscoveryChunkModel.topic_id == topic_id)
+                .order_by(DiscoveryChunkModel.chunk_index)
+            )
+        ).scalars().all()
+        if existing:
+            return existing
+
+        max_pages = max(1, int(os.getenv("GEMINI_DISCOVERY_MAX_PAGES_PER_CHUNK", "8")))
+        rows: list[DiscoveryChunkModel] = []
+        start = topic.page_start
+        index = 1
+        while start <= topic.page_end:
+            end = min(start + max_pages - 1, topic.page_end)
+            row = DiscoveryChunkModel(
+                id=uuid4(),
+                topic_id=topic_id,
+                chunk_index=index,
+                page_start=start,
+                page_end=end,
+                status="PENDING",
+            )
+            session.add(row)
+            rows.append(row)
+            start = end + 1
+            index += 1
+        await session.commit()
+        return rows
+
+    async def discover_chunk(
         self,
         session: AsyncSession,
         source_id: UUID,
         topic_id: UUID,
+        chunk_id: UUID,
         document: DocumentReference,
     ) -> int:
-        topic_result = await session.execute(
-            select(TopicModel).where(TopicModel.id == topic_id, TopicModel.source_id == source_id)
-        )
-        topic = topic_result.scalar_one_or_none()
-        if topic is None:
-            raise ValueError("Topic not found.")
-
-        if topic.discovery_status == "COMPLETED":
-            result = await session.execute(
-                select(func.count(KnowledgeUnitModel.id)).where(KnowledgeUnitModel.topic_id == topic_id)
+        chunk = (
+            await session.execute(
+                select(DiscoveryChunkModel)
+                .where(DiscoveryChunkModel.id == chunk_id, DiscoveryChunkModel.topic_id == topic_id)
             )
-            return int(result.scalar_one() or 0)
+        ).scalar_one_or_none()
+        topic = (
+            await session.execute(
+                select(TopicModel).where(TopicModel.id == topic_id, TopicModel.source_id == source_id)
+            )
+        ).scalar_one_or_none()
+        if chunk is None or topic is None:
+            raise ValueError("Discovery chunk or topic not found.")
 
+        if chunk.status == "COMPLETED":
+            return 0
+
+        chunk.status = "RUNNING"
+        chunk.error_code = None
+        chunk.error_message = None
         topic.discovery_status = "RUNNING"
         topic.discovery_error = None
         await session.commit()
 
         try:
             source = await self.get_source(session, source_id)
-            domain_topic = BookTopic(topic.id, topic.source_id, topic.position, topic.title, topic.description, topic.source_reference)
-            ideas = await self.material_discoverer.discover_topic(source.to_domain(), domain_topic, document)
-
-            existing_result = await session.execute(
-                select(KnowledgeUnitModel).where(KnowledgeUnitModel.topic_id == topic_id)
+            domain_topic = BookTopic(
+                topic.id,
+                topic.source_id,
+                topic.position,
+                topic.title,
+                topic.description,
+                topic.source_reference,
+                topic.page_start,
+                topic.page_end,
             )
-            existing_rows = existing_result.scalars().all()
+            ideas = await self.material_discoverer.discover_topic(
+                source.to_domain(),
+                domain_topic,
+                document,
+                DiscoverySpan(chunk.page_start, chunk.page_end, chunk.chunk_index),
+            )
+
+            existing_rows = (
+                await session.execute(
+                    select(KnowledgeUnitModel).where(KnowledgeUnitModel.topic_id == topic_id)
+                )
+            ).scalars().all()
             seen = {
                 (row.original_text or row.content).strip().casefold()
                 for row in existing_rows
                 if (row.original_text or row.content).strip()
             }
 
-            max_position_result = await session.execute(
-                select(func.max(KnowledgeUnitModel.position)).where(KnowledgeUnitModel.source_id == source_id)
+            max_position = int(
+                (
+                    await session.execute(
+                        select(func.max(KnowledgeUnitModel.position)).where(KnowledgeUnitModel.source_id == source_id)
+                    )
+                ).scalar_one()
+                or 0
             )
-            next_position = int(max_position_result.scalar_one() or 0) + 1
+            next_position = max_position + 1
             discovered = 0
 
             for idea in ideas:
@@ -155,34 +266,57 @@ class DiscoverBook:
                         content=unit.content,
                         original_text=unit.original_text,
                         source_reference=unit.source_reference,
+                        discovery_page_start=chunk.page_start,
+                        discovery_page_end=chunk.page_end,
+                        discovery_chunk_index=chunk.chunk_index,
                         created_at=unit.created_at,
                     )
                 )
                 next_position += 1
                 discovered += 1
 
-            topic.discovery_status = "COMPLETED"
-            topic.discovery_error = None
+            chunk.status = "COMPLETED"
             await session.commit()
+
+            remaining = int(
+                (
+                    await session.execute(
+                        select(func.count(DiscoveryChunkModel.id)).where(
+                            DiscoveryChunkModel.topic_id == topic_id,
+                            DiscoveryChunkModel.status != "COMPLETED",
+                        )
+                    )
+                ).scalar_one()
+                or 0
+            )
+            if remaining == 0:
+                topic.discovery_status = "COMPLETED"
+                topic.discovery_error = None
+                await session.commit()
             return discovered
         except Exception as exc:
+            if isinstance(exc, GeminiOperationError):
+                chunk.error_code = exc.code
+                chunk.error_message = str(exc)
+            else:
+                chunk.error_code = "DISCOVERY_DATA_ERROR"
+                chunk.error_message = f"{type(exc).__name__}: discovery failed."
+            chunk.status = "FAILED"
             topic.discovery_status = "FAILED"
-            topic.discovery_error = f"{type(exc).__name__}: discovery failed for this topic."
+            topic.discovery_error = f"Discovery failed for chunk {chunk.chunk_index}."
             await session.commit()
-            raise exc
+            raise
 
     async def execute(self, session: AsyncSession, source_id: UUID) -> tuple[BookMap, list[KnowledgeUnit]]:
-        """Backward-compatible synchronous application entry point for tests and scripts."""
+        """Backward-compatible application entry point; executes the new bounded lifecycle sequentially."""
         source = await self.get_source(session, source_id)
-        existing_topics = await session.execute(select(TopicModel).where(TopicModel.source_id == source_id))
-        if existing_topics.scalars().first() is not None:
-            raise ValueError("Book map already exists for this source.")
-
         document = await self.prepare_document(session, source_id)
         book_map = await self.build_book_map(session, source_id, document)
 
         for topic in book_map.topics:
-            await self.discover_topic(session, source_id, topic.id, document)
+            chunks = await self.ensure_topic_chunks(session, topic.id)
+            for chunk in chunks:
+                await self.discover_chunk(session, source_id, topic.id, chunk.id, document)
 
         result = await session.execute(
             select(KnowledgeUnitModel).where(KnowledgeUnitModel.source_id == source_id).order_by(KnowledgeUnitModel.position)
