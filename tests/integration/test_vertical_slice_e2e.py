@@ -11,14 +11,18 @@ from sqlalchemy import select
 
 
 async def test_vertical_slice_e2e() -> None:
-    """Verify PDF ingestion through a PUBLISHED ledger entry."""
+    """Verify PDF ingestion through a PUBLISHED ledger entry with provenance."""
     pdf = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
     async with SessionFactory() as session:
         source = await IngestPdf(LocalFileStorage("./storage/test")).execute(session, "e2e.pdf", "application/pdf", pdf)
         units = await ExtractKnowledge(FakeExtractor()).execute(session, source.id)
         assert len(units) == 5
-        draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, units[0].id, "@test")
-        edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 p.pdf\\n#اختبار"
+        selected = units[0]
+        assert selected.source_id == source.id
+        assert selected.original_text is not None
+        assert selected.source_reference is not None
+        draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, selected.id, "@test")
+        edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 e2e.pdf\\n#اختبار"
         published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
         assert published.status.value == "PUBLISHED"
         assert published.external_id == "test_msg_999"
@@ -28,3 +32,4 @@ async def test_vertical_slice_e2e() -> None:
         assert row.external_id == "test_msg_999"
         assert row.content == edited_content
         assert row.published_at is not None
+        assert row.knowledge_unit_id == selected.id
