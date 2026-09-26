@@ -1,7 +1,7 @@
 """Embedded HTML interface for the Nashr hierarchical discovery console."""
 
 NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nashr</title><script src="https://cdn.tailwindcss.com"></script></head>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nashr Console</title><script src="https://cdn.tailwindcss.com"></script></head>
 <body class="min-h-screen bg-slate-50 text-slate-900"><main class="mx-auto max-w-6xl px-4 py-8">
 <header class="mb-8"><p class="text-sm font-semibold text-indigo-600">Nashr — Vertical Slice 2</p><h1 class="mt-1 text-3xl font-bold">خريطة الكتاب والمخزون التحريري</h1><p class="mt-2 text-sm text-slate-600">ارفع الكتاب، افحص محاوره، ثم اختر مادة حقيقية منه لتدخل مسار المسودة والمراجعة والنشر.</p></header>
 <section class="rounded-2xl border bg-white p-5 shadow-sm"><div class="flex flex-col gap-4 sm:flex-row sm:items-end"><label class="flex-1"><span class="mb-2 block text-sm font-semibold">ملف PDF</span><input id="pdf-file" type="file" accept="application/pdf" class="block w-full rounded-xl border bg-slate-50 p-3 text-sm"></label><button id="upload-btn" class="rounded-xl bg-indigo-600 px-6 py-3 font-semibold text-white disabled:opacity-50">رفع وبناء خريطة الكتاب</button></div><div id="progress" class="mt-4 hidden text-sm text-slate-600"></div><div id="error" class="mt-4 hidden rounded-xl bg-red-50 p-3 text-sm text-red-700"></div></section>
