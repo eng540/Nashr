@@ -5,7 +5,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0005_book_map_hierarchical_discovery"
+revision: str = "0005_book_map"
 down_revision: Union[str, Sequence[str], None] = "0004_material_provenance"
 branch_labels = None
 depends_on = None
