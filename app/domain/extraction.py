@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import Protocol
-
 from app.domain.sources import Source
 from app.domain.book_map import BookTopic
 
@@ -16,16 +15,27 @@ class ExtractedIdea:
     kind: str | None = None
 
 
+@dataclass(frozen=True)
+class DocumentReference:
+    """Represent a reusable external document reference."""
+    name: str
+    uri: str
+    mime_type: str
+
+
 class IExtractor(Protocol):
     async def extract(self, source: Source) -> list[ExtractedIdea]:
         """Discover zero or more materials from a source."""
 
 
 class IBookMapper(Protocol):
-    async def map_book(self, source: Source):
-        """Understand a book and return its navigational map."""
+    async def prepare_document(self, source: Source) -> DocumentReference:
+        """Prepare or reuse the external document representation."""
+
+    async def map_book(self, source: Source, document: DocumentReference) :
+        """Understand a book using the prepared document."""
 
 
 class ITopicMaterialDiscoverer(Protocol):
-    async def discover_topic(self, source: Source, topic: BookTopic) -> list[ExtractedIdea]:
+    async def discover_topic(self, source: Source, topic: BookTopic, document: DocumentReference) -> list[ExtractedIdea]:
         """Discover zero or more grounded materials inside one topic."""
