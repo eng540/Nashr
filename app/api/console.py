@@ -40,8 +40,8 @@ NASHR_CONSOLE_HTML = """<!DOCTYPE html>
     <section id="ideas-section" class="mt-8 hidden">
       <div class="mb-4 flex items-end justify-between">
         <div>
-          <h2 class="text-xl font-bold">الأفكار الخمس المستخرجة</h2>
-          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">اختر إحدى الأفكار لإنشاء مسودة النشر.</p>
+          <h2 class="text-xl font-bold">المواد المكتشفة</h2>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">اختر مادة لإنشاء مسودة النشر.</p>
         </div>
         <span id="idea-count" class="rounded-full bg-slate-100 px-3 py-1 text-xs dark:bg-slate-800"></span>
       </div>
