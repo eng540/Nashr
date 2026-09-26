@@ -14,23 +14,9 @@ depends_on = None
 def upgrade() -> None:
     op.add_column("topics", sa.Column("page_start", sa.Integer(), nullable=True))
     op.add_column("topics", sa.Column("page_end", sa.Integer(), nullable=True))
-
     op.add_column("knowledge_units", sa.Column("discovery_page_start", sa.Integer(), nullable=True))
     op.add_column("knowledge_units", sa.Column("discovery_page_end", sa.Integer(), nullable=True))
     op.add_column("knowledge_units", sa.Column("discovery_chunk_index", sa.Integer(), nullable=True))
-
-    op.add_column("discovery_jobs", sa.Column("chunks_total", sa.Integer(), nullable=False, server_default="0"))
-    op.add_column("discovery_jobs", sa.Column("chunks_completed", sa.Integer(), nullable=False, server_default="0"))
-    op.add_column("discovery_jobs", sa.Column("current_chunk_id", postgresql.UUID(as_uuid=True), nullable=True))
-    op.add_column("discovery_jobs", sa.Column("error_code", sa.String(length=80), nullable=True))
-    op.create_foreign_key(
-        "fk_discovery_jobs_current_chunk",
-        "discovery_jobs",
-        "discovery_chunks",
-        ["current_chunk_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
 
     op.create_table(
         "discovery_chunks",
@@ -47,15 +33,28 @@ def upgrade() -> None:
     )
     op.create_index("ix_discovery_chunks_topic_id", "discovery_chunks", ["topic_id"])
 
+    op.add_column("discovery_jobs", sa.Column("chunks_total", sa.Integer(), nullable=False, server_default="0"))
+    op.add_column("discovery_jobs", sa.Column("chunks_completed", sa.Integer(), nullable=False, server_default="0"))
+    op.add_column("discovery_jobs", sa.Column("current_chunk_id", postgresql.UUID(as_uuid=True), nullable=True))
+    op.add_column("discovery_jobs", sa.Column("error_code", sa.String(length=80), nullable=True))
+    op.create_foreign_key(
+        "fk_discovery_jobs_current_chunk",
+        "discovery_jobs",
+        "discovery_chunks",
+        ["current_chunk_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+
 
 def downgrade() -> None:
-    op.drop_index("ix_discovery_chunks_topic_id", table_name="discovery_chunks")
-    op.drop_table("discovery_chunks")
     op.drop_constraint("fk_discovery_jobs_current_chunk", "discovery_jobs", type_="foreignkey")
     op.drop_column("discovery_jobs", "error_code")
     op.drop_column("discovery_jobs", "current_chunk_id")
     op.drop_column("discovery_jobs", "chunks_completed")
     op.drop_column("discovery_jobs", "chunks_total")
+    op.drop_index("ix_discovery_chunks_topic_id", table_name="discovery_chunks")
+    op.drop_table("discovery_chunks")
     op.drop_column("knowledge_units", "discovery_chunk_index")
     op.drop_column("knowledge_units", "discovery_page_end")
     op.drop_column("knowledge_units", "discovery_page_start")
