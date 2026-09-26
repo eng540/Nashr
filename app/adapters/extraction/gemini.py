@@ -1,13 +1,19 @@
 import asyncio
+import hashlib
+import logging
 import os
+import time
 from pathlib import Path
 
 from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 
 from app.domain.book_map import BookMap, BookTopic
-from app.domain.extraction import ExtractedIdea, IExtractor, IBookMapper, ITopicMaterialDiscoverer
+from app.domain.extraction import DocumentReference, ExtractedIdea, IBookMapper, IExtractor, ITopicMaterialDiscoverer
 from app.domain.sources import Source
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiTopic(BaseModel):
@@ -37,7 +43,7 @@ class GeminiIdeas(BaseModel):
 
 
 class GeminiBookMapper(IBookMapper):
-    """Understand the book structure without producing the whole inventory."""
+    """Understand a book using one reusable Gemini Files representation."""
 
     SYSTEM_PROMPT = """أنت مستكشف بنية كتاب، ولست كاتب محتوى.
 افهم الوثيقة الأصلية كاملة، ثم أنشئ خريطة عملية تساعد المحرر على التنقل داخل الكتاب.
@@ -51,18 +57,75 @@ class GeminiBookMapper(IBookMapper):
         self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
-    async def map_book(self, source: Source) -> BookMap:
+    async def prepare_document(self, source: Source) -> DocumentReference:
         if source.mime_type != "application/pdf":
             raise ValueError("Gemini extraction requires a PDF source.")
-        return await asyncio.to_thread(self._map_sync, source)
+        return await asyncio.to_thread(self._prepare_sync, source)
 
-    def _map_sync(self, source: Source) -> BookMap:
-        if not Path(source.storage_path).is_file():
+    def _source_hash(self, source: Source) -> str:
+        if source.content_sha256:
+            return source.content_sha256
+        path = Path(source.storage_path)
+        if not path.is_file():
             raise FileNotFoundError(source.storage_path)
-        uploaded_file = self.client.files.upload(file=source.storage_path)
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def _prepare_sync(self, source: Source) -> DocumentReference:
+        path = Path(source.storage_path)
+        if not path.is_file():
+            raise FileNotFoundError(source.storage_path)
+        source_hash = self._source_hash(source)
+
+        if source.gemini_file_name and source.gemini_file_source_sha256 == source_hash:
+            try:
+                existing = self.client.files.get(name=source.gemini_file_name)
+                state = getattr(getattr(existing, "state", None), "name", None)
+                if state in (None, "ACTIVE"):
+                    if not existing.uri or not existing.mime_type:
+                        raise ValueError("Stored Gemini file has no usable URI.")
+                    logger.info("gemini_document_reused source_id=%s file=%s", source.id, source.gemini_file_name)
+                    return DocumentReference(existing.name, existing.uri, existing.mime_type)
+                if state == "PROCESSING":
+                    return self._wait_for_active(existing.name, source.id)
+                logger.warning("gemini_document_unusable source_id=%s state=%s", source.id, state)
+            except Exception:
+                logger.exception("gemini_document_reuse_failed source_id=%s file=%s", source.id, source.gemini_file_name)
+
+        uploaded = self.client.files.upload(file=source.storage_path)
+        if not uploaded.name or not uploaded.uri or not uploaded.mime_type:
+            raise ValueError("Gemini file upload returned an incomplete document reference.")
+        logger.info("gemini_document_uploaded source_id=%s file=%s", source.id, uploaded.name)
+        return self._wait_for_active(uploaded.name, source.id)
+
+    def _wait_for_active(self, file_name: str, source_id) -> DocumentReference:
+        deadline = time.monotonic() + float(os.getenv("GEMINI_FILE_READY_TIMEOUT_SECONDS", "180"))
+        current = self.client.files.get(name=file_name)
+        while True:
+            state = getattr(getattr(current, "state", None), "name", None)
+            if state in (None, "ACTIVE"):
+                if not current.uri or not current.mime_type:
+                    raise ValueError("Gemini file has no usable URI.")
+                return DocumentReference(current.name, current.uri, current.mime_type)
+            if state == "FAILED":
+                raise RuntimeError("Gemini document processing failed.")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Timed out waiting for Gemini document processing.")
+            logger.info("gemini_document_processing source_id=%s file=%s state=%s", source_id, file_name, state)
+            time.sleep(2.5)
+            current = self.client.files.get(name=file_name)
+
+    async def map_book(self, source: Source, document: DocumentReference) -> BookMap:
+        if source.mime_type != "application/pdf":
+            raise ValueError("Gemini extraction requires a PDF source.")
+        return await asyncio.to_thread(self._map_sync, source, document)
+
+    def _map_sync(self, source: Source, document: DocumentReference) -> BookMap:
         response = self.client.models.generate_content(
             model=self.model,
-            contents=[self.SYSTEM_PROMPT, uploaded_file],
+            contents=[
+                self.SYSTEM_PROMPT,
+                types.Part.from_uri(file_uri=document.uri, mime_type=document.mime_type),
+            ],
             config={"response_mime_type": "application/json", "response_schema": GeminiBookMap},
         )
         parsed = response.parsed
@@ -76,7 +139,7 @@ class GeminiBookMapper(IBookMapper):
 
 
 class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
-    """Discover grounded materials one topic at a time."""
+    """Discover grounded materials one topic at a time using the same document."""
 
     SYSTEM_PROMPT = """أنت مستكشف مواد تحريرية داخل موضوع محدد من كتاب.
 استخرج فقط المواد الموجودة فعلاً في المصدر والمرتبطة بهذا الموضوع.
@@ -94,19 +157,20 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
-    async def discover_topic(self, source: Source, topic: BookTopic) -> list[ExtractedIdea]:
+    async def discover_topic(self, source: Source, topic: BookTopic, document: DocumentReference) -> list[ExtractedIdea]:
         if source.mime_type != "application/pdf":
             raise ValueError("Gemini extraction requires a PDF source.")
-        return await asyncio.to_thread(self._discover_sync, source, topic)
+        return await asyncio.to_thread(self._discover_sync, source, topic, document)
 
-    def _discover_sync(self, source: Source, topic: BookTopic) -> list[ExtractedIdea]:
-        if not Path(source.storage_path).is_file():
-            raise FileNotFoundError(source.storage_path)
-        uploaded_file = self.client.files.upload(file=source.storage_path)
+    def _discover_sync(self, source: Source, topic: BookTopic, document: DocumentReference) -> list[ExtractedIdea]:
         context = f"عنوان الكتاب: {source.filename}\\nالموضوع: {topic.title}\\nوصف الموضوع: {topic.description}"
         response = self.client.models.generate_content(
             model=self.model,
-            contents=[self.SYSTEM_PROMPT, context, uploaded_file],
+            contents=[
+                self.SYSTEM_PROMPT,
+                context,
+                types.Part.from_uri(file_uri=document.uri, mime_type=document.mime_type),
+            ],
             config={"response_mime_type": "application/json", "response_schema": GeminiIdeas},
         )
         parsed = response.parsed
@@ -115,7 +179,10 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         positions = [item.position for item in parsed.ideas]
         if positions != list(range(1, len(positions) + 1)):
             raise ValueError("Gemini returned invalid material positions.")
-        return [ExtractedIdea(item.position, item.title.strip(), item.content.strip(), item.original_text, item.source_reference, item.kind.strip() if item.kind else None) for item in parsed.ideas]
+        return [
+            ExtractedIdea(item.position, item.title.strip(), item.content.strip(), item.original_text, item.source_reference, item.kind.strip() if item.kind else None)
+            for item in parsed.ideas
+        ]
 
 
 class GeminiExtractor(IExtractor):
