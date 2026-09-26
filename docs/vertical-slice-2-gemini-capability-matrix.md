@@ -10,7 +10,7 @@
 | Usage metadata | Observability | ENABLED when returned | Response usage metadata is logged when available; no usage numbers are fabricated when absent. |
 | Implicit context caching | Native Gemini optimization | ENABLED by supported Gemini models | Gemini 2.5+ models provide implicit caching automatically; the application does not depend on a cache hit for correctness. |
 | Explicit context caching | Potential repeated-corpus optimization | TECHNICALLY NON-REQUIRED FOR THIS CORRECTNESS PATH | Explicit caching is a beta/paid mechanism and the repaired topic path no longer repeats the full corpus. The correctness boundary is bounded input, not cache availability. |
-| File lifecycle/state | Core reliability | ENABLED | PROCESSING/ACTIVE/FAILED and missing-file handling are explicit. |
+| File Search | Retrieval + page citations are relevant to provenance | TECHNICALLY BLOCKED AS THE PRIMARY DISCOVERY BOUNDARY | Google File Search returns retrieved chunks and may expose page numbers, but its retrieval API does not provide a deterministic page_start/page_end constraint for a query. Using it as the correctness boundary would allow retrieval outside the persisted topic span and would require a second retrieval architecture. The deterministic bounded-page requirement is therefore implemented with local page slicing instead. |\n| File lifecycle/state | Core reliability | ENABLED | PROCESSING/ACTIVE/FAILED and missing-file handling are explicit. |
 | Gemini error classification | Core lifecycle | ENABLED | Stable application codes distinguish quota, rate-limit, auth, file, network/server and response/schema failures. |
 
 ## Important distinction
