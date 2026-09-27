@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.benchmark import benchmark_router
 from app.api.routes import router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
     """Create the Nashr FastAPI application."""
     application = FastAPI(title="Nashr", lifespan=lifespan)
     application.include_router(router)
+    application.include_router(benchmark_router)  # <--- أضف هذا السطر فقط
     return application
 
 
