@@ -16,3 +16,8 @@ async def test_console_returns_html_response() -> None:
     assert 'id="step-1"' in body
     assert 'id="progress-bar"' in body
     assert 'id="empty-library"' in body
+    assert 'id="material-search"' in body
+    assert 'id="material-kind"' in body
+    assert 'id="material-sort"' in body
+    assert 'id="close-draft-btn"' in body
+    assert "scrollIntoView" not in body
