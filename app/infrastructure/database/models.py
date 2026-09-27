@@ -1,7 +1,8 @@
 from datetime import datetime
+from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -28,10 +29,23 @@ class SourceModel(Base):
     gemini_file_uri: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     gemini_file_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     gemini_file_source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    file_payload: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     knowledge_units: Mapped[list["KnowledgeUnitModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     topics: Mapped[list["TopicModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     discovery_jobs: Mapped[list["DiscoveryJobModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+
+    def ensure_file_on_disk(self) -> Path:
+        """Guarantee that the source PDF exists on ephemeral local storage."""
+        path = Path(self.storage_path)
+        if not path.is_file():
+            if self.file_payload is None:
+                raise FileNotFoundError(
+                    f"Source file is missing from disk and has no database backup: {self.storage_path}"
+                )
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(self.file_payload)
+        return path
 
     def to_domain(self) -> Source:
         from app.domain.sources import SourceStatus

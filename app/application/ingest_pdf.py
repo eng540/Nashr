@@ -9,7 +9,7 @@ from app.infrastructure.storage import LocalFileStorage
 
 
 class IngestPdf:
-    """Store a PDF and register immutable source identity metadata."""
+    """Store a PDF and register immutable source identity metadata and payload."""
 
     def __init__(self, storage: LocalFileStorage) -> None:
         self.storage = storage
@@ -28,6 +28,7 @@ class IngestPdf:
             storage_path=storage_path,
             size_bytes=len(content),
             content_sha256=content_sha256,
+            file_payload=content,
             status=SourceStatus.STORED.value,
         )
         session.add(row)

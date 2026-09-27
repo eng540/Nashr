@@ -25,6 +25,7 @@ class DiscoverBook:
         source = result.scalar_one_or_none()
         if source is None:
             raise ValueError("Source not found.")
+        source.ensure_file_on_disk()
         return source
 
     async def prepare_document(self, session: AsyncSession, source_id: UUID) -> DocumentReference:

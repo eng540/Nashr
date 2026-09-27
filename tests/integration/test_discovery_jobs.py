@@ -63,6 +63,7 @@ async def _new_source():
                 size_bytes=10,
                 status="STORED",
                 content_sha256="test-hash",
+                file_payload=b"%PDF-test",
             )
         )
         await session.commit()
