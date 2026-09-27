@@ -1,155 +1,83 @@
-"""Embedded HTML interface for the Nashr hierarchical discovery console."""
+"""Embedded HTML interface for the Nashr editorial workspace."""
 
 NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Nashr — مساحة العمل</title><script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  .step{transition:all .2s ease}.step.active{border-color:#4f46e5;background:#eef2ff}.step.done{border-color:#10b981;background:#ecfdf5}
+  .drop-zone{transition:all .2s ease}.drop-zone.dragging,.drop-zone:focus-within{border-color:#4f46e5;background:#eef2ff}
+  .material-card{transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.material-card:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgb(15 23 42 / .08)}
+</style>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900">
-<main class="mx-auto max-w-6xl px-4 py-8">
+<main class="mx-auto max-w-6xl px-4 py-8 sm:py-12">
 <header class="mb-8 flex flex-wrap items-start justify-between gap-4 border-b pb-6">
-<div><p class="text-sm font-semibold text-indigo-600">Nashr — مساحة العمل</p>
-<h1 class="mt-1 text-3xl font-bold tracking-tight">مكتبة الكتب والمخزون التحريري</h1>
-<p class="mt-2 max-w-2xl text-sm leading-7 text-slate-600">أضف كتابًا، راقب تحليله، ثم اختر مادة وحوّلها إلى مسودة قابلة للمراجعة والنشر.</p></div>
-<nav class="flex gap-2 text-sm"><a href="/benchmark" class="rounded-full bg-white px-3 py-2 font-semibold text-slate-600 shadow-sm hover:text-indigo-600">مختبر الجودة</a><span class="rounded-full bg-indigo-50 px-3 py-2 font-semibold text-indigo-700">المكتبة</span></nav>
+  <div><p class="text-sm font-semibold text-indigo-600">Nashr — مساحة العمل</p>
+    <h1 class="mt-1 text-3xl font-bold tracking-tight">مكتبة الكتب والمخزون التحريري</h1>
+    <p class="mt-2 max-w-2xl text-sm leading-7 text-slate-600">أضف كتابًا، راقب تحليله، ثم اختر مادة وحوّلها إلى مسودة قابلة للمراجعة والنشر.</p>
+  </div>
+  <nav class="flex gap-2 text-sm" aria-label="التنقل الرئيسي"><span class="rounded-full bg-indigo-50 px-3 py-2 font-semibold text-indigo-700">المكتبة</span><a href="/benchmark" class="rounded-full bg-white px-3 py-2 font-semibold text-slate-600 shadow-sm hover:text-indigo-600">مختبر الجودة</a></nav>
 </header>
 
-<section class="rounded-2xl border bg-white p-5 shadow-sm">
-<div class="grid gap-4 lg:grid-cols-2">
-<div>
-<label class="mb-2 block text-sm font-semibold">اختر كتابًا محفوظًا</label>
-<div class="flex gap-2">
-<select id="source-select" class="min-w-0 flex-1 rounded-xl border bg-slate-50 p-3 text-sm"></select>
-<button id="source-btn" class="rounded-xl bg-slate-800 px-5 py-3 font-semibold text-white disabled:opacity-50">فتح مساحة الكتاب</button>
-</div>
-</div>
-<div>
-<label class="mb-2 block text-sm font-semibold">أضف كتابًا جديدًا</label>
-<div class="flex gap-2">
-<input id="pdf-file" type="file" accept="application/pdf" class="min-w-0 flex-1 rounded-xl border bg-slate-50 p-3 text-sm">
-<button id="upload-btn" class="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white disabled:opacity-50">رفع وتحليل</button>
-</div>
-</div>
-</div>
-<div id="progress" class="mt-4 hidden rounded-xl bg-indigo-50 p-4 text-sm text-indigo-900"></div>
-<div id="error" class="mt-4 hidden rounded-xl bg-red-50 p-4 text-sm text-red-700"></div>
-<div id="retry-box" class="mt-3 hidden"><button id="retry-btn" class="rounded-xl bg-amber-600 px-5 py-3 font-semibold text-white">إعادة المحاولة</button></div>
+<section class="mb-6 grid gap-3 sm:grid-cols-3" aria-label="مراحل العمل">
+  <div id="step-1" class="step active rounded-2xl border-2 p-4"><p class="text-xs font-bold text-indigo-600">01</p><p class="mt-1 font-bold">أضف كتابًا</p><p class="mt-1 text-xs text-slate-500">اختر كتابًا جديدًا أو محفوظًا</p></div>
+  <div id="step-2" class="step rounded-2xl border-2 border-slate-200 bg-white p-4"><p class="text-xs font-bold text-slate-400">02</p><p class="mt-1 font-bold">افهم الكتاب</p><p class="mt-1 text-xs text-slate-500">تابع المحاور والمواد المكتشفة</p></div>
+  <div id="step-3" class="step rounded-2xl border-2 border-slate-200 bg-white p-4"><p class="text-xs font-bold text-slate-400">03</p><p class="mt-1 font-bold">حرّر وانشر</p><p class="mt-1 text-xs text-slate-500">أنشئ مسودة وراجعها قبل النشر</p></div>
 </section>
 
-<section id="book-section" class="mt-8 hidden">
-<div class="rounded-2xl border bg-white p-5 shadow-sm">
-<p class="text-xs font-semibold text-indigo-600">BOOK MAP</p>
-<h2 id="book-title" class="mt-1 text-2xl font-bold"></h2>
-<p id="book-description" class="mt-2 text-sm leading-7 text-slate-600"></p>
-<div class="mt-4 flex flex-wrap gap-2 text-xs">
-<span id="topic-count" class="rounded-full bg-slate-100 px-3 py-1"></span>
-<span id="material-count" class="rounded-full bg-slate-100 px-3 py-1"></span>
-<span id="book-status" class="rounded-full bg-slate-100 px-3 py-1"></span>
-</div>
-</div>
-<div id="topics" class="mt-5 space-y-4"></div>
+<section class="rounded-3xl border bg-white p-5 shadow-sm sm:p-7" aria-labelledby="source-heading">
+  <div class="mb-5"><h2 id="source-heading" class="text-xl font-bold">ابدأ من مكتبتك</h2><p class="mt-1 text-sm text-slate-500">يمكنك متابعة كتاب محفوظ أو إضافة كتاب PDF جديد.</p></div>
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div><label for="source-select" class="mb-2 block text-sm font-bold">اختر كتابًا محفوظًا</label>
+      <div class="flex gap-2"><select id="source-select" aria-describedby="source-help" class="min-w-0 flex-1 rounded-xl border bg-slate-50 p-3 text-sm"></select><button id="source-btn" class="rounded-xl bg-slate-800 px-5 py-3 font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50">فتح مساحة الكتاب</button></div>
+      <p id="source-help" class="mt-2 text-xs text-slate-500">اختر كتابًا لمعرفة حالته ومتابعة تحليله.</p>
+    </div>
+    <div><label for="pdf-file" class="mb-2 block text-sm font-bold">أضف كتابًا جديدًا</label>
+      <div id="drop-zone" tabindex="0" class="drop-zone cursor-pointer rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center">
+        <input id="pdf-file" type="file" accept="application/pdf" class="sr-only">
+        <p class="font-semibold text-slate-700">اسحب ملف PDF هنا</p><p class="mt-1 text-xs text-slate-500">أو اضغط لاختيار ملف من جهازك — الحد الأقصى 100 MB</p>
+        <p id="file-name" class="mt-3 hidden rounded-lg bg-white px-3 py-2 text-xs font-semibold text-indigo-700"></p>
+      </div><button id="upload-btn" class="mt-3 w-full rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">رفع وتحليل الكتاب</button>
+    </div>
+  </div>
+  <div id="empty-library" class="mt-6 hidden rounded-2xl border border-dashed bg-slate-50 p-6 text-center"><p class="font-bold">لم تضف أي كتاب بعد</p><p class="mt-1 text-sm text-slate-500">ابدأ برفع ملف PDF من المنطقة أعلاه.</p></div>
+  <div id="progress" class="mt-6 hidden rounded-2xl border border-indigo-100 bg-indigo-50 p-4" role="status" aria-live="polite"><div class="flex items-center justify-between gap-4"><span id="progress-message" class="text-sm font-semibold text-indigo-900"></span><span id="progress-percent" class="text-xs font-bold text-indigo-700"></span></div><div class="mt-3 h-2 overflow-hidden rounded-full bg-indigo-100"><div id="progress-bar" class="h-full rounded-full bg-indigo-600 transition-all" style="width:0%"></div></div></div>
+  <div id="error" class="mt-4 hidden rounded-2xl border border-red-200 bg-red-50 p-4 text-sm leading-7 text-red-700" role="alert"></div>
+  <div id="retry-box" class="mt-4 hidden rounded-2xl border border-amber-200 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">توقف التحليل قبل اكتماله.</p><p class="mt-1 text-xs text-amber-800">تم الاحتفاظ بالكتاب ويمكنك إعادة المحاولة دون رفعه من جديد.</p><button id="retry-btn" class="mt-3 rounded-xl bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-700">إعادة المحاولة</button></div>
 </section>
 
-<section id="draft-section" class="mt-8 hidden rounded-2xl border border-indigo-200 bg-indigo-50 p-5">
-<p class="text-xs font-semibold text-indigo-700">EDITORIAL DRAFT</p>
-<h2 class="mt-1 text-xl font-bold">مسودة المادة المختارة</h2>
-<textarea id="draft-content" dir="rtl" class="mt-4 min-h-80 w-full rounded-xl border bg-white p-4 leading-7"></textarea>
-<button id="publish-btn" class="mt-4 w-full rounded-xl bg-emerald-600 px-6 py-4 font-bold text-white disabled:opacity-50">نشر بعد المراجعة في تيليجرام</button>
+<section id="book-section" class="mt-8 hidden" aria-labelledby="book-title">
+  <div class="rounded-3xl border bg-white p-5 shadow-sm sm:p-7"><div class="flex flex-wrap items-start justify-between gap-4"><div><p class="text-xs font-bold text-indigo-600">مساحة الكتاب</p><h2 id="book-title" class="mt-1 text-2xl font-bold"></h2><p id="book-description" class="mt-2 max-w-3xl text-sm leading-7 text-slate-600"></p></div><button id="refresh-btn" class="rounded-xl border px-4 py-2 text-sm font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600">تحديث الحالة</button></div><div class="mt-5 flex flex-wrap gap-2 text-xs"><span id="topic-count" class="rounded-full bg-slate-100 px-3 py-1.5"></span><span id="material-count" class="rounded-full bg-slate-100 px-3 py-1.5"></span><span id="book-status" class="rounded-full bg-slate-100 px-3 py-1.5"></span></div></div>
+  <div id="topics" class="mt-5 space-y-4"></div><div id="topics-empty" class="mt-5 hidden rounded-2xl border border-dashed bg-white p-8 text-center"><p class="font-bold">لم تظهر مواد بعد</p><p class="mt-1 text-sm text-slate-500">ستظهر المحاور والمواد هنا تدريجيًا أثناء التحليل.</p></div>
 </section>
 
-<section id="success-section" class="mt-8 hidden rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-<h2 class="text-xl font-bold text-emerald-800">تم النشر بنجاح</h2>
-<p class="mt-2 text-sm">Telegram message ID</p><code id="external-id" class="mt-1 block rounded bg-white p-2"></code>
-</section>
+<section id="draft-section" class="mt-8 hidden rounded-3xl border border-indigo-200 bg-indigo-50 p-5 sm:p-7" aria-labelledby="draft-heading"><p class="text-xs font-bold text-indigo-700">التحرير والنشر</p><h2 id="draft-heading" class="mt-1 text-xl font-bold">مسودة المادة المختارة</h2><p class="mt-1 text-sm text-slate-600">راجع النص وعدّله قبل إرساله إلى تيليجرام.</p><textarea id="draft-content" dir="rtl" aria-label="محتوى المسودة" class="mt-4 min-h-80 w-full rounded-2xl border bg-white p-4 leading-8 shadow-sm"></textarea><button id="publish-btn" class="mt-4 w-full rounded-xl bg-emerald-600 px-6 py-4 font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">نشر بعد المراجعة في تيليجرام</button></section>
+<section id="success-section" class="mt-8 hidden rounded-2xl border border-emerald-200 bg-emerald-50 p-5" role="status"><h2 class="text-xl font-bold text-emerald-800">تم النشر بنجاح</h2><p class="mt-2 text-sm text-emerald-700">تم إرسال المسودة إلى تيليجرام. رقم الرسالة:</p><code id="external-id" class="mt-2 block rounded-lg bg-white p-2"></code></section>
 </main>
-
 <script>
-const $=id=>document.getElementById(id);
-const state={sourceId:null,jobId:null,publicationId:null,pollTimer:null};
-
+const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,publicationId:null,pollTimer:null};
+function setStage(stage){for(let i=1;i<=3;i++){const el=$('step-'+i);el.classList.remove('active','done');if(i<stage)el.classList.add('done');if(i===stage)el.classList.add('active');}}
 function setBusy(v){$('upload-btn').disabled=v;$('source-btn').disabled=v;$('retry-btn').disabled=v;$('publish-btn').disabled=v;}
-function showProgress(msg){$('progress').classList.remove('hidden');$('progress').textContent=msg||'';}
+function showProgress(message,done=0,total=0){$('progress').classList.remove('hidden');$('progress-message').textContent=message||'';const pct=total?Math.min(100,Math.round(done/total*100)):0;$('progress-percent').textContent=total?`${pct}%`:'';$('progress-bar').style.width=(total?pct:25)+'%';}
 function hideProgress(){$('progress').classList.add('hidden');}
-function error(m){$('error').textContent=m;$('error').classList.remove('hidden');}
+function showError(message){$('error').textContent=message;$('error').classList.remove('hidden');}
 function clearError(){$('error').classList.add('hidden');$('retry-box').classList.add('hidden');}
-function esc(t){return (t??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-async function request(url,opt={}){
- const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));
- if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');
- return d;
-}
-async function loadSources(){
- const sources=await request('/sources');
- const select=$('source-select');
- select.innerHTML='<option value="">اختر كتاباً محفوظاً...</option>'+sources.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.book_title||s.filename)+'</option>').join('');
-}
-function stageLabel(stage){
- return ({PREPARING_DOCUMENT:'جاري تجهيز وثيقة الكتاب في Gemini',BUILDING_BOOK_MAP:'جاري بناء خريطة الكتاب',DISCOVERING_MATERIALS:'جاري اكتشاف المواد داخل المحاور',FINALIZING:'جاري إنهاء المخزون'}[stage]||stage||'جاري الاستكشاف');
-}
-function renderBook(d){
- $('book-title').textContent=d.book.title;$('book-description').textContent=d.book.description||'';
- $('topic-count').textContent=d.topics.length+' محاور';$('material-count').textContent=d.count+' مواد';
- $('book-status').textContent=d.job?('حالة الاستكشاف: '+d.job.status):'';
- const html=d.topics.map(function(t){
-  const mats=t.materials.map(function(m){
-   return '<button data-id="'+esc(m.id)+'" class="material text-right rounded-xl border bg-white p-4 hover:border-indigo-400 '+(t.discovery_status==='COMPLETED'?'':'opacity-90')+'"><div class="flex justify-between gap-3"><strong class="text-sm">'+esc(m.title)+'</strong><span class="text-xs text-slate-400">'+esc(m.kind||'مادة')+'</span></div><p class="mt-2 line-clamp-3 text-xs leading-6 text-slate-600">'+esc(m.content)+'</p><p class="mt-2 text-xs text-slate-400">'+esc(m.source_reference||'مرجع غير محدد')+'</p></button>';
-  }).join('');
-  return '<article class="rounded-2xl border bg-white p-5 shadow-sm"><div class="flex items-start justify-between gap-4"><div><p class="text-xs text-slate-400">المحور '+t.position+'</p><h3 class="text-lg font-bold">'+esc(t.title)+'</h3><p class="mt-1 text-sm leading-6 text-slate-600">'+esc(t.description)+'</p></div><div class="text-left"><span class="rounded-full bg-indigo-50 px-3 py-1 text-xs text-indigo-700">'+t.materials.length+' مواد</span><p class="mt-2 text-xs text-slate-400">'+esc(t.discovery_status)+'</p></div></div><div class="mt-4 grid gap-3">'+(mats||'<p class="text-sm text-slate-400">لم تُكتشف مواد في هذا المحور حتى الآن.</p>')+'</div></article>';
- }).join('');
- $('topics').innerHTML=html;$('book-section').classList.remove('hidden');
- document.querySelectorAll('.material').forEach(function(b){b.onclick=function(){selectMaterial(b.dataset.id);};});
-}
-async function refreshBook(){
- if(!state.sourceId)return;
- try{const d=await request('/sources/'+state.sourceId+'/book-map');renderBook(d);}catch(e){}
-}
-async function poll(){
- if(!state.jobId)return;
- try{
-  const d=await request('/sources/'+state.sourceId+'/discovery/status');
-  state.jobId=d.job_id||state.jobId;
-  showProgress(stageLabel(d.stage)+' — '+(d.topics_completed||0)+' / '+(d.topics_total||0)+' محاور، '+(d.materials_discovered||0)+' مواد');
-  await refreshBook();
-  if(d.status==='COMPLETED'){showProgress('اكتمل الاستكشاف. الخريطة والمخزون جاهزان.');setBusy(false);await refreshBook();return;}
-  if(d.status==='FAILED'){setBusy(false);error(d.error||'فشل الاستكشاف.');if(d.retryable)$('retry-box').classList.remove('hidden');return;}
-  state.pollTimer=setTimeout(poll,2000);
- }catch(e){setBusy(false);error(e.message);}
-}
-async function startDiscovery(sourceId){
- clearError();state.sourceId=sourceId;state.jobId=null;$('draft-section').classList.add('hidden');$('success-section').classList.add('hidden');setBusy(true);
- try{
-  const d=await request('/sources/'+sourceId+'/discovery',{method:'POST'});
-  state.jobId=d.job_id;showProgress(stageLabel(d.stage));await refreshBook();poll();
- }catch(e){setBusy(false);error(e.message);}
-}
-async function selectMaterial(id){
- clearError();setBusy(true);showProgress('جاري إنشاء المسودة عبر المحرر الحالي...');
- try{
-  const d=await request('/knowledge-units/'+id+'/draft',{method:'POST'});
-  state.publicationId=d.id;$('draft-content').value=d.content||'';$('draft-section').classList.remove('hidden');$('draft-section').scrollIntoView({behavior:'smooth'});
- }catch(e){error(e.message);}finally{setBusy(false);}
-}
-$('source-btn').onclick=function(){const id=$('source-select').value;if(!id)return error('اختر كتاباً محفوظاً أولاً.');startDiscovery(id);};
-$('upload-btn').onclick=async function(){
- clearError();const file=$('pdf-file').files[0];if(!file)return error('اختر ملف PDF أولاً.');setBusy(true);
- try{const form=new FormData();form.append('file',file);const s=await request('/sources',{method:'POST',body:form});await loadSources();$('source-select').value=s.id;startDiscovery(s.id);}
- catch(e){setBusy(false);error(e.message);}
-};
-$('retry-btn').onclick=function(){if(state.sourceId)startRetry();};
-async function startRetry(){
- clearError();setBusy(true);
- try{const d=await request('/sources/'+state.sourceId+'/discovery/retry',{method:'POST'});state.jobId=d.job_id;showProgress(stageLabel(d.stage));poll();}
- catch(e){setBusy(false);error(e.message);}
-}
-$('publish-btn').onclick=async function(){
- if(!state.publicationId)return;clearError();setBusy(true);showProgress('جاري حفظ المراجعة والنشر في تيليجرام...');
- try{
-  const d=await request('/publications/'+state.publicationId+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:$('draft-content').value})});
-  if(d.status!=='PUBLISHED')throw Error(d.error_message||'تعذر تأكيد النشر.');
-  $('external-id').textContent=d.external_id||'غير متاح';$('success-section').classList.remove('hidden');hideProgress();
- }catch(e){error(e.message);}finally{setBusy(false);}
-};
-loadSources().catch(e=>error(e.message));
-</script>
-</body></html>'''
+function esc(t){return(t??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function request(url,opt={}){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');return d;}
+function stageLabel(stage){return({QUEUED:'في قائمة الانتظار',PREPARING_DOCUMENT:'جاري تجهيز وثيقة الكتاب',BUILDING_BOOK_MAP:'جاري بناء خريطة الكتاب',DISCOVERING_MATERIALS:'جاري اكتشاف المواد داخل المحاور',FINALIZING:'جاري إنهاء المخزون',COMPLETED:'اكتمل تحليل الكتاب'}[stage]||stage||'جاري تحليل الكتاب');}
+async function loadSources(){const sources=await request('/sources');const select=$('source-select');select.innerHTML='<option value="">اختر كتابًا محفوظًا...</option>'+sources.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.book_title||s.filename)+'</option>').join('');$('empty-library').classList.toggle('hidden',sources.length>0);$('source-btn').disabled=!sources.length;}
+function renderBook(d){$('book-title').textContent=d.book.title;$('book-description').textContent=d.book.description||'لا يوجد وصف متاح لهذا الكتاب بعد.';$('topic-count').textContent=d.topics.length+' محاور';$('material-count').textContent=d.count+' مواد';$('book-status').textContent=d.job?('الحالة: '+stageLabel(d.job.stage||d.job.status)):'جاهز للمراجعة';$('book-section').classList.remove('hidden');const html=d.topics.map(t=>{const mats=t.materials.map(m=>'<button data-id="'+esc(m.id)+'" class="material-card text-right rounded-2xl border bg-white p-4 hover:border-indigo-400"><div class="flex justify-between gap-3"><strong class="text-sm">'+esc(m.title)+'</strong><span class="text-xs text-slate-400">'+esc(m.kind||'مادة')+'</span></div><p class="mt-2 line-clamp-3 text-xs leading-6 text-slate-600">'+esc(m.content)+'</p><p class="mt-2 text-xs text-slate-400">'+esc(m.source_reference||'مرجع غير محدد')+'</p></button>').join('');return'<article class="rounded-2xl border bg-white p-5 shadow-sm"><div class="flex items-start justify-between gap-4"><div><p class="text-xs text-slate-400">المحور '+t.position+'</p><h3 class="mt-1 text-lg font-bold">'+esc(t.title)+'</h3><p class="mt-1 text-sm leading-6 text-slate-600">'+esc(t.description)+'</p></div><div class="text-left"><span class="rounded-full bg-indigo-50 px-3 py-1 text-xs text-indigo-700">'+t.materials.length+' مواد</span><p class="mt-2 text-xs text-slate-400">'+esc(t.discovery_status||'قيد التجهيز')+'</p></div></div><div class="mt-4 grid gap-3">'+(mats||'<p class="text-sm text-slate-400">لم تُكتشف مواد في هذا المحور حتى الآن.</p>')+'</div></article>';}).join('');$('topics').innerHTML=html;$('topics-empty').classList.toggle('hidden',d.topics.length>0);document.querySelectorAll('.material-card').forEach(b=>b.onclick=()=>selectMaterial(b.dataset.id));}
+async function refreshBook(){if(!state.sourceId)return;try{renderBook(await request('/sources/'+state.sourceId+'/book-map'));}catch(e){showError('تعذر تحديث مساحة الكتاب الآن.');}}
+async function poll(){if(!state.jobId)return;try{const d=await request('/sources/'+state.sourceId+'/discovery/status');state.jobId=d.job_id||state.jobId;setStage(2);showProgress(stageLabel(d.stage),d.topics_completed||0,d.topics_total||0);await refreshBook();if(d.status==='COMPLETED'){showProgress('اكتمل تحليل الكتاب. الخريطة والمخزون جاهزان.',d.topics_total||1,d.topics_total||1);setBusy(false);return;}if(d.status==='FAILED'){setBusy(false);$('retry-box').classList.toggle('hidden',!d.retryable);showError('تعذر إكمال تحليل الكتاب. '+(d.error||'يمكنك إعادة المحاولة الآن.'));return;}state.pollTimer=setTimeout(poll,2000);}catch(e){setBusy(false);showError(e.message);}}
+async function startDiscovery(sourceId){clearError();state.sourceId=sourceId;state.jobId=null;$('draft-section').classList.add('hidden');$('success-section').classList.add('hidden');setStage(2);setBusy(true);showProgress('جاري بدء تحليل الكتاب...');try{const d=await request('/sources/'+sourceId+'/discovery',{method:'POST'});state.jobId=d.job_id;showProgress(stageLabel(d.stage),0,d.topics_total||0);await refreshBook();poll();}catch(e){setBusy(false);showError(e.message);}}
+async function selectMaterial(id){clearError();setStage(3);setBusy(true);showProgress('جاري إنشاء المسودة...');try{const d=await request('/knowledge-units/'+id+'/draft',{method:'POST'});state.publicationId=d.id;$('draft-content').value=d.content||'';$('draft-section').classList.remove('hidden');$('draft-section').scrollIntoView({behavior:'smooth'});hideProgress();}catch(e){showError(e.message);}finally{setBusy(false);}}
+$('source-select').onchange=()=>{clearError();if($('source-select').value)setStage(2);else setStage(1);};$('source-btn').onclick=()=>{const id=$('source-select').value;if(!id)return showError('اختر كتابًا محفوظًا أولًا.');startDiscovery(id);};
+$('drop-zone').onclick=()=> $('pdf-file').click();$('drop-zone').onkeydown=e=>{if(e.key==='Enter'||e.key===' ')$('pdf-file').click();};$('drop-zone').ondragover=e=>{e.preventDefault();$('drop-zone').classList.add('dragging');};$('drop-zone').ondragleave=()=>$('drop-zone').classList.remove('dragging');$('drop-zone').ondrop=e=>{e.preventDefault();$('drop-zone').classList.remove('dragging');if(e.dataTransfer.files.length){$('pdf-file').files=e.dataTransfer.files;$('pdf-file').dispatchEvent(new Event('change'));}};$('pdf-file').onchange=()=>{const file=$('pdf-file').files[0];$('file-name').classList.toggle('hidden',!file);if(file)$('file-name').textContent=file.name+' — '+(file.size/1024/1024).toFixed(1)+' MB';};
+$('upload-btn').onclick=async()=>{clearError();const file=$('pdf-file').files[0];if(!file)return showError('اختر ملف PDF أولًا.');if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf'))return showError('الملف المحدد ليس بصيغة PDF.');if(file.size>100*1024*1024)return showError('حجم الملف يتجاوز الحد الأقصى وهو 100 MB.');setBusy(true);showProgress('جاري رفع الكتاب وحفظه...');try{const form=new FormData();form.append('file',file);const s=await request('/sources',{method:'POST',body:form});await loadSources();$('source-select').value=s.id;startDiscovery(s.id);}catch(e){setBusy(false);showError(e.message);}};
+$('retry-btn').onclick=()=>{if(state.sourceId)startRetry();};async function startRetry(){clearError();setBusy(true);showProgress('جاري إعادة تحليل الكتاب...');try{const d=await request('/sources/'+state.sourceId+'/discovery/retry',{method:'POST'});state.jobId=d.job_id;poll();}catch(e){setBusy(false);showError(e.message);}}
+$('refresh-btn').onclick=refreshBook;$('publish-btn').onclick=async()=>{if(!state.publicationId)return;if(!confirm('هل راجعت المسودة وتريد نشرها الآن في تيليجرام؟'))return;clearError();setBusy(true);showProgress('جاري حفظ المراجعة والنشر في تيليجرام...');try{const d=await request('/publications/'+state.publicationId+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:$('draft-content').value})});if(d.status!=='PUBLISHED')throw Error(d.error_message||'تعذر تأكيد النشر.');$('external-id').textContent=d.external_id||'غير متاح';$('success-section').classList.remove('hidden');hideProgress();}catch(e){showError(e.message);}finally{setBusy(false);}};
+loadSources().catch(e=>showError('تعذر تحميل المكتبة. '+e.message));
+</script></body></html>'''
