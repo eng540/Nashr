@@ -114,19 +114,18 @@ async def run_benchmark_test(
         raise HTTPException(status_code=404, detail="المادة أو المصدر غير موجود.")
 
     source = unit.source
-    storage_path = Path(source.storage_path)
-
-    # معالجة استعادة الملف إذا كان مفقوداً من قرص السيرفر المؤقت
-    if not storage_path.is_file():
+    try:
+        storage_path = source.ensure_file_on_disk()
+    except FileNotFoundError:
         if file is None:
-            raise HTTPException(
-                status_code=412,
-                detail="FILE_MISSING_ON_DISK",
-            )
-        # حفظ الملف المرفوع في مكانه الصحيح مباشرة
-        storage_path.parent.mkdir(parents=True, exist_ok=True)
+            raise HTTPException(status_code=412, detail="FILE_MISSING_ON_DISK")
+        # Backfill the database backup for sources created before migration 0008.
         content = await file.read()
+        storage_path = Path(source.storage_path)
+        storage_path.parent.mkdir(parents=True, exist_ok=True)
         storage_path.write_bytes(content)
+        source.file_payload = content
+        await session.commit()
         logger.info("event=STORAGE_RESTORED path=%s", storage_path)
 
     # -------------------------------------------------------------

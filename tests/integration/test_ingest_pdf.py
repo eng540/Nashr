@@ -18,5 +18,6 @@ async def test_upload_real_pdf_is_stored_and_registered() -> None:
         result = await session.execute(select(SourceModel).where(SourceModel.id == source_id))
         source = result.scalar_one()
         assert source.status == "STORED"
+        assert source.file_payload == pdf
         assert Path(source.storage_path).read_bytes() == pdf
     await engine.dispose()
