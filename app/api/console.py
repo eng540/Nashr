@@ -4,30 +4,31 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nashr Console</title><script src="https://cdn.tailwindcss.com"></script>
+<title>Nashr — مساحة العمل</title><script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900">
 <main class="mx-auto max-w-6xl px-4 py-8">
-<header class="mb-8">
-<p class="text-sm font-semibold text-indigo-600">Nashr — Vertical Slice 2</p>
-<h1 class="mt-1 text-3xl font-bold">خريطة الكتاب والمخزون التحريري</h1>
-<p class="mt-2 text-sm text-slate-600">ارفع الكتاب أو اختر كتاباً محفوظاً، ثم راقب الاستكشاف حتى تظهر الخريطة والمواد تدريجياً.</p>
+<header class="mb-8 flex flex-wrap items-start justify-between gap-4 border-b pb-6">
+<div><p class="text-sm font-semibold text-indigo-600">Nashr — مساحة العمل</p>
+<h1 class="mt-1 text-3xl font-bold tracking-tight">مكتبة الكتب والمخزون التحريري</h1>
+<p class="mt-2 max-w-2xl text-sm leading-7 text-slate-600">أضف كتابًا، راقب تحليله، ثم اختر مادة وحوّلها إلى مسودة قابلة للمراجعة والنشر.</p></div>
+<nav class="flex gap-2 text-sm"><a href="/benchmark" class="rounded-full bg-white px-3 py-2 font-semibold text-slate-600 shadow-sm hover:text-indigo-600">مختبر الجودة</a><span class="rounded-full bg-indigo-50 px-3 py-2 font-semibold text-indigo-700">المكتبة</span></nav>
 </header>
 
 <section class="rounded-2xl border bg-white p-5 shadow-sm">
 <div class="grid gap-4 lg:grid-cols-2">
 <div>
-<label class="mb-2 block text-sm font-semibold">كتاب محفوظ</label>
+<label class="mb-2 block text-sm font-semibold">اختر كتابًا محفوظًا</label>
 <div class="flex gap-2">
 <select id="source-select" class="min-w-0 flex-1 rounded-xl border bg-slate-50 p-3 text-sm"></select>
-<button id="source-btn" class="rounded-xl bg-slate-800 px-5 py-3 font-semibold text-white disabled:opacity-50">استكشاف الكتاب</button>
+<button id="source-btn" class="rounded-xl bg-slate-800 px-5 py-3 font-semibold text-white disabled:opacity-50">فتح مساحة الكتاب</button>
 </div>
 </div>
 <div>
-<label class="mb-2 block text-sm font-semibold">رفع كتاب جديد</label>
+<label class="mb-2 block text-sm font-semibold">أضف كتابًا جديدًا</label>
 <div class="flex gap-2">
 <input id="pdf-file" type="file" accept="application/pdf" class="min-w-0 flex-1 rounded-xl border bg-slate-50 p-3 text-sm">
-<button id="upload-btn" class="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white disabled:opacity-50">رفع</button>
+<button id="upload-btn" class="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white disabled:opacity-50">رفع وتحليل</button>
 </div>
 </div>
 </div>
