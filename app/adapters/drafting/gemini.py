@@ -101,7 +101,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
             stop=stop_after_attempt(4),
             wait=wait_exponential(multiplier=1.5, min=2, max=10),
             retry=retry_if_exception_type(Exception),
-            retry_error_callback=lambda state: logger.warning("event=DRAFT_RETRY attempt=%s", state.attempt_number),
+            before_sleep=lambda state: logger.warning("event=DRAFT_RETRY attempt=%s", state.attempt_number),
         )
         def _execute_call():
             try:
