@@ -13,7 +13,7 @@ from google.genai import types
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.adapters.gemini_policy import generate_content as generate_gemini_content
 from app.application.publications import slice_pdf_pages_as_bytes
@@ -48,13 +48,16 @@ async def benchmark_page() -> HTMLResponse:
 async def get_benchmark_sources(session: AsyncSession = Depends(get_session)):
     """List books first; materials are loaded only after a book is selected.
 
-    ``file_payload`` is a deferred column, so we never materialise the binary
-    payload here. We ask PostgreSQL for a single boolean instead of pulling
-    tens of megabytes per source row.
+    ``file_payload`` is loaded by default on ``SourceModel``; this read-only
+    list view opts out explicitly with ``defer`` so we never materialise the
+    binary payload here. We ask PostgreSQL for a single boolean instead of
+    pulling tens of megabytes per source row.
     """
     has_payload_expr = SourceModel.file_payload.is_not(None).label("has_db_payload")
     result = await session.execute(
-        select(SourceModel, has_payload_expr).order_by(SourceModel.created_at.desc())
+        select(SourceModel, has_payload_expr)
+        .options(defer(SourceModel.file_payload))
+        .order_by(SourceModel.created_at.desc())
     )
     return [
         {
