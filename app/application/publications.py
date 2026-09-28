@@ -86,8 +86,8 @@ class CreateTelegramDraft:
                     unit.discovery_page_end,
                     window_size=10,
                 )
-            except (FileNotFoundError, OSError, ValueError):
-                # Older records may not have a recoverable PDF; preserve the text fallback.
+            except Exception:
+                # Older records may have a missing or malformed PDF; preserve the text fallback.
                 pdf_slice = None
 
         content = await self.drafter.draft(
