@@ -1,11 +1,16 @@
 import asyncio
+import logging
 import os
 
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError, ServerError
 from pydantic import BaseModel
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.domain.editorial import IEditorialDrafter
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiTelegramDraft(BaseModel):
@@ -14,8 +19,21 @@ class GeminiTelegramDraft(BaseModel):
     content: str
 
 
+def _is_transient_error(exc: Exception) -> bool:
+    """Determine if a Gemini failure is temporary and worth retrying."""
+    if isinstance(exc, ServerError):
+        # يغطي أخطاء 503 High Demand و 500 و 504
+        return True
+    if isinstance(exc, APIError):
+        status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+        if status in (429, 500, 502, 503, 504):
+            return True
+    text = str(exc).lower()
+    return any(w in text for w in ("503", "unavailable", "high demand", "resource_exhausted", "too many requests"))
+
+
 class GeminiEditorialDrafter(IEditorialDrafter):
-    """Draft publication-ready Telegram content with optional visual grounding."""
+    """Draft publication-ready Telegram content with visual grounding and self-healing retries."""
 
     SYSTEM_PROMPT = """أنت محرر محتوى تراثي وأدبي رفيع، متخصص في تحويل المادة المصدرية إلى منشورات تيليجرام رصينة، غنية ومكتملة.
 مهمتك صياغة منشور متكامل الأركان يعتمد على الوثيقة المرفقة والمادة المصدرية دون أي بتر أو اختصار مخل.
@@ -60,7 +78,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
         source_name: str,
         pdf_slice: bytes | None = None,
     ) -> str:
-        """Run the blocking Gemini editorial request."""
+        """Run the blocking Gemini editorial request with resilient retries."""
         prompt = (
             f"اسم الكتاب: {source_name}\n"
             f"عنوان الفكرة: {title}\n"
@@ -78,14 +96,31 @@ class GeminiEditorialDrafter(IEditorialDrafter):
             prompt += "اعتمد على المادة المصدرية المتاحة دون اختلاق أي اقتباس أو معلومة."
             contents.append(prompt)
 
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=GeminiTelegramDraft,
-            ),
+        @retry(
+            reraise=True,
+            stop=stop_after_attempt(4),
+            wait=wait_exponential(multiplier=1.5, min=2, max=10),
+            retry=retry_if_exception_type(Exception),
+            retry_error_callback=lambda state: logger.warning("event=DRAFT_RETRY attempt=%s", state.attempt_number),
         )
+        def _execute_call():
+            try:
+                return self.client.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=GeminiTelegramDraft,
+                    ),
+                )
+            except Exception as exc:
+                if _is_transient_error(exc):
+                    logger.warning("event=GEMINI_TRANSIENT_SPIKE error=%s - retrying...", str(exc))
+                    raise exc
+                # إذا كان الخطأ غير قابل للتعافي لا نعيد المحاولة
+                raise
+
+        response = _execute_call()
         parsed = response.parsed
         if parsed is None or not parsed.content.strip():
             raise ValueError("Gemini returned no editorial draft.")
