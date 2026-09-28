@@ -58,11 +58,20 @@ GEMINI_RETRY_MAX_ATTEMPTS_ENV = "GEMINI_RETRY_MAX_ATTEMPTS"
 GEMINI_RETRY_BACKOFF_MIN_ENV = "GEMINI_RETRY_BACKOFF_MIN_SECONDS"
 GEMINI_RETRY_BACKOFF_MAX_ENV = "GEMINI_RETRY_BACKOFF_MAX_SECONDS"
 GEMINI_RETRY_BACKOFF_MULTIPLIER_ENV = "GEMINI_RETRY_BACKOFF_MULTIPLIER"
+GEMINI_TOTAL_TIMEOUT_ENV = "GEMINI_TOTAL_TIMEOUT_SECONDS"
+GEMINI_SDK_RETRY_ATTEMPTS_ENV = "GEMINI_SDK_RETRY_ATTEMPTS"
+GEMINI_HTTP_TIMEOUT_MS_ENV = "GEMINI_HTTP_TIMEOUT_MS"
 
 DEFAULT_RETRY_MAX_ATTEMPTS = 2
 DEFAULT_RETRY_BACKOFF_MIN_SECONDS = 2.0
 DEFAULT_RETRY_BACKOFF_MAX_SECONDS = 10.0
 DEFAULT_RETRY_BACKOFF_MULTIPLIER = 2.0
+# Total wall-clock budget for one full chain walk. 0 disables the budget.
+DEFAULT_TOTAL_TIMEOUT_SECONDS = 120.0
+# The google-genai SDK must not retry on its own: the cascade below is the only
+# retry authority (otherwise one policy attempt hides several SDK attempts).
+DEFAULT_SDK_RETRY_ATTEMPTS = 1
+DEFAULT_HTTP_TIMEOUT_MS = 90_000
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +88,7 @@ GEMINI_SERVER_ERROR = "GEMINI_SERVER_ERROR"
 GEMINI_NETWORK_ERROR = "GEMINI_NETWORK_ERROR"
 GEMINI_API_ERROR = "GEMINI_API_ERROR"
 GEMINI_EMPTY_RESPONSE = "GEMINI_EMPTY_RESPONSE"
+GEMINI_DEADLINE_EXCEEDED = "GEMINI_DEADLINE_EXCEEDED"
 
 
 class GeminiOperationError(RuntimeError):
@@ -134,6 +144,7 @@ class RetryPolicy:
     backoff_min_seconds: float = DEFAULT_RETRY_BACKOFF_MIN_SECONDS
     backoff_max_seconds: float = DEFAULT_RETRY_BACKOFF_MAX_SECONDS
     backoff_multiplier: float = DEFAULT_RETRY_BACKOFF_MULTIPLIER
+    total_timeout_seconds: float = DEFAULT_TOTAL_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
@@ -147,6 +158,7 @@ class RetryPolicy:
             backoff_min_seconds=_env_float(GEMINI_RETRY_BACKOFF_MIN_ENV, DEFAULT_RETRY_BACKOFF_MIN_SECONDS),
             backoff_max_seconds=_env_float(GEMINI_RETRY_BACKOFF_MAX_ENV, DEFAULT_RETRY_BACKOFF_MAX_SECONDS),
             backoff_multiplier=_env_float(GEMINI_RETRY_BACKOFF_MULTIPLIER_ENV, DEFAULT_RETRY_BACKOFF_MULTIPLIER),
+            total_timeout_seconds=_env_float(GEMINI_TOTAL_TIMEOUT_ENV, DEFAULT_TOTAL_TIMEOUT_SECONDS, minimum=0.0),
         )
 
     def delay_for(self, attempt_number: int) -> float:
@@ -299,6 +311,86 @@ def is_transient_error(exc: Exception) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Client construction (the only place that builds a google-genai client)
+# ---------------------------------------------------------------------------
+
+
+def gemini_http_options() -> Any:
+    """Return the shared SDK HTTP options, or ``None`` when unavailable.
+
+    The google-genai SDK retries retryable statuses on its own (5 attempts by
+    default). That silently multiplies every retry made by this policy, so the
+    SDK retry count is pinned to 1 and the cascade here is the only retry
+    authority. Set ``GEMINI_SDK_RETRY_ATTEMPTS`` to raise it deliberately.
+    """
+    try:
+        from google.genai import types
+    except Exception:  # pragma: no cover - defensive fallback only
+        return None
+    attempts = _env_int(GEMINI_SDK_RETRY_ATTEMPTS_ENV, DEFAULT_SDK_RETRY_ATTEMPTS, minimum=1)
+    timeout_ms = _env_int(GEMINI_HTTP_TIMEOUT_MS_ENV, DEFAULT_HTTP_TIMEOUT_MS, minimum=1000)
+    try:
+        return types.HttpOptions(
+            retry_options=types.HttpRetryOptions(attempts=attempts),
+            timeout=timeout_ms,
+        )
+    except Exception:  # pragma: no cover - defensive fallback only
+        return None
+
+
+def create_gemini_client(api_key: str | None = None) -> Any:
+    """Build the single, policy-configured Gemini client used by every layer."""
+    from google import genai
+
+    options = gemini_http_options()
+    if options is None:
+        return genai.Client(api_key=api_key)
+    return genai.Client(api_key=api_key, http_options=options)
+
+
+# ---------------------------------------------------------------------------
+# HTTP mapping for provider failures
+# ---------------------------------------------------------------------------
+
+_HTTP_STATUS_BY_CODE: dict[str, int] = {
+    GEMINI_AUTH_ERROR: 401,
+    GEMINI_INVALID_ARGUMENT: 400,
+    GEMINI_FILE_NOT_FOUND: 404,
+    GEMINI_RATE_LIMITED: 429,
+    GEMINI_QUOTA_EXCEEDED: 429,
+    GEMINI_FILE_TIMEOUT: 503,
+    GEMINI_SERVER_ERROR: 503,
+    GEMINI_NETWORK_ERROR: 503,
+    GEMINI_DEADLINE_EXCEEDED: 504,
+}
+
+
+def http_status_for(code: str) -> int:
+    """Map a stable Gemini error code to the HTTP status the caller should see."""
+    return _HTTP_STATUS_BY_CODE.get(code, 500)
+
+
+def retry_after_seconds(exc: Exception) -> float | None:
+    """Read a ``Retry-After`` hint from a structured provider error, if present."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        headers = getattr(exc, "headers", None)
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("retry-after") or headers.get("Retry-After")
+    except Exception:  # pragma: no cover - defensive fallback only
+        return None
+    if raw is None:
+        return None
+    try:
+        return max(0.0, float(str(raw).strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Canonical log events (identical field names and event names in every layer)
 # ---------------------------------------------------------------------------
 
@@ -324,6 +416,7 @@ def generate_content(
     retry_policy: RetryPolicy | None = None,
     sleep: Callable[[float], None] | None = None,
     validator: Callable[[Any], None] | None = None,
+    clock: Callable[[], float] | None = None,
 ) -> Any:
     """Run one Gemini ``generate_content`` request through the unified policy.
 
@@ -337,11 +430,17 @@ def generate_content(
     ``validator`` runs on every returned response and may raise to reject it
     (for example an empty structured payload). A retryable rejection is treated
     exactly like a transient provider failure.
+
+    ``policy.total_timeout_seconds`` caps the wall-clock budget of the whole
+    walk (0 disables it), and the backoff honours a provider ``Retry-After``
+    hint when one is present.
     """
     chain = resolve_model_chain(models)
     policy = retry_policy or RetryPolicy.from_env()
     sleeper = sleep or time.sleep
+    now = clock or time.monotonic
     context_fields = dict(context or {})
+    deadline = now() + policy.total_timeout_seconds if policy.total_timeout_seconds > 0 else None
 
     _log_event(
         logging.INFO,
@@ -349,12 +448,17 @@ def generate_content(
         operation=operation,
         models=",".join(chain),
         model_count=len(chain),
+        total_timeout_seconds=policy.total_timeout_seconds or None,
         **context_fields,
     )
 
     last_error: Exception | None = None
+    budget_exhausted = False
     for model_index, model in enumerate(chain, start=1):
         for attempt in range(1, policy.max_attempts + 1):
+            if deadline is not None and now() >= deadline:
+                budget_exhausted = True
+                break
             _log_event(
                 logging.INFO,
                 "GEMINI_ATTEMPT_START",
@@ -398,6 +502,15 @@ def generate_content(
                 )
                 if attempt < policy.max_attempts:
                     delay = policy.delay_for(attempt)
+                    hint = retry_after_seconds(exc)
+                    if hint is not None:
+                        delay = max(delay, min(hint, policy.backoff_max_seconds))
+                    if deadline is not None:
+                        remaining = deadline - now()
+                        if remaining <= 0:
+                            budget_exhausted = True
+                            break
+                        delay = min(delay, remaining)
                     _log_event(
                         logging.WARNING,
                         "GEMINI_RETRY_BACKOFF",
@@ -405,6 +518,7 @@ def generate_content(
                         model=model,
                         attempt=attempt,
                         delay_seconds=delay,
+                        retry_after_seconds=hint,
                         **context_fields,
                     )
                     sleeper(delay)
@@ -422,6 +536,9 @@ def generate_content(
                 )
                 return response
 
+        if budget_exhausted:
+            break
+
         if model_index < len(chain):
             _log_event(
                 logging.WARNING,
@@ -434,8 +551,23 @@ def generate_content(
                 **context_fields,
             )
 
+    if budget_exhausted:
+        _log_event(
+            logging.WARNING,
+            "GEMINI_BUDGET_EXHAUSTED",
+            operation=operation,
+            total_timeout_seconds=policy.total_timeout_seconds,
+            **context_fields,
+        )
+
+    if last_error is None:
+        raise GeminiOperationError(
+            GEMINI_DEADLINE_EXCEEDED,
+            "Gemini request budget was exhausted before any attempt ran.",
+            True,
+        )
+
     # Every model and every attempt is exhausted: surface the real provider error.
-    assert last_error is not None
     raise last_error
 
 

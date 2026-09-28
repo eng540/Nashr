@@ -15,6 +15,7 @@ from pypdf import PdfReader, PdfWriter
 from app.adapters.gemini_policy import (
     GeminiOperationError,
     classify_gemini_error,
+    create_gemini_client,
     generate_content as generate_gemini_content,
 )
 from app.domain.book_map import BookMap, BookTopic
@@ -74,7 +75,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
 حافظ على ترتيب ظهور الأقسام عندما يكون واضحاً."""
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
-        self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = client or create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL")
 
     async def prepare_document(self, source: Source) -> DocumentReference:
@@ -227,7 +228,7 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
 رقّم النتائج من 1 داخل هذا النطاق."""
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
-        self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = client or create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL")
 
     async def discover_topic(
@@ -330,7 +331,7 @@ class GeminiExtractor(IExtractor):
 رقّم المواد بترتيب ظهورها أو أهميتها ابتداءً من 1، ولا تستخدم الرقم لفرض عدد معين."""
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
-        self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = client or create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL")
 
     async def extract(self, source: Source) -> list[ExtractedIdea]:
