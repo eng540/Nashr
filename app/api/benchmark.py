@@ -45,17 +45,25 @@ async def benchmark_page() -> HTMLResponse:
 
 @benchmark_router.get("/benchmark/sources")
 async def get_benchmark_sources(session: AsyncSession = Depends(get_session)):
-    """List books first; materials are loaded only after a book is selected."""
-    result = await session.execute(select(SourceModel).order_by(SourceModel.created_at.desc()))
+    """List books first; materials are loaded only after a book is selected.
+
+    ``file_payload`` is a deferred column, so we never materialise the binary
+    payload here. We ask PostgreSQL for a single boolean instead of pulling
+    tens of megabytes per source row.
+    """
+    has_payload_expr = SourceModel.file_payload.is_not(None).label("has_db_payload")
+    result = await session.execute(
+        select(SourceModel, has_payload_expr).order_by(SourceModel.created_at.desc())
+    )
     return [
         {
             "id": str(source.id),
             "title": source.book_title or source.filename,
             "filename": source.filename,
             "file_exists": Path(source.storage_path).is_file(),
-            "has_db_payload": source.file_payload is not None,
+            "has_db_payload": bool(has_db_payload),
         }
-        for source in result.scalars().all()
+        for source, has_db_payload in result.all()
     ]
 
 
