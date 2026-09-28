@@ -20,16 +20,23 @@ class GeminiTelegramDraft(BaseModel):
 
 
 def _is_transient_error(exc: Exception) -> bool:
-    """Determine if a Gemini failure is temporary and worth retrying."""
+    """Determine whether a Gemini failure is temporary and worth retrying.
+
+    Covers 503 High Demand, 500 Internal, 502 Bad Gateway, 504 Timeout and
+    429 Rate-Limit / Resource-Exhausted spikes that routinely appear on the
+    Gemini public endpoint during peak hours.
+    """
     if isinstance(exc, ServerError):
-        # يغطي أخطاء 503 High Demand و 500 و 504
         return True
     if isinstance(exc, APIError):
         status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
         if status in (429, 500, 502, 503, 504):
             return True
     text = str(exc).lower()
-    return any(w in text for w in ("503", "unavailable", "high demand", "resource_exhausted", "too many requests"))
+    return any(
+        w in text
+        for w in ("503", "unavailable", "high demand", "resource_exhausted", "too many requests")
+    )
 
 
 class GeminiEditorialDrafter(IEditorialDrafter):
@@ -101,7 +108,9 @@ class GeminiEditorialDrafter(IEditorialDrafter):
             stop=stop_after_attempt(4),
             wait=wait_exponential(multiplier=1.5, min=2, max=10),
             retry=retry_if_exception_type(Exception),
-            retry_error_callback=lambda state: logger.warning("event=DRAFT_RETRY attempt=%s", state.attempt_number),
+            retry_error_callback=lambda state: logger.warning(
+                "event=DRAFT_RETRY_EXHAUSTED attempt=%s", state.attempt_number
+            ),
         )
         def _execute_call():
             try:
@@ -117,7 +126,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
                 if _is_transient_error(exc):
                     logger.warning("event=GEMINI_TRANSIENT_SPIKE error=%s - retrying...", str(exc))
                     raise exc
-                # إذا كان الخطأ غير قابل للتعافي لا نعيد المحاولة
+                # خطأ دائم (مفتاح خاطئ، مدخل غير صالح، ...) → لا نعيد المحاولة
                 raise
 
         response = _execute_call()
