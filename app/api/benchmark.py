@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.adapters.gemini_policy import generate_content as generate_gemini_content
 from app.application.publications import slice_pdf_pages_as_bytes
 from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
 from app.infrastructure.database.session import get_session
@@ -132,7 +133,7 @@ async def run_benchmark_test(
         await session.commit()
 
     client = genai.Client(api_key=api_key)
-    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    model = os.getenv("GEMINI_MODEL")
 
     # Approach A: send a visual, bounded PDF slice instead of lossy local text extraction.
     t0_a = time.perf_counter()
@@ -146,8 +147,11 @@ async def run_benchmark_test(
 
 هذه شريحة PDF بصرية من 10 صفحات تغطي موضع المادة وسياقها. استخرج القصة والشواهد كاملة كما وردت، ثم صغ منشور تيليجرام مكتملًا دون اختصار مخل."""
     response_a = await asyncio.to_thread(
-        client.models.generate_content,
-        model=model,
+        generate_gemini_content,
+        client,
+        models=model,
+        operation="BENCHMARK_PDF_SLICE",
+        context={"unit_id": unit.id},
         contents=[SYSTEM_PROMPT, prompt_a, slice_part],
         config=types.GenerateContentConfig(
             response_mime_type="application/json", response_schema=DraftResponse
@@ -170,8 +174,11 @@ async def run_benchmark_test(
 الملخص المستخرج: {unit.content}
 ابحث في وثيقة الكتاب الكاملة عن السياق الأصلي، ثم اكتب منشور تيليجرام مكتملًا يضم الحوار والقصة والشواهد دون بتر."""
     response_b = await asyncio.to_thread(
-        client.models.generate_content,
-        model=model,
+        generate_gemini_content,
+        client,
+        models=model,
+        operation="BENCHMARK_FULL_DOCUMENT",
+        context={"unit_id": unit.id},
         contents=[SYSTEM_PROMPT, prompt_b, document_part],
         config=types.GenerateContentConfig(
             response_mime_type="application/json", response_schema=DraftResponse

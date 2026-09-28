@@ -12,6 +12,11 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from pypdf import PdfReader, PdfWriter
 
+from app.adapters.gemini_policy import (
+    GeminiOperationError,
+    classify_gemini_error,
+    generate_content as generate_gemini_content,
+)
 from app.domain.book_map import BookMap, BookTopic
 from app.domain.extraction import (
     DiscoverySpan,
@@ -24,40 +29,6 @@ from app.domain.extraction import (
 from app.domain.sources import Source
 
 logger = logging.getLogger(__name__)
-
-
-class GeminiOperationError(RuntimeError):
-    """Normalized Gemini failure carrying a stable application error code."""
-
-    def __init__(self, code: str, message: str, retryable: bool = False, cause: Exception | None = None) -> None:
-        super().__init__(message)
-        self.code = code
-        self.retryable = retryable
-        self.cause = cause
-
-
-def classify_gemini_error(exc: Exception) -> tuple[str, bool]:
-    if isinstance(exc, GeminiOperationError):
-        return exc.code, exc.retryable
-    if isinstance(exc, TimeoutError):
-        return "GEMINI_FILE_TIMEOUT", True
-    text = str(exc).lower()
-    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-    if "resource_exhausted" in text or "quota" in text:
-        return "GEMINI_QUOTA_EXCEEDED", False
-    if status == 429 or "rate limit" in text or "too many requests" in text:
-        return "GEMINI_RATE_LIMITED", True
-    if status in (401, 403) or "unauthenticated" in text or "permission denied" in text:
-        return "GEMINI_AUTH_ERROR", False
-    if status == 404 or "not found" in text:
-        return "GEMINI_FILE_NOT_FOUND", False
-    if status == 400 or "invalid argument" in text:
-        return "GEMINI_INVALID_ARGUMENT", False
-    if status and int(status) >= 500:
-        return "GEMINI_SERVER_ERROR", True
-    if isinstance(exc, (ConnectionError, OSError)) or "timeout" in text or "connection" in text:
-        return "GEMINI_NETWORK_ERROR", True
-    return "GEMINI_API_ERROR", False
 
 
 class GeminiTopic(BaseModel):
@@ -104,7 +75,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
         self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        self.model = model or os.getenv("GEMINI_MODEL")
 
     async def prepare_document(self, source: Source) -> DocumentReference:
         if source.mime_type != "application/pdf":
@@ -186,10 +157,12 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
         return await asyncio.to_thread(self._map_sync, source, document)
 
     def _map_sync(self, source: Source, document: DocumentReference) -> BookMap:
-        logger.info("event=GEMINI_CALL stage=BUILDING_BOOK_MAP source_id=%s model=%s input=document_file", source.id, self.model)
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
+            response = generate_gemini_content(
+                self.client,
+                models=self.model,
+                operation="BUILDING_BOOK_MAP",
+                context={"source_id": source.id},
                 contents=[
                     self.SYSTEM_PROMPT,
                     types.Part.from_uri(file_uri=document.uri, mime_type=document.mime_type),
@@ -255,7 +228,7 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
         self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        self.model = model or os.getenv("GEMINI_MODEL")
 
     async def discover_topic(
         self,
@@ -286,12 +259,15 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
             "تعامل مع هذا النطاق فقط ولا تفترض محتوى خارج الصفحات الممررة."
         )
         logger.info(
-            "event=GEMINI_CALL stage=DISCOVERING_MATERIALS source_id=%s topic_id=%s chunk=%s pages=%s-%s bytes=%s model=%s input=bounded_pdf",
-            source.id, topic.id, span.chunk_index, span.page_start, span.page_end, len(bounded_pdf), self.model,
+            "event=GEMINI_BOUNDED_INPUT source_id=%s topic_id=%s chunk=%s pages=%s-%s bytes=%s",
+            source.id, topic.id, span.chunk_index, span.page_start, span.page_end, len(bounded_pdf),
         )
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
+            response = generate_gemini_content(
+                self.client,
+                models=self.model,
+                operation="DISCOVERING_MATERIALS",
+                context={"source_id": source.id, "topic_id": topic.id, "chunk_index": span.chunk_index},
                 contents=[
                     self.SYSTEM_PROMPT,
                     context,
@@ -355,7 +331,7 @@ class GeminiExtractor(IExtractor):
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
         self.client = client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        self.model = model or os.getenv("GEMINI_MODEL")
 
     async def extract(self, source: Source) -> list[ExtractedIdea]:
         if source.mime_type != "application/pdf":
@@ -366,8 +342,11 @@ class GeminiExtractor(IExtractor):
         if not Path(source.storage_path).is_file():
             raise FileNotFoundError(source.storage_path)
         uploaded_file = self.client.files.upload(file=source.storage_path)
-        response = self.client.models.generate_content(
-            model=self.model,
+        response = generate_gemini_content(
+            self.client,
+            models=self.model,
+            operation="FLAT_EXTRACTION",
+            context={"source_id": source.id},
             contents=[self.SYSTEM_PROMPT, uploaded_file],
             config={"response_mime_type": "application/json", "response_schema": GeminiIdeas},
         )

@@ -1,25 +1,31 @@
 import asyncio
 import logging
 import os
-import time
 
 from google import genai
 from google.genai import types
-from google.genai.errors import APIError, ServerError
 from pydantic import BaseModel
 
+from app.adapters.gemini_policy import (
+    DEFAULT_GEMINI_MODELS,
+    DEFAULT_RETRY_BACKOFF_MIN_SECONDS,
+    DEFAULT_RETRY_MAX_ATTEMPTS,
+    GEMINI_EMPTY_RESPONSE,
+    GeminiOperationError,
+    generate_content as generate_gemini_content,
+    is_transient_error,
+    parse_model_chain,
+)
 from app.domain.editorial import IEditorialDrafter
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_CASCADE = [
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-3.8-flash",
-]
-
-ATTEMPTS_PER_MODEL = 2
-BASE_DELAY_SECONDS = 2.0
+# Backward-compatible views of the values that now live in the central policy.
+# The cascade default, the attempts-per-model and the base delay are defined once
+# in app/adapters/gemini_policy.py and consumed from there by every layer.
+DEFAULT_MODEL_CASCADE = list(DEFAULT_GEMINI_MODELS)
+ATTEMPTS_PER_MODEL = DEFAULT_RETRY_MAX_ATTEMPTS
+BASE_DELAY_SECONDS = DEFAULT_RETRY_BACKOFF_MIN_SECONDS
 
 
 class GeminiTelegramDraft(BaseModel):
@@ -28,19 +34,15 @@ class GeminiTelegramDraft(BaseModel):
     content: str
 
 
-def _is_transient_error(exc: Exception) -> bool:
-    """Check whether a Gemini failure is transient and eligible for retry/failover."""
-    if isinstance(exc, ServerError):
-        return True
-    if isinstance(exc, APIError):
-        status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-        if status in (429, 500, 502, 503, 504):
-            return True
-    text = str(exc).lower()
-    return any(
-        w in text
-        for w in ("503", "unavailable", "high demand", "resource_exhausted", "too many requests", "rate limit")
-    )
+# Backward-compatible alias; classification itself lives only in the central policy.
+_is_transient_error = is_transient_error
+
+
+def _require_editorial_draft(response) -> None:
+    """Treat an empty model response as a transient failure eligible for failover."""
+    parsed = getattr(response, "parsed", None)
+    if parsed is None or not (getattr(parsed, "content", "") or "").strip():
+        raise GeminiOperationError(GEMINI_EMPTY_RESPONSE, "Gemini returned no editorial draft.", True)
 
 
 class GeminiEditorialDrafter(IEditorialDrafter):
@@ -63,10 +65,8 @@ class GeminiEditorialDrafter(IEditorialDrafter):
         """Initialize with a prioritized cascade of models."""
         self._client = client
         raw_models = model or os.getenv("GEMINI_MODEL", "")
-        if raw_models.strip():
-            self.models = [m.strip() for m in raw_models.split(",") if m.strip()]
-        else:
-            self.models = DEFAULT_MODEL_CASCADE
+        self.model = raw_models
+        self.models = list(parse_model_chain(raw_models))
         logger.info("event=DRAFT_CASCADE_CONFIGURED models=%s", self.models)
 
     @property
@@ -112,51 +112,19 @@ class GeminiEditorialDrafter(IEditorialDrafter):
             prompt += "اعتمد على المادة المصدرية المتاحة دون اختلاق أي اقتباس أو معلومة."
             contents.append(prompt)
 
-        last_error: Exception | None = None
-
-        for candidate_model in self.models:
-            for attempt in range(1, ATTEMPTS_PER_MODEL + 1):
-                try:
-                    logger.info(
-                        "event=DRAFT_ATTEMPT model=%s attempt=%s/%s",
-                        candidate_model, attempt, ATTEMPTS_PER_MODEL,
-                    )
-                    response = self.client.models.generate_content(
-                        model=candidate_model,
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=GeminiTelegramDraft,
-                        ),
-                    )
-                    parsed = response.parsed
-                    if parsed and parsed.content.strip():
-                        logger.info("event=DRAFT_SUCCESS model=%s attempt=%s", candidate_model, attempt)
-                        return parsed.content.strip()
-                    logger.warning("event=DRAFT_EMPTY_RESPONSE model=%s attempt=%s", candidate_model, attempt)
-                    last_error = ValueError(f"Model {candidate_model} returned an empty draft.")
-                except Exception as exc:
-                    if not _is_transient_error(exc):
-                        logger.error("event=DRAFT_PERMANENT_ERROR model=%s error=%s", candidate_model, str(exc))
-                        raise
-                    last_error = exc
-                    logger.warning(
-                        "event=DRAFT_TRANSIENT_ERROR model=%s attempt=%s/%s error=%s",
-                        candidate_model, attempt, ATTEMPTS_PER_MODEL, str(exc),
-                    )
-                    # إن كانت هناك محاولة أخرى لنفس النموذج، انتظر ثم أعد
-                    if attempt < ATTEMPTS_PER_MODEL:
-                        delay = BASE_DELAY_SECONDS * attempt
-                        logger.info("event=DRAFT_BACKOFF seconds=%s", delay)
-                        time.sleep(delay)
-                        continue
-                    # استُنفدت محاولات هذا النموذج: انتقل للتالي
-                    logger.warning(
-                        "event=MODEL_FAILOVER exhausted=%s -> trying next model in cascade...",
-                        candidate_model,
-                    )
-                    break
-
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("Model cascade is empty; no Gemini model was configured.")
+        response = generate_gemini_content(
+            self.client,
+            models=self.model,
+            operation="EDITORIAL_DRAFT",
+            context={"source_name": source_name},
+            contents=contents,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=GeminiTelegramDraft,
+            ),
+            validator=_require_editorial_draft,
+        )
+        parsed = response.parsed
+        if parsed is None or not parsed.content.strip():
+            raise ValueError("Gemini returned no editorial draft.")
+        return parsed.content.strip()
