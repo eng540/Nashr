@@ -1,15 +1,84 @@
 import asyncio
 import logging
+import os
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
+from app.adapters.gemini_policy import (
+    GeminiOperationError,
+    RetryPolicy,
+    classify_gemini_error,
+    http_status_for,
+    resolve_model_chain,
+    retry_after_seconds,
+)
 from app.api.benchmark import benchmark_router
 from app.api.routes import router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 
 logger = logging.getLogger(__name__)
+
+
+def configure_logging() -> None:
+    """Make application INFO events visible (otherwise only warnings show up)."""
+    level_name = (os.getenv("LOG_LEVEL") or "INFO").strip().upper()
+    level = getattr(logging, level_name, logging.INFO)
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    root.setLevel(level)
+    logging.getLogger("app").setLevel(level)
+
+
+def log_gemini_startup_config() -> None:
+    """Log the effective model chain and retry policy once, at startup."""
+    raw_model = os.getenv("GEMINI_MODEL")
+    if raw_model is not None and not raw_model.strip():
+        logger.warning("event=GEMINI_MODEL_EMPTY falling back to the default chain.")
+    chain = resolve_model_chain()
+    policy = RetryPolicy.from_env()
+    logger.info(
+        "event=GEMINI_STARTUP_CONFIG models=%s attempts_per_model=%s total_timeout_seconds=%s",
+        ",".join(chain),
+        policy.max_attempts,
+        policy.total_timeout_seconds,
+    )
+
+
+async def gemini_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Map a Gemini provider failure to its real HTTP status instead of a 500."""
+    code, retryable = classify_gemini_error(exc)
+    status_code = http_status_for(code)
+    headers: dict[str, str] = {}
+    hint = retry_after_seconds(exc)
+    if hint:
+        headers["Retry-After"] = str(int(hint))
+    logger.warning(
+        "event=GEMINI_HTTP_ERROR path=%s status=%s code=%s retryable=%s",
+        request.url.path,
+        status_code,
+        code,
+        retryable,
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": f"Gemini provider error: {code}", "code": code, "retryable": retryable},
+        headers=headers,
+    )
+
+
+def register_gemini_error_handlers(application: FastAPI) -> None:
+    """Register the shared handler for our own and the SDK's provider errors."""
+    application.add_exception_handler(GeminiOperationError, gemini_exception_handler)
+    try:
+        from google.genai.errors import APIError
+    except Exception:  # pragma: no cover - defensive fallback only
+        APIError = None  # type: ignore[assignment]
+    if APIError is not None:
+        application.add_exception_handler(APIError, gemini_exception_handler)
 
 
 @asynccontextmanager
@@ -32,9 +101,12 @@ async def lifespan(application: FastAPI):
 
 def create_app() -> FastAPI:
     """Create the Nashr FastAPI application."""
+    configure_logging()
     application = FastAPI(title="Nashr", lifespan=lifespan)
+    register_gemini_error_handlers(application)
     application.include_router(router)
     application.include_router(benchmark_router)  # <--- أضف هذا السطر فقط
+    log_gemini_startup_config()
     return application
 
 

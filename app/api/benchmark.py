@@ -8,14 +8,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
-from google import genai
 from google.genai import types
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
-from app.adapters.gemini_policy import generate_content as generate_gemini_content
+from app.adapters.gemini_policy import (
+    GeminiOperationError,
+    classify_gemini_error,
+    create_gemini_client,
+    generate_content as generate_gemini_content,
+)
 from app.application.publications import slice_pdf_pages_as_bytes
 from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
 from app.infrastructure.database.session import get_session
@@ -135,11 +139,45 @@ async def run_benchmark_test(
         source.file_payload = content
         await session.commit()
 
-    client = genai.Client(api_key=api_key)
+    client = create_gemini_client(api_key=api_key)
     model = os.getenv("GEMINI_MODEL")
 
+    async def run_approach(operation: str, contents: list) -> dict:
+        """Run one benchmark approach independently so a failure stays local."""
+        started = time.perf_counter()
+        try:
+            response = await asyncio.to_thread(
+                generate_gemini_content,
+                client,
+                models=model,
+                operation=operation,
+                context={"unit_id": unit.id},
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json", response_schema=DraftResponse
+                ),
+            )
+        except Exception as exc:
+            code, retryable = classify_gemini_error(exc)
+            return {
+                "latency": round(time.perf_counter() - started, 2),
+                "input_tokens": "غير متاح",
+                "output_tokens": "غير متاح",
+                "draft": "فشل التوليد",
+                "error": code,
+                "retryable": retryable,
+                "error_detail": str(exc),
+            }
+        usage = getattr(response, "usage_metadata", None)
+        parsed = getattr(response, "parsed", None)
+        return {
+            "latency": round(time.perf_counter() - started, 2),
+            "input_tokens": getattr(usage, "prompt_token_count", "غير متاح"),
+            "output_tokens": getattr(usage, "candidates_token_count", "غير متاح"),
+            "draft": parsed.content if parsed else "فشل التوليد",
+        }
+
     # Approach A: send a visual, bounded PDF slice instead of lossy local text extraction.
-    t0_a = time.perf_counter()
     pdf_slice = slice_pdf_pages_as_bytes(
         str(storage_path), unit.discovery_page_start or 1, unit.discovery_page_end or 1, 10
     )
@@ -149,49 +187,42 @@ async def run_benchmark_test(
 الملخص الأولي: {unit.content}
 
 هذه شريحة PDF بصرية من 10 صفحات تغطي موضع المادة وسياقها. استخرج القصة والشواهد كاملة كما وردت، ثم صغ منشور تيليجرام مكتملًا دون اختصار مخل."""
-    response_a = await asyncio.to_thread(
-        generate_gemini_content,
-        client,
-        models=model,
-        operation="BENCHMARK_PDF_SLICE",
-        context={"unit_id": unit.id},
-        contents=[SYSTEM_PROMPT, prompt_a, slice_part],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json", response_schema=DraftResponse
-        ),
-    )
-    latency_a = time.perf_counter() - t0_a
-    usage_a = getattr(response_a, "usage_metadata", None)
+    approach_a = await run_approach("BENCHMARK_PDF_SLICE", [SYSTEM_PROMPT, prompt_a, slice_part])
 
     # Approach B: retrieve from the full Gemini document for comparison.
-    t0_b = time.perf_counter()
-    if source.gemini_file_uri and source.gemini_file_mime_type:
-        document_part = types.Part.from_uri(
-            file_uri=source.gemini_file_uri, mime_type=source.gemini_file_mime_type
-        )
-    else:
-        uploaded = await asyncio.to_thread(client.files.upload, file=str(storage_path))
-        document_part = types.Part.from_uri(file_uri=uploaded.uri, mime_type=uploaded.mime_type)
     prompt_b = f"""اسم الكتاب: {source.book_title or source.filename}
 عنوان المادة: {unit.title}
 الملخص المستخرج: {unit.content}
 ابحث في وثيقة الكتاب الكاملة عن السياق الأصلي، ثم اكتب منشور تيليجرام مكتملًا يضم الحوار والقصة والشواهد دون بتر."""
-    response_b = await asyncio.to_thread(
-        generate_gemini_content,
-        client,
-        models=model,
-        operation="BENCHMARK_FULL_DOCUMENT",
-        context={"unit_id": unit.id},
-        contents=[SYSTEM_PROMPT, prompt_b, document_part],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json", response_schema=DraftResponse
-        ),
-    )
-    latency_b = time.perf_counter() - t0_b
-    usage_b = getattr(response_b, "usage_metadata", None)
+    try:
+        if source.gemini_file_uri and source.gemini_file_mime_type:
+            document_part = types.Part.from_uri(
+                file_uri=source.gemini_file_uri, mime_type=source.gemini_file_mime_type
+            )
+        else:
+            uploaded = await asyncio.to_thread(client.files.upload, file=str(storage_path))
+            document_part = types.Part.from_uri(file_uri=uploaded.uri, mime_type=uploaded.mime_type)
+    except Exception as exc:
+        code, retryable = classify_gemini_error(exc)
+        approach_b = {
+            "latency": 0,
+            "input_tokens": "غير متاح",
+            "output_tokens": "غير متاح",
+            "draft": "فشل التوليد",
+            "error": code,
+            "retryable": retryable,
+            "error_detail": str(exc),
+        }
+    else:
+        approach_b = await run_approach("BENCHMARK_FULL_DOCUMENT", [SYSTEM_PROMPT, prompt_b, document_part])
 
-    def metric(usage, name: str):
-        return getattr(usage, name, "غير متاح")
+    # Only a total failure (both approaches) is surfaced as a provider error.
+    if approach_a.get("error") and approach_b.get("error"):
+        raise GeminiOperationError(
+            str(approach_a["error"]),
+            f"Both benchmark approaches failed: {approach_a['error_detail']}",
+            bool(approach_a.get("retryable")),
+        )
 
     return {
         "material": {
@@ -201,18 +232,8 @@ async def run_benchmark_test(
             "book": source.book_title or source.filename,
             "summary": unit.content,
         },
-        "approach_a": {
-            "latency": round(latency_a, 2),
-            "input_tokens": metric(usage_a, "prompt_token_count"),
-            "output_tokens": metric(usage_a, "candidates_token_count"),
-            "draft": response_a.parsed.content if response_a.parsed else "فشل التوليد",
-        },
-        "approach_b": {
-            "latency": round(latency_b, 2),
-            "input_tokens": metric(usage_b, "prompt_token_count"),
-            "output_tokens": metric(usage_b, "candidates_token_count"),
-            "draft": response_b.parsed.content if response_b.parsed else "فشل التوليد",
-        },
+        "approach_a": approach_a,
+        "approach_b": approach_b,
     }
 
 

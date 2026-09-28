@@ -12,6 +12,7 @@ from app.adapters.gemini_policy import (
     DEFAULT_RETRY_MAX_ATTEMPTS,
     GEMINI_EMPTY_RESPONSE,
     GeminiOperationError,
+    create_gemini_client,
     generate_content as generate_gemini_content,
     is_transient_error,
     parse_model_chain,
@@ -73,7 +74,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
     def client(self) -> genai.Client:
         """Create the Gemini client only when a real draft is requested."""
         if self._client is None:
-            self._client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            self._client = create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         return self._client
 
     async def draft(
