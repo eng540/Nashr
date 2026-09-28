@@ -1,16 +1,25 @@
 import asyncio
 import logging
 import os
+import time
 
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ServerError
 from pydantic import BaseModel
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.domain.editorial import IEditorialDrafter
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MODEL_CASCADE = [
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3.8-flash",
+]
+
+ATTEMPTS_PER_MODEL = 2
+BASE_DELAY_SECONDS = 2.0
 
 
 class GeminiTelegramDraft(BaseModel):
@@ -20,20 +29,22 @@ class GeminiTelegramDraft(BaseModel):
 
 
 def _is_transient_error(exc: Exception) -> bool:
-    """Determine if a Gemini failure is temporary and worth retrying."""
+    """Check whether a Gemini failure is transient and eligible for retry/failover."""
     if isinstance(exc, ServerError):
-        # يغطي أخطاء 503 High Demand و 500 و 504
         return True
     if isinstance(exc, APIError):
         status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
         if status in (429, 500, 502, 503, 504):
             return True
     text = str(exc).lower()
-    return any(w in text for w in ("503", "unavailable", "high demand", "resource_exhausted", "too many requests"))
+    return any(
+        w in text
+        for w in ("503", "unavailable", "high demand", "resource_exhausted", "too many requests", "rate limit")
+    )
 
 
 class GeminiEditorialDrafter(IEditorialDrafter):
-    """Draft publication-ready Telegram content with visual grounding and self-healing retries."""
+    """Draft publication-ready Telegram content with retry + multi-model failover."""
 
     SYSTEM_PROMPT = """أنت محرر محتوى تراثي وأدبي رفيع، متخصص في تحويل المادة المصدرية إلى منشورات تيليجرام رصينة، غنية ومكتملة.
 مهمتك صياغة منشور متكامل الأركان يعتمد على الوثيقة المرفقة والمادة المصدرية دون أي بتر أو اختصار مخل.
@@ -49,9 +60,14 @@ class GeminiEditorialDrafter(IEditorialDrafter):
 """
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
-        """Initialize the Gemini client and model configuration."""
+        """Initialize with a prioritized cascade of models."""
         self._client = client
-        self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        raw_models = model or os.getenv("GEMINI_MODEL", "")
+        if raw_models.strip():
+            self.models = [m.strip() for m in raw_models.split(",") if m.strip()]
+        else:
+            self.models = DEFAULT_MODEL_CASCADE
+        logger.info("event=DRAFT_CASCADE_CONFIGURED models=%s", self.models)
 
     @property
     def client(self) -> genai.Client:
@@ -78,7 +94,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
         source_name: str,
         pdf_slice: bytes | None = None,
     ) -> str:
-        """Run the blocking Gemini editorial request with resilient retries."""
+        """Run the blocking request: retry each model, then fall back to the next."""
         prompt = (
             f"اسم الكتاب: {source_name}\n"
             f"عنوان الفكرة: {title}\n"
@@ -96,32 +112,51 @@ class GeminiEditorialDrafter(IEditorialDrafter):
             prompt += "اعتمد على المادة المصدرية المتاحة دون اختلاق أي اقتباس أو معلومة."
             contents.append(prompt)
 
-        @retry(
-            reraise=True,
-            stop=stop_after_attempt(4),
-            wait=wait_exponential(multiplier=1.5, min=2, max=10),
-            retry=retry_if_exception_type(Exception),
-            before_sleep=lambda state: logger.warning("event=DRAFT_RETRY attempt=%s", state.attempt_number),
-        )
-        def _execute_call():
-            try:
-                return self.client.models.generate_content(
-                    model=self.model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=GeminiTelegramDraft,
-                    ),
-                )
-            except Exception as exc:
-                if _is_transient_error(exc):
-                    logger.warning("event=GEMINI_TRANSIENT_SPIKE error=%s - retrying...", str(exc))
-                    raise exc
-                # إذا كان الخطأ غير قابل للتعافي لا نعيد المحاولة
-                raise
+        last_error: Exception | None = None
 
-        response = _execute_call()
-        parsed = response.parsed
-        if parsed is None or not parsed.content.strip():
-            raise ValueError("Gemini returned no editorial draft.")
-        return parsed.content.strip()
+        for candidate_model in self.models:
+            for attempt in range(1, ATTEMPTS_PER_MODEL + 1):
+                try:
+                    logger.info(
+                        "event=DRAFT_ATTEMPT model=%s attempt=%s/%s",
+                        candidate_model, attempt, ATTEMPTS_PER_MODEL,
+                    )
+                    response = self.client.models.generate_content(
+                        model=candidate_model,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=GeminiTelegramDraft,
+                        ),
+                    )
+                    parsed = response.parsed
+                    if parsed and parsed.content.strip():
+                        logger.info("event=DRAFT_SUCCESS model=%s attempt=%s", candidate_model, attempt)
+                        return parsed.content.strip()
+                    logger.warning("event=DRAFT_EMPTY_RESPONSE model=%s attempt=%s", candidate_model, attempt)
+                    last_error = ValueError(f"Model {candidate_model} returned an empty draft.")
+                except Exception as exc:
+                    if not _is_transient_error(exc):
+                        logger.error("event=DRAFT_PERMANENT_ERROR model=%s error=%s", candidate_model, str(exc))
+                        raise
+                    last_error = exc
+                    logger.warning(
+                        "event=DRAFT_TRANSIENT_ERROR model=%s attempt=%s/%s error=%s",
+                        candidate_model, attempt, ATTEMPTS_PER_MODEL, str(exc),
+                    )
+                    # إن كانت هناك محاولة أخرى لنفس النموذج، انتظر ثم أعد
+                    if attempt < ATTEMPTS_PER_MODEL:
+                        delay = BASE_DELAY_SECONDS * attempt
+                        logger.info("event=DRAFT_BACKOFF seconds=%s", delay)
+                        time.sleep(delay)
+                        continue
+                    # استُنفدت محاولات هذا النموذج: انتقل للتالي
+                    logger.warning(
+                        "event=MODEL_FAILOVER exhausted=%s -> trying next model in cascade...",
+                        candidate_model,
+                    )
+                    break
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Model cascade is empty; no Gemini model was configured.")
