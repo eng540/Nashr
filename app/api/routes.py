@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
@@ -125,7 +126,9 @@ async def create_source(
 
 @router.get("/sources")
 async def list_sources(session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
-    result = await session.execute(select(SourceModel).order_by(SourceModel.created_at.desc()))
+    result = await session.execute(
+        select(SourceModel).options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
+    )
     return [
         {
             "id": str(source.id),
@@ -195,7 +198,9 @@ async def retry_discovery(
 
 @router.get("/sources/{source_id}/book-map")
 async def get_book_map(source_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    result = await session.execute(select(SourceModel).where(SourceModel.id == source_id))
+    result = await session.execute(
+        select(SourceModel).options(defer(SourceModel.file_payload)).where(SourceModel.id == source_id)
+    )
     source = result.scalar_one_or_none()
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found.")

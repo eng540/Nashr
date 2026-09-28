@@ -29,7 +29,10 @@ class SourceModel(Base):
     gemini_file_uri: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     gemini_file_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     gemini_file_source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    file_payload: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    # file_payload is loaded by default for safety. Read-only list
+    # views that never need the binary payload should apply
+    # .options(defer(SourceModel.file_payload)) explicitly.
+    file_payload: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     knowledge_units: Mapped[list["KnowledgeUnitModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     topics: Mapped[list["TopicModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
