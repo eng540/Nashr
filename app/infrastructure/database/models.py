@@ -29,26 +29,14 @@ class SourceModel(Base):
     gemini_file_uri: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     gemini_file_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     gemini_file_source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
-
-    # التحميل المؤجل: لا تُسحب بايتات الكتاب من قاعدة البيانات إلا عند الحاجة الفعلية
-    # (أي عند فقدان الملف من القرص واستدعاء ensure_file_on_disk).
-    # هذا يحوّل استعلامات مصادر الكتب من مئات الميجابايتات إلى بضعة كيلوبايتات.
     file_payload: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
-
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     knowledge_units: Mapped[list["KnowledgeUnitModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     topics: Mapped[list["TopicModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     discovery_jobs: Mapped[list["DiscoveryJobModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
 
     def ensure_file_on_disk(self) -> Path:
-        """Guarantee that the source PDF exists on ephemeral local storage.
-
-        Notes:
-            The ``file_payload`` column is deferred. Accessing it here triggers
-            an on-demand load *only* when the physical file is actually missing.
-            Under SQLAlchemy 2.0 async this happens transparently through the
-            active greenlet context, so callers continue to use the sync API.
-        """
+        """Guarantee that the source PDF exists on ephemeral local storage."""
         path = Path(self.storage_path)
         if not path.is_file():
             if self.file_payload is None:
