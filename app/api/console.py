@@ -139,12 +139,16 @@ function updateGeneratedScheduleTimes(){
   const start=$('schedule-start-at').value,interval=Number($('schedule-interval').value||0),timezone=$('schedule-timezone').value.trim();
   document.querySelectorAll('[data-schedule-time]').forEach((el,index)=>{
     if(!start||!interval||!timezone){el.textContent='';return;}
-    try{el.textContent=new Date(localDateTimeToUtcISOString(start,timezone)).toLocaleString('ar',{timeZone:timezone})+' + '+(index*interval)+'د';}catch(e){el.textContent='وقت غير صالح';}
+    try{
+      const base=new Date(localDateTimeToUtcISOString(start,timezone));
+      const when=new Date(base.getTime()+index*interval*60000);
+      el.textContent=when.toLocaleString('ar',{timeZone:timezone,dateStyle:'short',timeStyle:'short'});
+    }catch(e){el.textContent='وقت غير صالح';}
   });
 }
 function localDateTimeToUtcISOString(value,timeZone){if(!value)return null;const match=/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})$/.exec(value);if(!match)throw new Error('موعد غير صالح.');const [,y,m,d,h,min]=match;const wall=Date.UTC(Number(y),Number(m)-1,Number(d),Number(h),Number(min),0);const formatter=new Intl.DateTimeFormat('en-US',{calendar:'gregory',numberingSystem:'latn',timeZone,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});const parts=Object.fromEntries(formatter.formatToParts(new Date(wall)).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));const zoneWall=Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day),Number(parts.hour),Number(parts.minute),Number(parts.second));const candidate=new Date(wall-(zoneWall-wall));const check=Object.fromEntries(formatter.formatToParts(candidate).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));if(check.year!==y||check.month!==m||check.day!==d||check.hour!==h||check.minute!==min)throw new Error('الوقت المحدد غير صالح في المنطقة الزمنية '+timeZone+'.');return candidate.toISOString();}
 async function loadSchedules(){try{const d=await request('/schedules?limit=50&offset=0');$('schedule-list').innerHTML=d.items.length?d.items.map(s=>'<button data-schedule-id="'+esc(s.id)+'" class="block w-full rounded-2xl border bg-white p-4 text-right hover:border-indigo-400"><div class="flex items-center justify-between gap-3"><strong>'+esc(s.name)+'</strong><span class="rounded-full bg-slate-100 px-2 py-1 text-xs">'+esc(s.status)+'</span></div><p class="mt-2 text-xs text-slate-500">'+s.total_items+' عناصر · '+s.published_items+' منشورة · '+s.failed_items+' فاشلة · التالي: '+esc(s.next_scheduled_at||'لا يوجد')+'</p></button>').join(''):'<p class="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">لا توجد خطط بعد.</p>';document.querySelectorAll('[data-schedule-id]').forEach(b=>b.onclick=()=>openSchedule(b.dataset.scheduleId));}catch(e){$('schedule-list').textContent=e.message;}}
-async async function showTelegramPreview(id){
+async function showTelegramPreview(id){
   try{
     const p=await request('/posts/'+id+'/telegram-preview');
     $('telegram-preview-meta').textContent='Telegram · '+(p.destination||'لم يحدد الوجهة')+' · '+(p.status==='APPROVED'?'معتمد':'غير معتمد');
