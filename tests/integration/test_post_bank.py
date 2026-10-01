@@ -150,9 +150,7 @@ async def test_existing_post_is_not_duplicated():
     async with SessionFactory() as session:
         result = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
         assert result.id == post_id
-        count = int((await session.execute(
-            select(PostModel).where(PostModel.knowledge_unit_id == unit_id)
-        )).scalars().count()) if False else len((await session.execute(
+        count = len((await session.execute(
             select(PostModel).where(PostModel.knowledge_unit_id == unit_id)
         )).scalars().all())
     assert count == 1
