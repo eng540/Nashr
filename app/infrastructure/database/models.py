@@ -163,7 +163,7 @@ class ProductionJobItemModel(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="SET NULL"), nullable=True)
+    post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="RESTRICT"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

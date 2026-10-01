@@ -51,7 +51,7 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["job_id"], ["production_jobs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["knowledge_unit_id"], ["knowledge_units.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["post_id"], ["posts.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["post_id"], ["posts.id"], ondelete="RESTRICT"),
         sa.UniqueConstraint("job_id", "knowledge_unit_id", name="uq_production_job_items_job_knowledge_unit"),
         sa.UniqueConstraint("job_id", "position", name="uq_production_job_items_job_position"),
     )

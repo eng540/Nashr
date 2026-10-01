@@ -1,3 +1,4 @@
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -182,3 +183,30 @@ async def test_duplicate_selection_is_rejected():
     async with SessionFactory() as session:
         with pytest.raises(ValueError, match="duplicates"):
             await create_production_job(session, source_id, ProductionScope.SELECTION, knowledge_unit_ids=[unit_ids[0], unit_ids[0]])
+
+
+async def test_concurrent_job_execution_claims_job_once():
+    source_id, _, unit_ids = await _fixture(materials=5)
+    async with SessionFactory() as session:
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+
+    runner_a = ProductionJobRunner(RecordingDrafter())
+    runner_b = ProductionJobRunner(RecordingDrafter())
+    await asyncio.gather(runner_a.run(job.id), runner_b.run(job.id))
+
+    async with SessionFactory() as session:
+        final = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+        items = (await session.execute(
+            select(ProductionJobItemModel)
+            .where(ProductionJobItemModel.job_id == job.id)
+            .order_by(ProductionJobItemModel.position)
+        )).scalars().all()
+        posts = (await session.execute(
+            select(PostModel).where(PostModel.knowledge_unit_id.in_(unit_ids))
+        )).scalars().all()
+        assert final.status == ProductionJobStatus.COMPLETED.value
+        assert final.completed_items == 5
+        assert len(posts) == 5
+        assert [item.status for item in items] == ["COMPLETED"] * 5
