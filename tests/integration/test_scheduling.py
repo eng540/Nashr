@@ -10,6 +10,7 @@ from sqlalchemy import inspect, select
 from app.adapters.publishing.fake import FakePublisher
 from app.application.scheduling import (
     _claim_due_item,
+    _finish_schedule_if_complete,
     create_schedule,
     process_due_schedule_items,
     recover_stale_schedule_items,
@@ -263,6 +264,33 @@ async def test_stale_processing_recovery_respects_schedule_lifecycle():
             select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == published.id)
         )).scalar_one()
     assert untouched.status == "PUBLISHED"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_schedule_never_becomes_completed():
+    _, _, _, post = await _post("Cancelled completion guard")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Cancelled completion guard",
+            "Asia/Aden",
+            [(post, datetime.now(timezone.utc) - timedelta(minutes=1))],
+        )
+        schedule.status = "CANCELLED"
+        item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+        )).scalar_one()
+        item.status = "PUBLISHED"
+        await session.commit()
+
+    async with SessionFactory() as session:
+        await _finish_schedule_if_complete(session, schedule.id)
+        await session.commit()
+        refreshed = (await session.execute(
+            select(ScheduleModel).where(ScheduleModel.id == schedule.id)
+        )).scalar_one()
+
+    assert refreshed.status == "CANCELLED"
 
 
 @pytest.mark.asyncio
