@@ -253,6 +253,12 @@ async def test_stale_processing_recovery_respects_schedule_lifecycle():
     assert by_status["CANCELLED"] == "CANCELLED"
 
     async with SessionFactory() as session:
+        cancelled_item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == cancelled.id)
+        )).scalar_one()
+        assert "external publication outcome is unknown" in cancelled_item.last_error
+
+    async with SessionFactory() as session:
         untouched = (await session.execute(
             select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == published.id)
         )).scalar_one()
