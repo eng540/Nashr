@@ -29,10 +29,11 @@ async def _fixture():
             TopicModel(id=topic_a2, source_id=source_a, position=2, title="Topic A2", description="A2"),
             TopicModel(id=topic_b1, source_id=source_b, position=1, title="Topic B1", description="B1"),
         ])
+        unique = str(source_a)[:8]
         for position, (source_id, topic_id, title) in enumerate([
-            (source_a, topic_a1, "Alpha"),
-            (source_a, topic_a2, "Beta"),
-            (source_b, topic_b1, "Gamma"),
+            (source_a, topic_a1, f"Alpha-{unique}"),
+            (source_a, topic_a2, f"Beta-{unique}"),
+            (source_b, topic_b1, f"Gamma-{unique}"),
         ], start=1):
             unit_id = uuid4()
             units.append(unit_id)
@@ -55,13 +56,13 @@ async def _fixture():
 
 @pytest.mark.asyncio
 async def test_list_posts_returns_paginated_inventory_and_provenance():
-    _, _, _, _, _, units, _ = await _fixture()
+    source_a, _, _, _, _, units, _ = await _fixture()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/posts?limit=2&offset=0")
+        response = await client.get(f"/posts?source_id={source_a}&limit=2&offset=0")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["total"] == 3
+    assert payload["total"] == 2
     assert len(payload["items"]) == 2
     item = payload["items"][0]
     assert {"post_id", "title", "status", "knowledge_unit_id", "topic_id", "topic_title", "source_id", "source_title", "content_preview", "created_at", "updated_at"} <= set(item)
@@ -75,11 +76,11 @@ async def test_list_posts_filters_source_topic_and_status():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         source_response = await client.get(f"/posts?source_id={source_a}")
         topic_response = await client.get(f"/posts?topic_id={topic_a1}")
-        status_response = await client.get("/posts?status=DRAFT")
+        status_response = await client.get(f"/posts?source_id={source_a}&status=DRAFT")
     assert len(source_response.json()["items"]) == 2
     assert all(x["source_id"] == str(source_a) for x in source_response.json()["items"])
     assert all(x["topic_id"] == str(topic_a1) for x in topic_response.json()["items"])
-    assert len(status_response.json()["items"]) == 3
+    assert len(status_response.json()["items"]) == 2
 
 
 @pytest.mark.asyncio
@@ -87,10 +88,10 @@ async def test_list_posts_searches_content_and_material_title():
     _, _, _, _, _, _, _ = await _fixture()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/posts?q=Alpha")
+        response = await client.get(f"/posts?q={str((await _fixture())[0])[:8]}")
     assert response.status_code == 200
     assert response.json()["total"] == 1
-    assert response.json()["items"][0]["title"] == "Alpha"
+    assert response.json()["items"][0]["title"].startswith("Alpha-")
 
 
 @pytest.mark.asyncio
