@@ -68,6 +68,7 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
   <div class="mt-6 flex items-center justify-between"><h3 class="font-bold">الخطط المحفوظة</h3><button id="schedule-refresh" class="rounded-lg border px-3 py-2 text-xs font-semibold">تحديث</button></div>
   <div id="schedule-list" class="mt-4 space-y-3"></div>
   <div id="schedule-detail" class="mt-5 hidden rounded-2xl border bg-slate-50 p-4"></div>
+  <div class="mt-6"><div class="flex flex-wrap items-center justify-between gap-3"><h3 class="font-bold">التقويم اليومي</h3><div class="flex items-center gap-2"><input id="calendar-date" type="date" class="rounded-lg border bg-white px-3 py-2 text-xs"><button id="calendar-refresh" class="rounded-lg border px-3 py-2 text-xs font-semibold">عرض اليوم</button></div></div><div id="calendar-list" class="mt-3 space-y-2"></div></div>
   <div class="mt-6"><h3 class="font-bold">القادم</h3><div id="upcoming-list" class="mt-3 space-y-2"></div></div>
 </section>
 <section id="telegram-preview" class="fixed inset-0 z-50 hidden grid place-items-center bg-slate-900/60 p-4">
@@ -156,6 +157,15 @@ async function showTelegramPreview(id){
     $('telegram-preview').classList.remove('hidden');
   }catch(e){alert(e.message);}
 }
+async function loadCalendar(){
+  try{
+    const date=$('calendar-date').value || new Date().toISOString().slice(0,10);
+    $('calendar-date').value=date;
+    const d=await request('/schedules/calendar?date='+encodeURIComponent(date)+'&timezone='+encodeURIComponent($('schedule-timezone').value||'Asia/Aden'));
+    $('calendar-list').innerHTML=d.items.length?d.items.map(i=>'<button data-calendar-preview="'+esc(i.post_id)+'" class="w-full rounded-xl border bg-white p-3 text-right hover:border-indigo-400"><div class="flex flex-wrap items-center justify-between gap-3"><strong>'+esc(i.title)+'</strong><span class="text-xs text-slate-500">'+new Date(i.scheduled_at).toLocaleTimeString('ar',{hour:'2-digit',minute:'2-digit',timeZone:d.timezone})+'</span></div><p class="mt-1 text-xs text-slate-400">'+esc(i.schedule_name)+' · '+esc(i.status)+' · الموضع '+i.position+(i.last_error?' · '+esc(i.last_error):'')+'</p></button>').join(''):'<p class="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">لا توجد عناصر لهذا اليوم.</p>';
+    document.querySelectorAll('[data-calendar-preview]').forEach(b=>b.onclick=()=>showTelegramPreview(b.dataset.calendarPreview));
+  }catch(e){$('calendar-list').textContent=e.message;}
+}
 async function loadUpcoming(){
   try{
     const d=await request('/schedules/upcoming?days=7&limit=100');
@@ -221,7 +231,9 @@ $('schedule-save-create').onclick=async()=>{
     $('schedule-create-panel').classList.add('hidden');$('schedule-create-error').textContent='';state.scheduleIdempotencyKey=null;await loadSchedules();await loadUpcoming();
   }catch(e){$('schedule-create-error').textContent=e.message;}finally{$('schedule-save-create').disabled=false;}
 };
-$('schedule-refresh').onclick=()=>{loadSchedules();loadUpcoming();};
+$('schedule-refresh').onclick=()=>{loadSchedules();loadUpcoming();loadCalendar();loadCalendar();};
+$('calendar-refresh').onclick=loadCalendar;
+$('calendar-date').value=new Date().toISOString().slice(0,10);
 $('schedule-start-at').onchange=updateGeneratedScheduleTimes;$('schedule-interval').oninput=updateGeneratedScheduleTimes;$('schedule-timezone').oninput=updateGeneratedScheduleTimes;
 $('telegram-preview-close').onclick=()=>$('telegram-preview').classList.add('hidden');
 $('post-select-all-approved').onclick=async()=>{try{const params=new URLSearchParams();const source=$('post-source').value,topic=$('post-topic').value,q=$('post-search').value.trim();if(source)params.set('source_id',source);if(topic)params.set('topic_id',topic);if(q)params.set('q',q);params.set('status','APPROVED');params.set('limit','500');params.set('offset','0');const d=await request('/posts?'+params.toString());state.selectedPostIds=[...new Set(d.items.map(p=>p.post_id))];renderSelectionCount();loadPostBank();}catch(e){alert(e.message);}};
