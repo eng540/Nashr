@@ -449,17 +449,32 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
         return parsed
 
     @staticmethod
-    def _log_usage(response, source_id, stage: str) -> None:
-        usage = getattr(response, "usage_metadata", None)
-        if usage is None:
-            logger.info("event=GEMINI_USAGE_UNAVAILABLE source_id=%s stage=%s", source_id, stage)
-            return
-        fields = {}
-        for name in ("prompt_token_count", "candidates_token_count", "total_token_count", "cached_content_token_count"):
-            value = getattr(usage, name, None)
-            if value is not None:
-                fields[name] = value
-        logger.info("event=GEMINI_USAGE source_id=%s stage=%s usage=%s", source.id, stage, fields)
+    @contextmanager
+    def _quiet_pypdf_warnings():
+        pdf_logger = logging.getLogger("pypdf._reader")
+        previous_level = pdf_logger.level
+        pdf_logger.setLevel(logging.ERROR)
+        try:
+            yield
+        finally:
+            pdf_logger.setLevel(previous_level)
+
+    @staticmethod
+    def _bounded_pdf(reader: PdfReader, page_start: int, page_end: int) -> bytes:
+        if page_start < 1 or page_end < page_start:
+            raise GeminiOperationError("GEMINI_INVALID_ARGUMENT", "Invalid PDF page range.")
+        if page_end > len(reader.pages):
+            raise GeminiOperationError(
+                "GEMINI_INVALID_ARGUMENT",
+                f"Requested page range {page_start}-{page_end} exceeds PDF page count {len(reader.pages)}.",
+            )
+        writer = PdfWriter()
+        with GeminiBookMapper._quiet_pypdf_warnings():
+            for page_index in range(page_start - 1, page_end):
+                writer.add_page(reader.pages[page_index])
+            output = io.BytesIO()
+            writer.write(output)
+        return output.getvalue()
 
     @staticmethod
     def _log_usage(response, source_id, stage: str) -> None:
@@ -472,7 +487,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             value = getattr(usage, name, None)
             if value is not None:
                 fields[name] = value
-        logger.info("event=GEMINI_USAGE source_id=%s stage=%s usage=%s", source_id, stage, fields)
+        logger.info("event=GEMINI_USAGE source_id=%s stage=%s usage=%s", source.id, stage, fields)
 
 
 class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
