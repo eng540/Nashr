@@ -5,10 +5,12 @@ from app.application.extract_knowledge import ExtractKnowledge
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.application.reviews import ReviewPost
+from app.application.scheduling import create_schedule, process_due_schedule_items
 from app.infrastructure.database.models import PostModel, PublicationModel
 from app.infrastructure.database.session import SessionFactory
 from app.infrastructure.storage import LocalFileStorage
 from sqlalchemy import select
+from datetime import datetime, timedelta, timezone
 
 
 async def test_vertical_slice_e2e() -> None:
@@ -42,3 +44,54 @@ async def test_vertical_slice_e2e() -> None:
         assert row.content == edited_content
         assert row.published_at is not None
         assert row.knowledge_unit_id == selected.id
+
+
+@pytest.mark.asyncio
+async def test_full_operational_publication_journey():
+    pdf = b"%PDF-1.4\\n1 0 obj\\n<< /Type /Catalog >>\\nendobj\\n%%EOF\\n"
+    async with SessionFactory() as session:
+        source = await IngestPdf(LocalFileStorage("./storage/test")).execute(
+            session, "operational-e2e.pdf", "application/pdf", pdf
+        )
+        units = await ExtractKnowledge(FakeExtractor(3)).execute(session, source.id)
+        posts = []
+        for unit in units:
+            await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit.id, "@test")
+            post = (await session.execute(
+                select(PostModel).where(PostModel.knowledge_unit_id == unit.id)
+            )).scalar_one()
+            await ReviewPost().approve(session, post.id, "approved for operational e2e")
+            posts.append(post.id)
+        schedule = await create_schedule(
+            session,
+            "Operational E2E",
+            "Asia/Aden",
+            [
+                (post_id, datetime.now(timezone.utc) - timedelta(minutes=1 + index))
+                for index, post_id in enumerate(posts)
+            ],
+            "operational-e2e-idempotency",
+        )
+        schedule.status = "ACTIVE"
+        await session.commit()
+
+    publisher = FakePublisher()
+    await process_due_schedule_items(publisher=publisher, destination="@test")
+
+    async with SessionFactory() as session:
+        items = (await session.execute(
+            select(ScheduleItemModel)
+            .where(ScheduleItemModel.schedule_id == schedule.id)
+            .order_by(ScheduleItemModel.position)
+        )).scalars().all()
+        publications = (await session.execute(
+            select(PublicationModel).where(PublicationModel.post_id.in_(posts))
+        )).scalars().all()
+        assert len(items) == 3
+        assert all(item.status == "PUBLISHED" for item in items)
+        assert len(publications) == 3
+        assert {item.publication_id for item in items} == {publication.id for publication in publications}
+        assert all(publication.status == "PUBLISHED" for publication in publications)
+        assert {publication.knowledge_unit_id for publication in publications} == {
+            unit.id for unit in units
+        }
