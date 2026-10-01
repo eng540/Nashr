@@ -19,6 +19,7 @@ from app.api.benchmark import benchmark_router
 from app.api.routes import router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 from app.application.production_jobs import recover_stale_production_jobs, run_production_job
+from app.application.scheduling import recover_stale_schedule_items
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,10 @@ async def lifespan(application: FastAPI):
     except Exception:
         logger.exception("event=PRODUCTION_RECOVERY_FAILED")
         production_recovered = []
+    try:
+        await recover_stale_schedule_items()
+    except Exception:
+        logger.exception("event=SCHEDULE_RECOVERY_FAILED")
     tasks = [asyncio.create_task(run_discovery_job(job_id)) for job_id in recovered]
     tasks.extend(asyncio.create_task(run_production_job(job_id)) for job_id in production_recovered)
     try:
