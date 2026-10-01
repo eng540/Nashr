@@ -143,6 +143,8 @@ class ApproveAndPublish:
 
         result = await session.execute(select(PublicationModel).where(PublicationModel.id == publication_id))
         row = result.scalar_one()
+        # The provider call must never hold an open database transaction.
+        await session.commit()
         try:
             published = await self.publisher.publish(destination=row.destination, content=row.content)
         except Exception as exc:
