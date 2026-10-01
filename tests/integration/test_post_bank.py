@@ -85,10 +85,10 @@ async def test_list_posts_filters_source_topic_and_status():
 
 @pytest.mark.asyncio
 async def test_list_posts_searches_content_and_material_title():
-    _, _, _, _, _, _, _ = await _fixture()
+    source_a, _, _, _, _, _, _ = await _fixture()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(f"/posts?q={str((await _fixture())[0])[:8]}")
+        response = await client.get(f"/posts?q={str(source_a)[:8]}")
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["title"].startswith("Alpha-")
