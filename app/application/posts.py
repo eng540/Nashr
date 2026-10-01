@@ -91,10 +91,7 @@ class ProducePost:
     async def _find_existing(self, session: AsyncSession, knowledge_unit_id: UUID) -> PostModel | None:
         result = await session.execute(
             select(PostModel)
-            .where(
-                PostModel.knowledge_unit_id == knowledge_unit_id,
-                PostModel.status == PostStatus.DRAFT.value,
-            )
+            .where(PostModel.knowledge_unit_id == knowledge_unit_id)
             .order_by(PostModel.created_at.asc(), PostModel.id.asc())
             .limit(1)
         )
