@@ -7,6 +7,7 @@ import os
 import re
 import time
 from pathlib import Path
+from contextlib import contextmanager
 
 from google import genai
 from google.genai import types
@@ -65,14 +66,13 @@ class GeminiBookMapper(IBookMapper):
     """Understand the book once, then provide evidence-backed topic page bounds."""
 
     SYSTEM_PROMPT = """أنت مستكشف بنية كتاب، ولست كاتب محتوى.
-افهم الوثيقة الأصلية كاملة، ثم أنشئ خريطة عملية تساعد المحرر على التنقل داخل الكتاب.
-أعد عنوان الكتاب ووصفاً موجزاً، ثم الموضوعات/الأقسام/المحاور ذات المعنى التي تكشف تنظيم المحتوى فعلاً.
+أنت تعمل على نافذة محدودة من الكتاب؛ افهم فقط ما تثبته الصفحات الممررة لك، ولا تدّعِ معرفة ما خارجها.
+استخرج البنية الموضوعية الظاهرة في هذه النافذة: الأقسام والمحاور والموضوعات ذات المعنى التي تكشف تنظيم المحتوى فعلاً.
 لا تفترض أن كل كتاب له فصول رسمية. قد يكون التجميع موضوعياً أو مفاهيمياً أو زمنياً أو أدبياً أو غير ذلك.
 لا تستخدم تصنيفاً مغلقاً ولا تفرض عدداً معيناً من الموضوعات. إذا لم توجد موضوعات ذات معنى فأعد topics فارغة.
 لا تستخرج مواد منشورات في هذه الخطوة ولا تخترع عناوين.
-لكل موضوع، أعد page_start و page_end كأرقام صفحات PDF التي تحتوي فعلاً على نطاق الموضوع. يجب أن تكون الحدود مدعومة بما تراه في الوثيقة؛ لا تخمن أرقام الصفحات.
-إذا كان الموضوع يمتد على نطاق كبير، أعط النطاق الكامل. إذا لم يمكن تحديد نطاق مدعوم، لا تُنشئ الموضوع.
-source_reference اختياري ولا يوضع إلا إذا كان مدعوماً من الوثيقة.
+لكل موضوع، أعد page_start و page_end كأرقام الصفحات المطلقة في الكتاب، على أن تقع بالكامل داخل النافذة الممررة.
+source_reference اختياري ولا يوضع إلا إذا كان مدعوماً من الصفحات الممررة.
 حافظ على ترتيب ظهور الأقسام عندما يكون واضحاً."""
 
     def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
@@ -168,7 +168,8 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
         if not path.is_file():
             raise FileNotFoundError(source.storage_path)
 
-        reader = PdfReader(str(path))
+        with self._quiet_pypdf_warnings():
+            reader = PdfReader(str(path))
         page_count = len(reader.pages)
         if page_count == 0:
             raise GeminiOperationError("GEMINI_INVALID_ARGUMENT", "PDF contains no pages.")
@@ -189,6 +190,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             local_maps.extend(
                 self._map_section_adaptive(
                     source,
+                    reader,
                     page_start,
                     page_end,
                     section_index=index,
@@ -207,13 +209,14 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
     def _map_section_adaptive(
         self,
         source: Source,
+        reader: PdfReader,
         page_start: int,
         page_end: int,
         *,
         section_index: int,
     ) -> list[GeminiBookMap]:
         try:
-            return [self._map_section(source, page_start, page_end, section_index)]
+            return [self._map_section(source, reader, page_start, page_end, section_index)]
         except GeminiOperationError as exc:
             cause_text = str(getattr(exc, "cause", None) or exc).lower()
             context_limit = (
@@ -228,18 +231,19 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
                 "event=BOOK_MAP_SECTION_SPLIT source_id=%s section=%s pages=%s-%s midpoint=%s",
                 source.id, section_index, page_start, page_end, midpoint,
             )
-            left = self._map_section_adaptive(source, page_start, midpoint, section_index=section_index)
-            right = self._map_section_adaptive(source, midpoint + 1, page_end, section_index=section_index)
+            left = self._map_section_adaptive(source, reader, page_start, midpoint, section_index=section_index)
+            right = self._map_section_adaptive(source, reader, midpoint + 1, page_end, section_index=section_index)
             return left + right
 
     def _map_section(
         self,
         source: Source,
+        reader: PdfReader,
         page_start: int,
         page_end: int,
         section_index: int,
     ) -> GeminiBookMap:
-        bounded_pdf = self._bounded_pdf(source.storage_path, page_start, page_end)
+        bounded_pdf = self._bounded_pdf(reader, page_start, page_end)
         prompt = (
             "هذه نافذة محدودة من كتاب وليست الكتاب كاملاً. "
             f"حلّل فقط صفحات PDF {page_start}-{page_end}. "
@@ -302,52 +306,22 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
         page_count: int,
         section_count: int,
     ) -> BookMap:
-        payload = json.dumps(
-            [
-                {
-                    "section": index,
-                    "title": item.title,
-                    "description": item.description,
-                    "topics": [topic.model_dump() for topic in item.topics],
-                }
-                for index, item in enumerate(local_maps, start=1)
-            ],
-            ensure_ascii=False,
-        )
-        prompt = f"""أنت الآن تقوم بدمج خرائط محلية لكتاب واحد في خريطة كتاب نهائية.
-الخرائط المحلية جاءت من نوافذ صفحات متجاورة ومحدودة، وليست ملخصات للمحتوى.
-ادمج الموضوعات التي تمثل نفس البنية أو القسم عبر حدود النوافذ عندما تكون الأدلة متصلة، واحتفظ بالموضوعات المستقلة عندما تختلف دلالتها.
-رتّب الموضوعات حسب ظهورها في الكتاب.
-لا تخترع موضوعاً جديداً غير مدعوم بالخرائط المحلية.
-لا تستخدم تصنيفاً مغلقاً ولا تفرض عدداً معيناً.
-حافظ على page_start/page_end كحدود PDF مطلقة، واسمح بالتداخل فقط عندما تدعمه البنية الفعلية.
-أعد عنوان الكتاب ووصفه من الأدلة المتاحة.
-يجب أن تكون جميع page_start/page_end بين 1 و {page_count}.
-عدد النوافذ الأصلية: {section_count}.
-
-الخرائط المحلية:
-{payload}
-"""
-        try:
-            response = generate_gemini_content(
-                self.client,
-                models=self.model,
-                operation="BUILDING_BOOK_MAP_MERGE",
-                context={"source_id": source.id, "section_count": section_count},
-                contents=[prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=GeminiBookMap,
-                ),
+        if not local_maps:
+            return BookMap(
+                source_id=source.id,
+                title=source.filename,
+                description="",
+                topics=[],
             )
-        except Exception as exc:
-            code, retryable = classify_gemini_error(exc)
-            raise GeminiOperationError(code, "Gemini book-map merge failed.", retryable, exc) from exc
-
-        self._log_usage(response, source.id, "BUILDING_BOOK_MAP_MERGE")
-        parsed = response.parsed
-        if parsed is None:
-            raise GeminiOperationError("GEMINI_INVALID_RESPONSE", "Gemini returned no merged book map.")
+        if len(local_maps) == 1:
+            parsed = local_maps[0]
+        else:
+            parsed = self._merge_maps_hierarchical(
+                source,
+                local_maps,
+                page_count,
+                section_count,
+            )
 
         positions = [topic.position for topic in parsed.topics]
         if positions != list(range(1, len(positions) + 1)):
@@ -379,22 +353,126 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             topics=topics,
         )
 
+    def _merge_maps_hierarchical(
+        self,
+        source: Source,
+        maps: list[GeminiBookMap],
+        page_count: int,
+        section_count: int,
+    ) -> GeminiBookMap:
+        current = maps
+        round_index = 1
+        while len(current) > 1:
+            next_level: list[GeminiBookMap] = []
+            batch_size = max(2, int(os.getenv("GEMINI_BOOK_MAP_MERGE_BATCH_SIZE", "6")))
+            for batch_index in range(0, len(current), batch_size):
+                batch = current[batch_index:batch_index + batch_size]
+                next_level.append(
+                    self._merge_maps_batch(
+                        source,
+                        batch,
+                        page_count,
+                        section_count,
+                        round_index,
+                        batch_index // batch_size + 1,
+                    )
+                )
+            current = next_level
+            round_index += 1
+        return current[0]
+
+    def _merge_maps_batch(
+        self,
+        source: Source,
+        maps: list[GeminiBookMap],
+        page_count: int,
+        section_count: int,
+        round_index: int,
+        batch_index: int,
+    ) -> GeminiBookMap:
+        payload = json.dumps(
+            [
+                {
+                    "section": index,
+                    "title": item.title,
+                    "description": item.description,
+                    "topics": [topic.model_dump() for topic in item.topics],
+                }
+                for index, item in enumerate(maps, start=1)
+            ],
+            ensure_ascii=False,
+        )
+        prompt = f"""أنت الآن تقوم بدمج خرائط محلية متجاورة لكتاب واحد.
+ادمج فقط البنية المدعومة في الخرائط الممررة، بما في ذلك دمج الموضوعات المتصلة عبر حدود النوافذ عندما تدعمها الأدلة.
+رتّب الموضوعات حسب ظهورها في الكتاب.
+لا تخترع موضوعاً جديداً غير موجود في الخرائط.
+لا تستخدم تصنيفاً مغلقاً ولا تفرض عدداً معيناً.
+حافظ على page_start/page_end كحدود PDF مطلقة.
+أعد عنوان الكتاب ووصفه من الأدلة المتاحة.
+يجب أن تكون جميع page_start/page_end بين 1 و {page_count}.
+هذه مرحلة دمج، وليست مرحلة استخراج مواد منشورات.
+
+جولة الدمج: {round_index}
+دفعة الدمج: {batch_index}
+عدد النوافذ الأصلية في المهمة: {section_count}
+
+الخرائط:
+{payload}
+"""
+        try:
+            response = generate_gemini_content(
+                self.client,
+                models=self.model,
+                operation="BUILDING_BOOK_MAP_MERGE",
+                context={
+                    "source_id": source.id,
+                    "section_count": section_count,
+                    "merge_round": round_index,
+                    "merge_batch": batch_index,
+                    "map_count": len(maps),
+                },
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=GeminiBookMap,
+                ),
+            )
+        except Exception as exc:
+            code, retryable = classify_gemini_error(exc)
+            raise GeminiOperationError(code, "Gemini book-map merge failed.", retryable, exc) from exc
+
+        self._log_usage(response, source.id, "BUILDING_BOOK_MAP_MERGE")
+        parsed = response.parsed
+        if parsed is None:
+            raise GeminiOperationError("GEMINI_INVALID_RESPONSE", "Gemini returned no merged book map.")
+        return parsed
+
     @staticmethod
-    def _bounded_pdf(path: str, page_start: int, page_end: int) -> bytes:
-        pdf_path = Path(path)
-        if not pdf_path.is_file():
-            raise FileNotFoundError(path)
-        reader = PdfReader(str(pdf_path))
+    @contextmanager
+    def _quiet_pypdf_warnings():
+        pdf_logger = logging.getLogger("pypdf._reader")
+        previous_level = pdf_logger.level
+        pdf_logger.setLevel(logging.ERROR)
+        try:
+            yield
+        finally:
+            pdf_logger.setLevel(previous_level)
+
+    @staticmethod
+    def _bounded_pdf(reader: PdfReader, page_start: int, page_end: int) -> bytes:
+        if page_start < 1 or page_end < page_start:
+            raise GeminiOperationError("GEMINI_INVALID_ARGUMENT", "Invalid PDF page range.")
         if page_end > len(reader.pages):
             raise GeminiOperationError(
                 "GEMINI_INVALID_ARGUMENT",
                 f"Requested page range {page_start}-{page_end} exceeds PDF page count {len(reader.pages)}.",
             )
         writer = PdfWriter()
-        for page_index in range(page_start - 1, page_end):
-            writer.add_page(reader.pages[page_index])
-        output = io.BytesIO()
-        writer.write(output)
+        with GeminiBookMapper._quiet_pypdf_warnings():
+            for page_index in range(page_start - 1, page_end):
+                writer.add_page(reader.pages[page_index])
+            output = io.BytesIO()
+            writer.write(output)
         return output.getvalue()
 
     @staticmethod
@@ -409,19 +487,6 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             if value is not None:
                 fields[name] = value
         logger.info("event=GEMINI_USAGE source_id=%s stage=%s usage=%s", source.id, stage, fields)
-
-    @staticmethod
-    def _log_usage(response, source_id, stage: str) -> None:
-        usage = getattr(response, "usage_metadata", None)
-        if usage is None:
-            logger.info("event=GEMINI_USAGE_UNAVAILABLE source_id=%s stage=%s", source_id, stage)
-            return
-        fields = {}
-        for name in ("prompt_token_count", "candidates_token_count", "total_token_count", "cached_content_token_count"):
-            value = getattr(usage, name, None)
-            if value is not None:
-                fields[name] = value
-        logger.info("event=GEMINI_USAGE source_id=%s stage=%s usage=%s", source_id, stage, fields)
 
 
 class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
@@ -516,17 +581,18 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         pdf_path = Path(path)
         if not pdf_path.is_file():
             raise FileNotFoundError(path)
-        reader = PdfReader(str(pdf_path))
-        if page_end > len(reader.pages):
-            raise GeminiOperationError(
-                "GEMINI_INVALID_ARGUMENT",
-                f"Requested page range {page_start}-{page_end} exceeds PDF page count {len(reader.pages)}.",
-            )
-        writer = PdfWriter()
-        for page_index in range(page_start - 1, page_end):
-            writer.add_page(reader.pages[page_index])
-        output = io.BytesIO()
-        writer.write(output)
+        with GeminiBookMapper._quiet_pypdf_warnings():
+            reader = PdfReader(str(pdf_path))
+            if page_end > len(reader.pages):
+                raise GeminiOperationError(
+                    "GEMINI_INVALID_ARGUMENT",
+                    f"Requested page range {page_start}-{page_end} exceeds PDF page count {len(reader.pages)}.",
+                )
+            writer = PdfWriter()
+            for page_index in range(page_start - 1, page_end):
+                writer.add_page(reader.pages[page_index])
+            output = io.BytesIO()
+            writer.write(output)
         return output.getvalue()
 
 
