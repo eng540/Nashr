@@ -533,3 +533,73 @@ async def test_schedule_creation_idempotency_returns_same_schedule():
     assert second.status_code == 201
     assert first.json()["id"] == second.json()["id"]
     assert len(second.json()["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_schedule_api_rejects_unapproved_post_with_409():
+    _, _, _, post = await _post("API draft gate", status="DRAFT")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/schedules",
+            json={
+                "name": "Blocked",
+                "timezone": "Asia/Aden",
+                "post_ids": [str(post)],
+                "start_at": "2026-10-05T17:00:00+00:00",
+                "interval_minutes": 30,
+            },
+        )
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_schedule_idempotency_key_rejects_conflicting_request():
+    _, _, _, post_a = await _post("Idempotency A")
+    _, _, _, post_b = await _post("Idempotency B")
+    transport = httpx.ASGITransport(app=app)
+    key = "schedule-conflicting-idempotency-test"
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post(
+            "/schedules",
+            json={
+                "name": "First",
+                "timezone": "Asia/Aden",
+                "post_ids": [str(post_a)],
+                "start_at": "2026-10-05T17:00:00+00:00",
+                "interval_minutes": 30,
+                "idempotency_key": key,
+            },
+        )
+        second = await client.post(
+            "/schedules",
+            json={
+                "name": "Different",
+                "timezone": "Asia/Aden",
+                "post_ids": [str(post_b)],
+                "start_at": "2026-10-05T18:00:00+00:00",
+                "interval_minutes": 60,
+                "idempotency_key": key,
+            },
+        )
+    assert first.status_code == 201
+    assert second.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_schedule_calendar_returns_items_by_schedule_timezone():
+    _, _, _, post = await _post("Calendar item")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Calendar",
+            "Asia/Aden",
+            [(post, datetime(2026, 10, 5, 17, 0, tzinfo=timezone.utc))],
+        )
+        schedule.status = "ACTIVE"
+        await session.commit()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/schedules/calendar?date=2026-10-05&timezone=Asia/Aden")
+    assert response.status_code == 200
+    assert [item["post_id"] for item in response.json()["items"]] == [str(post)]
