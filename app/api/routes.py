@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -13,8 +14,13 @@ from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.posts import ProducePost
 from app.application.production_jobs import create_production_job, resume_production_job, run_production_job
+from app.application.scheduling import (
+    create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
+    process_due_schedule_items, retry_failed_items, transition, update_schedule_item_time,
+    validate_timezone,
+)
 from app.domain.production_jobs import ProductionScope
-from app.infrastructure.database.models import ProductionJobItemModel, ProductionJobModel
+from app.infrastructure.database.models import ProductionJobItemModel, ProductionJobModel, ScheduleItemModel, ScheduleModel
 from app.application.discovery_jobs import (
     DiscoveryJobStatus,
     create_discovery_job,
@@ -44,6 +50,27 @@ class ProductionJobResumeRequest(BaseModel):
 
 class PostUpdateRequest(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)
+
+class ScheduleItemRequest(BaseModel):
+    post_id: UUID
+    scheduled_at: datetime
+
+
+class ScheduleCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    timezone: str = Field(min_length=1, max_length=100)
+    items: list[ScheduleItemRequest] = Field(min_length=1, max_length=500)
+
+
+class ScheduleUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+    timezone: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class ScheduleItemUpdateRequest(BaseModel):
+    scheduled_at: datetime
+
+
 
 
 def _post_payload(post: PostModel) -> dict[str, Any]:
@@ -415,6 +442,170 @@ async def resume_production_job_route(
         return await _load_production_job_payload(session, job)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+
+def _schedule_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
+    post = item.post
+    unit = post.knowledge_unit
+    topic = unit.topic
+    source = topic.source if topic is not None else unit.source
+    publication = item.publication
+    return {
+        "id": str(item.id),
+        "position": item.position,
+        "post_id": str(post.id),
+        "title": unit.title,
+        "status": item.status,
+        "scheduled_at": item.scheduled_at,
+        "attempts": item.attempts,
+        "publication_id": str(item.publication_id) if item.publication_id else None,
+        "published_at": item.published_at,
+        "last_error": item.last_error,
+        "published": bool(publication and publication.status == "PUBLISHED"),
+        "content_preview": post.content[:300],
+        "knowledge_unit_id": str(unit.id),
+        "topic_id": str(topic.id) if topic is not None else None,
+        "topic_title": topic.title if topic is not None else None,
+        "source_id": str(source.id),
+        "source_title": source.book_title or source.filename,
+    }
+
+
+def _schedule_payload(schedule: ScheduleModel, detail: bool = False) -> dict[str, Any]:
+    items = sorted(schedule.items, key=lambda x: x.position)
+    payload = {
+        "id": str(schedule.id),
+        "name": schedule.name,
+        "status": schedule.status,
+        "timezone": schedule.timezone,
+        "total_items": len(items),
+        "pending_items": sum(i.status == "PENDING" for i in items),
+        "published_items": sum(i.status == "PUBLISHED" for i in items),
+        "failed_items": sum(i.status == "FAILED" for i in items),
+        "next_scheduled_at": next_scheduled_at(schedule),
+        "created_at": schedule.created_at,
+        "updated_at": schedule.updated_at,
+        "started_at": schedule.started_at,
+        "completed_at": schedule.completed_at,
+    }
+    if detail:
+        payload["items"] = [_schedule_item_payload(item) for item in items]
+    return payload
+
+
+@router.post("/schedules", status_code=status.HTTP_201_CREATED)
+async def create_schedule_route(payload: ScheduleCreateRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    try:
+        schedule = await create_schedule(session, payload.name, payload.timezone, [(i.post_id, i.scheduled_at) for i in payload.items])
+        return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/schedules")
+async def list_schedules(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    rows, total = await list_schedule_rows(session, limit, offset)
+    return {"items": [_schedule_payload(row) for row in rows], "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/schedules/{schedule_id}")
+async def schedule_detail(schedule_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    schedule = await get_schedule(session, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found.")
+    return _schedule_payload(schedule, detail=True)
+
+
+@router.patch("/schedules/{schedule_id}")
+async def update_schedule_route(schedule_id: UUID, payload: ScheduleUpdateRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    schedule = await get_schedule(session, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found.")
+    if schedule.status in ("COMPLETED", "CANCELLED"):
+        raise HTTPException(status_code=409, detail="Schedule cannot be edited in its current state.")
+    if payload.name is not None:
+        schedule.name = payload.name.strip()
+    if payload.timezone is not None:
+        try:
+            schedule.timezone = validate_timezone(payload.timezone)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await session.commit()
+    return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
+
+
+@router.patch("/schedules/{schedule_id}/items/{item_id}")
+async def update_schedule_item_route(schedule_id: UUID, item_id: UUID, payload: ScheduleItemUpdateRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    try:
+        await update_schedule_item_time(session, schedule_id, item_id, payload.scheduled_at)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _schedule_payload(await get_schedule(session, schedule_id), detail=True)
+
+
+@router.post("/schedules/{schedule_id}/activate")
+async def activate_schedule_route(schedule_id: UUID, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    schedule = await get_schedule(session, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found.")
+    try:
+        transition(schedule, "activate")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await session.commit()
+    background_tasks.add_task(process_due_schedule_items)
+    return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
+
+
+@router.post("/schedules/{schedule_id}/pause")
+async def pause_schedule_route(schedule_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    schedule = await get_schedule(session, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found.")
+    try:
+        transition(schedule, "pause")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await session.commit()
+    return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
+
+
+@router.post("/schedules/{schedule_id}/cancel")
+async def cancel_schedule_route(schedule_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    schedule = await get_schedule(session, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found.")
+    try:
+        transition(schedule, "cancel")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await session.commit()
+    return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
+
+
+@router.post("/schedules/{schedule_id}/retry-failed", status_code=status.HTTP_202_ACCEPTED)
+async def retry_failed_schedule_route(schedule_id: UUID, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    try:
+        count = await retry_failed_items(session, schedule_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background_tasks.add_task(process_due_schedule_items)
+    return {"retried_items": count, "schedule": _schedule_payload(await get_schedule(session, schedule_id), detail=True)}
+
+
+@router.post("/schedules/process-due", status_code=status.HTTP_202_ACCEPTED)
+async def process_due_schedules_route(background_tasks: BackgroundTasks, limit: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
+    background_tasks.add_task(process_due_schedule_items, limit=limit)
+    return {"status": "QUEUED", "limit": limit}
 
 
 @router.get("/posts")
