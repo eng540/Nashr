@@ -486,7 +486,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             value = getattr(usage, name, None)
             if value is not None:
                 fields[name] = value
-        logger.info("event=GEMINI_USAGE source_id=%s stage=%s usage=%s", source.id, stage, fields)
+        logger.info("event=GEMINI_USAGE source_id=%s stage=%s usage=%s", source_id, stage, fields)
 
 
 class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
