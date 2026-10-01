@@ -33,6 +33,7 @@ from app.application.discovery_jobs import (
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.api.console import NASHR_CONSOLE_HTML
+from app.api.post_console import NASHR_POSTS_HTML
 from app.infrastructure.database.models import BookMapSectionModel, DiscoveryJobModel, KnowledgeUnitModel, PostModel, SourceModel, TopicModel
 from app.infrastructure.database.session import get_session
 from app.infrastructure.storage import LocalFileStorage
@@ -259,6 +260,11 @@ async def health() -> dict[str, str]:
 @router.get("/console", response_class=HTMLResponse, include_in_schema=False)
 async def console() -> HTMLResponse:
     return HTMLResponse(content=NASHR_CONSOLE_HTML)
+
+
+@router.get("/posts", response_class=HTMLResponse, include_in_schema=False)
+async def posts_console() -> HTMLResponse:
+    return HTMLResponse(content=NASHR_POSTS_HTML)
 
 
 @router.post("/sources")
