@@ -19,9 +19,51 @@ from app.api.benchmark import benchmark_router
 from app.api.routes import router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 from app.application.production_jobs import recover_stale_production_jobs, run_production_job
-from app.application.scheduling import recover_stale_schedule_items
+from app.application.scheduling import process_due_schedule_items, recover_stale_schedule_items
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_SCHEDULE_TRIGGER_INTERVAL_SECONDS = 30.0
+MIN_SCHEDULE_TRIGGER_INTERVAL_SECONDS = 5.0
+
+
+def schedule_trigger_interval() -> float:
+    raw = os.getenv("SCHEDULE_TRIGGER_INTERVAL_SECONDS")
+    if raw is None:
+        return DEFAULT_SCHEDULE_TRIGGER_INTERVAL_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "event=INVALID_SCHEDULE_TRIGGER_INTERVAL value=%r fallback=%s",
+            raw,
+            DEFAULT_SCHEDULE_TRIGGER_INTERVAL_SECONDS,
+        )
+        return DEFAULT_SCHEDULE_TRIGGER_INTERVAL_SECONDS
+    if value < MIN_SCHEDULE_TRIGGER_INTERVAL_SECONDS:
+        logger.warning(
+            "event=SCHEDULE_TRIGGER_INTERVAL_TOO_SMALL value=%s minimum=%s fallback=%s",
+            value,
+            MIN_SCHEDULE_TRIGGER_INTERVAL_SECONDS,
+            DEFAULT_SCHEDULE_TRIGGER_INTERVAL_SECONDS,
+        )
+        return DEFAULT_SCHEDULE_TRIGGER_INTERVAL_SECONDS
+    return value
+
+
+async def run_schedule_trigger() -> None:
+    """Continuously wake the durable DB-backed scheduler without queue infrastructure."""
+    interval = schedule_trigger_interval()
+    while True:
+        try:
+            processed = await process_due_schedule_items(limit=20)
+            if processed:
+                logger.info("event=SCHEDULE_TRIGGER_PROCESSED count=%s", processed)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("event=SCHEDULE_TRIGGER_FAILED")
+        await asyncio.sleep(interval)
 
 
 def configure_logging() -> None:
@@ -102,6 +144,8 @@ async def lifespan(application: FastAPI):
         logger.exception("event=SCHEDULE_RECOVERY_FAILED")
     tasks = [asyncio.create_task(run_discovery_job(job_id)) for job_id in recovered]
     tasks.extend(asyncio.create_task(run_production_job(job_id)) for job_id in production_recovered)
+    schedule_task = asyncio.create_task(run_schedule_trigger(), name="nashr-schedule-trigger")
+    tasks.append(schedule_task)
     try:
         yield
     finally:
