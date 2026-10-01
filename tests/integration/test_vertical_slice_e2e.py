@@ -1,3 +1,4 @@
+import pytest
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.adapters.extraction.fake import FakeExtractor
 from app.adapters.publishing.fake import FakePublisher
@@ -6,7 +7,7 @@ from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.application.reviews import ReviewPost
 from app.application.scheduling import create_schedule, process_due_schedule_items
-from app.infrastructure.database.models import PostModel, PublicationModel
+from app.infrastructure.database.models import PostModel, PublicationModel, ScheduleItemModel
 from app.infrastructure.database.session import SessionFactory
 from app.infrastructure.storage import LocalFileStorage
 from sqlalchemy import select
