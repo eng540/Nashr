@@ -577,47 +577,22 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         ]
 
     @staticmethod
-    @contextmanager
-    def _quiet_pypdf_warnings():
-        pdf_logger = logging.getLogger("pypdf._reader")
-        previous_level = pdf_logger.level
-        pdf_logger.setLevel(logging.ERROR)
-        try:
-            yield
-        finally:
-            pdf_logger.setLevel(previous_level)
-
-    @staticmethod
-    def _bounded_pdf(reader: PdfReader, page_start: int, page_end: int) -> bytes:
-        if page_end > len(reader.pages):
-            raise GeminiOperationError(
-                "GEMINI_INVALID_ARGUMENT",
-                f"Requested page range {page_start}-{page_end} exceeds PDF page count {len(reader.pages)}.",
-            )
-        writer = PdfWriter()
-        with GeminiBookMapper._quiet_pypdf_warnings():
-            for page_index in range(page_start - 1, page_end):
-                writer.add_page(reader.pages[page_index])
-            output = io.BytesIO()
-            writer.write(output)
-        return output.getvalue()
-
-    @staticmethod
     def _bounded_pdf(path: str, page_start: int, page_end: int) -> bytes:
         pdf_path = Path(path)
         if not pdf_path.is_file():
             raise FileNotFoundError(path)
-        reader = PdfReader(str(pdf_path))
-        if page_end > len(reader.pages):
-            raise GeminiOperationError(
-                "GEMINI_INVALID_ARGUMENT",
-                f"Requested page range {page_start}-{page_end} exceeds PDF page count {len(reader.pages)}.",
-            )
-        writer = PdfWriter()
-        for page_index in range(page_start - 1, page_end):
-            writer.add_page(reader.pages[page_index])
-        output = io.BytesIO()
-        writer.write(output)
+        with GeminiBookMapper._quiet_pypdf_warnings():
+            reader = PdfReader(str(pdf_path))
+            if page_end > len(reader.pages):
+                raise GeminiOperationError(
+                    "GEMINI_INVALID_ARGUMENT",
+                    f"Requested page range {page_start}-{page_end} exceeds PDF page count {len(reader.pages)}.",
+                )
+            writer = PdfWriter()
+            for page_index in range(page_start - 1, page_end):
+                writer.add_page(reader.pages[page_index])
+            output = io.BytesIO()
+            writer.write(output)
         return output.getvalue()
 
 
