@@ -2,6 +2,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.application.posts import ProducePost
@@ -63,6 +64,11 @@ async def test_post_provenance_reaches_source_and_topic() -> None:
         row = (
             await session.execute(
                 select(PostModel)
+                .options(
+                    selectinload(PostModel.knowledge_unit)
+                    .selectinload(KnowledgeUnitModel.topic)
+                    .selectinload(TopicModel.source)
+                )
                 .where(PostModel.id == post.id)
             )
         ).scalar_one()
