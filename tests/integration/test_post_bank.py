@@ -168,3 +168,72 @@ async def test_canonical_lookup_does_not_filter_by_draft_status():
         found = await ProducePost(FakeEditorialDrafter())._find_existing(session, unit_id)
     assert found is not None
     assert found.id == row.id
+
+
+@pytest.mark.asyncio
+async def test_post_review_lifecycle_and_metadata():
+    _, _, _, _, _, units, post_by_unit = await _fixture()
+    post_id = post_by_unit[units[0]]
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        approved = await client.post(f"/posts/{post_id}/approve", json={"note": "تمت المراجعة"})
+        assert approved.status_code == 200
+        assert approved.json()["status"] == "APPROVED"
+        assert approved.json()["reviewed_at"] is not None
+        assert approved.json()["review_note"] == "تمت المراجعة"
+
+        duplicate = await client.post(f"/posts/{post_id}/approve", json={"note": "مرة أخرى"})
+        assert duplicate.status_code == 409
+
+        edited = await client.patch(f"/posts/{post_id}", json={"content": "Edited after approval"})
+        assert edited.status_code == 200
+        assert edited.json()["status"] == "DRAFT"
+        assert edited.json()["reviewed_at"] is None
+        assert edited.json()["review_note"] is None
+
+        rejected = await client.post(f"/posts/{post_id}/reject", json={"reason": "يحتاج إعادة صياغة"})
+        assert rejected.status_code == 200
+        assert rejected.json()["status"] == "REJECTED"
+        assert rejected.json()["review_note"] == "يحتاج إعادة صياغة"
+
+        edited_again = await client.patch(f"/posts/{post_id}", json={"content": "Revised rejected content"})
+        assert edited_again.status_code == 200
+        assert edited_again.json()["status"] == "DRAFT"
+
+        approved_again = await client.post(f"/posts/{post_id}/approve", json={"note": "مقبول"})
+        assert approved_again.status_code == 200
+        assert approved_again.json()["status"] == "APPROVED"
+
+        reject_approved = await client.post(f"/posts/{post_id}/reject", json={"reason": "late"})
+        assert reject_approved.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_reject_requires_reason_and_missing_post_is_404():
+    _, _, _, _, _, units, post_by_unit = await _fixture()
+    post_id = post_by_unit[units[0]]
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        empty = await client.post(f"/posts/{post_id}/reject", json={"reason": "   "})
+        missing = await client.post(f"/posts/{uuid4()}/approve", json={"note": "x"})
+    assert empty.status_code == 422
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_production_post_is_created_as_draft():
+    _, _, _, _, _, units, _ = await _fixture()
+    async with SessionFactory() as session:
+        result = await ProducePost(FakeEditorialDrafter()).execute(session, units[0])
+    assert result.status.value == "DRAFT"
+
+
+@pytest.mark.asyncio
+async def test_console_contains_editorial_review_controls_and_status_filters():
+    from app.api.console import NASHR_CONSOLE_HTML
+    assert 'value="APPROVED">APPROVED' in NASHR_CONSOLE_HTML
+    assert 'value="REJECTED">REJECTED' in NASHR_CONSOLE_HTML
+    assert "post-editor-approve" in NASHR_CONSOLE_HTML
+    assert "post-editor-reject" in NASHR_CONSOLE_HTML
+    assert "/approve" in NASHR_CONSOLE_HTML
+    assert "/reject" in NASHR_CONSOLE_HTML
