@@ -50,6 +50,37 @@ class ReviewPost:
         await session.refresh(post)
         return post
 
+    async def edit(
+        self,
+        session: AsyncSession,
+        post_id: UUID,
+        content: str,
+    ) -> PostModel:
+        content = content.strip()
+        if not content:
+            raise ValueError("Post content cannot be empty.")
+        post = await _load_post(session, post_id)
+        await _ensure_not_processing(session, post_id)
+        post.content = content
+        post.status = PostStatus.DRAFT.value
+        post.reviewed_at = None
+        post.review_note = None
+        await session.execute(
+            __import__("sqlalchemy").update(ScheduleItemModel)
+            .where(
+                ScheduleItemModel.post_id == post.id,
+                ScheduleItemModel.status == "PENDING",
+            )
+            .values(
+                status="CANCELLED",
+                last_error="Post content changed; editorial approval is required again.",
+                processing_started_at=None,
+            )
+        )
+        await session.commit()
+        await session.refresh(post)
+        return post
+
     async def reject(
         self,
         session: AsyncSession,
