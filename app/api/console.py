@@ -231,14 +231,14 @@ $('schedule-save-create').onclick=async()=>{
     $('schedule-create-panel').classList.add('hidden');$('schedule-create-error').textContent='';state.scheduleIdempotencyKey=null;await loadSchedules();await loadUpcoming();
   }catch(e){$('schedule-create-error').textContent=e.message;}finally{$('schedule-save-create').disabled=false;}
 };
-$('schedule-refresh').onclick=()=>{loadSchedules();loadUpcoming();loadCalendar();loadCalendar();};
+$('schedule-refresh').onclick=()=>{loadSchedules();loadUpcoming();loadCalendar();};
 $('calendar-refresh').onclick=loadCalendar;
 $('calendar-date').value=new Date().toISOString().slice(0,10);
 $('schedule-start-at').onchange=updateGeneratedScheduleTimes;$('schedule-interval').oninput=updateGeneratedScheduleTimes;$('schedule-timezone').oninput=updateGeneratedScheduleTimes;
 $('telegram-preview-close').onclick=()=>$('telegram-preview').classList.add('hidden');
 $('post-select-all-approved').onclick=async()=>{try{const params=new URLSearchParams();const source=$('post-source').value,topic=$('post-topic').value,q=$('post-search').value.trim();if(source)params.set('source_id',source);if(topic)params.set('topic_id',topic);if(q)params.set('q',q);params.set('status','APPROVED');params.set('limit','500');params.set('offset','0');const d=await request('/posts?'+params.toString());state.selectedPostIds=[...new Set(d.items.map(p=>p.post_id))];renderSelectionCount();loadPostBank();}catch(e){alert(e.message);}};
 $('post-clear-selection').onclick=()=>{state.selectedPostIds=[];renderSelectionCount();loadPostBank();};
-loadSchedules();loadUpcoming();
+loadSchedules();loadUpcoming();loadCalendar();
 loadPostSources().then(loadPostBank).catch(e=>$('post-bank-summary').textContent=e.message);
 $('post-source').onchange=()=>{state.postOffset=0;loadPostTopics($('post-source').value);loadPostBank();};
 $('post-topic').onchange=()=>{state.postOffset=0;loadPostBank();};
