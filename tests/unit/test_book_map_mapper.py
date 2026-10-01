@@ -60,3 +60,16 @@ def test_book_map_merge_is_hierarchical() -> None:
 
     assert result is maps[0]
     assert calls == [6, 6, 1, 3]
+
+def test_book_map_usage_logging_uses_source_id_without_source_scope() -> None:
+    response = SimpleNamespace(
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=123,
+            candidates_token_count=7,
+            total_token_count=130,
+            cached_content_token_count=0,
+        )
+    )
+    source_id = uuid4()
+
+    GeminiBookMapper._log_usage(response, source_id, "BUILDING_BOOK_MAP_SECTION")
