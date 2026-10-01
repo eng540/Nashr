@@ -19,7 +19,7 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
     <h1 class="mt-1 text-3xl font-bold tracking-tight">مكتبة الكتب والمخزون التحريري</h1>
     <p class="mt-2 max-w-2xl text-sm leading-7 text-slate-600">أضف كتابًا، راقب تحليله، ثم اختر مادة وحوّلها إلى مسودة قابلة للمراجعة والنشر.</p>
   </div>
-  <nav class="flex gap-2 text-sm" aria-label="التنقل الرئيسي"><span class="rounded-full bg-indigo-50 px-3 py-2 font-semibold text-indigo-700">المكتبة</span><a href="/benchmark" class="rounded-full bg-white px-3 py-2 font-semibold text-slate-600 shadow-sm hover:text-indigo-600">مختبر الجودة</a></nav>
+  <nav class="flex flex-wrap gap-2 text-sm" aria-label="التنقل الرئيسي"><span class="rounded-full bg-indigo-50 px-3 py-2 font-semibold text-indigo-700">📚 المكتبة</span><a href="/posts" class="rounded-full bg-white px-3 py-2 font-semibold text-slate-600 shadow-sm hover:text-indigo-600">✍️ المنشورات</a><a href="/console#scheduling-section" class="rounded-full bg-white px-3 py-2 font-semibold text-slate-600 shadow-sm hover:text-indigo-600">📅 الجدولة</a><a href="/benchmark" class="rounded-full bg-white px-3 py-2 font-semibold text-slate-600 shadow-sm hover:text-indigo-600">مختبر الجودة</a></nav>
 </header>
 
 <section class="mb-6 grid gap-3 sm:grid-cols-3" aria-label="مراحل العمل">
@@ -28,7 +28,7 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
   <div id="step-3" class="step rounded-2xl border-2 border-slate-200 bg-white p-4"><p class="text-xs font-bold text-slate-400">03</p><p class="mt-1 font-bold">حرّر وانشر</p><p class="mt-1 text-xs text-slate-500">أنشئ مسودة وراجعها قبل النشر</p></div>
 </section>
 
-<section id="post-bank-section" class="mb-8 rounded-3xl border bg-white p-5 shadow-sm sm:p-7" aria-labelledby="post-bank-heading">
+<section id="post-bank-section" class="hidden mb-8 rounded-3xl border bg-white p-5 shadow-sm sm:p-7" aria-labelledby="post-bank-heading">
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div><p class="text-xs font-bold text-indigo-600">Post Bank</p><h2 id="post-bank-heading" class="mt-1 text-2xl font-bold">المخزون التحريري</h2>
       <p class="mt-2 max-w-3xl text-sm leading-7 text-slate-600">تصفح المنشورات الناتجة، صفِّها، افتح أصلها، وعدّل النص المحرر دون إعادة تشغيل الإنتاج.</p></div>
