@@ -28,6 +28,33 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
   <div id="step-3" class="step rounded-2xl border-2 border-slate-200 bg-white p-4"><p class="text-xs font-bold text-slate-400">03</p><p class="mt-1 font-bold">حرّر وانشر</p><p class="mt-1 text-xs text-slate-500">أنشئ مسودة وراجعها قبل النشر</p></div>
 </section>
 
+<section id="post-bank-section" class="mb-8 rounded-3xl border bg-white p-5 shadow-sm sm:p-7" aria-labelledby="post-bank-heading">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div><p class="text-xs font-bold text-indigo-600">Post Bank</p><h2 id="post-bank-heading" class="mt-1 text-2xl font-bold">المخزون التحريري</h2>
+      <p class="mt-2 max-w-3xl text-sm leading-7 text-slate-600">تصفح المنشورات الناتجة، صفِّها، افتح أصلها، وعدّل النص المحرر دون إعادة تشغيل الإنتاج.</p></div>
+    <span id="post-selection-count" class="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">0 محدد</span>
+  </div>
+  <div class="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+    <input id="post-search" type="search" placeholder="ابحث في العنوان أو المحتوى..." class="rounded-xl border bg-slate-50 p-3 text-sm xl:col-span-2">
+    <select id="post-source" class="rounded-xl border bg-slate-50 p-3 text-sm"><option value="">كل الكتب</option></select>
+    <select id="post-topic" class="rounded-xl border bg-slate-50 p-3 text-sm"><option value="">كل المحاور</option></select>
+    <select id="post-status" class="rounded-xl border bg-slate-50 p-3 text-sm"><option value="">كل الحالات</option><option value="DRAFT">DRAFT</option></select>
+  </div>
+  <div class="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+    <span id="post-bank-summary">جارٍ التحميل...</span>
+    <div class="flex gap-2"><button id="post-clear-filters" class="rounded-lg border px-3 py-2 font-semibold hover:border-indigo-400">مسح التصفية</button><button id="post-refresh" class="rounded-lg border px-3 py-2 font-semibold hover:border-indigo-400">تحديث</button></div>
+  </div>
+  <div id="post-bank-grid" class="mt-5 grid gap-4 lg:grid-cols-2"></div>
+  <div id="post-bank-empty" class="mt-5 hidden rounded-2xl border border-dashed bg-slate-50 p-8 text-center"><p class="font-bold">لا توجد Posts مطابقة</p><p class="mt-1 text-sm text-slate-500">جرّب تغيير الفلاتر أو أنشئ Posts عبر Production Job.</p></div>
+  <div class="mt-5 flex items-center justify-between"><button id="post-prev" class="rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-40">السابق</button><span id="post-page" class="text-xs text-slate-500"></span><button id="post-next" class="rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-40">التالي</button></div>
+</section>
+<section id="post-editor" class="fixed inset-0 z-50 hidden grid place-items-center bg-slate-900/50 p-4">
+  <div class="w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
+    <div class="flex items-start justify-between gap-4"><div><p class="text-xs font-bold text-indigo-600">تحرير Post</p><h2 id="post-editor-title" class="mt-1 text-xl font-bold"></h2><p id="post-editor-provenance" class="mt-1 text-xs text-slate-500"></p></div><button id="post-editor-close" class="rounded-xl border px-3 py-2 text-sm">إغلاق</button></div>
+    <textarea id="post-editor-content" dir="rtl" class="mt-5 min-h-[300px] w-full rounded-2xl border p-4 leading-8"></textarea>
+    <div class="mt-4 flex items-center justify-between gap-3"><span id="post-editor-error" class="text-sm text-red-600"></span><button id="post-editor-save" class="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-700">حفظ</button></div>
+  </div>
+</section>
 <section class="rounded-3xl border bg-white p-5 shadow-sm sm:p-7" aria-labelledby="source-heading">
   <div class="mb-5"><h2 id="source-heading" class="text-xl font-bold">ابدأ من مكتبتك</h2><p class="mt-1 text-sm text-slate-500">يمكنك متابعة كتاب محفوظ أو إضافة كتاب PDF جديد.</p></div>
   <div class="grid gap-6 lg:grid-cols-2">
@@ -59,7 +86,23 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 <section id="success-section" class="mt-8 hidden rounded-2xl border border-emerald-200 bg-emerald-50 p-5" role="status"><h2 class="text-xl font-bold text-emerald-800">تم النشر بنجاح</h2><p class="mt-2 text-sm text-emerald-700">تم إرسال المسودة إلى تيليجرام. رقم الرسالة:</p><code id="external-id" class="mt-2 block rounded-lg bg-white p-2"></code></section>
 </main>
 <script>
-const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,publicationId:null,pollTimer:null};
+const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,publicationId:null,pollTimer:null,selectedPostIds:[],postOffset:0,postTotal:0};
+async function loadPostSources(){const sources=await request('/sources');$('post-source').innerHTML='<option value="">كل الكتب</option>'+sources.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.book_title||s.filename)+'</option>').join('');}
+async function loadPostTopics(sourceId){$('post-topic').innerHTML='<option value="">كل المحاور</option>';if(!sourceId)return;try{const d=await request('/sources/'+sourceId+'/book-map');$('post-topic').innerHTML='<option value="">كل المحاور</option>'+d.topics.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.title)+'</option>').join('');}catch(e){}}
+function selectedPost(id){return state.selectedPostIds.includes(id)}
+function togglePostSelection(id){if(selectedPost(id))state.selectedPostIds=state.selectedPostIds.filter(x=>x!==id);else state.selectedPostIds.push(id);renderSelectionCount();}
+function renderSelectionCount(){$('post-selection-count').textContent=state.selectedPostIds.length+' محدد';window.nashrPostSelection=()=>[...state.selectedPostIds];}
+function renderPostBank(d){state.postTotal=d.total;const grid=$('post-bank-grid');grid.innerHTML=d.items.map(p=>'<article class="rounded-2xl border p-4 '+(selectedPost(p.post_id)?'border-indigo-400 bg-indigo-50':'bg-white')+'"><div class="flex items-start justify-between gap-3"><label class="flex items-start gap-3"><input type="checkbox" '+(selectedPost(p.post_id)?'checked':'')+' data-select-post="'+esc(p.post_id)+'" class="mt-1 h-4 w-4"><span><h3 class="font-bold">'+esc(p.title)+'</h3><p class="mt-1 text-xs text-slate-500">'+esc(p.topic_title||'بدون محور')+' · '+esc(p.source_title)+'</p></span></label><span class="rounded-full bg-slate-100 px-2 py-1 text-[11px]">'+esc(p.status)+(p.published?' · منشور':'')+'</span></div><p class="mt-3 line-clamp-4 text-sm leading-7 text-slate-700">'+esc(p.content_preview)+'</p><div class="mt-3 flex items-center justify-between gap-3 text-xs text-slate-400"><span>المادة: '+esc(p.knowledge_unit_id.slice(0,8))+'…</span><div class="flex gap-2"><button data-open-post="'+esc(p.post_id)+'" class="rounded-lg border px-3 py-1.5 font-semibold text-slate-700 hover:border-indigo-400">معاينة/تحرير</button></div></div></article>').join('');
+document.querySelectorAll('[data-select-post]').forEach(el=>el.onchange=()=>{togglePostSelection(el.dataset.selectPost);loadPostBank();});
+document.querySelectorAll('[data-open-post]').forEach(el=>el.onclick=()=>openPostEditor(el.dataset.openPost));
+$('post-bank-empty').classList.toggle('hidden',d.items.length>0);
+$('post-bank-summary').textContent=d.total+' Posts · '+d.items.length+' معروضة';
+const page=Math.floor(d.offset/d.limit)+1;const pages=Math.max(1,Math.ceil(d.total/d.limit));$('post-page').textContent='صفحة '+page+' من '+pages;
+$('post-prev').disabled=d.offset===0;$('post-next').disabled=d.offset+d.limit>=d.total;renderSelectionCount();}
+async function loadPostBank(){const params=new URLSearchParams();const source=$('post-source').value,topic=$('post-topic').value,status=$('post-status').value,q=$('post-search').value.trim();if(source)params.set('source_id',source);if(topic)params.set('topic_id',topic);if(status)params.set('status',status);if(q)params.set('q',q);params.set('limit','50');params.set('offset',String(state.postOffset));try{renderPostBank(await request('/posts?'+params.toString()));}catch(e){$('post-bank-summary').textContent=e.message;}}
+async function openPostEditor(id){try{const p=await request('/posts/'+id);$('post-editor-title').textContent=p.title;$('post-editor-provenance').textContent=(p.source_title||'المصدر')+' ← '+(p.topic_title||'بدون محور')+' ← '+(p.title||'المادة');$('post-editor-content').value=p.content;$('post-editor').dataset.postId=id;$('post-editor-error').textContent='';$('post-editor').classList.remove('hidden');}catch(e){alert(e.message);}}
+async function savePost(){const id=$('post-editor').dataset.postId,content=$('post-editor-content').value.trim();if(!content){$('post-editor-error').textContent='المحتوى لا يمكن أن يكون فارغًا.';return;}$('post-editor-save').disabled=true;try{await request('/posts/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});$('post-editor').classList.add('hidden');await loadPostBank();}catch(e){$('post-editor-error').textContent=e.message;}finally{$('post-editor-save').disabled=false;}}
+
 function setStage(stage){for(let i=1;i<=3;i++){const el=$('step-'+i);el.classList.remove('active','done');if(i<stage)el.classList.add('done');if(i===stage)el.classList.add('active');}}
 function setBusy(v){$('upload-btn').disabled=v;$('source-btn').disabled=v;$('retry-btn').disabled=v;$('publish-btn').disabled=v;}
 function showProgress(message,done=0,total=0){$('progress').classList.remove('hidden');$('progress-message').textContent=message||'';const pct=total?Math.min(100,Math.round(done/total*100)):0;$('progress-percent').textContent=total?`${pct}%`:'';$('progress-bar').style.width=(total?pct:25)+'%';}
@@ -82,5 +125,17 @@ $('drop-zone').onclick=()=> $('pdf-file').click();$('drop-zone').onkeydown=e=>{i
 $('upload-btn').onclick=async()=>{clearError();const file=$('pdf-file').files[0];if(!file)return showError('اختر ملف PDF أولًا.');if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf'))return showError('الملف المحدد ليس بصيغة PDF.');if(file.size>100*1024*1024)return showError('حجم الملف يتجاوز الحد الأقصى وهو 100 MB.');setBusy(true);showProgress('جاري رفع الكتاب وحفظه...');try{const form=new FormData();form.append('file',file);const s=await request('/sources',{method:'POST',body:form});await loadSources();$('source-select').value=s.id;startDiscovery(s.id);}catch(e){setBusy(false);showError(e.message);}};
 $('retry-btn').onclick=()=>{if(state.sourceId)startRetry();};async function startRetry(){clearError();setBusy(true);showProgress('جاري إعادة تحليل الكتاب...');try{const d=await request('/sources/'+state.sourceId+'/discovery/retry',{method:'POST'});state.jobId=d.job_id;poll();}catch(e){setBusy(false);showError(e.message);}}
 $('material-search').oninput=applyMaterialFilters;$('material-kind').onchange=applyMaterialFilters;$('material-sort').onchange=applyMaterialFilters;$('clear-material-filters').onclick=()=>{$('material-search').value='';$('material-kind').value='';$('material-sort').value='position';applyMaterialFilters();};$('collapse-topics').onclick=()=>{const topics=Array.from(document.querySelectorAll('[data-topic-content]'));const shouldOpen=topics.some(x=>!x.classList.contains('hidden'));topics.forEach(x=>x.classList.toggle('hidden',shouldOpen));$('collapse-topics').textContent=shouldOpen?'فتح المحاور':'طيّ المحاور';};$('close-draft-btn').onclick=()=>{$('draft-section').classList.add('hidden');document.body.classList.remove('overflow-hidden');setStage(2);};$('refresh-btn').onclick=refreshBook;$('publish-btn').onclick=async()=>{if(!state.publicationId)return;if(!confirm('هل راجعت المسودة وتريد نشرها الآن في تيليجرام؟'))return;clearError();setBusy(true);showProgress('جاري حفظ المراجعة والنشر في تيليجرام...');try{const d=await request('/publications/'+state.publicationId+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:$('draft-content').value})});if(d.status!=='PUBLISHED')throw Error(d.error_message||'تعذر تأكيد النشر.');$('external-id').textContent=d.external_id||'غير متاح';$('success-section').classList.remove('hidden');hideProgress();}catch(e){showError(e.message);}finally{setBusy(false);}};
+loadPostSources().then(loadPostBank).catch(e=>$('post-bank-summary').textContent=e.message);
+$('post-source').onchange=()=>{state.postOffset=0;loadPostTopics($('post-source').value);loadPostBank();};
+$('post-topic').onchange=()=>{state.postOffset=0;loadPostBank();};
+$('post-status').onchange=()=>{state.postOffset=0;loadPostBank();};
+$('post-search').oninput=()=>{clearTimeout(state.postSearchTimer);state.postSearchTimer=setTimeout(()=>{state.postOffset=0;loadPostBank();},300);};
+$('post-clear-filters').onclick=()=>{$('post-search').value='';$('post-source').value='';$('post-topic').innerHTML='<option value="">كل المحاور</option>';$('post-status').value='';state.postOffset=0;loadPostBank();};
+$('post-refresh').onclick=()=>loadPostBank();
+$('post-prev').onclick=()=>{state.postOffset=Math.max(0,state.postOffset-50);loadPostBank();};
+$('post-next').onclick=()=>{state.postOffset+=50;loadPostBank();};
+$('post-editor-close').onclick=()=>$('post-editor').classList.add('hidden');
+$('post-editor-save').onclick=savePost;
+renderSelectionCount();
 loadSources().catch(e=>showError('تعذر تحميل المكتبة. '+e.message));
 </script></body></html>'''
