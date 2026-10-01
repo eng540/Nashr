@@ -117,7 +117,7 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 <section id="success-section" class="mt-8 hidden rounded-2xl border border-emerald-200 bg-emerald-50 p-5" role="status"><h2 class="text-xl font-bold text-emerald-800">تم النشر بنجاح</h2><p class="mt-2 text-sm text-emerald-700">تم إرسال المسودة إلى تيليجرام. رقم الرسالة:</p><code id="external-id" class="mt-2 block rounded-lg bg-white p-2"></code></section>
 </main>
 <script>
-const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,publicationId:null,pollTimer:null,selectedPostIds:[],postOffset:0,postTotal:0};
+const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,publicationId:null,pollTimer:null,selectedPostIds:[],postOffset:0,postTotal:0,scheduleIdempotencyKey:null};
 async function loadPostSources(){const sources=await request('/sources');$('post-source').innerHTML='<option value="">كل الكتب</option>'+sources.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.book_title||s.filename)+'</option>').join('');}
 async function loadPostTopics(sourceId){$('post-topic').innerHTML='<option value="">كل المحاور</option>';if(!sourceId)return;try{const d=await request('/sources/'+sourceId+'/book-map');$('post-topic').innerHTML='<option value="">كل المحاور</option>'+d.topics.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.title)+'</option>').join('');}catch(e){}}
 function renderScheduleSelection(){
@@ -204,8 +204,8 @@ $('drop-zone').onclick=()=> $('pdf-file').click();$('drop-zone').onkeydown=e=>{i
 $('upload-btn').onclick=async()=>{clearError();const file=$('pdf-file').files[0];if(!file)return showError('اختر ملف PDF أولًا.');if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf'))return showError('الملف المحدد ليس بصيغة PDF.');if(file.size>100*1024*1024)return showError('حجم الملف يتجاوز الحد الأقصى وهو 100 MB.');setBusy(true);showProgress('جاري رفع الكتاب وحفظه...');try{const form=new FormData();form.append('file',file);const s=await request('/sources',{method:'POST',body:form});await loadSources();$('source-select').value=s.id;startDiscovery(s.id);}catch(e){setBusy(false);showError(e.message);}};
 $('retry-btn').onclick=()=>{if(state.sourceId)startRetry();};async function startRetry(){clearError();setBusy(true);showProgress('جاري إعادة تحليل الكتاب...');try{const d=await request('/sources/'+state.sourceId+'/discovery/retry',{method:'POST'});state.jobId=d.job_id;poll();}catch(e){setBusy(false);showError(e.message);}}
 $('material-search').oninput=applyMaterialFilters;$('material-kind').onchange=applyMaterialFilters;$('material-sort').onchange=applyMaterialFilters;$('clear-material-filters').onclick=()=>{$('material-search').value='';$('material-kind').value='';$('material-sort').value='position';applyMaterialFilters();};$('collapse-topics').onclick=()=>{const topics=Array.from(document.querySelectorAll('[data-topic-content]'));const shouldOpen=topics.some(x=>!x.classList.contains('hidden'));topics.forEach(x=>x.classList.toggle('hidden',shouldOpen));$('collapse-topics').textContent=shouldOpen?'فتح المحاور':'طيّ المحاور';};$('close-draft-btn').onclick=()=>{$('draft-section').classList.add('hidden');document.body.classList.remove('overflow-hidden');setStage(2);};$('refresh-btn').onclick=refreshBook;$('publish-btn').onclick=async()=>{if(!state.publicationId)return;if(!confirm('هل راجعت المسودة وتريد نشرها الآن في تيليجرام؟'))return;clearError();setBusy(true);showProgress('جاري حفظ المراجعة والنشر في تيليجرام...');try{const d=await request('/publications/'+state.publicationId+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:$('draft-content').value})});if(d.status!=='PUBLISHED')throw Error(d.error_message||'تعذر تأكيد النشر.');$('external-id').textContent=d.external_id||'غير متاح';$('success-section').classList.remove('hidden');hideProgress();}catch(e){showError(e.message);}finally{setBusy(false);}};
-$('schedule-from-selection').onclick=()=>{if(!state.selectedPostIds.length)return alert('اختر Posts أولًا من Post Bank.');renderScheduleSelection();$('schedule-create-panel').classList.remove('hidden');};
-$('schedule-cancel-create').onclick=()=>$('schedule-create-panel').classList.add('hidden');
+$('schedule-from-selection').onclick=()=>{if(!state.selectedPostIds.length)return alert('اختر Posts أولًا من Post Bank.');state.scheduleIdempotencyKey=window.crypto?.randomUUID?window.crypto.randomUUID():String(Date.now())+'-'+Math.random();renderScheduleSelection();$('schedule-create-panel').classList.remove('hidden');};
+$('schedule-cancel-create').onclick=()=>{$('schedule-create-panel').classList.add('hidden');state.scheduleIdempotencyKey=null;};
 $('schedule-save-create').onclick=async()=>{
   const ids=window.nashrPostSelection?window.nashrPostSelection():state.selectedPostIds;
   const timezone=$('schedule-timezone').value.trim(),start=$('schedule-start-at').value,interval=Number($('schedule-interval').value||0);
@@ -217,8 +217,8 @@ $('schedule-save-create').onclick=async()=>{
   $('schedule-save-create').disabled=true;
   try{
     const startAt=localDateTimeToUtcISOString(start,timezone);
-    await request('/schedules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('schedule-name').value.trim(),timezone,post_ids:ids,start_at:startAt,interval_minutes:interval})});
-    $('schedule-create-panel').classList.add('hidden');$('schedule-create-error').textContent='';await loadSchedules();await loadUpcoming();
+    await request('/schedules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('schedule-name').value.trim(),timezone,post_ids:ids,start_at:startAt,interval_minutes:interval,idempotency_key:state.scheduleIdempotencyKey})});
+    $('schedule-create-panel').classList.add('hidden');$('schedule-create-error').textContent='';state.scheduleIdempotencyKey=null;await loadSchedules();await loadUpcoming();
   }catch(e){$('schedule-create-error').textContent=e.message;}finally{$('schedule-save-create').disabled=false;}
 };
 $('schedule-refresh').onclick=()=>{loadSchedules();loadUpcoming();};
