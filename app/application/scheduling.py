@@ -203,22 +203,38 @@ async def recover_stale_schedule_items(now: datetime | None = None) -> list[UUID
     cutoff = now - STALE_PROCESSING_AFTER
     async with SessionFactory() as session:
         result = await session.execute(
-            select(ScheduleItemModel.id)
+            select(ScheduleItemModel.id, ScheduleModel.status)
             .join(ScheduleModel)
             .where(
                 ScheduleItemModel.status == ScheduleItemStatus.PROCESSING.value,
                 ScheduleItemModel.processing_started_at.is_not(None),
                 ScheduleItemModel.processing_started_at < cutoff,
-                ScheduleModel.status == ScheduleStatus.ACTIVE.value,
+                ScheduleModel.status.in_(
+                    (
+                        ScheduleStatus.ACTIVE.value,
+                        ScheduleStatus.PAUSED.value,
+                        ScheduleStatus.CANCELLED.value,
+                    )
+                ),
             )
         )
-        ids = list(result.scalars().all())
-        if ids:
+        rows = result.all()
+        ids = [item_id for item_id, _ in rows]
+        for item_id, schedule_status in rows:
+            target_status = (
+                ScheduleItemStatus.CANCELLED.value
+                if schedule_status == ScheduleStatus.CANCELLED.value
+                else ScheduleItemStatus.PENDING.value
+            )
             await session.execute(
                 update(ScheduleItemModel)
-                .where(ScheduleItemModel.id.in_(ids), ScheduleItemModel.status == ScheduleItemStatus.PROCESSING.value)
-                .values(status=ScheduleItemStatus.PENDING.value, processing_started_at=None)
+                .where(
+                    ScheduleItemModel.id == item_id,
+                    ScheduleItemModel.status == ScheduleItemStatus.PROCESSING.value,
+                )
+                .values(status=target_status, processing_started_at=None)
             )
+        if ids:
             await session.commit()
         return ids
 
@@ -255,11 +271,18 @@ async def _finish_schedule_if_complete(session: AsyncSession, schedule_id: UUID)
     statuses = list((await session.execute(
         select(ScheduleItemModel.status).where(ScheduleItemModel.schedule_id == schedule_id)
     )).scalars().all())
-    if statuses and all(status in (
-        ScheduleItemStatus.PUBLISHED.value,
-        ScheduleItemStatus.SKIPPED.value,
-        ScheduleItemStatus.CANCELLED.value,
-    ) for status in statuses):
+    if (
+        schedule.status == ScheduleStatus.ACTIVE.value
+        and statuses
+        and all(
+            status in (
+                ScheduleItemStatus.PUBLISHED.value,
+                ScheduleItemStatus.SKIPPED.value,
+                ScheduleItemStatus.CANCELLED.value,
+            )
+            for status in statuses
+        )
+    ):
         schedule.status = ScheduleStatus.COMPLETED.value
         schedule.completed_at = datetime.now(timezone.utc)
 
