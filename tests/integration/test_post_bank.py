@@ -32,8 +32,8 @@ async def _fixture():
         unique = str(source_a)[:8]
         for position, (source_id, topic_id, title) in enumerate([
             (source_a, topic_a1, f"Alpha-{unique}"),
-            (source_a, topic_a2, f"Beta-{unique}"),
-            (source_b, topic_b1, f"Gamma-{unique}"),
+            (source_a, topic_a2, "Beta"),
+            (source_b, topic_b1, "Gamma"),
         ], start=1):
             unit_id = uuid4()
             units.append(unit_id)
