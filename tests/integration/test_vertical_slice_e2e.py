@@ -4,6 +4,7 @@ from app.adapters.publishing.fake import FakePublisher
 from app.application.extract_knowledge import ExtractKnowledge
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
+from app.application.reviews import ReviewPost
 from app.infrastructure.database.models import PostModel, PublicationModel
 from app.infrastructure.database.session import SessionFactory
 from app.infrastructure.storage import LocalFileStorage
@@ -23,12 +24,18 @@ async def test_vertical_slice_e2e() -> None:
         assert selected.source_reference is not None
         draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, selected.id, "@test")
         edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 e2e.pdf\\n#اختبار"
-        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
+        post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == selected.id))).scalar_one()
+        post.content = edited_content
+        post.status = "DRAFT"
+        await session.commit()
+        await ReviewPost().approve(session, post.id, "تمت المراجعة")
+        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id)
         assert published.status.value == "PUBLISHED"
         assert published.external_id == "test_msg_999"
         assert published.content == edited_content
         post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == selected.id))).scalar_one()
         assert post.content == edited_content
+        assert post.status == "APPROVED"
         row = (await session.execute(select(PublicationModel).where(PublicationModel.id == draft.id))).scalar_one()
         assert row.status == "PUBLISHED"
         assert row.external_id == "test_msg_999"
