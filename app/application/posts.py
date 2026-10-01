@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.domain.editorial import IEditorialDrafter
 from app.domain.posts import Post, PostStatus
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel
+from app.application.editorial_context import slice_pdf_pages_as_bytes
 
 
 def _to_domain(row: PostModel) -> Post:
@@ -48,8 +49,6 @@ class ProducePost:
         if source is not None and unit.discovery_page_start is not None and unit.discovery_page_end is not None:
             try:
                 storage_path = source.ensure_file_on_disk()
-                from app.application.publications import slice_pdf_pages_as_bytes
-
                 pdf_slice = slice_pdf_pages_as_bytes(
                     str(storage_path),
                     unit.discovery_page_start,
