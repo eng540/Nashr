@@ -118,7 +118,10 @@ class ApproveAndPublish:
                 )
                 post = post_result.scalar_one_or_none()
                 if post is not None:
-                    post.content = content
+                    if post.status != "APPROVED":
+                        raise ValueError("Post must be APPROVED before publication.")
+                    if content != post.content:
+                        raise ValueError("Edit and approve the Post before publication.")
             edited = await session.execute(
                 update(PublicationModel)
                 .where(PublicationModel.id == publication_id, PublicationModel.status == PublicationStatus.DRAFT.value)
@@ -127,6 +130,21 @@ class ApproveAndPublish:
             if edited.rowcount != 1:
                 raise ValueError("Publication is not a DRAFT.")
             await session.commit()
+
+        if content is None:
+            current = await session.execute(
+                select(PublicationModel).where(PublicationModel.id == publication_id)
+            )
+            current_row = current.scalar_one_or_none()
+            if current_row is None:
+                raise ValueError("Publication not found.")
+            if current_row.post_id is not None:
+                post_result = await session.execute(
+                    select(PostModel).where(PostModel.id == current_row.post_id)
+                )
+                post = post_result.scalar_one_or_none()
+                if post is not None and post.status != "APPROVED":
+                    raise ValueError("Post must be APPROVED before publication.")
 
         claimed = await session.execute(
             update(PublicationModel)
