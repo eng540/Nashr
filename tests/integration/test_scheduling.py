@@ -24,7 +24,8 @@ from app.infrastructure.database.models import (
     TopicModel,
 )
 from app.infrastructure.database.session import SessionFactory
-from app.main import app
+from app.api.console import NASHR_CONSOLE_HTML
+from app.main import app, lifespan
 
 
 async def _post(title: str = "Scheduled post", published: bool = False):
@@ -196,45 +197,89 @@ async def test_retry_failed_item_can_be_processed_again():
 
 
 @pytest.mark.asyncio
-async def test_stale_processing_recovers_but_published_does_not():
-    _, _, _, post = await _post()
-    _, _, _, post2 = await _post("Recovery published")
+async def test_stale_processing_recovery_respects_schedule_lifecycle():
+    _, _, _, active_post = await _post("Recovery active")
+    _, _, _, paused_post = await _post("Recovery paused")
+    _, _, _, cancelled_post = await _post("Recovery cancelled")
+    _, _, _, published_post = await _post("Recovery published")
+
     async with SessionFactory() as session:
-        schedule = await create_schedule(session, "Recovery", "Asia/Aden", [(post, datetime.now(timezone.utc) + timedelta(days=1))])
-        schedule.status = "ACTIVE"
-        await session.commit()
-        item = (await session.execute(
-            select(ScheduleItemModel).where(
-                ScheduleItemModel.schedule_id == schedule.id,
-                ScheduleItemModel.position == 1,
-            )
-        )).scalar_one()
-        item.status = "PROCESSING"
-        item.processing_started_at = datetime.now(timezone.utc) - timedelta(minutes=20)
-        await session.commit()
+        active = await create_schedule(session, "Recovery active", "Asia/Aden", [(active_post, datetime.now(timezone.utc) + timedelta(days=1))])
+        paused = await create_schedule(session, "Recovery paused", "Asia/Aden", [(paused_post, datetime.now(timezone.utc) + timedelta(days=1))])
+        cancelled = await create_schedule(session, "Recovery cancelled", "Asia/Aden", [(cancelled_post, datetime.now(timezone.utc) + timedelta(days=1))])
+        published = await create_schedule(session, "Recovery published", "Asia/Aden", [(published_post, datetime.now(timezone.utc) + timedelta(days=1))])
+        active.status = "ACTIVE"
+        paused.status = "PAUSED"
+        cancelled.status = "CANCELLED"
+
+        stale_at = datetime.now(timezone.utc) - timedelta(minutes=20)
+        for schedule in (active, paused, cancelled):
+            item = schedule.items[0]
+            item.status = "PROCESSING"
+            item.processing_started_at = stale_at
+
         published_id = uuid4()
-        post2_unit = (await session.execute(
-            select(PostModel.knowledge_unit_id).where(PostModel.id == post2)
+        published_unit = (await session.execute(
+            select(PostModel.knowledge_unit_id).where(PostModel.id == published_post)
         )).scalar_one()
         session.add(PublicationModel(
-            id=published_id, knowledge_unit_id=post2_unit, post_id=post2,
+            id=published_id, knowledge_unit_id=published_unit, post_id=published_post,
             platform="telegram", destination="@test", content="already published",
             status="PUBLISHED", external_id="published-2",
             published_at=datetime.now(timezone.utc),
         ))
-        item2 = ScheduleItemModel(
-            id=uuid4(), schedule_id=schedule.id, post_id=post2, position=2,
-            scheduled_at=datetime.now(timezone.utc) - timedelta(minutes=1),
-            status="PUBLISHED", publication_id=published_id,
-            published_at=datetime.now(timezone.utc),
-        )
-        session.add(item2)
+        published_item = published.items[0]
+        published_item.status = "PUBLISHED"
+        published_item.publication_id = published_id
+        published_item.published_at = datetime.now(timezone.utc)
         await session.commit()
-    await recover_stale_schedule_items()
+
+    recovered = await recover_stale_schedule_items()
+    assert len(recovered) == 3
+
     async with SessionFactory() as session:
-        rows = (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id).order_by(ScheduleItemModel.position))).scalars().all()
-    assert rows[0].status == "PENDING"
-    assert rows[1].status == "PUBLISHED"
+        rows = (await session.execute(
+            select(ScheduleItemModel, ScheduleModel.status)
+            .join(ScheduleModel)
+            .where(ScheduleItemModel.id.in_(recovered))
+        )).all()
+    by_status = {schedule_status: item.status for item, schedule_status in rows}
+    assert by_status["ACTIVE"] == "PENDING"
+    assert by_status["PAUSED"] == "PENDING"
+    assert by_status["CANCELLED"] == "CANCELLED"
+
+    async with SessionFactory() as session:
+        untouched = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == published.id)
+        )).scalar_one()
+    assert untouched.status == "PUBLISHED"
+
+
+@pytest.mark.asyncio
+async def test_schedule_trigger_runs_from_application_lifespan(monkeypatch):
+    triggered = asyncio.Event()
+
+    async def fake_process_due_schedule_items(*, limit=20):
+        triggered.set()
+        return 0
+
+    async def no_recovery():
+        return []
+
+    monkeypatch.setattr("app.main.process_due_schedule_items", fake_process_due_schedule_items)
+    monkeypatch.setattr("app.main.recover_stale_jobs", no_recovery)
+    monkeypatch.setattr("app.main.recover_stale_production_jobs", no_recovery)
+    monkeypatch.setattr("app.main.recover_stale_schedule_items", no_recovery)
+
+    async with lifespan(app):
+        await asyncio.wait_for(triggered.wait(), timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_console_schedule_time_conversion_is_timezone_aware():
+    assert "localDateTimeToUtcISOString" in NASHR_CONSOLE_HTML
+    assert "timeZone,hourCycle:'h23'" in NASHR_CONSOLE_HTML
+    assert "new Date(x.value).toISOString()" not in NASHR_CONSOLE_HTML
 
 
 @pytest.mark.asyncio
