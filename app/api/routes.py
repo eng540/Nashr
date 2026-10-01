@@ -72,8 +72,11 @@ def _post_query_options():
     return (
         selectinload(PostModel.knowledge_unit)
         .selectinload(KnowledgeUnitModel.topic)
-        .selectinload(TopicModel.source),
-        selectinload(PostModel.knowledge_unit).selectinload(KnowledgeUnitModel.source),
+        .selectinload(TopicModel.source)
+        .defer(SourceModel.file_payload),
+        selectinload(PostModel.knowledge_unit)
+        .selectinload(KnowledgeUnitModel.source)
+        .defer(SourceModel.file_payload),
         selectinload(PostModel.publications),
     )
 
