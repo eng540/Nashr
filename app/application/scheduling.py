@@ -77,12 +77,17 @@ async def create_schedule(
     name: str,
     timezone_name: str,
     items: list[tuple[UUID, datetime]],
+    idempotency_key: str | None = None,
 ) -> ScheduleModel:
     name = name.strip()
     if not name:
         raise ValueError("Schedule name cannot be empty.")
     if len(name) > 300:
         raise ValueError("Schedule name is too long.")
+    if idempotency_key is not None and not idempotency_key.strip():
+        raise ValueError("Idempotency key cannot be empty.")
+    if idempotency_key is not None and len(idempotency_key) > 100:
+        raise ValueError("Idempotency key is too long.")
     timezone_name = validate_timezone(timezone_name)
     if not items:
         raise ValueError("Schedule must contain at least one item.")
@@ -104,7 +109,7 @@ async def create_schedule(
     not_approved = [post_id for post_id in post_ids if post_id not in approved]
     if not_approved:
         raise RuntimeError("Post must be APPROVED before scheduling.")
-    schedule = ScheduleModel(id=uuid4(), name=name, timezone=timezone_name, status=ScheduleStatus.DRAFT.value)
+    schedule = ScheduleModel(id=uuid4(), name=name, timezone=timezone_name, status=ScheduleStatus.DRAFT.value, idempotency_key=idempotency_key.strip() if idempotency_key else None)
     schedule.items = [
         ScheduleItemModel(
             id=uuid4(),
