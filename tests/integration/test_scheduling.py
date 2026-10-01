@@ -198,6 +198,7 @@ async def test_retry_failed_item_can_be_processed_again():
 @pytest.mark.asyncio
 async def test_stale_processing_recovers_but_published_does_not():
     _, _, _, post = await _post()
+    _, _, _, post2 = await _post("Recovery published")
     async with SessionFactory() as session:
         schedule = await create_schedule(session, "Recovery", "Asia/Aden", [(post, datetime.now(timezone.utc) + timedelta(days=1))])
         schedule.status = "ACTIVE"
@@ -208,7 +209,7 @@ async def test_stale_processing_recovers_but_published_does_not():
         await session.refresh(item)
         published_id = uuid4()
         item2 = ScheduleItemModel(
-            id=uuid4(), schedule_id=schedule.id, post_id=post, position=2,
+            id=uuid4(), schedule_id=schedule.id, post_id=post2, position=2,
             scheduled_at=datetime.now(timezone.utc) - timedelta(minutes=1),
             status="PUBLISHED", publication_id=published_id,
             published_at=datetime.now(timezone.utc),
