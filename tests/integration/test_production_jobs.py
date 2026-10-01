@@ -136,8 +136,16 @@ async def test_resume_skips_completed_and_retries_failed_only_when_requested():
         items = (await session.execute(
             select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id).order_by(ProductionJobItemModel.position)
         )).scalars().all()
+        existing_post = PostModel(
+            id=uuid4(),
+            knowledge_unit_id=unit_ids[0],
+            content="Already completed",
+            status="DRAFT",
+        )
+        session.add(existing_post)
+        await session.flush()
         items[0].status = "COMPLETED"
-        items[0].post_id = uuid4()
+        items[0].post_id = existing_post.id
         items[1].status = "FAILED"
         items[1].error_code = "TEST"
         items[1].error_message = "failure"
