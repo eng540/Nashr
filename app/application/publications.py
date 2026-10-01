@@ -43,7 +43,8 @@ class CreateTelegramDraft:
         post = await ProducePost(self.drafter).execute(session, knowledge_unit_id)
         return await self.execute_for_post(session, post, destination)
 
-    async def execute_for_post(self, session: AsyncSession, post: PostModel, destination: str) -> Publication:
+    @staticmethod
+    async def execute_for_post(session: AsyncSession, post: PostModel, destination: str) -> Publication:
         existing_result = await session.execute(
             select(PublicationModel)
             .where(
