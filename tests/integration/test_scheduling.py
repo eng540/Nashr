@@ -11,6 +11,7 @@ from app.adapters.publishing.fake import FakePublisher
 from app.application.scheduling import (
     _claim_due_item,
     _finish_schedule_if_complete,
+    build_schedule_times,
     create_schedule,
     process_due_schedule_items,
     recover_stale_schedule_items,
@@ -421,3 +422,92 @@ async def test_schedule_detail_defers_source_file_payload():
         loaded = await __import__("app.application.scheduling", fromlist=["get_schedule"]).get_schedule(session, schedule.id)
         source = loaded.items[0].post.knowledge_unit.source
         assert "file_payload" in inspect(source).unloaded
+
+
+
+@pytest.mark.asyncio
+async def test_build_schedule_times_is_deterministic_and_timezone_aware():
+    post_ids = [uuid4(), uuid4(), uuid4()]
+    start = datetime(2026, 10, 5, 20, 0, tzinfo=ZoneInfo("Asia/Aden"))
+    items = build_schedule_times(post_ids, start, 30, "Asia/Aden")
+    assert [post_id for post_id, _ in items] == post_ids
+    assert [when for _, when in items] == [
+        datetime(2026, 10, 5, 17, 0, tzinfo=timezone.utc),
+        datetime(2026, 10, 5, 17, 30, tzinfo=timezone.utc),
+        datetime(2026, 10, 5, 18, 0, tzinfo=timezone.utc),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_schedule_api_can_generate_times_from_post_selection():
+    _, _, _, post_a = await _post("Generated A")
+    _, _, _, post_b = await _post("Generated B")
+    start = "2026-10-05T17:00:00+00:00"
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/schedules",
+            json={
+                "name": "Generated schedule",
+                "timezone": "Asia/Aden",
+                "post_ids": [str(post_a), str(post_b)],
+                "start_at": start,
+                "interval_minutes": 30,
+            },
+        )
+    assert response.status_code == 201
+    items = response.json()["items"]
+    assert [item["position"] for item in items] == [1, 2]
+    assert [item["scheduled_at"] for item in items] == [
+        "2026-10-05T17:00:00+00:00",
+        "2026-10-05T17:30:00+00:00",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_schedule_api_rejects_invalid_generated_schedule_request():
+    _, _, _, post = await _post("Invalid generated")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/schedules",
+            json={
+                "name": "Invalid",
+                "timezone": "Asia/Aden",
+                "post_ids": [str(post)],
+            },
+        )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_upcoming_queue_returns_active_pending_items():
+    _, _, _, post = await _post("Upcoming")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Upcoming schedule",
+            "Asia/Aden",
+            [(post, datetime.now(timezone.utc) + timedelta(hours=1))],
+        )
+        schedule.status = "ACTIVE"
+        await session.commit()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/schedules/upcoming?days=2")
+    assert response.status_code == 200
+    assert any(item["post_id"] == str(post) for item in response.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_telegram_preview_uses_canonical_post_content():
+    _, _, _, post = await _post("Preview")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/posts/{post}/telegram-preview")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["post_id"] == str(post)
+    assert payload["platform"] == "telegram"
+    assert payload["content"] == "Post content Preview"
+    assert payload["ready"] is True
