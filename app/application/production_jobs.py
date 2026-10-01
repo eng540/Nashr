@@ -516,5 +516,52 @@ async def resume_production_job(
     return job
 
 
+async def recover_stale_production_jobs() -> list[UUID]:
+    threshold = datetime.now(timezone.utc) - timedelta(seconds=_stale_seconds())
+    recovered: list[UUID] = []
+    async with SessionFactory() as session:
+        stale = (
+            await session.execute(
+                select(ProductionJobModel).where(
+                    ProductionJobModel.status == ProductionJobStatus.RUNNING.value,
+                    ProductionJobModel.updated_at < threshold,
+                )
+            )
+        ).scalars().all()
+        for job in stale:
+            await session.execute(
+                update(ProductionJobItemModel)
+                .where(
+                    ProductionJobItemModel.job_id == job.id,
+                    ProductionJobItemModel.status == ProductionJobItemStatus.RUNNING.value,
+                )
+                .values(
+                    status=ProductionJobItemStatus.PENDING.value,
+                    error_code="PRODUCTION_RECOVERED_AFTER_PROCESS_STALE",
+                    error_message="Recovered after the previous process stopped before completion.",
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            job.status = ProductionJobStatus.QUEUED.value
+            job.current_item_id = None
+            job.error_code = "PRODUCTION_RECOVERED_AFTER_PROCESS_STALE"
+            job.error_message = "Recovered after the previous process stopped before completion."
+            job.updated_at = datetime.now(timezone.utc)
+            recovered.append(job.id)
+
+        queued = (
+            await session.execute(
+                select(ProductionJobModel).where(
+                    ProductionJobModel.status == ProductionJobStatus.QUEUED.value
+                )
+            )
+        ).scalars().all()
+        for job in queued:
+            if job.id not in recovered:
+                recovered.append(job.id)
+        await session.commit()
+    return recovered
+
+
 async def run_production_job(job_id: UUID) -> None:
     await ProductionJobRunner(GeminiEditorialDrafter()).run(job_id)
