@@ -214,7 +214,9 @@ async def test_stale_processing_recovery_respects_schedule_lifecycle():
 
         stale_at = datetime.now(timezone.utc) - timedelta(minutes=20)
         for schedule in (active, paused, cancelled):
-            item = schedule.items[0]
+            item = (await session.execute(
+                select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+            )).scalar_one()
             item.status = "PROCESSING"
             item.processing_started_at = stale_at
 
@@ -228,7 +230,9 @@ async def test_stale_processing_recovery_respects_schedule_lifecycle():
             status="PUBLISHED", external_id="published-2",
             published_at=datetime.now(timezone.utc),
         ))
-        published_item = published.items[0]
+        published_item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == published.id)
+        )).scalar_one()
         published_item.status = "PUBLISHED"
         published_item.publication_id = published_id
         published_item.published_at = datetime.now(timezone.utc)
