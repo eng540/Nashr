@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import io
+import json
 import logging
 import os
 import re
@@ -153,20 +154,115 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
                 raise GeminiOperationError(code, "Gemini file state lookup failed.", retryable, exc) from exc
 
     async def map_book(self, source: Source, document: DocumentReference) -> BookMap:
+        """Build a global book map without ever sending the whole PDF in one request."""
         if source.mime_type != "application/pdf":
             raise ValueError("Gemini extraction requires a PDF source.")
         return await asyncio.to_thread(self._map_sync, source, document)
 
+    async def map_book_hierarchical(self, source: Source, document: DocumentReference) -> BookMap:
+        """Compatibility-facing name for the bounded, hierarchical mapper."""
+        return await self.map_book(source, document)
+
     def _map_sync(self, source: Source, document: DocumentReference) -> BookMap:
+        path = Path(source.storage_path)
+        if not path.is_file():
+            raise FileNotFoundError(source.storage_path)
+
+        reader = PdfReader(str(path))
+        page_count = len(reader.pages)
+        if page_count == 0:
+            raise GeminiOperationError("GEMINI_INVALID_ARGUMENT", "PDF contains no pages.")
+
+        max_pages = max(1, int(os.getenv("GEMINI_BOOK_MAP_MAX_PAGES_PER_SECTION", "64")))
+        sections = self._page_ranges(page_count, max_pages)
+        logger.info(
+            "event=BOOK_MAP_SECTIONS_PLANNED source_id=%s page_count=%s section_count=%s max_pages=%s",
+            source.id, page_count, len(sections), max_pages,
+        )
+
+        local_maps: list[GeminiBookMap] = []
+        for index, (page_start, page_end) in enumerate(sections, start=1):
+            logger.info(
+                "event=BOOK_MAP_SECTION_START source_id=%s section=%s/%s pages=%s-%s",
+                source.id, index, len(sections), page_start, page_end,
+            )
+            local_maps.extend(
+                self._map_section_adaptive(
+                    source,
+                    page_start,
+                    page_end,
+                    section_index=index,
+                )
+            )
+
+        return self._merge_local_maps(source, local_maps, page_count, len(sections))
+
+    @staticmethod
+    def _page_ranges(page_count: int, max_pages: int) -> list[tuple[int, int]]:
+        return [
+            (start, min(start + max_pages - 1, page_count))
+            for start in range(1, page_count + 1, max_pages)
+        ]
+
+    def _map_section_adaptive(
+        self,
+        source: Source,
+        page_start: int,
+        page_end: int,
+        *,
+        section_index: int,
+    ) -> list[GeminiBookMap]:
+        try:
+            return [self._map_section(source, page_start, page_end, section_index)]
+        except GeminiOperationError as exc:
+            cause_text = str(getattr(exc, "cause", None) or exc).lower()
+            context_limit = (
+                "maximum number of tokens" in cause_text
+                or "token count exceeds" in cause_text
+                or "context window" in cause_text
+            )
+            if not context_limit or page_start >= page_end:
+                raise
+            midpoint = (page_start + page_end) // 2
+            logger.warning(
+                "event=BOOK_MAP_SECTION_SPLIT source_id=%s section=%s pages=%s-%s midpoint=%s",
+                source.id, section_index, page_start, page_end, midpoint,
+            )
+            left = self._map_section_adaptive(source, page_start, midpoint, section_index=section_index)
+            right = self._map_section_adaptive(source, midpoint + 1, page_end, section_index=section_index)
+            return left + right
+
+    def _map_section(
+        self,
+        source: Source,
+        page_start: int,
+        page_end: int,
+        section_index: int,
+    ) -> GeminiBookMap:
+        bounded_pdf = self._bounded_pdf(source.storage_path, page_start, page_end)
+        prompt = (
+            "هذه نافذة محدودة من كتاب وليست الكتاب كاملاً. "
+            f"حلّل فقط صفحات PDF {page_start}-{page_end}. "
+            "استخرج البنية الموضوعية الظاهرة في هذه النافذة، ويمكن للموضوع أن يبدأ أو ينتهي خارجها؛ "
+            "في هذه الحالة اجعل page_start/page_end حدوداً محافظة لما تثبته هذه النافذة فقط. "
+            "لا تنشئ مواد منشورات. "
+            "أعد page_start و page_end كأرقام الصفحات المطلقة في الكتاب، وليس أرقاماً نسبية داخل النافذة."
+        )
         try:
             response = generate_gemini_content(
                 self.client,
                 models=self.model,
-                operation="BUILDING_BOOK_MAP",
-                context={"source_id": source.id},
+                operation="BUILDING_BOOK_MAP_SECTION",
+                context={
+                    "source_id": source.id,
+                    "section_index": section_index,
+                    "page_start": page_start,
+                    "page_end": page_end,
+                },
                 contents=[
                     self.SYSTEM_PROMPT,
-                    types.Part.from_uri(file_uri=document.uri, mime_type=document.mime_type),
+                    prompt,
+                    types.Part.from_bytes(data=bounded_pdf, mime_type="application/pdf"),
                 ],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -175,18 +271,95 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             )
         except Exception as exc:
             code, retryable = classify_gemini_error(exc)
-            raise GeminiOperationError(code, "Gemini book-map generation failed.", retryable, exc) from exc
-        self._log_usage(response, source.id, "BUILDING_BOOK_MAP")
+            raise GeminiOperationError(code, "Gemini bounded book-map generation failed.", retryable, exc) from exc
+
+        self._log_usage(response, source.id, "BUILDING_BOOK_MAP_SECTION")
         parsed = response.parsed
         if parsed is None:
-            raise GeminiOperationError("GEMINI_INVALID_RESPONSE", "Gemini returned no book map.")
-        positions = [topic.position for topic in parsed.topics]
-        if positions != list(range(1, len(positions) + 1)):
-            raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned invalid topic positions.")
-        topics: list[BookTopic] = []
+            raise GeminiOperationError("GEMINI_INVALID_RESPONSE", "Gemini returned no section book map.")
+
+        topics: list[GeminiTopic] = []
         for item in parsed.topics:
             if item.page_start > item.page_end:
-                raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned an inverted topic page range.")
+                raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned an inverted section topic range.")
+            if item.page_start < page_start or item.page_end > page_end:
+                raise GeminiOperationError(
+                    "GEMINI_PROVENANCE_UNAVAILABLE",
+                    f"Section topic pages {item.page_start}-{item.page_end} escape bounded window {page_start}-{page_end}.",
+                )
+            topics.append(item)
+
+        return GeminiBookMap(
+            title=parsed.title.strip(),
+            description=parsed.description.strip(),
+            topics=topics,
+        )
+
+    def _merge_local_maps(
+        self,
+        source: Source,
+        local_maps: list[GeminiBookMap],
+        page_count: int,
+        section_count: int,
+    ) -> BookMap:
+        payload = json.dumps(
+            [
+                {
+                    "section": index,
+                    "title": item.title,
+                    "description": item.description,
+                    "topics": [topic.model_dump() for topic in item.topics],
+                }
+                for index, item in enumerate(local_maps, start=1)
+            ],
+            ensure_ascii=False,
+        )
+        prompt = f"""أنت الآن تقوم بدمج خرائط محلية لكتاب واحد في خريطة كتاب نهائية.
+الخرائط المحلية جاءت من نوافذ صفحات متجاورة ومحدودة، وليست ملخصات للمحتوى.
+ادمج الموضوعات التي تمثل نفس البنية أو القسم عبر حدود النوافذ عندما تكون الأدلة متصلة، واحتفظ بالموضوعات المستقلة عندما تختلف دلالتها.
+رتّب الموضوعات حسب ظهورها في الكتاب.
+لا تخترع موضوعاً جديداً غير مدعوم بالخرائط المحلية.
+لا تستخدم تصنيفاً مغلقاً ولا تفرض عدداً معيناً.
+حافظ على page_start/page_end كحدود PDF مطلقة، واسمح بالتداخل فقط عندما تدعمه البنية الفعلية.
+أعد عنوان الكتاب ووصفه من الأدلة المتاحة.
+يجب أن تكون جميع page_start/page_end بين 1 و {page_count}.
+عدد النوافذ الأصلية: {section_count}.
+
+الخرائط المحلية:
+{payload}
+"""
+        try:
+            response = generate_gemini_content(
+                self.client,
+                models=self.model,
+                operation="BUILDING_BOOK_MAP_MERGE",
+                context={"source_id": source.id, "section_count": section_count},
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=GeminiBookMap,
+                ),
+            )
+        except Exception as exc:
+            code, retryable = classify_gemini_error(exc)
+            raise GeminiOperationError(code, "Gemini book-map merge failed.", retryable, exc) from exc
+
+        self._log_usage(response, source.id, "BUILDING_BOOK_MAP_MERGE")
+        parsed = response.parsed
+        if parsed is None:
+            raise GeminiOperationError("GEMINI_INVALID_RESPONSE", "Gemini returned no merged book map.")
+
+        positions = [topic.position for topic in parsed.topics]
+        if positions != list(range(1, len(positions) + 1)):
+            raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned invalid merged topic positions.")
+
+        topics: list[BookTopic] = []
+        for item in parsed.topics:
+            if item.page_start > item.page_end or item.page_start < 1 or item.page_end > page_count:
+                raise GeminiOperationError(
+                    "GEMINI_PROVENANCE_UNAVAILABLE",
+                    f"Gemini returned topic pages outside the source: {item.page_start}-{item.page_end}.",
+                )
             topics.append(
                 BookTopic.create(
                     source.id,
@@ -198,7 +371,44 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
                     item.page_end,
                 )
             )
-        return BookMap(source_id=source.id, title=parsed.title.strip() or source.filename, description=parsed.description.strip(), topics=topics)
+
+        return BookMap(
+            source_id=source.id,
+            title=parsed.title.strip() or source.filename,
+            description=parsed.description.strip(),
+            topics=topics,
+        )
+
+    @staticmethod
+    def _bounded_pdf(path: str, page_start: int, page_end: int) -> bytes:
+        pdf_path = Path(path)
+        if not pdf_path.is_file():
+            raise FileNotFoundError(path)
+        reader = PdfReader(str(pdf_path))
+        if page_end > len(reader.pages):
+            raise GeminiOperationError(
+                "GEMINI_INVALID_ARGUMENT",
+                f"Requested page range {page_start}-{page_end} exceeds PDF page count {len(reader.pages)}.",
+            )
+        writer = PdfWriter()
+        for page_index in range(page_start - 1, page_end):
+            writer.add_page(reader.pages[page_index])
+        output = io.BytesIO()
+        writer.write(output)
+        return output.getvalue()
+
+    @staticmethod
+    def _log_usage(response, source_id, stage: str) -> None:
+        usage = getattr(response, "usage_metadata", None)
+        if usage is None:
+            logger.info("event=GEMINI_USAGE_UNAVAILABLE source_id=%s stage=%s", source_id, stage)
+            return
+        fields = {}
+        for name in ("prompt_token_count", "candidates_token_count", "total_token_count", "cached_content_token_count"):
+            value = getattr(usage, name, None)
+            if value is not None:
+                fields[name] = value
+        logger.info("event=GEMINI_USAGE source_id=%s stage=%s usage=%s", source.id, stage, fields)
 
     @staticmethod
     def _log_usage(response, source_id, stage: str) -> None:
