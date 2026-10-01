@@ -42,17 +42,52 @@ def validate_scheduled_at(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def build_schedule_times(
+    post_ids: list[UUID],
+    start_at: datetime,
+    interval_minutes: int,
+    timezone_name: str,
+) -> list[tuple[UUID, datetime]]:
+    """Build deterministic publication times from a local schedule start and interval."""
+    if not post_ids:
+        raise ValueError("At least one Post is required.")
+    if len(post_ids) != len(set(post_ids)):
+        raise ValueError("A Post cannot appear more than once in a Schedule.")
+    if interval_minutes < 1 or interval_minutes > 7 * 24 * 60:
+        raise ValueError("interval_minutes must be between 1 and 10080.")
+    timezone_name = validate_timezone(timezone_name)
+    if start_at.tzinfo is None or start_at.utcoffset() is None:
+        raise ValueError("start_at must be timezone-aware.")
+    local_start = start_at.astimezone(ZoneInfo(timezone_name))
+    return [
+        (
+            post_id,
+            validate_scheduled_at(
+                (local_start + timedelta(minutes=index * interval_minutes)).astimezone(
+                    timezone.utc
+                )
+            ),
+        )
+        for index, post_id in enumerate(post_ids)
+    ]
+
+
 async def create_schedule(
     session: AsyncSession,
     name: str,
     timezone_name: str,
     items: list[tuple[UUID, datetime]],
+    idempotency_key: str | None = None,
 ) -> ScheduleModel:
     name = name.strip()
     if not name:
         raise ValueError("Schedule name cannot be empty.")
     if len(name) > 300:
         raise ValueError("Schedule name is too long.")
+    if idempotency_key is not None and not idempotency_key.strip():
+        raise ValueError("Idempotency key cannot be empty.")
+    if idempotency_key is not None and len(idempotency_key) > 100:
+        raise ValueError("Idempotency key is too long.")
     timezone_name = validate_timezone(timezone_name)
     if not items:
         raise ValueError("Schedule must contain at least one item.")
@@ -74,7 +109,7 @@ async def create_schedule(
     not_approved = [post_id for post_id in post_ids if post_id not in approved]
     if not_approved:
         raise RuntimeError("Post must be APPROVED before scheduling.")
-    schedule = ScheduleModel(id=uuid4(), name=name, timezone=timezone_name, status=ScheduleStatus.DRAFT.value)
+    schedule = ScheduleModel(id=uuid4(), name=name, timezone=timezone_name, status=ScheduleStatus.DRAFT.value, idempotency_key=idempotency_key.strip() if idempotency_key else None)
     schedule.items = [
         ScheduleItemModel(
             id=uuid4(),

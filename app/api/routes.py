@@ -1,5 +1,6 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Any
 from uuid import UUID
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Qu
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
@@ -16,7 +18,7 @@ from app.application.posts import ProducePost
 from app.application.reviews import ReviewPost
 from app.application.production_jobs import create_production_job, resume_production_job, run_production_job
 from app.application.scheduling import (
-    create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
+    build_schedule_times, create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
     process_due_schedule_items, retry_failed_items, transition, update_schedule_item_time,
     validate_timezone,
 )
@@ -68,7 +70,11 @@ class ScheduleItemRequest(BaseModel):
 class ScheduleCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=300)
     timezone: str = Field(min_length=1, max_length=100)
-    items: list[ScheduleItemRequest] = Field(min_length=1, max_length=500)
+    items: list[ScheduleItemRequest] | None = Field(default=None, max_length=500)
+    post_ids: list[UUID] | None = Field(default=None, max_length=500)
+    start_at: datetime | None = None
+    interval_minutes: int | None = Field(default=None, ge=1, le=10080)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -506,9 +512,91 @@ def _schedule_payload(schedule: ScheduleModel, detail: bool = False) -> dict[str
 
 
 @router.post("/schedules", status_code=status.HTTP_201_CREATED)
-async def create_schedule_route(payload: ScheduleCreateRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+async def create_schedule_route(
+    payload: ScheduleCreateRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
     try:
-        schedule = await create_schedule(session, payload.name, payload.timezone, [(i.post_id, i.scheduled_at) for i in payload.items])
+        if payload.items is not None:
+            if not payload.items:
+                raise ValueError("Schedule must contain at least one item.")
+            if payload.post_ids is not None or payload.start_at is not None or payload.interval_minutes is not None:
+                raise ValueError("Use either explicit items or post_ids with start_at and interval_minutes.")
+            items = [(item.post_id, item.scheduled_at) for item in payload.items]
+        else:
+            if not payload.post_ids or payload.start_at is None or payload.interval_minutes is None:
+                raise ValueError("post_ids, start_at, and interval_minutes are required.")
+            items = build_schedule_times(
+                payload.post_ids,
+                payload.start_at,
+                payload.interval_minutes,
+                payload.timezone,
+            )
+
+        if payload.idempotency_key:
+            existing = (
+                await session.execute(
+                    select(ScheduleModel).where(
+                        ScheduleModel.idempotency_key == payload.idempotency_key
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                loaded = await get_schedule(session, existing.id)
+                if loaded is None:
+                    raise RuntimeError("Idempotent Schedule no longer exists.")
+                existing_items = sorted(loaded.items, key=lambda item: item.position)
+                same_request = (
+                    loaded.name == payload.name.strip()
+                    and loaded.timezone == validate_timezone(payload.timezone)
+                    and len(existing_items) == len(items)
+                    and all(
+                        item.post_id == post_id
+                        and item.scheduled_at == scheduled_at
+                        for item, (post_id, scheduled_at) in zip(existing_items, items)
+                    )
+                )
+                if not same_request:
+                    raise RuntimeError("Idempotency key is already associated with a different Schedule request.")
+                return _schedule_payload(loaded, detail=True)
+
+        try:
+            schedule = await create_schedule(
+                session,
+                payload.name,
+                payload.timezone,
+                items,
+                payload.idempotency_key,
+            )
+        except IntegrityError:
+            await session.rollback()
+            if not payload.idempotency_key:
+                raise
+            existing = (
+                await session.execute(
+                    select(ScheduleModel).where(
+                        ScheduleModel.idempotency_key == payload.idempotency_key
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                raise
+            loaded = await get_schedule(session, existing.id)
+            if loaded is None:
+                raise
+            existing_items = sorted(loaded.items, key=lambda item: item.position)
+            if not (
+                loaded.name == payload.name.strip()
+                and loaded.timezone == validate_timezone(payload.timezone)
+                and len(existing_items) == len(items)
+                and all(
+                    item.post_id == post_id
+                    and item.scheduled_at == scheduled_at
+                    for item, (post_id, scheduled_at) in zip(existing_items, items)
+                )
+            ):
+                raise RuntimeError("Idempotency key is already associated with a different Schedule request.")
+            return _schedule_payload(loaded, detail=True)
         return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -516,6 +604,114 @@ async def create_schedule_route(payload: ScheduleCreateRequest, session: AsyncSe
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _upcoming_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
+    post = item.post
+    unit = post.knowledge_unit
+    return {
+        "schedule_id": str(item.schedule_id),
+        "schedule_name": item.schedule.name,
+        "timezone": item.schedule.timezone,
+        "item_id": str(item.id),
+        "post_id": str(item.post_id),
+        "title": unit.title,
+        "scheduled_at": item.scheduled_at,
+        "status": item.status,
+        "position": item.position,
+        "attempts": item.attempts,
+        "last_error": item.last_error,
+    }
+
+
+@router.get("/schedules/calendar")
+async def schedule_calendar(
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    timezone_name: str = Query(default="UTC", alias="timezone"),
+    limit: int = Query(default=200, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        tz = ZoneInfo(validate_timezone(timezone_name))
+        local_date = datetime.strptime(date, "%Y-%m-%d").date()
+        start_local = datetime.combine(local_date, datetime.min.time(), tzinfo=tz)
+        end_local = start_local + timedelta(days=1)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid date or timezone.") from exc
+
+    result = await session.execute(
+        select(ScheduleItemModel)
+        .join(ScheduleModel)
+        .options(
+            selectinload(ScheduleItemModel.schedule),
+            selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit),
+        )
+        .where(
+            ScheduleItemModel.scheduled_at >= start_local.astimezone(timezone.utc),
+            ScheduleItemModel.scheduled_at < end_local.astimezone(timezone.utc),
+            ScheduleItemModel.status.in_(
+                ("PENDING", "PROCESSING", "PUBLISHED", "FAILED", "SKIPPED", "CANCELLED")
+            ),
+        )
+        .order_by(ScheduleItemModel.scheduled_at, ScheduleItemModel.position, ScheduleItemModel.id)
+        .limit(limit)
+    )
+    return {
+        "date": date,
+        "timezone": timezone_name,
+        "items": [_upcoming_item_payload(item) for item in result.scalars().all()],
+    }
+
+
+@router.get("/schedules/upcoming")
+async def upcoming_schedule_items(
+    days: int = Query(default=7, ge=1, le=30),
+    limit: int = Query(default=100, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Return the durable upcoming publishing queue from active schedules."""
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(days=days)
+    result = await session.execute(
+        select(ScheduleItemModel)
+        .join(ScheduleModel)
+        .options(
+            selectinload(ScheduleItemModel.schedule),
+            selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit),
+        )
+        .where(
+            ScheduleModel.status == "ACTIVE",
+            ScheduleItemModel.status == "PENDING",
+            ScheduleItemModel.scheduled_at >= now,
+            ScheduleItemModel.scheduled_at <= horizon,
+        )
+        .order_by(
+            ScheduleItemModel.scheduled_at,
+            ScheduleItemModel.position,
+            ScheduleItemModel.id,
+        )
+        .limit(limit)
+    )
+    items = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": str(item.id),
+                "schedule_id": str(item.schedule_id),
+                "schedule_name": item.schedule.name,
+                "post_id": str(item.post_id),
+                "title": item.post.knowledge_unit.title,
+                "content_preview": item.post.content[:300],
+                "scheduled_at": item.scheduled_at,
+                "timezone": item.schedule.timezone,
+                "position": item.position,
+                "status": item.status,
+            }
+            for item in items
+        ],
+        "days": days,
+        "limit": limit,
+    }
 
 
 @router.get("/schedules")
@@ -628,7 +824,7 @@ async def list_posts(
     knowledge_unit_id: UUID | None = None,
     kind: str | None = Query(default=None, max_length=200),
     q: str | None = Query(default=None, max_length=500),
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
@@ -665,6 +861,27 @@ async def list_posts(
         "total": total,
         "limit": limit,
         "offset": offset,
+    }
+
+
+@router.get("/posts/{post_id}/telegram-preview")
+async def telegram_preview(post_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Return the exact canonical payload the existing Telegram publisher will receive."""
+    result = await session.execute(
+        select(PostModel)
+        .options(*_post_query_options())
+        .where(PostModel.id == post_id)
+    )
+    post = result.scalar_one_or_none()
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return {
+        "post_id": str(post.id),
+        "platform": "telegram",
+        "destination": os.getenv("TELEGRAM_DESTINATION_ID", ""),
+        "content": post.content,
+        "status": post.status,
+        "ready": post.status == "APPROVED",
     }
 
 

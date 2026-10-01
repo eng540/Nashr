@@ -32,7 +32,7 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div><p class="text-xs font-bold text-indigo-600">Post Bank</p><h2 id="post-bank-heading" class="mt-1 text-2xl font-bold">المخزون التحريري</h2>
       <p class="mt-2 max-w-3xl text-sm leading-7 text-slate-600">تصفح المنشورات الناتجة، صفِّها، افتح أصلها، وعدّل النص المحرر دون إعادة تشغيل الإنتاج.</p></div>
-    <span id="post-selection-count" class="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">0 محدد</span>
+    <div class="flex flex-wrap items-center gap-2"><span id="post-selection-count" class="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">0 محدد</span><button id="post-select-all-approved" class="rounded-lg border px-3 py-2 text-xs font-semibold hover:border-indigo-400">تحديد كل المعتمدين</button><button id="post-clear-selection" class="rounded-lg border px-3 py-2 text-xs font-semibold hover:border-indigo-400">إلغاء التحديد</button></div>
   </div>
   <div class="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
     <input id="post-search" type="search" placeholder="ابحث في العنوان أو المحتوى..." class="rounded-xl border bg-slate-50 p-3 text-sm xl:col-span-2">
@@ -54,10 +54,13 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
     <button id="schedule-from-selection" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">إنشاء خطة من المحدد</button>
   </div>
   <div id="schedule-create-panel" class="mt-5 hidden rounded-2xl border bg-slate-50 p-4">
-    <div class="grid gap-3 md:grid-cols-2">
+    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       <input id="schedule-name" class="rounded-xl border bg-white p-3 text-sm" placeholder="اسم الخطة">
       <input id="schedule-timezone" class="rounded-xl border bg-white p-3 text-sm" value="Asia/Aden">
+      <input id="schedule-start-at" type="datetime-local" class="rounded-xl border bg-white p-3 text-sm">
+      <input id="schedule-interval" type="number" min="1" max="10080" value="30" class="rounded-xl border bg-white p-3 text-sm" placeholder="الفاصل بالدقائق">
     </div>
+    <p class="mt-2 text-xs leading-6 text-slate-500">اختر وقت البداية والفاصل بالدقائق. سيولد Nashr المواعيد بالتسلسل حسب ترتيب العناصر. يمكنك تغيير ترتيب العناصر قبل الحفظ.</p>
     <div id="schedule-selection-rows" class="mt-4 space-y-2"></div>
     <div class="mt-4 flex justify-end gap-2"><button id="schedule-cancel-create" class="rounded-xl border px-4 py-2 text-sm">إلغاء</button><button id="schedule-save-create" class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white">حفظ الخطة</button></div>
     <p id="schedule-create-error" class="mt-2 text-sm text-red-600"></p>
@@ -65,6 +68,15 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
   <div class="mt-6 flex items-center justify-between"><h3 class="font-bold">الخطط المحفوظة</h3><button id="schedule-refresh" class="rounded-lg border px-3 py-2 text-xs font-semibold">تحديث</button></div>
   <div id="schedule-list" class="mt-4 space-y-3"></div>
   <div id="schedule-detail" class="mt-5 hidden rounded-2xl border bg-slate-50 p-4"></div>
+  <div class="mt-6"><div class="flex flex-wrap items-center justify-between gap-3"><h3 class="font-bold">التقويم اليومي</h3><div class="flex items-center gap-2"><input id="calendar-date" type="date" class="rounded-lg border bg-white px-3 py-2 text-xs"><button id="calendar-refresh" class="rounded-lg border px-3 py-2 text-xs font-semibold">عرض اليوم</button></div></div><div id="calendar-list" class="mt-3 space-y-2"></div></div>
+  <div class="mt-6"><h3 class="font-bold">القادم</h3><div id="upcoming-list" class="mt-3 space-y-2"></div></div>
+</section>
+<section id="telegram-preview" class="fixed inset-0 z-50 hidden grid place-items-center bg-slate-900/60 p-4">
+  <div class="w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
+    <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-bold text-indigo-600">Telegram Preview</p><h2 class="text-xl font-bold">المعاينة النهائية</h2></div><button id="telegram-preview-close" class="rounded-xl border px-3 py-2 text-sm">إغلاق</button></div>
+    <p id="telegram-preview-meta" class="mt-3 text-xs text-slate-500"></p>
+    <pre id="telegram-preview-content" dir="rtl" class="mt-4 max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-2xl border bg-slate-50 p-5 text-sm leading-8"></pre>
+  </div>
 </section>
 <section id="post-editor" class="fixed inset-0 z-50 hidden grid place-items-center bg-slate-900/50 p-4">
   <div class="w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
@@ -106,13 +118,63 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 <section id="success-section" class="mt-8 hidden rounded-2xl border border-emerald-200 bg-emerald-50 p-5" role="status"><h2 class="text-xl font-bold text-emerald-800">تم النشر بنجاح</h2><p class="mt-2 text-sm text-emerald-700">تم إرسال المسودة إلى تيليجرام. رقم الرسالة:</p><code id="external-id" class="mt-2 block rounded-lg bg-white p-2"></code></section>
 </main>
 <script>
-const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,publicationId:null,pollTimer:null,selectedPostIds:[],postOffset:0,postTotal:0};
+const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,publicationId:null,pollTimer:null,selectedPostIds:[],postOffset:0,postTotal:0,scheduleIdempotencyKey:null};
 async function loadPostSources(){const sources=await request('/sources');$('post-source').innerHTML='<option value="">كل الكتب</option>'+sources.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.book_title||s.filename)+'</option>').join('');}
 async function loadPostTopics(sourceId){$('post-topic').innerHTML='<option value="">كل المحاور</option>';if(!sourceId)return;try{const d=await request('/sources/'+sourceId+'/book-map');$('post-topic').innerHTML='<option value="">كل المحاور</option>'+d.topics.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.title)+'</option>').join('');}catch(e){}}
-function renderScheduleSelection(){const ids=window.nashrPostSelection?window.nashrPostSelection():state.selectedPostIds;const rows=$('schedule-selection-rows');rows.innerHTML=ids.map((id,i)=>'<div class="flex items-center gap-3 rounded-xl border bg-white p-3"><span class="w-7 text-xs font-bold text-slate-400">'+(i+1)+'</span><span class="min-w-0 flex-1 truncate text-sm">'+esc(id)+'</span><input data-schedule-post="'+esc(id)+'" type="datetime-local" class="rounded-lg border p-2 text-sm"></div>').join('');}
+function renderScheduleSelection(){
+  const ids=window.nashrPostSelection?window.nashrPostSelection():state.selectedPostIds;
+  const rows=$('schedule-selection-rows');
+  rows.innerHTML=ids.map((id,i)=>'<div data-schedule-row="'+esc(id)+'" class="flex items-center gap-3 rounded-xl border bg-white p-3"><span class="w-7 text-xs font-bold text-slate-400">'+(i+1)+'</span><span class="min-w-0 flex-1 truncate text-sm">'+esc(id)+'</span><button type="button" data-move-up="'+esc(id)+'" class="rounded-lg border px-2 py-1 text-xs">↑</button><button type="button" data-move-down="'+esc(id)+'" class="rounded-lg border px-2 py-1 text-xs">↓</button><span data-schedule-time="'+esc(id)+'" class="w-40 text-xs text-slate-500"></span></div>').join('');
+  document.querySelectorAll('[data-move-up]').forEach(b=>b.onclick=()=>moveSelectedPost(b.dataset.moveUp,-1));
+  document.querySelectorAll('[data-move-down]').forEach(b=>b.onclick=()=>moveSelectedPost(b.dataset.moveDown,1));
+  updateGeneratedScheduleTimes();
+}
+function moveSelectedPost(id,direction){
+  const index=state.selectedPostIds.indexOf(id);
+  const target=index+direction;
+  if(index<0||target<0||target>=state.selectedPostIds.length)return;
+  const next=[...state.selectedPostIds];[next[index],next[target]]=[next[target],next[index]];
+  state.selectedPostIds=next;renderSelectionCount();renderScheduleSelection();
+}
+function updateGeneratedScheduleTimes(){
+  const start=$('schedule-start-at').value,interval=Number($('schedule-interval').value||0),timezone=$('schedule-timezone').value.trim();
+  document.querySelectorAll('[data-schedule-time]').forEach((el,index)=>{
+    if(!start||!interval||!timezone){el.textContent='';return;}
+    try{
+      const base=new Date(localDateTimeToUtcISOString(start,timezone));
+      const when=new Date(base.getTime()+index*interval*60000);
+      el.textContent=when.toLocaleString('ar',{timeZone:timezone,dateStyle:'short',timeStyle:'short'});
+    }catch(e){el.textContent='وقت غير صالح';}
+  });
+}
 function localDateTimeToUtcISOString(value,timeZone){if(!value)return null;const match=/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})$/.exec(value);if(!match)throw new Error('موعد غير صالح.');const [,y,m,d,h,min]=match;const wall=Date.UTC(Number(y),Number(m)-1,Number(d),Number(h),Number(min),0);const formatter=new Intl.DateTimeFormat('en-US',{calendar:'gregory',numberingSystem:'latn',timeZone,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});const parts=Object.fromEntries(formatter.formatToParts(new Date(wall)).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));const zoneWall=Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day),Number(parts.hour),Number(parts.minute),Number(parts.second));const candidate=new Date(wall-(zoneWall-wall));const check=Object.fromEntries(formatter.formatToParts(candidate).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));if(check.year!==y||check.month!==m||check.day!==d||check.hour!==h||check.minute!==min)throw new Error('الوقت المحدد غير صالح في المنطقة الزمنية '+timeZone+'.');return candidate.toISOString();}
 async function loadSchedules(){try{const d=await request('/schedules?limit=50&offset=0');$('schedule-list').innerHTML=d.items.length?d.items.map(s=>'<button data-schedule-id="'+esc(s.id)+'" class="block w-full rounded-2xl border bg-white p-4 text-right hover:border-indigo-400"><div class="flex items-center justify-between gap-3"><strong>'+esc(s.name)+'</strong><span class="rounded-full bg-slate-100 px-2 py-1 text-xs">'+esc(s.status)+'</span></div><p class="mt-2 text-xs text-slate-500">'+s.total_items+' عناصر · '+s.published_items+' منشورة · '+s.failed_items+' فاشلة · التالي: '+esc(s.next_scheduled_at||'لا يوجد')+'</p></button>').join(''):'<p class="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">لا توجد خطط بعد.</p>';document.querySelectorAll('[data-schedule-id]').forEach(b=>b.onclick=()=>openSchedule(b.dataset.scheduleId));}catch(e){$('schedule-list').textContent=e.message;}}
-async function openSchedule(id){try{const s=await request('/schedules/'+id);$('schedule-detail').classList.remove('hidden');$('schedule-detail').innerHTML='<div class="flex flex-wrap items-center justify-between gap-3"><div><h3 class="font-bold">'+esc(s.name)+'</h3><p class="mt-1 text-xs text-slate-500">'+esc(s.timezone)+' · '+esc(s.status)+'</p></div><div class="flex flex-wrap gap-2">'+(s.status==='DRAFT'||s.status==='PAUSED'?'<button data-schedule-action="activate" class="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white">تفعيل</button>':'')+(s.status==='ACTIVE'?'<button data-schedule-action="pause" class="rounded-lg border px-3 py-2 text-xs font-bold">إيقاف مؤقت</button>':'')+(s.status==='DRAFT'||s.status==='ACTIVE'||s.status==='PAUSED'?'<button data-schedule-action="cancel" class="rounded-lg border px-3 py-2 text-xs font-bold">إلغاء</button>':'')+(s.failed_items?'<button data-schedule-action="retry-failed" class="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white">إعادة الفاشل</button>':'')+'</div></div><div class="mt-4 space-y-2">'+s.items.map(i=>'<div class="rounded-xl border bg-white p-3"><div class="flex flex-wrap items-center gap-3"><b class="w-7">'+i.position+'</b><span class="min-w-0 flex-1 font-semibold">'+esc(i.title)+'</span><span class="text-xs text-slate-500">'+esc(i.scheduled_at)+'</span><span class="rounded-full bg-slate-100 px-2 py-1 text-xs">'+esc(i.status)+'</span></div><p class="mt-1 text-xs text-slate-400">'+esc(i.source_title)+' ← '+esc(i.topic_title||'بدون محور')+' · محاولات '+i.attempts+(i.last_error?' · '+esc(i.last_error):'')+'</p></div>').join('')+'</div>';document.querySelectorAll('[data-schedule-action]').forEach(b=>b.onclick=()=>scheduleAction(id,b.dataset.scheduleAction));}catch(e){$('schedule-detail').textContent=e.message;}}
+async function showTelegramPreview(id){
+  try{
+    const p=await request('/posts/'+id+'/telegram-preview');
+    $('telegram-preview-meta').textContent='Telegram · '+(p.destination||'لم يحدد الوجهة')+' · '+(p.status==='APPROVED'?'معتمد':'غير معتمد');
+    $('telegram-preview-content').textContent=p.content||'';
+    $('telegram-preview').classList.remove('hidden');
+  }catch(e){alert(e.message);}
+}
+async function loadCalendar(){
+  try{
+    const date=$('calendar-date').value || new Date().toISOString().slice(0,10);
+    $('calendar-date').value=date;
+    const d=await request('/schedules/calendar?date='+encodeURIComponent(date)+'&timezone='+encodeURIComponent($('schedule-timezone').value||'Asia/Aden'));
+    $('calendar-list').innerHTML=d.items.length?d.items.map(i=>'<button data-calendar-preview="'+esc(i.post_id)+'" class="w-full rounded-xl border bg-white p-3 text-right hover:border-indigo-400"><div class="flex flex-wrap items-center justify-between gap-3"><strong>'+esc(i.title)+'</strong><span class="text-xs text-slate-500">'+new Date(i.scheduled_at).toLocaleTimeString('ar',{hour:'2-digit',minute:'2-digit',timeZone:d.timezone})+'</span></div><p class="mt-1 text-xs text-slate-400">'+esc(i.schedule_name)+' · '+esc(i.status)+' · الموضع '+i.position+(i.last_error?' · '+esc(i.last_error):'')+'</p></button>').join(''):'<p class="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">لا توجد عناصر لهذا اليوم.</p>';
+    document.querySelectorAll('[data-calendar-preview]').forEach(b=>b.onclick=()=>showTelegramPreview(b.dataset.calendarPreview));
+  }catch(e){$('calendar-list').textContent=e.message;}
+}
+async function loadUpcoming(){
+  try{
+    const d=await request('/schedules/upcoming?days=7&limit=100');
+    const box=$('upcoming-list');
+    box.innerHTML=d.items.length?d.items.map(i=>'<button data-upcoming-preview="'+esc(i.post_id)+'" class="w-full rounded-xl border bg-white p-3 text-right hover:border-indigo-400"><div class="flex flex-wrap items-center justify-between gap-3"><strong>'+esc(i.title)+'</strong><span class="text-xs text-slate-500">'+new Date(i.scheduled_at).toLocaleString('ar',{timeZone:i.timezone})+'</span></div><p class="mt-1 text-xs text-slate-400">'+esc(i.schedule_name)+' · '+esc(i.status)+'</p></button>').join(''):'<p class="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">لا توجد منشورات قادمة في الخطط النشطة.</p>';
+    document.querySelectorAll('[data-upcoming-preview]').forEach(b=>b.onclick=()=>showTelegramPreview(b.dataset.upcomingPreview));
+  }catch(e){$('upcoming-list').textContent=e.message;}
+}
+async function openSchedule(id){try{const s=await request('/schedules/'+id);$('schedule-detail').classList.remove('hidden');$('schedule-detail').innerHTML='<div class="flex flex-wrap items-center justify-between gap-3"><div><h3 class="font-bold">'+esc(s.name)+'</h3><p class="mt-1 text-xs text-slate-500">'+esc(s.timezone)+' · '+esc(s.status)+'</p></div><div class="flex flex-wrap gap-2">'+(s.status==='DRAFT'||s.status==='PAUSED'?'<button data-schedule-action="activate" class="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white">تفعيل</button>':'')+(s.status==='ACTIVE'?'<button data-schedule-action="pause" class="rounded-lg border px-3 py-2 text-xs font-bold">إيقاف مؤقت</button>':'')+(s.status==='DRAFT'||s.status==='ACTIVE'||s.status==='PAUSED'?'<button data-schedule-action="cancel" class="rounded-lg border px-3 py-2 text-xs font-bold">إلغاء</button>':'')+(s.failed_items?'<button data-schedule-action="retry-failed" class="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white">إعادة الفاشل</button>':'')+'</div></div><div class="mt-4 space-y-2">'+s.items.map(i=>'<div class="rounded-xl border bg-white p-3"><div class="flex flex-wrap items-center gap-3"><b class="w-7">'+i.position+'</b><span class="min-w-0 flex-1 font-semibold">'+esc(i.title)+'</span><span class="text-xs text-slate-500">'+esc(i.scheduled_at)+'</span><span class="rounded-full bg-slate-100 px-2 py-1 text-xs">'+esc(i.status)+'</span><button data-item-preview="'+esc(i.post_id)+'" class="rounded-lg border px-2 py-1 text-xs">Preview</button></div><p class="mt-1 text-xs text-slate-400">'+esc(i.source_title)+' ← '+esc(i.topic_title||'بدون محور')+' · محاولات '+i.attempts+(i.last_error?' · '+esc(i.last_error):'')+'</p></div>').join('')+'</div>';document.querySelectorAll('[data-item-preview]').forEach(b=>b.onclick=()=>showTelegramPreview(b.dataset.itemPreview));document.querySelectorAll('[data-schedule-action]').forEach(b=>b.onclick=()=>scheduleAction(id,b.dataset.scheduleAction));}catch(e){$('schedule-detail').textContent=e.message;}}
 async function scheduleAction(id,action){const path=action==='retry-failed'?'/retry-failed':'/'+action;try{await request('/schedules/'+id+path,{method:'POST'});await loadSchedules();await openSchedule(id);}catch(e){alert(e.message);}}
 function selectedPost(id){return state.selectedPostIds.includes(id)}
 function togglePostSelection(id){if(selectedPost(id))state.selectedPostIds=state.selectedPostIds.filter(x=>x!==id);else state.selectedPostIds.push(id);renderSelectionCount();}
@@ -152,11 +214,31 @@ $('drop-zone').onclick=()=> $('pdf-file').click();$('drop-zone').onkeydown=e=>{i
 $('upload-btn').onclick=async()=>{clearError();const file=$('pdf-file').files[0];if(!file)return showError('اختر ملف PDF أولًا.');if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf'))return showError('الملف المحدد ليس بصيغة PDF.');if(file.size>100*1024*1024)return showError('حجم الملف يتجاوز الحد الأقصى وهو 100 MB.');setBusy(true);showProgress('جاري رفع الكتاب وحفظه...');try{const form=new FormData();form.append('file',file);const s=await request('/sources',{method:'POST',body:form});await loadSources();$('source-select').value=s.id;startDiscovery(s.id);}catch(e){setBusy(false);showError(e.message);}};
 $('retry-btn').onclick=()=>{if(state.sourceId)startRetry();};async function startRetry(){clearError();setBusy(true);showProgress('جاري إعادة تحليل الكتاب...');try{const d=await request('/sources/'+state.sourceId+'/discovery/retry',{method:'POST'});state.jobId=d.job_id;poll();}catch(e){setBusy(false);showError(e.message);}}
 $('material-search').oninput=applyMaterialFilters;$('material-kind').onchange=applyMaterialFilters;$('material-sort').onchange=applyMaterialFilters;$('clear-material-filters').onclick=()=>{$('material-search').value='';$('material-kind').value='';$('material-sort').value='position';applyMaterialFilters();};$('collapse-topics').onclick=()=>{const topics=Array.from(document.querySelectorAll('[data-topic-content]'));const shouldOpen=topics.some(x=>!x.classList.contains('hidden'));topics.forEach(x=>x.classList.toggle('hidden',shouldOpen));$('collapse-topics').textContent=shouldOpen?'فتح المحاور':'طيّ المحاور';};$('close-draft-btn').onclick=()=>{$('draft-section').classList.add('hidden');document.body.classList.remove('overflow-hidden');setStage(2);};$('refresh-btn').onclick=refreshBook;$('publish-btn').onclick=async()=>{if(!state.publicationId)return;if(!confirm('هل راجعت المسودة وتريد نشرها الآن في تيليجرام؟'))return;clearError();setBusy(true);showProgress('جاري حفظ المراجعة والنشر في تيليجرام...');try{const d=await request('/publications/'+state.publicationId+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:$('draft-content').value})});if(d.status!=='PUBLISHED')throw Error(d.error_message||'تعذر تأكيد النشر.');$('external-id').textContent=d.external_id||'غير متاح';$('success-section').classList.remove('hidden');hideProgress();}catch(e){showError(e.message);}finally{setBusy(false);}};
-$('schedule-from-selection').onclick=()=>{if(!state.selectedPostIds.length)return alert('اختر Posts أولًا من Post Bank.');renderScheduleSelection();$('schedule-create-panel').classList.remove('hidden');};
-$('schedule-cancel-create').onclick=()=>$('schedule-create-panel').classList.add('hidden');
-$('schedule-save-create').onclick=async()=>{const ids=window.nashrPostSelection?window.nashrPostSelection():state.selectedPostIds;const timezone=$('schedule-timezone').value.trim();const inputs=Array.from(document.querySelectorAll('[data-schedule-post]'));if(!$('schedule-name').value.trim())return $('schedule-create-error').textContent='اسم الخطة مطلوب.';if(!timezone)return $('schedule-create-error').textContent='المنطقة الزمنية مطلوبة.';try{const items=inputs.map(x=>({post_id:x.dataset.schedulePost,scheduled_at:localDateTimeToUtcISOString(x.value,timezone)}));if(items.some(x=>!x.scheduled_at))throw new Error('أدخل موعدًا لكل Post.');await request('/schedules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('schedule-name').value.trim(),timezone,items})});$('schedule-create-panel').classList.add('hidden');$('schedule-create-error').textContent='';await loadSchedules();}catch(e){$('schedule-create-error').textContent=e.message;}};
-$('schedule-refresh').onclick=loadSchedules;
-loadSchedules();
+$('schedule-from-selection').onclick=()=>{if(!state.selectedPostIds.length)return alert('اختر Posts أولًا من Post Bank.');state.scheduleIdempotencyKey=window.crypto?.randomUUID?window.crypto.randomUUID():String(Date.now())+'-'+Math.random();renderScheduleSelection();$('schedule-create-panel').classList.remove('hidden');};
+$('schedule-cancel-create').onclick=()=>{$('schedule-create-panel').classList.add('hidden');state.scheduleIdempotencyKey=null;};
+$('schedule-save-create').onclick=async()=>{
+  const ids=window.nashrPostSelection?window.nashrPostSelection():state.selectedPostIds;
+  const timezone=$('schedule-timezone').value.trim(),start=$('schedule-start-at').value,interval=Number($('schedule-interval').value||0);
+  if(!$('schedule-name').value.trim())return $('schedule-create-error').textContent='اسم الخطة مطلوب.';
+  if(!timezone)return $('schedule-create-error').textContent='المنطقة الزمنية مطلوبة.';
+  if(!ids.length)return $('schedule-create-error').textContent='اختر Posts أولًا.';
+  if(!start)return $('schedule-create-error').textContent='وقت البداية مطلوب.';
+  if(!interval||interval<1)return $('schedule-create-error').textContent='الفاصل بالدقائق مطلوب.';
+  $('schedule-save-create').disabled=true;
+  try{
+    const startAt=localDateTimeToUtcISOString(start,timezone);
+    await request('/schedules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('schedule-name').value.trim(),timezone,post_ids:ids,start_at:startAt,interval_minutes:interval,idempotency_key:state.scheduleIdempotencyKey})});
+    $('schedule-create-panel').classList.add('hidden');$('schedule-create-error').textContent='';state.scheduleIdempotencyKey=null;await loadSchedules();await loadUpcoming();
+  }catch(e){$('schedule-create-error').textContent=e.message;}finally{$('schedule-save-create').disabled=false;}
+};
+$('schedule-refresh').onclick=()=>{loadSchedules();loadUpcoming();loadCalendar();};
+$('calendar-refresh').onclick=loadCalendar;
+$('calendar-date').value=new Date().toISOString().slice(0,10);
+$('schedule-start-at').onchange=updateGeneratedScheduleTimes;$('schedule-interval').oninput=updateGeneratedScheduleTimes;$('schedule-timezone').oninput=updateGeneratedScheduleTimes;
+$('telegram-preview-close').onclick=()=>$('telegram-preview').classList.add('hidden');
+$('post-select-all-approved').onclick=async()=>{try{const params=new URLSearchParams();const source=$('post-source').value,topic=$('post-topic').value,q=$('post-search').value.trim();if(source)params.set('source_id',source);if(topic)params.set('topic_id',topic);if(q)params.set('q',q);params.set('status','APPROVED');params.set('limit','500');params.set('offset','0');const d=await request('/posts?'+params.toString());state.selectedPostIds=[...new Set(d.items.map(p=>p.post_id))];renderSelectionCount();loadPostBank();}catch(e){alert(e.message);}};
+$('post-clear-selection').onclick=()=>{state.selectedPostIds=[];renderSelectionCount();loadPostBank();};
+loadSchedules();loadUpcoming();loadCalendar();
 loadPostSources().then(loadPostBank).catch(e=>$('post-bank-summary').textContent=e.message);
 $('post-source').onchange=()=>{state.postOffset=0;loadPostTopics($('post-source').value);loadPostBank();};
 $('post-topic').onchange=()=>{state.postOffset=0;loadPostBank();};
