@@ -37,6 +37,7 @@ class SourceModel(Base):
     knowledge_units: Mapped[list["KnowledgeUnitModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     topics: Mapped[list["TopicModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     discovery_jobs: Mapped[list["DiscoveryJobModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+    book_map_sections: Mapped[list["BookMapSectionModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
 
     def ensure_file_on_disk(self) -> Path:
         """Guarantee that the source PDF exists on ephemeral local storage."""
@@ -123,6 +124,24 @@ class PublicationModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     knowledge_unit: Mapped[KnowledgeUnitModel] = relationship(back_populates="publications")
+
+
+class BookMapSectionModel(Base):
+    __tablename__ = "book_map_sections"
+    __table_args__ = (UniqueConstraint("source_id", "section_index", name="uq_book_map_sections_source_index"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
+    section_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
+    payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    source: Mapped[SourceModel] = relationship(back_populates="book_map_sections")
 
 
 class DiscoveryChunkModel(Base):
