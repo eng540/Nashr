@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.domain.editorial import IEditorialDrafter
 from app.domain.posts import Post, PostStatus
-from app.infrastructure.database.models import KnowledgeUnitModel, PostModel
+from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ScheduleItemModel
 from app.application.editorial_context import slice_pdf_pages_as_bytes
 
 
@@ -20,6 +20,38 @@ def _to_domain(row: PostModel) -> Post:
         status=PostStatus(row.status),
         created_at=row.created_at,
         updated_at=row.updated_at,
+        reviewed_at=row.reviewed_at,
+        review_note=row.review_note,
+    )
+
+
+async def reset_post_to_draft(session: AsyncSession, post: PostModel, content: str) -> None:
+    """Persist an editorial edit and invalidate pending schedule entries."""
+    processing = await session.execute(
+        select(ScheduleItemModel.id).where(
+            ScheduleItemModel.post_id == post.id,
+            ScheduleItemModel.status == "PROCESSING",
+        ).limit(1)
+    )
+    if processing.scalar_one_or_none() is not None:
+        raise RuntimeError("Post cannot be edited while publication execution is in progress.")
+
+    post.content = content
+    post.status = PostStatus.DRAFT.value
+    post.reviewed_at = None
+    post.review_note = None
+
+    await session.execute(
+        __import__("sqlalchemy").update(ScheduleItemModel)
+        .where(
+            ScheduleItemModel.post_id == post.id,
+            ScheduleItemModel.status == "PENDING",
+        )
+        .values(
+            status="CANCELLED",
+            last_error="Post content changed; editorial approval is required again.",
+            processing_started_at=None,
+        )
     )
 
 
