@@ -31,6 +31,7 @@ class Publication:
     """Represent a publication ledger entry."""
     id: object
     knowledge_unit_id: object
+    post_id: object | None
     platform: str
     destination: str
     content: str
