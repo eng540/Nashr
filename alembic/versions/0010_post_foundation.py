@@ -23,7 +23,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(["knowledge_unit_id"], ["knowledge_units.id"], ondelete="RESTRICT"),
-        sa.UniqueConstraint("knowledge_unit_id", "status", name="uq_posts_knowledge_unit_status"),
+        sa.UniqueConstraint("knowledge_unit_id", name="uq_posts_knowledge_unit"),
     )
     op.create_index("ix_posts_knowledge_unit_id", "posts", ["knowledge_unit_id"])
 
