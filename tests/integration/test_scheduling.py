@@ -208,6 +208,7 @@ async def test_due_execution_refuses_post_that_lost_approval():
 
 @pytest.mark.asyncio
 async def test_due_execution_refuses_rejected_post():
+    CountingPublisher.calls = 0
     _, _, _, post = await _post("Rejected before execution")
     async with SessionFactory() as session:
         schedule = await create_schedule(
