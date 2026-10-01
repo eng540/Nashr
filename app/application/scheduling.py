@@ -65,6 +65,15 @@ async def create_schedule(
     missing = [post_id for post_id in post_ids if post_id not in found]
     if missing:
         raise LookupError("Post not found.")
+    approved = set((await session.execute(
+        select(PostModel.id).where(
+            PostModel.id.in_(post_ids),
+            PostModel.status == "APPROVED",
+        )
+    )).scalars().all())
+    not_approved = [post_id for post_id in post_ids if post_id not in approved]
+    if not_approved:
+        raise RuntimeError("Post must be APPROVED before scheduling.")
     schedule = ScheduleModel(id=uuid4(), name=name, timezone=timezone_name, status=ScheduleStatus.DRAFT.value)
     schedule.items = [
         ScheduleItemModel(
@@ -321,6 +330,15 @@ async def _execute_claimed_item(
         if item is None:
             return
         post = item.post
+        # Re-check the canonical editorial gate immediately before any publication work.
+        if post.status != "APPROVED":
+            item.status = ScheduleItemStatus.CANCELLED.value
+            item.last_error = "Post is no longer APPROVED; editorial approval is required before publication."
+            item.processing_started_at = None
+            await session.commit()
+            await _finish_schedule_if_complete(session, item.schedule_id)
+            await session.commit()
+            return
         existing = (await session.execute(
             select(PublicationModel)
             .where(
