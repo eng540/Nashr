@@ -25,36 +25,6 @@ def _to_domain(row: PostModel) -> Post:
     )
 
 
-async def reset_post_to_draft(session: AsyncSession, post: PostModel, content: str) -> None:
-    """Persist an editorial edit and invalidate pending schedule entries."""
-    processing = await session.execute(
-        select(ScheduleItemModel.id).where(
-            ScheduleItemModel.post_id == post.id,
-            ScheduleItemModel.status == "PROCESSING",
-        ).limit(1)
-    )
-    if processing.scalar_one_or_none() is not None:
-        raise RuntimeError("Post cannot be edited while publication execution is in progress.")
-
-    post.content = content
-    post.status = PostStatus.DRAFT.value
-    post.reviewed_at = None
-    post.review_note = None
-
-    await session.execute(
-        __import__("sqlalchemy").update(ScheduleItemModel)
-        .where(
-            ScheduleItemModel.post_id == post.id,
-            ScheduleItemModel.status == "PENDING",
-        )
-        .values(
-            status="CANCELLED",
-            last_error="Post content changed; editorial approval is required again.",
-            processing_started_at=None,
-        )
-    )
-
-
 class ProducePost:
     """Produce and persist one editorial Post from one KnowledgeUnit."""
 
