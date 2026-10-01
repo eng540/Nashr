@@ -191,6 +191,7 @@ async def test_due_execution_refuses_post_that_lost_approval():
         post_row = (await session.execute(select(PostModel).where(PostModel.id == post))).scalar_one()
         post_row.status = "DRAFT"
         await session.commit()
+    CountingPublisher.calls = 0
     publisher = CountingPublisher()
     await process_due_schedule_items(publisher=publisher, destination="@test")
     async with SessionFactory() as session:
