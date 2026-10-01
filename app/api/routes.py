@@ -732,7 +732,10 @@ async def approve_post(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return _post_payload(post)
+    result = await session.execute(
+        select(PostModel).options(*_post_query_options()).where(PostModel.id == post.id)
+    )
+    return _post_payload(result.scalar_one())
 
 
 @router.post("/posts/{post_id}/reject")
@@ -749,8 +752,10 @@ async def reject_post(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return _post_payload(post)
-
+    result = await session.execute(
+        select(PostModel).options(*_post_query_options()).where(PostModel.id == post.id)
+    )
+    return _post_payload(result.scalar_one())
 
 
 @router.post("/knowledge-units/{knowledge_unit_id}/draft")
