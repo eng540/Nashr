@@ -93,6 +93,11 @@ async def get_schedule(session: AsyncSession, schedule_id: UUID) -> ScheduleMode
             .selectinload(KnowledgeUnitModel.topic)
             .selectinload(TopicModel.source)
             .defer(SourceModel.file_payload),
+            selectinload(ScheduleModel.items)
+            .selectinload(ScheduleItemModel.post)
+            .selectinload(PostModel.knowledge_unit)
+            .selectinload(KnowledgeUnitModel.source)
+            .defer(SourceModel.file_payload),
             selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.publication),
         )
         .where(ScheduleModel.id == schedule_id)
