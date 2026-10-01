@@ -202,11 +202,16 @@ async def test_stale_processing_recovers_but_published_does_not():
     async with SessionFactory() as session:
         schedule = await create_schedule(session, "Recovery", "Asia/Aden", [(post, datetime.now(timezone.utc) + timedelta(days=1))])
         schedule.status = "ACTIVE"
-        item = schedule.items[0]
+        await session.commit()
+        item = (await session.execute(
+            select(ScheduleItemModel).where(
+                ScheduleItemModel.schedule_id == schedule.id,
+                ScheduleItemModel.position == 1,
+            )
+        )).scalar_one()
         item.status = "PROCESSING"
         item.processing_started_at = datetime.now(timezone.utc) - timedelta(minutes=20)
         await session.commit()
-        await session.refresh(item)
         published_id = uuid4()
         item2 = ScheduleItemModel(
             id=uuid4(), schedule_id=schedule.id, post_id=post2, position=2,
