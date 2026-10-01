@@ -1,0 +1,66 @@
+from uuid import uuid4
+
+import httpx
+import pytest
+from sqlalchemy import select
+
+from app.main import app
+from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
+
+
+async def _api_fixture():
+    source_id = uuid4()
+    async with __import__("app.infrastructure.database.session", fromlist=["SessionFactory"]).SessionFactory() as session:
+        session.add(SourceModel(
+            id=source_id, filename="api.pdf", mime_type="application/pdf",
+            storage_path="./storage/test/api.pdf", size_bytes=10, status="STORED",
+        ))
+        for position in range(1, 3):
+            session.add(KnowledgeUnitModel(
+                id=uuid4(), source_id=source_id, position=position,
+                title=f"API Material {position}", content=f"Content {position}",
+            ))
+        await session.commit()
+        units = (await session.execute(
+            select(KnowledgeUnitModel).where(KnowledgeUnitModel.source_id == source_id).order_by(KnowledgeUnitModel.position)
+        )).scalars().all()
+        return source_id, [unit.id for unit in units]
+
+
+@pytest.mark.asyncio
+async def test_create_and_read_production_job_api(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+    async def noop(job_id):
+        return None
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/production-jobs",
+            json={"source_id": str(source_id), "scope": "SOURCE"},
+        )
+        assert response.status_code == 202
+        payload = response.json()
+        assert payload["status"] == "QUEUED"
+        assert payload["total_items"] == 2
+        assert payload["pending_items"] == 2
+
+        status_response = await client.get(f"/production-jobs/{payload['job_id']}")
+        assert status_response.status_code == 200
+        status_payload = status_response.json()
+        assert status_payload["job_id"] == payload["job_id"]
+        assert status_payload["scope"] == "SOURCE"
+        assert status_payload["pending_items"] == 2
+
+
+@pytest.mark.asyncio
+async def test_create_production_job_api_rejects_empty_selection():
+    source_id, _ = await _api_fixture()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/production-jobs",
+            json={"source_id": str(source_id), "scope": "SELECTION", "knowledge_unit_ids": []},
+        )
+        assert response.status_code == 400
