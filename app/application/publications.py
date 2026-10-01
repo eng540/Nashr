@@ -4,11 +4,14 @@ from uuid import UUID, uuid4
 
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.domain.editorial import IEditorialDrafter
 from app.domain.publications import IPublisher, Publication, PublicationStatus
+from app.application.posts import ProducePost
+from app.infrastructure.database.models import PostModel
 from app.infrastructure.database.models import KnowledgeUnitModel, PublicationModel
 
 
@@ -45,6 +48,7 @@ def _to_domain(row: PublicationModel) -> Publication:
     return Publication(
         id=row.id,
         knowledge_unit_id=row.knowledge_unit_id,
+        post_id=row.post_id,
         platform=row.platform,
         destination=row.destination,
         content=row.content,
@@ -57,58 +61,56 @@ def _to_domain(row: PublicationModel) -> Publication:
 
 
 class CreateTelegramDraft:
-    """Create a Telegram draft grounded by the source's visual PDF context."""
+    """Create the existing Telegram draft flow from the canonical Post."""
 
     def __init__(self, drafter: IEditorialDrafter) -> None:
-        """Initialize the editorial drafter."""
         self.drafter = drafter
 
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID, destination: str) -> Publication:
-        """Create a DRAFT publication from an editorially generated post."""
-        result = await session.execute(
-            select(KnowledgeUnitModel)
-            .options(selectinload(KnowledgeUnitModel.source))
-            .where(KnowledgeUnitModel.id == knowledge_unit_id)
+        post = await ProducePost(self.drafter).execute(session, knowledge_unit_id)
+        existing_result = await session.execute(
+            select(PublicationModel)
+            .where(
+                PublicationModel.post_id == post.id,
+                PublicationModel.platform == "telegram",
+                PublicationModel.destination == destination,
+            )
+            .order_by(PublicationModel.created_at.asc(), PublicationModel.id.asc())
+            .limit(1)
         )
-        unit = result.scalar_one_or_none()
-        if unit is None:
-            raise ValueError("Knowledge unit not found.")
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            return _to_domain(existing)
 
-        source = unit.source
-        source_name = source.book_title or source.filename if source is not None else "المصدر"
-        pdf_slice: bytes | None = None
-        if source is not None and unit.discovery_page_start is not None and unit.discovery_page_end is not None:
-            try:
-                storage_path = source.ensure_file_on_disk()
-                pdf_slice = slice_pdf_pages_as_bytes(
-                    str(storage_path),
-                    unit.discovery_page_start,
-                    unit.discovery_page_end,
-                    window_size=10,
-                )
-            except Exception:
-                # Older records may have a missing or malformed PDF; preserve the text fallback.
-                pdf_slice = None
-
-        content = await self.drafter.draft(
-            title=unit.title,
-            content=unit.content,
-            source_name=source_name,
-            pdf_slice=pdf_slice,
-        )
         row = PublicationModel(
             id=uuid4(),
-            knowledge_unit_id=unit.id,
+            knowledge_unit_id=post.knowledge_unit_id,
+            post_id=post.id,
             platform="telegram",
             destination=destination,
-            content=content,
+            content=post.content,
             status=PublicationStatus.DRAFT.value,
         )
         session.add(row)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            result = await session.execute(
+                select(PublicationModel)
+                .where(
+                    PublicationModel.post_id == post.id,
+                    PublicationModel.platform == "telegram",
+                    PublicationModel.destination == destination,
+                )
+                .limit(1)
+            )
+            existing = result.scalar_one_or_none()
+            if existing is None:
+                raise
+            return _to_domain(existing)
         await session.refresh(row)
         return _to_domain(row)
-
 
 class ApproveAndPublish:
     """Approve a publication and publish it through a platform adapter."""
@@ -123,6 +125,22 @@ class ApproveAndPublish:
             content = content.strip()
             if not content:
                 raise ValueError("Publication content cannot be empty.")
+            current = await session.execute(
+                select(PublicationModel).where(
+                    PublicationModel.id == publication_id,
+                    PublicationModel.status == PublicationStatus.DRAFT.value,
+                )
+            )
+            current_row = current.scalar_one_or_none()
+            if current_row is None:
+                raise ValueError("Publication is not a DRAFT.")
+            if current_row.post_id is not None:
+                post_result = await session.execute(
+                    select(PostModel).where(PostModel.id == current_row.post_id)
+                )
+                post = post_result.scalar_one_or_none()
+                if post is not None:
+                    post.content = content
             edited = await session.execute(
                 update(PublicationModel)
                 .where(PublicationModel.id == publication_id, PublicationModel.status == PublicationStatus.DRAFT.value)

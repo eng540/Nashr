@@ -3,11 +3,12 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from pypdf import PdfReader, PdfWriter
+from sqlalchemy import select
 
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.adapters.publishing.fake import FakePublisher
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
-from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
+from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -27,6 +28,10 @@ async def test_create_and_publish_with_fake_publisher() -> None:
     async with SessionFactory() as session:
         draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit_id, "@test")
         assert draft.status.value == "DRAFT"
+        post = (await session.execute(select(PostModel).where(PostModel.id == draft.id))).scalar_one_or_none()
+        assert post is None
+        post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_id))).scalar_one()
+        assert post.content == draft.content
         edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 p.pdf\\n#اختبار"
         published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
         assert published.status.value == "PUBLISHED"

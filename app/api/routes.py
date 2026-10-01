@@ -11,6 +11,7 @@ from sqlalchemy.orm import defer
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
+from app.application.posts import ProducePost
 from app.application.discovery_jobs import (
     DiscoveryJobStatus,
     create_discovery_job,
@@ -20,7 +21,7 @@ from app.application.discovery_jobs import (
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.api.console import NASHR_CONSOLE_HTML
-from app.infrastructure.database.models import BookMapSectionModel, DiscoveryJobModel, KnowledgeUnitModel, SourceModel, TopicModel
+from app.infrastructure.database.models import BookMapSectionModel, DiscoveryJobModel, KnowledgeUnitModel, PostModel, SourceModel, TopicModel
 from app.infrastructure.database.session import get_session
 from app.infrastructure.storage import LocalFileStorage
 
@@ -265,6 +266,38 @@ async def get_book_map(source_id: UUID, session: AsyncSession = Depends(get_sess
     }
 
 
+def get_produce_post() -> ProducePost:
+    return ProducePost(GeminiEditorialDrafter())
+
+
+@router.post("/knowledge-units/{knowledge_unit_id}/post")
+async def produce_post(
+    knowledge_unit_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    use_case: ProducePost = Depends(get_produce_post),
+) -> dict[str, Any]:
+    try:
+        post = await use_case.execute(session, knowledge_unit_id)
+        return {"post_id": str(post.id), "status": post.status.value}
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(status_code=404 if "not found" in detail.lower() else 400, detail=detail) from exc
+
+
+@router.get("/posts/{post_id}")
+async def get_post(post_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    result = await session.execute(select(PostModel).where(PostModel.id == post_id))
+    post = result.scalar_one_or_none()
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return {
+        "post_id": str(post.id),
+        "knowledge_unit_id": str(post.knowledge_unit_id),
+        "content": post.content,
+        "status": post.status,
+    }
+
+
 @router.post("/knowledge-units/{knowledge_unit_id}/draft")
 async def create_telegram_draft(
     knowledge_unit_id: UUID,
@@ -278,6 +311,7 @@ async def create_telegram_draft(
         publication = await use_case.execute(session, knowledge_unit_id, destination)
         return {
             "id": str(publication.id),
+            "post_id": str(publication.post_id) if publication.post_id else None,
             "knowledge_unit_id": str(publication.knowledge_unit_id),
             "platform": publication.platform,
             "destination": publication.destination,

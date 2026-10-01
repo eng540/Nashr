@@ -4,7 +4,7 @@ from app.adapters.publishing.fake import FakePublisher
 from app.application.extract_knowledge import ExtractKnowledge
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
-from app.infrastructure.database.models import PublicationModel
+from app.infrastructure.database.models import PostModel, PublicationModel
 from app.infrastructure.database.session import SessionFactory
 from app.infrastructure.storage import LocalFileStorage
 from sqlalchemy import select
@@ -27,6 +27,8 @@ async def test_vertical_slice_e2e() -> None:
         assert published.status.value == "PUBLISHED"
         assert published.external_id == "test_msg_999"
         assert published.content == edited_content
+        post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == selected.id))).scalar_one()
+        assert post.content == edited_content
         row = (await session.execute(select(PublicationModel).where(PublicationModel.id == draft.id))).scalar_one()
         assert row.status == "PUBLISHED"
         assert row.external_id == "test_msg_999"
