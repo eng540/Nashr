@@ -3,10 +3,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
@@ -72,6 +73,7 @@ class ScheduleCreateRequest(BaseModel):
     post_ids: list[UUID] | None = Field(default=None, max_length=500)
     start_at: datetime | None = None
     interval_minutes: int | None = Field(default=None, ge=1, le=10080)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -514,6 +516,19 @@ async def create_schedule_route(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     try:
+        if payload.idempotency_key:
+            existing = (
+                await session.execute(
+                    select(ScheduleModel).where(
+                        ScheduleModel.idempotency_key == payload.idempotency_key
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                return _schedule_payload(
+                    await get_schedule(session, existing.id),
+                    detail=True,
+                )
         if payload.items is not None:
             if not payload.items:
                 raise ValueError("Schedule must contain at least one item.")
@@ -529,7 +544,37 @@ async def create_schedule_route(
                 payload.interval_minutes,
                 payload.timezone,
             )
+        schedule = ScheduleModel(
+            id=__import__("uuid").uuid4(),
+            name=payload.name.strip(),
+            timezone=payload.timezone.strip(),
+            status="DRAFT",
+            idempotency_key=payload.idempotency_key,
+        )
+        if not schedule.name:
+            raise ValueError("Schedule name cannot be empty.")
+        # Keep all existing domain validation and persistence semantics in one place.
+        # create_schedule intentionally remains the canonical application service.
         schedule = await create_schedule(session, payload.name, payload.timezone, items)
+        if payload.idempotency_key:
+            schedule.idempotency_key = payload.idempotency_key
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                existing = (
+                    await session.execute(
+                        select(ScheduleModel).where(
+                            ScheduleModel.idempotency_key == payload.idempotency_key
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing is None:
+                    raise
+                return _schedule_payload(
+                    await get_schedule(session, existing.id),
+                    detail=True,
+                )
         return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
