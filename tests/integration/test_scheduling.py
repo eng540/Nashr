@@ -603,3 +603,26 @@ async def test_schedule_calendar_returns_items_by_schedule_timezone():
         response = await client.get("/schedules/calendar?date=2026-10-05&timezone=Asia/Aden")
     assert response.status_code == 200
     assert [item["post_id"] for item in response.json()["items"]] == [str(post)]
+
+
+@pytest.mark.asyncio
+async def test_schedule_scales_to_hundreds_of_posts_deterministically():
+    posts = [await _post(f"Scale {index}") for index in range(200)]
+    post_ids = [row[3] for row in posts]
+    start = datetime(2026, 10, 5, 17, 0, tzinfo=timezone.utc)
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Scale schedule",
+            "Asia/Aden",
+            build_schedule_times(post_ids, start, 5, "Asia/Aden"),
+        )
+        items = (await session.execute(
+            select(ScheduleItemModel)
+            .where(ScheduleItemModel.schedule_id == schedule.id)
+            .order_by(ScheduleItemModel.position)
+        )).scalars().all()
+    assert len(items) == 200
+    assert [item.position for item in items] == list(range(1, 201))
+    assert [item.post_id for item in items] == post_ids
+    assert len({item.scheduled_at for item in items}) == 200
