@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.posts import PostStatus
@@ -66,7 +66,7 @@ class ReviewPost:
         post.reviewed_at = None
         post.review_note = None
         await session.execute(
-            __import__("sqlalchemy").update(ScheduleItemModel)
+            update(ScheduleItemModel)
             .where(
                 ScheduleItemModel.post_id == post.id,
                 ScheduleItemModel.status == "PENDING",
