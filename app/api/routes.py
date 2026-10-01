@@ -626,7 +626,7 @@ def _upcoming_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
 
 @router.get("/schedules/calendar")
 async def schedule_calendar(
-    date: str = Query(..., pattern=r"^\\d{4}-\\d{2}-\\d{2}$"),
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     timezone_name: str = Query(default="UTC", alias="timezone"),
     limit: int = Query(default=200, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
