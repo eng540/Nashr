@@ -629,8 +629,28 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
             raise GeminiOperationError(code, "Gemini bounded material discovery failed.", retryable, exc) from exc
         GeminiBookMapper._log_usage(response, source.id, "DISCOVERING_MATERIALS")
         parsed = response.parsed
+
+        # google-genai normally populates response.parsed for structured output.
+        # A successful 200 response can nevertheless contain valid JSON while
+        # parsed is None. Re-validate the provider JSON before declaring the
+        # discovery response invalid.
         if parsed is None:
-            raise GeminiOperationError("GEMINI_INVALID_RESPONSE", "Gemini returned no topic materials.")
+            raw_text = getattr(response, "text", None)
+            if not isinstance(raw_text, str) or not raw_text.strip():
+                raise GeminiOperationError(
+                    "GEMINI_INVALID_RESPONSE",
+                    "Gemini returned an empty material-discovery response.",
+                )
+            try:
+                parsed = GeminiIdeas.model_validate(json.loads(raw_text))
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise GeminiOperationError(
+                    "GEMINI_INVALID_RESPONSE",
+                    "Gemini returned material-discovery JSON that could not be parsed.",
+                    True,
+                    exc,
+                ) from exc
+
         positions = [item.position for item in parsed.ideas]
         if positions != list(range(1, len(positions) + 1)):
             raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned invalid material positions.")
