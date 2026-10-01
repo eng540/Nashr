@@ -326,7 +326,7 @@ async def _execute_claimed_item(
         elif existing is not None:
             publication_id = existing.id
         else:
-            draft = await CreateTelegramDraft(None).execute_for_post(session, post, destination)
+            draft = await CreateTelegramDraft.execute_for_post(session, post, destination)
             publication_id = draft.id
 
     # All DB work above is committed before the external Telegram call.
