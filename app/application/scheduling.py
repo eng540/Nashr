@@ -232,7 +232,16 @@ async def recover_stale_schedule_items(now: datetime | None = None) -> list[UUID
                     ScheduleItemModel.id == item_id,
                     ScheduleItemModel.status == ScheduleItemStatus.PROCESSING.value,
                 )
-                .values(status=target_status, processing_started_at=None)
+                .values(
+                    status=target_status,
+                    processing_started_at=None,
+                    last_error=(
+                        "Recovered stale PROCESSING item from CANCELLED schedule; "
+                        "external publication outcome is unknown."
+                        if target_status == ScheduleItemStatus.CANCELLED.value
+                        else None
+                    ),
+                )
             )
         if ids:
             await session.commit()
