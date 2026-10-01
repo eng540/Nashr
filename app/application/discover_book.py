@@ -1,4 +1,6 @@
 import hashlib
+import json
+import logging
 import os
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -6,11 +8,17 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.extraction.gemini import GeminiOperationError
+from app.adapters.extraction.gemini import GeminiBookMap, GeminiOperationError
 from app.domain.book_map import BookMap, BookTopic
 from app.domain.extraction import DiscoverySpan, DocumentReference, ExtractedIdea
 from app.domain.knowledge import KnowledgeUnit
-from app.infrastructure.database.models import DiscoveryChunkModel, KnowledgeUnitModel, SourceModel, TopicModel
+from app.infrastructure.database.models import (
+    BookMapSectionModel,
+    DiscoveryChunkModel,
+    KnowledgeUnitModel,
+    SourceModel,
+    TopicModel,
+)
 
 
 class DiscoverBook:
@@ -48,11 +56,9 @@ class DiscoverBook:
 
     async def build_book_map(self, session: AsyncSession, source_id: UUID, document: DocumentReference) -> BookMap:
         source = await self.get_source(session, source_id)
-        existing = (
-            await session.execute(
-                select(TopicModel).where(TopicModel.source_id == source_id).order_by(TopicModel.position)
-            )
-        ).scalars().all()
+        existing = (await session.execute(
+            select(TopicModel).where(TopicModel.source_id == source_id).order_by(TopicModel.position)
+        )).scalars().all()
 
         if existing and all(topic.page_start and topic.page_end for topic in existing):
             return BookMap(
@@ -60,21 +66,106 @@ class DiscoverBook:
                 title=source.book_title or source.filename,
                 description=source.book_description or "",
                 topics=[
-                    BookTopic(
-                        topic.id,
-                        topic.source_id,
-                        topic.position,
-                        topic.title,
-                        topic.description,
-                        topic.source_reference,
-                        topic.page_start,
-                        topic.page_end,
-                    )
+                    BookTopic(topic.id, topic.source_id, topic.position, topic.title, topic.description,
+                              topic.source_reference, topic.page_start, topic.page_end)
                     for topic in existing
                 ],
             )
 
-        mapped = await self.mapper.map_book(source.to_domain(), document)
+        if not all(hasattr(self.mapper, name) for name in ("plan_book_sections", "map_book_section", "merge_book_maps")):
+            mapped = await self.mapper.map_book(source.to_domain(), document)
+            return await self._persist_mapped_book_map(session, source, source_id, mapped, existing)
+
+        ranges = await self.mapper.plan_book_sections(source.to_domain())
+        if not ranges:
+            raise GeminiOperationError("GEMINI_INVALID_ARGUMENT", "PDF contains no pages.")
+
+        sections = (await session.execute(
+            select(BookMapSectionModel).where(BookMapSectionModel.source_id == source_id)
+            .order_by(BookMapSectionModel.section_index)
+        )).scalars().all()
+
+        if sections:
+            expected = [(row.section_index, row.page_start, row.page_end) for row in sections]
+            actual = [(index, start, end) for index, (start, end) in enumerate(ranges, start=1)]
+            if expected != actual:
+                raise GeminiOperationError(
+                    "DISCOVERY_DATA_ERROR",
+                    "Persisted Book Map section plan does not match the current deterministic page plan.",
+                )
+        else:
+            session.add_all([
+                BookMapSectionModel(
+                    id=uuid4(), source_id=source_id, section_index=index,
+                    page_start=page_start, page_end=page_end, status="PENDING",
+                )
+                for index, (page_start, page_end) in enumerate(ranges, start=1)
+            ])
+            await session.commit()
+            sections = (await session.execute(
+                select(BookMapSectionModel).where(BookMapSectionModel.source_id == source_id)
+                .order_by(BookMapSectionModel.section_index)
+            )).scalars().all()
+
+        local_maps: list[GeminiBookMap] = []
+        for section in sections:
+            if section.status == "COMPLETED" and section.payload:
+                try:
+                    maps = [GeminiBookMap.model_validate(item) for item in json.loads(section.payload)]
+                except Exception as exc:
+                    logger.warning(
+                        "event=BOOK_MAP_CHECKPOINT_INVALID source_id=%s section=%s error=%s",
+                        source_id, section.section_index, exc,
+                    )
+                    section.status = "PENDING"
+                    section.payload = section.error_code = section.error_message = None
+                    await session.commit()
+                else:
+                    local_maps.extend(maps)
+                    continue
+
+            section.status = "RUNNING"
+            section.error_code = section.error_message = None
+            await session.commit()
+            try:
+                maps = await self.mapper.map_book_section(
+                    source.to_domain(), document, section.page_start, section.page_end, section.section_index
+                )
+                for item in maps:
+                    self._validate_local_map(item, section.page_start, section.page_end)
+                section.payload = json.dumps([
+                    {"title": item.title, "description": item.description,
+                     "topics": [topic.model_dump() for topic in item.topics]}
+                    for item in maps
+                ], ensure_ascii=False)
+                section.status = "COMPLETED"
+                await session.commit()
+                local_maps.extend(maps)
+            except Exception as exc:
+                section.status = "FAILED"
+                section.error_code = getattr(exc, "code", "UNKNOWN")
+                section.error_message = str(exc)
+                await session.commit()
+                raise
+
+        mapped = await self.mapper.merge_book_maps(
+            source.to_domain(), local_maps, ranges[-1][1], len(ranges)
+        )
+        return await self._persist_mapped_book_map(session, source, source_id, mapped, existing)
+
+    @staticmethod
+    def _validate_local_map(mapped: GeminiBookMap, page_start: int, page_end: int) -> None:
+        for topic in mapped.topics:
+            if topic.page_start > topic.page_end or topic.page_start < page_start or topic.page_end > page_end:
+                raise GeminiOperationError(
+                    "GEMINI_PROVENANCE_UNAVAILABLE",
+                    f"Book Map section topic pages {topic.page_start}-{topic.page_end} escape {page_start}-{page_end}.",
+                )
+
+    async def _persist_mapped_book_map(
+        self, session: AsyncSession, source: SourceModel, source_id: UUID,
+        mapped: BookMap, existing: list[TopicModel],
+    ) -> BookMap:
         if [topic.position for topic in mapped.topics] != list(range(1, len(mapped.topics) + 1)):
             raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned invalid topic positions.")
         if any(topic.page_start is None or topic.page_end is None for topic in mapped.topics):
@@ -83,10 +174,9 @@ class DiscoverBook:
                 "Gemini did not provide evidence-backed page bounds for every topic.",
             )
 
-        existing_units = int(
-            (await session.execute(select(func.count(KnowledgeUnitModel.id)).where(KnowledgeUnitModel.source_id == source_id))).scalar_one()
-            or 0
-        )
+        existing_units = int((await session.execute(
+            select(func.count(KnowledgeUnitModel.id)).where(KnowledgeUnitModel.source_id == source_id)
+        )).scalar_one() or 0)
         if existing and existing_units and len(existing) != len(mapped.topics):
             raise GeminiOperationError(
                 "DISCOVERY_DATA_ERROR",
@@ -106,22 +196,16 @@ class DiscoverBook:
                 row.source_reference = item.source_reference
                 row.page_start = item.page_start
                 row.page_end = item.page_end
-                row.discovery_status = "PENDING" if not row.discovery_status == "COMPLETED" else row.discovery_status
+                row.discovery_status = "PENDING" if row.discovery_status != "COMPLETED" else row.discovery_status
         else:
             for item in mapped.topics:
-                session.add(
-                    TopicModel(
-                        id=item.id,
-                        source_id=source_id,
-                        position=item.position,
-                        title=item.title,
-                        description=item.description,
-                        source_reference=item.source_reference,
-                        page_start=item.page_start,
-                        page_end=item.page_end,
-                        discovery_status="PENDING",
-                    )
-                )
+                session.add(TopicModel(
+                    id=item.id, source_id=source_id, position=item.position,
+                    title=item.title, description=item.description,
+                    source_reference=item.source_reference,
+                    page_start=item.page_start, page_end=item.page_end,
+                    discovery_status="PENDING",
+                ))
         await session.commit()
         return mapped
 

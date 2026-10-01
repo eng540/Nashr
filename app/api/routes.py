@@ -20,7 +20,7 @@ from app.application.discovery_jobs import (
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.api.console import NASHR_CONSOLE_HTML
-from app.infrastructure.database.models import DiscoveryJobModel, KnowledgeUnitModel, SourceModel, TopicModel
+from app.infrastructure.database.models import BookMapSectionModel, DiscoveryJobModel, KnowledgeUnitModel, SourceModel, TopicModel
 from app.infrastructure.database.session import get_session
 from app.infrastructure.storage import LocalFileStorage
 
@@ -64,6 +64,29 @@ def _job_payload(job: DiscoveryJobModel) -> dict[str, Any]:
         "updated_at": job.updated_at,
         "started_at": job.started_at,
         "completed_at": job.completed_at,
+    }
+
+
+def _book_map_checkpoint_payload(sections: list[BookMapSectionModel]) -> dict[str, Any]:
+    return {
+        "total": len(sections),
+        "completed": sum(section.status == "COMPLETED" for section in sections),
+        "running": sum(section.status == "RUNNING" for section in sections),
+        "failed": sum(section.status == "FAILED" for section in sections),
+        "current": next(
+            (
+                {
+                    "section_index": section.section_index,
+                    "page_start": section.page_start,
+                    "page_end": section.page_end,
+                    "status": section.status,
+                    "error_code": section.error_code,
+                }
+                for section in sections
+                if section.status == "RUNNING"
+            ),
+            None,
+        ),
     }
 
 
@@ -179,7 +202,16 @@ async def discovery_status(source_id: UUID, session: AsyncSession = Depends(get_
     job = result.scalars().first()
     if job is None:
         return {"source_id": str(source_id), "status": "NOT_STARTED"}
-    return _job_payload(job)
+
+    sections_result = await session.execute(
+        select(BookMapSectionModel)
+        .where(BookMapSectionModel.source_id == source_id)
+        .order_by(BookMapSectionModel.section_index)
+    )
+    return {
+        **_job_payload(job),
+        "book_map_checkpoints": _book_map_checkpoint_payload(sections_result.scalars().all()),
+    }
 
 
 @router.post("/sources/{source_id}/discovery/retry", status_code=status.HTTP_202_ACCEPTED)

@@ -163,6 +163,76 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
         """Compatibility-facing name for the bounded, hierarchical mapper."""
         return await self.map_book(source, document)
 
+    async def plan_book_sections(self, source: Source) -> list[tuple[int, int]]:
+        """Plan deterministic bounded page windows without calling Gemini."""
+        return await asyncio.to_thread(self._plan_sections_sync, source)
+
+    async def map_book_section(
+        self,
+        source: Source,
+        document: DocumentReference,
+        page_start: int,
+        page_end: int,
+        section_index: int,
+    ) -> list[GeminiBookMap]:
+        """Map one bounded section; adaptive splits stay inside this section."""
+        return await asyncio.to_thread(
+            self._map_section_sync,
+            source,
+            page_start,
+            page_end,
+            section_index,
+        )
+
+    async def merge_book_maps(
+        self,
+        source: Source,
+        local_maps: list[GeminiBookMap],
+        page_count: int,
+        section_count: int,
+    ) -> BookMap:
+        """Merge already-checkpointed local maps into the final Book Map."""
+        return await asyncio.to_thread(
+            self._merge_local_maps,
+            source,
+            local_maps,
+            page_count,
+            section_count,
+        )
+
+
+    def _plan_sections_sync(self, source: Source) -> list[tuple[int, int]]:
+        path = Path(source.storage_path)
+        if not path.is_file():
+            raise FileNotFoundError(source.storage_path)
+        with self._quiet_pypdf_warnings():
+            reader = PdfReader(str(path))
+        page_count = len(reader.pages)
+        if page_count == 0:
+            raise GeminiOperationError("GEMINI_INVALID_ARGUMENT", "PDF contains no pages.")
+        max_pages = max(1, int(os.getenv("GEMINI_BOOK_MAP_MAX_PAGES_PER_SECTION", "64")))
+        return self._page_ranges(page_count, max_pages)
+
+    def _map_section_sync(
+        self,
+        source: Source,
+        page_start: int,
+        page_end: int,
+        section_index: int,
+    ) -> list[GeminiBookMap]:
+        path = Path(source.storage_path)
+        if not path.is_file():
+            raise FileNotFoundError(source.storage_path)
+        with self._quiet_pypdf_warnings():
+            reader = PdfReader(str(path))
+        return self._map_section_adaptive(
+            source,
+            reader,
+            page_start,
+            page_end,
+            section_index=section_index,
+        )
+
     def _map_sync(self, source: Source, document: DocumentReference) -> BookMap:
         path = Path(source.storage_path)
         if not path.is_file():

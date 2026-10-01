@@ -160,20 +160,19 @@ async def retry_discovery_job(session: AsyncSession, source_id: UUID) -> Discove
 
 
 async def recover_stale_jobs() -> list[UUID]:
+    """Recover stale RUNNING jobs and resume QUEUED jobs after process restart."""
     threshold = datetime.now(timezone.utc) - timedelta(
         seconds=int(os.getenv("NASHR_DISCOVERY_STALE_SECONDS", "900"))
     )
     recovered: list[UUID] = []
     async with SessionFactory() as session:
-        jobs = (
-            await session.execute(
-                select(DiscoveryJobModel).where(
-                    DiscoveryJobModel.status == DiscoveryJobStatus.RUNNING,
-                    DiscoveryJobModel.updated_at < threshold,
-                )
+        stale = (await session.execute(
+            select(DiscoveryJobModel).where(
+                DiscoveryJobModel.status == DiscoveryJobStatus.RUNNING,
+                DiscoveryJobModel.updated_at < threshold,
             )
-        ).scalars().all()
-        for job in jobs:
+        )).scalars().all()
+        for job in stale:
             await session.execute(
                 update(DiscoveryChunkModel)
                 .where(
@@ -200,11 +199,18 @@ async def recover_stale_jobs() -> list[UUID]:
             job.retryable = True
             job.updated_at = datetime.now(timezone.utc)
             recovered.append(job.id)
-        await session.commit()
-    for job_id in recovered:
-        logger.warning("event=DISCOVERY_RECOVERED job_id=%s", job_id)
-    return recovered
 
+        queued = (await session.execute(
+            select(DiscoveryJobModel).where(DiscoveryJobModel.status == DiscoveryJobStatus.QUEUED)
+        )).scalars().all()
+        for job in queued:
+            if job.id not in recovered:
+                recovered.append(job.id)
+        await session.commit()
+
+    for job_id in recovered:
+        logger.warning("event=DISCOVERY_RECOVERED_OR_RESUMED job_id=%s", job_id)
+    return recovered
 
 async def _claim_job(job_id: UUID) -> bool:
     async with SessionFactory() as session:
