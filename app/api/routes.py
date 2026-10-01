@@ -13,6 +13,7 @@ from sqlalchemy.orm import defer, selectinload
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.posts import ProducePost
+from app.application.reviews import ReviewPost
 from app.application.production_jobs import create_production_job, resume_production_job, run_production_job
 from app.application.scheduling import (
     create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
@@ -50,6 +51,14 @@ class ProductionJobResumeRequest(BaseModel):
 
 class PostUpdateRequest(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)
+
+
+class PostApproveRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=5_000)
+
+
+class PostRejectRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=5_000)
 
 class ScheduleItemRequest(BaseModel):
     post_id: UUID
@@ -91,6 +100,8 @@ def _post_payload(post: PostModel) -> dict[str, Any]:
         "content_preview": post.content[:300],
         "created_at": post.created_at,
         "updated_at": post.updated_at,
+        "reviewed_at": post.reviewed_at,
+        "review_note": post.review_note,
         "published": published,
     }
 
@@ -691,15 +702,51 @@ async def update_post(
     post = result.scalar_one_or_none()
     if post is None:
         raise HTTPException(status_code=404, detail="Post not found.")
-    post.content = content
-    await session.commit()
-    await session.refresh(post)
+    try:
+        post = await ReviewPost().edit(session, post_id, content)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     result = await session.execute(
         select(PostModel)
         .options(*_post_query_options())
         .where(PostModel.id == post_id)
     )
-    post = result.scalar_one()
+    return _post_payload(result.scalar_one())
+
+
+@router.post("/posts/{post_id}/approve")
+async def approve_post(
+    post_id: UUID,
+    payload: PostApproveRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        post = await ReviewPost().approve(session, post_id, payload.note)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _post_payload(post)
+
+
+@router.post("/posts/{post_id}/reject")
+async def reject_post(
+    post_id: UUID,
+    payload: PostRejectRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        post = await ReviewPost().reject(session, post_id, payload.reason)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _post_payload(post)
 
 
