@@ -156,6 +156,56 @@ async def test_due_item_is_claimed_once_concurrently():
 
 
 @pytest.mark.asyncio
+async def test_due_execution_publishes_approved_post():
+    _, _, _, post = await _post("Approved execution")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session, "Approved execution", "Asia/Aden",
+            [(post, datetime.now(timezone.utc) - timedelta(minutes=1))],
+        )
+        schedule.status = "ACTIVE"
+        await session.commit()
+    publisher = CountingPublisher()
+    await process_due_schedule_items(publisher=publisher, destination="@test")
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+        )).scalar_one()
+        publication = (await session.execute(
+            select(PublicationModel).where(PublicationModel.post_id == post)
+        )).scalar_one()
+    assert item.status == "PUBLISHED"
+    assert publication.status == "PUBLISHED"
+    assert publisher.calls >= 1
+
+
+@pytest.mark.asyncio
+async def test_due_execution_refuses_post_that_lost_approval():
+    _, _, _, post = await _post("Approval revoked before execution")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session, "Approval revoked", "Asia/Aden",
+            [(post, datetime.now(timezone.utc) - timedelta(minutes=1))],
+        )
+        schedule.status = "ACTIVE"
+        post_row = (await session.execute(select(PostModel).where(PostModel.id == post))).scalar_one()
+        post_row.status = "DRAFT"
+        await session.commit()
+    publisher = CountingPublisher()
+    await process_due_schedule_items(publisher=publisher, destination="@test")
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+        )).scalar_one()
+        publications = (await session.execute(
+            select(PublicationModel).where(PublicationModel.post_id == post)
+        )).scalars().all()
+    assert item.status == "CANCELLED"
+    assert publications == []
+    assert publisher.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_due_processing_reuses_existing_publication_and_does_not_duplicate():
     _, _, _, post = await _post(published=True)
     async with SessionFactory() as session:
