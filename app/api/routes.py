@@ -606,6 +606,24 @@ async def create_schedule_route(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+def _upcoming_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
+    post = item.post
+    unit = post.knowledge_unit
+    return {
+        "schedule_id": str(item.schedule_id),
+        "schedule_name": item.schedule.name,
+        "timezone": item.schedule.timezone,
+        "item_id": str(item.id),
+        "post_id": str(item.post_id),
+        "title": unit.title,
+        "scheduled_at": item.scheduled_at,
+        "status": item.status,
+        "position": item.position,
+        "attempts": item.attempts,
+        "last_error": item.last_error,
+    }
+
+
 @router.get("/schedules/calendar")
 async def schedule_calendar(
     date: str = Query(..., pattern=r"^\\d{4}-\\d{2}-\\d{2}$"),
