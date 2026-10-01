@@ -511,3 +511,25 @@ async def test_telegram_preview_uses_canonical_post_content():
     assert payload["platform"] == "telegram"
     assert payload["content"] == "Post content Preview"
     assert payload["ready"] is True
+
+
+
+@pytest.mark.asyncio
+async def test_schedule_creation_idempotency_returns_same_schedule():
+    _, _, _, post = await _post("Idempotent schedule")
+    transport = httpx.ASGITransport(app=app)
+    payload = {
+        "name": "Idempotent",
+        "timezone": "Asia/Aden",
+        "post_ids": [str(post)],
+        "start_at": "2026-10-05T17:00:00+00:00",
+        "interval_minutes": 30,
+        "idempotency_key": "schedule-test-idempotency-1",
+    }
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/schedules", json=payload)
+        second = await client.post("/schedules", json=payload)
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] == second.json()["id"]
+    assert len(second.json()["items"]) == 1
