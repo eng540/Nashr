@@ -213,6 +213,15 @@ async def test_stale_processing_recovers_but_published_does_not():
         item.processing_started_at = datetime.now(timezone.utc) - timedelta(minutes=20)
         await session.commit()
         published_id = uuid4()
+        post2_unit = (await session.execute(
+            select(PostModel.knowledge_unit_id).where(PostModel.id == post2)
+        )).scalar_one()
+        session.add(PublicationModel(
+            id=published_id, knowledge_unit_id=post2_unit, post_id=post2,
+            platform="telegram", destination="@test", content="already published",
+            status="PUBLISHED", external_id="published-2",
+            published_at=datetime.now(timezone.utc),
+        ))
         item2 = ScheduleItemModel(
             id=uuid4(), schedule_id=schedule.id, post_id=post2, position=2,
             scheduled_at=datetime.now(timezone.utc) - timedelta(minutes=1),
