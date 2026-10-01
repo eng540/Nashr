@@ -107,7 +107,22 @@ class KnowledgeUnitModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     source: Mapped[SourceModel] = relationship(back_populates="knowledge_units")
     topic: Mapped[TopicModel | None] = relationship(back_populates="knowledge_units")
+    posts: Mapped[list["PostModel"]] = relationship(back_populates="knowledge_unit", cascade="all, delete-orphan")
     publications: Mapped[list["PublicationModel"]] = relationship(back_populates="knowledge_unit", cascade="save-update, merge")
+
+
+class PostModel(Base):
+    __tablename__ = "posts"
+    __table_args__ = (UniqueConstraint("knowledge_unit_id", "status", name="uq_posts_knowledge_unit_status"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    knowledge_unit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("knowledge_units.id", ondelete="RESTRICT"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    knowledge_unit: Mapped[KnowledgeUnitModel] = relationship(back_populates="posts")
+    publications: Mapped[list["PublicationModel"]] = relationship(back_populates="post", cascade="save-update, merge")
 
 
 class PublicationModel(Base):
@@ -115,6 +130,7 @@ class PublicationModel(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     knowledge_unit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("knowledge_units.id", ondelete="RESTRICT"), nullable=False)
+    post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="SET NULL"), nullable=True)
     platform: Mapped[str] = mapped_column(String(50), nullable=False, default="telegram")
     destination: Mapped[str] = mapped_column(String(500), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -124,6 +140,7 @@ class PublicationModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     knowledge_unit: Mapped[KnowledgeUnitModel] = relationship(back_populates="publications")
+    post: Mapped[PostModel | None] = relationship(back_populates="publications")
 
 
 class BookMapSectionModel(Base):
