@@ -29,7 +29,7 @@ from app.api.console import NASHR_CONSOLE_HTML
 from app.main import app, lifespan
 
 
-async def _post(title: str = "Scheduled post", published: bool = False):
+async def _post(title: str = "Scheduled post", published: bool = False, status: str = "APPROVED"):
     source_id, topic_id, unit_id, post_id = uuid4(), uuid4(), uuid4(), uuid4()
     async with SessionFactory() as session:
         session.add(SourceModel(
@@ -42,7 +42,7 @@ async def _post(title: str = "Scheduled post", published: bool = False):
             id=unit_id, source_id=source_id, topic_id=topic_id, position=1,
             title=title, content="material", source_reference="page 1",
         ))
-        session.add(PostModel(id=post_id, knowledge_unit_id=unit_id, content=f"Post content {title}"))
+        session.add(PostModel(id=post_id, knowledge_unit_id=unit_id, content=f"Post content {title}", status=status))
         if published:
             session.add(PublicationModel(
                 id=uuid4(), knowledge_unit_id=unit_id, post_id=post_id,
@@ -61,6 +61,21 @@ class CountingPublisher(FakePublisher):
         type(self).calls += 1
         await asyncio.sleep(0.02)
         return await super().publish(destination=destination, content=content)
+
+
+@pytest.mark.asyncio
+async def test_create_schedule_requires_approved_posts():
+    _, _, _, draft_post = await _post("Draft schedule gate", status="DRAFT")
+    _, _, _, rejected_post = await _post("Rejected schedule gate", status="REJECTED")
+    _, _, _, approved_post = await _post("Approved schedule gate", status="APPROVED")
+    now = datetime.now(timezone.utc) + timedelta(hours=1)
+    async with SessionFactory() as session:
+        with pytest.raises(RuntimeError, match="must be APPROVED"):
+            await create_schedule(session, "draft", "Asia/Aden", [(draft_post, now)])
+        with pytest.raises(RuntimeError, match="must be APPROVED"):
+            await create_schedule(session, "rejected", "Asia/Aden", [(rejected_post, now)])
+        schedule = await create_schedule(session, "approved", "Asia/Aden", [(approved_post, now)])
+    assert schedule.status == "DRAFT"
 
 
 @pytest.mark.asyncio
@@ -138,6 +153,84 @@ async def test_due_item_is_claimed_once_concurrently():
     now = datetime.now(timezone.utc)
     claims = await asyncio.gather(_claim_due_item(now), _claim_due_item(now))
     assert sum(x is not None for x in claims) == 1
+
+
+@pytest.mark.asyncio
+async def test_due_execution_publishes_approved_post():
+    _, _, _, post = await _post("Approved execution")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session, "Approved execution", "Asia/Aden",
+            [(post, datetime.now(timezone.utc) - timedelta(minutes=1))],
+        )
+        schedule.status = "ACTIVE"
+        await session.commit()
+    publisher = CountingPublisher()
+    await process_due_schedule_items(publisher=publisher, destination="@test")
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+        )).scalar_one()
+        publication = (await session.execute(
+            select(PublicationModel).where(PublicationModel.post_id == post)
+        )).scalar_one()
+    assert item.status == "PUBLISHED"
+    assert publication.status == "PUBLISHED"
+    assert publisher.calls >= 1
+
+
+@pytest.mark.asyncio
+async def test_due_execution_refuses_post_that_lost_approval():
+    _, _, _, post = await _post("Approval revoked before execution")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session, "Approval revoked", "Asia/Aden",
+            [(post, datetime.now(timezone.utc) - timedelta(minutes=1))],
+        )
+        schedule.status = "ACTIVE"
+        post_row = (await session.execute(select(PostModel).where(PostModel.id == post))).scalar_one()
+        post_row.status = "DRAFT"
+        await session.commit()
+    CountingPublisher.calls = 0
+    publisher = CountingPublisher()
+    await process_due_schedule_items(publisher=publisher, destination="@test")
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+        )).scalar_one()
+        publications = (await session.execute(
+            select(PublicationModel).where(PublicationModel.post_id == post)
+        )).scalars().all()
+    assert item.status == "CANCELLED"
+    assert publications == []
+    assert publisher.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_due_execution_refuses_rejected_post():
+    CountingPublisher.calls = 0
+    _, _, _, post = await _post("Rejected before execution")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session, "Rejected execution", "Asia/Aden",
+            [(post, datetime.now(timezone.utc) - timedelta(minutes=1))],
+        )
+        schedule.status = "ACTIVE"
+        post_row = (await session.execute(select(PostModel).where(PostModel.id == post))).scalar_one()
+        post_row.status = "REJECTED"
+        await session.commit()
+    publisher = CountingPublisher()
+    await process_due_schedule_items(publisher=publisher, destination="@test")
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+        )).scalar_one()
+        publications = (await session.execute(
+            select(PublicationModel).where(PublicationModel.post_id == post)
+        )).scalars().all()
+    assert item.status == "CANCELLED"
+    assert publications == []
+    assert publisher.calls == 0
 
 
 @pytest.mark.asyncio

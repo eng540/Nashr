@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.adapters.publishing.fake import FakePublisher
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
+from app.application.reviews import ReviewPost
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
@@ -33,7 +34,11 @@ async def test_create_and_publish_with_fake_publisher() -> None:
         post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_id))).scalar_one()
         assert post.content == draft.content
         edited_content = "**نسخة محررة**\\n\\nنص عدله المستخدم.\\n\\n📚 p.pdf\\n#اختبار"
-        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id, edited_content)
+        post.content = edited_content
+        post.status = "DRAFT"
+        await session.commit()
+        await ReviewPost().approve(session, post.id, "تمت المراجعة")
+        published = await ApproveAndPublish(FakePublisher()).execute(session, draft.id)
         assert published.status.value == "PUBLISHED"
         assert published.external_id == "test_msg_999"
         assert published.content == edited_content
@@ -113,6 +118,8 @@ async def test_publish_failure_is_recorded() -> None:
     unit_id = await _knowledge_unit()
     async with SessionFactory() as session:
         draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit_id, "@test")
+        post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_id))).scalar_one()
+        await ReviewPost().approve(session, post.id, "تمت المراجعة")
         result = await ApproveAndPublish(FailingPublisher()).execute(session, draft.id)
         assert result.status.value == "FAILED"
         assert result.error_message == "telegram unavailable"

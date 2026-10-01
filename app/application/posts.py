@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.domain.editorial import IEditorialDrafter
 from app.domain.posts import Post, PostStatus
-from app.infrastructure.database.models import KnowledgeUnitModel, PostModel
+from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ScheduleItemModel
 from app.application.editorial_context import slice_pdf_pages_as_bytes
 
 
@@ -20,6 +20,8 @@ def _to_domain(row: PostModel) -> Post:
         status=PostStatus(row.status),
         created_at=row.created_at,
         updated_at=row.updated_at,
+        reviewed_at=row.reviewed_at,
+        review_note=row.review_note,
     )
 
 
