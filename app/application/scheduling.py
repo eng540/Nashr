@@ -7,7 +7,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
-from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.domain.scheduling import ScheduleItemStatus, ScheduleStatus
@@ -327,7 +326,7 @@ async def _execute_claimed_item(
         elif existing is not None:
             publication_id = existing.id
         else:
-            draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, post.knowledge_unit_id, destination)
+            draft = await CreateTelegramDraft(None).execute_for_post(session, post, destination)
             publication_id = draft.id
 
     # All DB work above is committed before the external Telegram call.
