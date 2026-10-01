@@ -190,6 +190,45 @@ class PublicationModel(Base):
     post: Mapped[PostModel | None] = relationship(back_populates="publications")
 
 
+class ScheduleModel(Base):
+    __tablename__ = "schedules"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
+    timezone: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    items: Mapped[list["ScheduleItemModel"]] = relationship(back_populates="schedule", cascade="all, delete-orphan")
+
+
+class ScheduleItemModel(Base):
+    __tablename__ = "schedule_items"
+    __table_args__ = (
+        UniqueConstraint("schedule_id", "position", name="uq_schedule_items_schedule_position"),
+        UniqueConstraint("schedule_id", "post_id", name="uq_schedule_items_schedule_post"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    schedule_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False)
+    post_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="RESTRICT"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
+    publication_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("publications.id", ondelete="SET NULL"), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    schedule: Mapped["ScheduleModel"] = relationship(back_populates="items")
+    post: Mapped[PostModel] = relationship()
+    publication: Mapped["PublicationModel | None"] = relationship()
+
+
 class BookMapSectionModel(Base):
     __tablename__ = "book_map_sections"
     __table_args__ = (UniqueConstraint("source_id", "section_index", name="uq_book_map_sections_source_index"),)

@@ -41,6 +41,10 @@ class CreateTelegramDraft:
 
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID, destination: str) -> Publication:
         post = await ProducePost(self.drafter).execute(session, knowledge_unit_id)
+        return await self.execute_for_post(session, post, destination)
+
+    @staticmethod
+    async def execute_for_post(session: AsyncSession, post: PostModel, destination: str) -> Publication:
         existing_result = await session.execute(
             select(PublicationModel)
             .where(
@@ -84,6 +88,7 @@ class CreateTelegramDraft:
             return _to_domain(existing)
         await session.refresh(row)
         return _to_domain(row)
+
 
 class ApproveAndPublish:
     """Approve a publication and publish it through a platform adapter."""
@@ -143,6 +148,8 @@ class ApproveAndPublish:
 
         result = await session.execute(select(PublicationModel).where(PublicationModel.id == publication_id))
         row = result.scalar_one()
+        # The provider call must never hold an open database transaction.
+        await session.commit()
         try:
             published = await self.publisher.publish(destination=row.destination, content=row.content)
         except Exception as exc:

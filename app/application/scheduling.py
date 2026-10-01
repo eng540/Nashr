@@ -1,0 +1,413 @@
+import os
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer, selectinload
+
+from app.adapters.publishing.telegram import TelegramPublisher
+from app.application.publications import ApproveAndPublish, CreateTelegramDraft
+from app.domain.scheduling import ScheduleItemStatus, ScheduleStatus
+from app.infrastructure.database.models import (
+    KnowledgeUnitModel,
+    PostModel,
+    PublicationModel,
+    ScheduleItemModel,
+    ScheduleModel,
+    SourceModel,
+    TopicModel,
+)
+from app.infrastructure.database.session import SessionFactory
+
+
+STALE_PROCESSING_AFTER = timedelta(minutes=10)
+
+
+def validate_timezone(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("Timezone is required.")
+    try:
+        ZoneInfo(value)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError("Invalid timezone.") from exc
+    return value
+
+
+def validate_scheduled_at(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("scheduled_at must be timezone-aware.")
+    return value.astimezone(timezone.utc)
+
+
+async def create_schedule(
+    session: AsyncSession,
+    name: str,
+    timezone_name: str,
+    items: list[tuple[UUID, datetime]],
+) -> ScheduleModel:
+    name = name.strip()
+    if not name:
+        raise ValueError("Schedule name cannot be empty.")
+    if len(name) > 300:
+        raise ValueError("Schedule name is too long.")
+    timezone_name = validate_timezone(timezone_name)
+    if not items:
+        raise ValueError("Schedule must contain at least one item.")
+    post_ids = [post_id for post_id, _ in items]
+    if len(post_ids) != len(set(post_ids)):
+        raise ValueError("A Post cannot appear more than once in a Schedule.")
+    normalized = [(post_id, validate_scheduled_at(when)) for post_id, when in items]
+    result = await session.execute(select(PostModel.id).where(PostModel.id.in_(post_ids)))
+    found = set(result.scalars().all())
+    missing = [post_id for post_id in post_ids if post_id not in found]
+    if missing:
+        raise LookupError("Post not found.")
+    schedule = ScheduleModel(id=uuid4(), name=name, timezone=timezone_name, status=ScheduleStatus.DRAFT.value)
+    schedule.items = [
+        ScheduleItemModel(
+            id=uuid4(),
+            post_id=post_id,
+            position=position,
+            scheduled_at=scheduled_at,
+            status=ScheduleItemStatus.PENDING.value,
+        )
+        for position, (post_id, scheduled_at) in enumerate(normalized, start=1)
+    ]
+    session.add(schedule)
+    await session.commit()
+    await session.refresh(schedule)
+    return schedule
+
+
+async def get_schedule(session: AsyncSession, schedule_id: UUID) -> ScheduleModel | None:
+    result = await session.execute(
+        select(ScheduleModel)
+        .options(
+            selectinload(ScheduleModel.items)
+            .selectinload(ScheduleItemModel.post)
+            .selectinload(PostModel.knowledge_unit)
+            .selectinload(KnowledgeUnitModel.topic)
+            .selectinload(TopicModel.source)
+            .defer(SourceModel.file_payload),
+            selectinload(ScheduleModel.items)
+            .selectinload(ScheduleItemModel.post)
+            .selectinload(PostModel.knowledge_unit)
+            .selectinload(KnowledgeUnitModel.source)
+            .defer(SourceModel.file_payload),
+            selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.publication),
+        )
+        .where(ScheduleModel.id == schedule_id)
+    )
+    schedule = result.scalar_one_or_none()
+    if schedule is not None:
+        schedule.items.sort(key=lambda item: item.position)
+    return schedule
+
+
+def schedule_counts(schedule: ScheduleModel) -> dict[str, int]:
+    counts = {key: 0 for key in ("total_items", "pending_items", "published_items", "failed_items")}
+    counts["total_items"] = len(schedule.items)
+    for item in schedule.items:
+        if item.status == ScheduleItemStatus.PENDING.value:
+            counts["pending_items"] += 1
+        elif item.status == ScheduleItemStatus.PUBLISHED.value:
+            counts["published_items"] += 1
+        elif item.status == ScheduleItemStatus.FAILED.value:
+            counts["failed_items"] += 1
+    return counts
+
+
+async def list_schedule_rows(session: AsyncSession, limit: int, offset: int) -> tuple[list[ScheduleModel], int]:
+    total = int((await session.execute(select(func.count(ScheduleModel.id)))).scalar_one() or 0)
+    result = await session.execute(
+        select(ScheduleModel)
+        .options(selectinload(ScheduleModel.items))
+        .order_by(ScheduleModel.created_at.desc(), ScheduleModel.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return result.scalars().all(), total
+
+
+def next_scheduled_at(schedule: ScheduleModel) -> datetime | None:
+    values = [
+        item.scheduled_at
+        for item in schedule.items
+        if item.status == ScheduleItemStatus.PENDING.value
+    ]
+    return min(values) if values else None
+
+
+def transition(schedule: ScheduleModel, action: str, now: datetime | None = None) -> None:
+    now = now or datetime.now(timezone.utc)
+    allowed = {
+        "activate": {ScheduleStatus.DRAFT.value, ScheduleStatus.PAUSED.value},
+        "pause": {ScheduleStatus.ACTIVE.value},
+        "cancel": {ScheduleStatus.DRAFT.value, ScheduleStatus.ACTIVE.value, ScheduleStatus.PAUSED.value},
+    }
+    if schedule.status not in allowed[action]:
+        raise RuntimeError(f"Cannot {action} schedule from {schedule.status}.")
+    if action == "activate":
+        schedule.status = ScheduleStatus.ACTIVE.value
+        schedule.started_at = schedule.started_at or now
+        schedule.completed_at = None
+    elif action == "pause":
+        schedule.status = ScheduleStatus.PAUSED.value
+    else:
+        schedule.status = ScheduleStatus.CANCELLED.value
+        for item in schedule.items:
+            if item.status in (ScheduleItemStatus.PENDING.value, ScheduleItemStatus.FAILED.value):
+                item.status = ScheduleItemStatus.CANCELLED.value
+
+
+async def update_schedule_item_time(
+    session: AsyncSession, schedule_id: UUID, item_id: UUID, scheduled_at: datetime
+) -> ScheduleItemModel:
+    item = (await session.execute(
+        select(ScheduleItemModel).where(
+            ScheduleItemModel.id == item_id,
+            ScheduleItemModel.schedule_id == schedule_id,
+        )
+    )).scalar_one_or_none()
+    if item is None:
+        raise LookupError("Schedule item not found.")
+    if item.status != ScheduleItemStatus.PENDING.value:
+        raise RuntimeError("Only PENDING schedule items can be rescheduled.")
+    item.scheduled_at = validate_scheduled_at(scheduled_at)
+    await session.commit()
+    return item
+
+
+async def retry_failed_items(session: AsyncSession, schedule_id: UUID) -> int:
+    schedule = await get_schedule(session, schedule_id)
+    if schedule is None:
+        raise LookupError("Schedule not found.")
+    if schedule.status not in (ScheduleStatus.ACTIVE.value, ScheduleStatus.PAUSED.value):
+        raise RuntimeError("Failed items can only be retried in ACTIVE or PAUSED schedules.")
+    count = 0
+    for item in schedule.items:
+        if item.status == ScheduleItemStatus.FAILED.value:
+            item.status = ScheduleItemStatus.PENDING.value
+            item.last_error = None
+            item.processing_started_at = None
+            count += 1
+    await session.commit()
+    return count
+
+
+async def recover_stale_schedule_items(now: datetime | None = None) -> list[UUID]:
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - STALE_PROCESSING_AFTER
+    async with SessionFactory() as session:
+        result = await session.execute(
+            select(ScheduleItemModel.id, ScheduleModel.status)
+            .join(ScheduleModel)
+            .where(
+                ScheduleItemModel.status == ScheduleItemStatus.PROCESSING.value,
+                ScheduleItemModel.processing_started_at.is_not(None),
+                ScheduleItemModel.processing_started_at < cutoff,
+                ScheduleModel.status.in_(
+                    (
+                        ScheduleStatus.ACTIVE.value,
+                        ScheduleStatus.PAUSED.value,
+                        ScheduleStatus.CANCELLED.value,
+                    )
+                ),
+            )
+        )
+        rows = result.all()
+        ids = [item_id for item_id, _ in rows]
+        for item_id, schedule_status in rows:
+            target_status = (
+                ScheduleItemStatus.CANCELLED.value
+                if schedule_status == ScheduleStatus.CANCELLED.value
+                else ScheduleItemStatus.PENDING.value
+            )
+            await session.execute(
+                update(ScheduleItemModel)
+                .where(
+                    ScheduleItemModel.id == item_id,
+                    ScheduleItemModel.status == ScheduleItemStatus.PROCESSING.value,
+                )
+                .values(
+                    status=target_status,
+                    processing_started_at=None,
+                    last_error=(
+                        "Recovered stale PROCESSING item from CANCELLED schedule; "
+                        "external publication outcome is unknown."
+                        if target_status == ScheduleItemStatus.CANCELLED.value
+                        else None
+                    ),
+                )
+            )
+        if ids:
+            await session.commit()
+        return ids
+
+
+async def _claim_due_item(now: datetime) -> UUID | None:
+    async with SessionFactory() as session:
+        result = await session.execute(
+            select(ScheduleItemModel)
+            .join(ScheduleModel)
+            .where(
+                ScheduleModel.status == ScheduleStatus.ACTIVE.value,
+                ScheduleItemModel.status == ScheduleItemStatus.PENDING.value,
+                ScheduleItemModel.scheduled_at <= now,
+            )
+            .order_by(ScheduleItemModel.scheduled_at, ScheduleItemModel.position, ScheduleItemModel.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        item = result.scalar_one_or_none()
+        if item is None:
+            return None
+        item.status = ScheduleItemStatus.PROCESSING.value
+        item.attempts += 1
+        item.processing_started_at = now
+        item.last_error = None
+        await session.commit()
+        return item.id
+
+
+async def _finish_schedule_if_complete(session: AsyncSession, schedule_id: UUID) -> None:
+    schedule = (await session.execute(
+        select(ScheduleModel).where(ScheduleModel.id == schedule_id)
+    )).scalar_one()
+    statuses = list((await session.execute(
+        select(ScheduleItemModel.status).where(ScheduleItemModel.schedule_id == schedule_id)
+    )).scalars().all())
+    if (
+        schedule.status == ScheduleStatus.ACTIVE.value
+        and statuses
+        and all(
+            status in (
+                ScheduleItemStatus.PUBLISHED.value,
+                ScheduleItemStatus.SKIPPED.value,
+                ScheduleItemStatus.CANCELLED.value,
+            )
+            for status in statuses
+        )
+    ):
+        schedule.status = ScheduleStatus.COMPLETED.value
+        schedule.completed_at = datetime.now(timezone.utc)
+
+
+async def _execute_claimed_item(
+    item_id: UUID,
+    publisher=None,
+    destination: str | None = None,
+) -> None:
+    destination = destination or os.getenv("TELEGRAM_DESTINATION_ID", "")
+    if not destination:
+        async with SessionFactory() as session:
+            item = (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.id == item_id))).scalar_one_or_none()
+            if item:
+                item.status = ScheduleItemStatus.FAILED.value
+                item.last_error = "TELEGRAM_DESTINATION_ID is required."
+                item.processing_started_at = None
+                await session.commit()
+        return
+
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ScheduleItemModel)
+            .options(selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit))
+            .where(ScheduleItemModel.id == item_id)
+        )).scalar_one_or_none()
+        if item is None:
+            return
+        post = item.post
+        existing = (await session.execute(
+            select(PublicationModel)
+            .where(
+                PublicationModel.post_id == post.id,
+                PublicationModel.platform == "telegram",
+                PublicationModel.destination == destination,
+            )
+            .order_by(PublicationModel.created_at.asc(), PublicationModel.id.asc())
+            .limit(1)
+        )).scalar_one_or_none()
+
+        if existing is not None and existing.status == "PUBLISHED":
+            item.status = ScheduleItemStatus.SKIPPED.value
+            item.publication_id = existing.id
+            item.published_at = existing.published_at
+            item.processing_started_at = None
+            await session.commit()
+            await _finish_schedule_if_complete(session, item.schedule_id)
+            await session.commit()
+            return
+
+        if existing is not None and existing.status in ("READY", "PUBLISHING"):
+            item.status = ScheduleItemStatus.FAILED.value
+            item.last_error = "Publication is already in progress; automatic retry is unsafe."
+            item.publication_id = existing.id
+            item.processing_started_at = None
+            await session.commit()
+            return
+
+        if existing is not None and existing.status == "FAILED":
+            existing.status = "DRAFT"
+            existing.error_message = None
+            await session.commit()
+            publication_id = existing.id
+        elif existing is not None:
+            publication_id = existing.id
+        else:
+            draft = await CreateTelegramDraft.execute_for_post(session, post, destination)
+            publication_id = draft.id
+
+    # All DB work above is committed before the external Telegram call.
+    publisher = publisher or TelegramPublisher()
+    async with SessionFactory() as session:
+        try:
+            publication = await ApproveAndPublish(publisher).execute(session, publication_id)
+        except Exception as exc:
+            result = await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.id == item_id))
+            item = result.scalar_one_or_none()
+            if item:
+                item.status = ScheduleItemStatus.FAILED.value
+                item.last_error = str(exc)
+                item.publication_id = publication_id
+                item.processing_started_at = None
+                await session.commit()
+            return
+        item = (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.id == item_id))).scalar_one_or_none()
+        if item is None:
+            return
+        item.publication_id = publication.id
+        item.processing_started_at = None
+        if publication.status.value == "PUBLISHED":
+            item.status = ScheduleItemStatus.PUBLISHED.value
+            item.published_at = publication.published_at
+            item.last_error = None
+        else:
+            item.status = ScheduleItemStatus.FAILED.value
+            item.last_error = publication.error_message or "Publication failed."
+        await session.commit()
+        await _finish_schedule_if_complete(session, item.schedule_id)
+        await session.commit()
+
+
+async def process_due_schedule_items(
+    limit: int = 20,
+    publisher=None,
+    destination: str | None = None,
+    now: datetime | None = None,
+) -> int:
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100.")
+    now = now or datetime.now(timezone.utc)
+    await recover_stale_schedule_items(now)
+    processed = 0
+    while processed < limit:
+        item_id = await _claim_due_item(now)
+        if item_id is None:
+            break
+        await _execute_claimed_item(item_id, publisher=publisher, destination=destination)
+        processed += 1
+    return processed
