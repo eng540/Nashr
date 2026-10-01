@@ -544,37 +544,31 @@ async def create_schedule_route(
                 payload.interval_minutes,
                 payload.timezone,
             )
-        schedule = ScheduleModel(
-            id=__import__("uuid").uuid4(),
-            name=payload.name.strip(),
-            timezone=payload.timezone.strip(),
-            status="DRAFT",
-            idempotency_key=payload.idempotency_key,
-        )
-        if not schedule.name:
-            raise ValueError("Schedule name cannot be empty.")
-        # Keep all existing domain validation and persistence semantics in one place.
-        # create_schedule intentionally remains the canonical application service.
-        schedule = await create_schedule(session, payload.name, payload.timezone, items)
-        if payload.idempotency_key:
-            schedule.idempotency_key = payload.idempotency_key
-            try:
-                await session.commit()
-            except IntegrityError:
-                await session.rollback()
-                existing = (
-                    await session.execute(
-                        select(ScheduleModel).where(
-                            ScheduleModel.idempotency_key == payload.idempotency_key
-                        )
+        try:
+            schedule = await create_schedule(
+                session,
+                payload.name,
+                payload.timezone,
+                items,
+                payload.idempotency_key,
+            )
+        except IntegrityError:
+            await session.rollback()
+            if not payload.idempotency_key:
+                raise
+            existing = (
+                await session.execute(
+                    select(ScheduleModel).where(
+                        ScheduleModel.idempotency_key == payload.idempotency_key
                     )
-                ).scalar_one_or_none()
-                if existing is None:
-                    raise
-                return _schedule_payload(
-                    await get_schedule(session, existing.id),
-                    detail=True,
                 )
+            ).scalar_one_or_none()
+            if existing is None:
+                raise
+            return _schedule_payload(
+                await get_schedule(session, existing.id),
+                detail=True,
+            )
         return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
