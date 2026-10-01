@@ -5,13 +5,16 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.posts import ProducePost
+from app.application.production_jobs import create_production_job, resume_production_job, run_production_job
+from app.domain.production_jobs import ProductionScope
+from app.infrastructure.database.models import ProductionJobItemModel, ProductionJobModel
 from app.application.discovery_jobs import (
     DiscoveryJobStatus,
     create_discovery_job,
@@ -26,6 +29,17 @@ from app.infrastructure.database.session import get_session
 from app.infrastructure.storage import LocalFileStorage
 
 router = APIRouter()
+
+
+class ProductionJobRequest(BaseModel):
+    source_id: UUID
+    scope: ProductionScope
+    topic_id: UUID | None = None
+    knowledge_unit_ids: list[UUID] = Field(default_factory=list)
+
+
+class ProductionJobResumeRequest(BaseModel):
+    retry_failed: bool = False
 
 
 class PublishTelegramRequest(BaseModel):
@@ -66,6 +80,39 @@ def _job_payload(job: DiscoveryJobModel) -> dict[str, Any]:
         "started_at": job.started_at,
         "completed_at": job.completed_at,
     }
+
+
+def _production_job_payload(job: ProductionJobModel, pending_items: int | None = None) -> dict[str, Any]:
+    return {
+        "job_id": str(job.id),
+        "source_id": str(job.source_id),
+        "status": job.status,
+        "scope": job.scope,
+        "total_items": job.total_items,
+        "completed_items": job.completed_items,
+        "failed_items": job.failed_items,
+        "pending_items": pending_items if pending_items is not None else max(job.total_items - job.completed_items - job.failed_items, 0),
+        "current_item_id": str(job.current_item_id) if job.current_item_id else None,
+        "attempts": job.attempts,
+        "error_code": job.error_code,
+        "error_message": job.error_message,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "started_at": job.started_at,
+        "completed_at": job.completed_at,
+    }
+
+
+async def _load_production_job_payload(session: AsyncSession, job: ProductionJobModel) -> dict[str, Any]:
+    pending = int(
+        (await session.execute(
+            select(func.count(ProductionJobItemModel.id)).where(
+                ProductionJobItemModel.job_id == job.id,
+                ProductionJobItemModel.status == "PENDING",
+            )
+        )).scalar_one() or 0
+    )
+    return _production_job_payload(job, pending_items=pending)
 
 
 def _book_map_checkpoint_payload(sections: list[BookMapSectionModel]) -> dict[str, Any]:
@@ -282,6 +329,52 @@ async def produce_post(
     except ValueError as exc:
         detail = str(exc)
         raise HTTPException(status_code=404 if "not found" in detail.lower() else 400, detail=detail) from exc
+
+
+@router.post("/production-jobs", status_code=status.HTTP_202_ACCEPTED)
+async def create_production_job_route(
+    payload: ProductionJobRequest,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        job = await create_production_job(
+            session,
+            payload.source_id,
+            payload.scope,
+            payload.topic_id,
+            payload.knowledge_unit_ids,
+        )
+        background_tasks.add_task(run_production_job, job.id)
+        return await _load_production_job_payload(session, job)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/production-jobs/{job_id}")
+async def production_job_status(job_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    job = (await session.execute(
+        select(ProductionJobModel).where(ProductionJobModel.id == job_id)
+    )).scalar_one_or_none()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Production job not found.")
+    return await _load_production_job_payload(session, job)
+
+
+@router.post("/production-jobs/{job_id}/resume", status_code=status.HTTP_202_ACCEPTED)
+async def resume_production_job_route(
+    job_id: UUID,
+    payload: ProductionJobResumeRequest,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        job = await resume_production_job(session, job_id, payload.retry_failed)
+        if job.status == "QUEUED":
+            background_tasks.add_task(run_production_job, job.id)
+        return await _load_production_job_payload(session, job)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/posts/{post_id}")
