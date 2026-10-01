@@ -38,6 +38,7 @@ class SourceModel(Base):
     topics: Mapped[list["TopicModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     discovery_jobs: Mapped[list["DiscoveryJobModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
     book_map_sections: Mapped[list["BookMapSectionModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+    production_jobs: Mapped[list["ProductionJobModel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
 
     def ensure_file_on_disk(self) -> Path:
         """Guarantee that the source PDF exists on ephemeral local storage."""
@@ -123,6 +124,52 @@ class PostModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     knowledge_unit: Mapped[KnowledgeUnitModel] = relationship(back_populates="posts")
     publications: Mapped[list["PublicationModel"]] = relationship(back_populates="post", cascade="save-update, merge")
+
+
+class ProductionJobModel(Base):
+    __tablename__ = "production_jobs"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
+    scope: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="QUEUED")
+    total_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_item_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source: Mapped[SourceModel] = relationship(back_populates="production_jobs")
+    items: Mapped[list["ProductionJobItemModel"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+
+
+class ProductionJobItemModel(Base):
+    __tablename__ = "production_job_items"
+    __table_args__ = (
+        UniqueConstraint("job_id", "knowledge_unit_id", name="uq_production_job_items_job_knowledge_unit"),
+        UniqueConstraint("job_id", "position", name="uq_production_job_items_job_position"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    job_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("production_jobs.id", ondelete="CASCADE"), nullable=False)
+    knowledge_unit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("knowledge_units.id", ondelete="RESTRICT"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    job: Mapped[ProductionJobModel] = relationship(back_populates="items")
+    knowledge_unit: Mapped[KnowledgeUnitModel] = relationship()
+    post: Mapped[PostModel | None] = relationship()
 
 
 class PublicationModel(Base):
