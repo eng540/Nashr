@@ -113,7 +113,7 @@ class KnowledgeUnitModel(Base):
 
 class PostModel(Base):
     __tablename__ = "posts"
-    __table_args__ = (UniqueConstraint("knowledge_unit_id", "status", name="uq_posts_knowledge_unit_status"),)
+    __table_args__ = (UniqueConstraint("knowledge_unit_id", name="uq_posts_knowledge_unit"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     knowledge_unit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("knowledge_units.id", ondelete="RESTRICT"), nullable=False)
