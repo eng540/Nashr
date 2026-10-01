@@ -216,7 +216,7 @@ async def test_reject_requires_reason_and_missing_post_is_404():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         empty = await client.post(f"/posts/{post_id}/reject", json={"reason": "   "})
         missing = await client.post(f"/posts/{uuid4()}/approve", json={"note": "x"})
-    assert empty.status_code == 422
+    assert empty.status_code == 400
     assert missing.status_code == 404
 
 
