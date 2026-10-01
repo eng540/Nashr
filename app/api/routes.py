@@ -2,12 +2,12 @@ import os
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import defer
+from sqlalchemy.orm import defer, selectinload
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
@@ -40,6 +40,43 @@ class ProductionJobRequest(BaseModel):
 
 class ProductionJobResumeRequest(BaseModel):
     retry_failed: bool = False
+
+
+class PostUpdateRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=100_000)
+
+
+def _post_payload(post: PostModel) -> dict[str, Any]:
+    unit = post.knowledge_unit
+    topic = unit.topic
+    source = topic.source if topic is not None else unit.source
+    published = any(publication.status == "PUBLISHED" for publication in post.publications)
+    return {
+        "post_id": str(post.id),
+        "title": unit.title,
+        "status": post.status,
+        "knowledge_unit_id": str(unit.id),
+        "topic_id": str(topic.id) if topic is not None else None,
+        "topic_title": topic.title if topic is not None else None,
+        "source_id": str(source.id),
+        "source_title": source.book_title or source.filename,
+        "content": post.content,
+        "content_preview": post.content[:300],
+        "created_at": post.created_at,
+        "updated_at": post.updated_at,
+        "published": published,
+    }
+
+
+def _post_query_options():
+    return (
+        selectinload(PostModel.knowledge_unit)
+        .selectinload(KnowledgeUnitModel.topic)
+        .selectinload(TopicModel.source),
+        selectinload(PostModel.knowledge_unit).selectinload(KnowledgeUnitModel.source),
+        selectinload(PostModel.publications),
+    )
+
 
 
 class PublishTelegramRequest(BaseModel):
@@ -377,18 +414,101 @@ async def resume_production_job_route(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.get("/posts")
+async def list_posts(
+    source_id: UUID | None = None,
+    topic_id: UUID | None = None,
+    status_filter: str | None = Query(default=None, alias="status", max_length=30),
+    knowledge_unit_id: UUID | None = None,
+    kind: str | None = Query(default=None, max_length=200),
+    q: str | None = Query(default=None, max_length=500),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    filters = []
+    if source_id is not None:
+        filters.append(KnowledgeUnitModel.source_id == source_id)
+    if topic_id is not None:
+        filters.append(KnowledgeUnitModel.topic_id == topic_id)
+    if knowledge_unit_id is not None:
+        filters.append(PostModel.knowledge_unit_id == knowledge_unit_id)
+    if status_filter is not None:
+        filters.append(PostModel.status == status_filter)
+    if kind is not None:
+        filters.append(KnowledgeUnitModel.kind == kind)
+    if q:
+        pattern = f"%{q.strip()}%"
+        filters.append(
+            PostModel.content.ilike(pattern) | KnowledgeUnitModel.title.ilike(pattern)
+        )
+
+    base = select(PostModel).join(PostModel.knowledge_unit).where(*filters)
+    total = int((await session.execute(
+        select(func.count(PostModel.id)).select_from(PostModel).join(PostModel.knowledge_unit).where(*filters)
+    )).scalar_one() or 0)
+    result = await session.execute(
+        base.options(*_post_query_options())
+        .order_by(PostModel.created_at.desc(), PostModel.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    posts = result.scalars().all()
+    return {
+        "items": [_post_payload(post) for post in posts],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 @router.get("/posts/{post_id}")
 async def get_post(post_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    result = await session.execute(select(PostModel).where(PostModel.id == post_id))
+    result = await session.execute(
+        select(PostModel)
+        .options(*_post_query_options())
+        .where(PostModel.id == post_id)
+    )
     post = result.scalar_one_or_none()
     if post is None:
         raise HTTPException(status_code=404, detail="Post not found.")
-    return {
-        "post_id": str(post.id),
-        "knowledge_unit_id": str(post.knowledge_unit_id),
-        "content": post.content,
-        "status": post.status,
-    }
+    payload = _post_payload(post)
+    payload["original_text"] = post.knowledge_unit.original_text
+    payload["source_reference"] = post.knowledge_unit.source_reference
+    payload["discovery_page_start"] = post.knowledge_unit.discovery_page_start
+    payload["discovery_page_end"] = post.knowledge_unit.discovery_page_end
+    payload["kind"] = post.knowledge_unit.kind
+    return payload
+
+
+@router.patch("/posts/{post_id}")
+async def update_post(
+    post_id: UUID,
+    payload: PostUpdateRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Post content cannot be empty.")
+    result = await session.execute(
+        select(PostModel)
+        .options(*_post_query_options())
+        .where(PostModel.id == post_id)
+    )
+    post = result.scalar_one_or_none()
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    post.content = content
+    await session.commit()
+    await session.refresh(post)
+    result = await session.execute(
+        select(PostModel)
+        .options(*_post_query_options())
+        .where(PostModel.id == post_id)
+    )
+    post = result.scalar_one()
+    return _post_payload(post)
+
 
 
 @router.post("/knowledge-units/{knowledge_unit_id}/draft")
