@@ -273,6 +273,35 @@ async def test_due_processing_reuses_existing_publication_and_does_not_duplicate
 
 
 @pytest.mark.asyncio
+async def test_previously_published_item_skips_even_without_destination_or_approval():
+    _, _, _, post = await _post("Published safety", published=True, status="DRAFT")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Published safety",
+            "Asia/Aden",
+            [(post, datetime.now(timezone.utc) - timedelta(minutes=1))],
+        )
+        schedule.status = "ACTIVE"
+        await session.commit()
+
+    await process_due_schedule_items(destination="")
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+        )).scalar_one()
+        publications = (await session.execute(
+            select(PublicationModel).where(
+                PublicationModel.post_id == post,
+                PublicationModel.status == "PUBLISHED",
+            )
+        )).scalars().all()
+    assert item.status == "SKIPPED"
+    assert item.publication_id == publications[0].id
+    assert len(publications) == 1
+
+
+@pytest.mark.asyncio
 async def test_due_processing_uses_existing_publication_and_records_failure():
     _, _, _, post = await _post()
     async with SessionFactory() as session:
