@@ -72,6 +72,74 @@ def build_schedule_times(
     ]
 
 
+async def get_posts_publish_eligibility(
+    session: AsyncSession,
+    post_ids: list[UUID],
+) -> dict[str, object]:
+    """Return per-Post publish eligibility using the existing Post/Publication/Schedule state."""
+    unique_ids = list(dict.fromkeys(post_ids))
+    if not unique_ids:
+        return {"eligible_ids": [], "blocked": []}
+
+    posts = (
+        await session.execute(
+            select(PostModel)
+            .options(selectinload(PostModel.publications))
+            .where(PostModel.id.in_(unique_ids))
+        )
+    ).scalars().all()
+    by_id = {post.id: post for post in posts}
+
+    scheduled_rows = (
+        await session.execute(
+            select(ScheduleItemModel.post_id, ScheduleItemModel.status, ScheduleModel.status)
+            .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
+            .where(
+                ScheduleItemModel.post_id.in_(unique_ids),
+                ScheduleModel.status.in_(
+                    (
+                        ScheduleStatus.DRAFT.value,
+                        ScheduleStatus.ACTIVE.value,
+                        ScheduleStatus.PAUSED.value,
+                    )
+                ),
+            )
+        )
+    ).all()
+    scheduled_by_post: dict[UUID, list[tuple[str, str]]] = {}
+    for post_id, item_status, schedule_status in scheduled_rows:
+        scheduled_by_post.setdefault(post_id, []).append((item_status, schedule_status))
+
+    eligible_ids: list[UUID] = []
+    blocked: list[dict[str, object]] = []
+    for post_id in unique_ids:
+        post = by_id.get(post_id)
+        if post is None:
+            blocked.append({"post_id": str(post_id), "reason_code": "POST_NOT_FOUND", "message": "Post not found."})
+            continue
+        if post.status != "APPROVED":
+            blocked.append({"post_id": str(post_id), "reason_code": "POST_NOT_APPROVED", "message": "Post is not APPROVED."})
+            continue
+        if not post.content.strip():
+            blocked.append({"post_id": str(post_id), "reason_code": "EMPTY_CONTENT", "message": "Post content is empty."})
+            continue
+        if any(publication.status == "PUBLISHED" for publication in post.publications):
+            blocked.append({"post_id": str(post_id), "reason_code": "ALREADY_PUBLISHED", "message": "Post was already published."})
+            continue
+        existing = scheduled_by_post.get(post_id, [])
+        if existing:
+            item_status, schedule_status = existing[0]
+            blocked.append({
+                "post_id": str(post_id),
+                "reason_code": "ALREADY_SCHEDULED",
+                "message": f"Post already exists in a {schedule_status} schedule ({item_status}).",
+            })
+            continue
+        eligible_ids.append(post_id)
+
+    return {"eligible_ids": eligible_ids, "blocked": blocked}
+
+
 async def create_schedule(
     session: AsyncSession,
     name: str,
@@ -100,15 +168,13 @@ async def create_schedule(
     missing = [post_id for post_id in post_ids if post_id not in found]
     if missing:
         raise LookupError("Post not found.")
-    approved = set((await session.execute(
-        select(PostModel.id).where(
-            PostModel.id.in_(post_ids),
-            PostModel.status == "APPROVED",
+    eligibility = await get_posts_publish_eligibility(session, post_ids)
+    blocked = eligibility["blocked"]
+    if blocked:
+        details = "؛ ".join(
+            f"{entry['post_id']}: {entry['message']}" for entry in blocked[:8]
         )
-    )).scalars().all())
-    not_approved = [post_id for post_id in post_ids if post_id not in approved]
-    if not_approved:
-        raise RuntimeError("Post must be APPROVED before scheduling.")
+        raise RuntimeError("Some Posts are not eligible for scheduling: " + details)
     schedule = ScheduleModel(id=uuid4(), name=name, timezone=timezone_name, status=ScheduleStatus.DRAFT.value, idempotency_key=idempotency_key.strip() if idempotency_key else None)
     schedule.items = [
         ScheduleItemModel(
