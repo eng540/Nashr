@@ -889,3 +889,27 @@ async def test_retry_after_existing_publication_never_creates_duplicate() -> Non
             )
         )).scalar_one())
     assert count_before == count_after == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_schedule_creation_reserves_a_post_once() -> None:
+    _, _, _, post = await _post("Concurrent reservation")
+
+    async def create(name: str):
+        async with SessionFactory() as session:
+            return await create_schedule(
+                session,
+                name,
+                "Asia/Aden",
+                [(post, datetime.now(timezone.utc) + timedelta(hours=1))],
+            )
+
+    results = await asyncio.gather(
+        create("Concurrent A"),
+        create("Concurrent B"),
+        return_exceptions=True,
+    )
+    successes = [result for result in results if isinstance(result, ScheduleModel)]
+    failures = [result for result in results if isinstance(result, RuntimeError)]
+    assert len(successes) == 1
+    assert len(failures) == 1
