@@ -253,53 +253,114 @@ def next_scheduled_at(schedule: ScheduleModel) -> datetime | None:
 
 
 async def validate_schedule_for_activation(session: AsyncSession, schedule_id: UUID) -> dict[str, object]:
-    """Validate a persisted schedule immediately before activation."""
+    """Validate schedule-level invariants while reporting item-level blockers without stopping siblings."""
     schedule = await get_schedule(session, schedule_id)
     if schedule is None:
         raise LookupError("Schedule not found.")
+
     errors: list[str] = []
     warnings: list[str] = []
+    blocked_items: list[dict[str, object]] = []
     items = sorted(schedule.items, key=lambda item: item.position)
+
     if not items:
         errors.append("الخطة لا تحتوي على أي منشور.")
+
     seen: set[UUID] = set()
     for item in items:
         if item.post_id in seen:
             errors.append(f"المنشور في الموضع {item.position} مكرر داخل الخطة.")
         seen.add(item.post_id)
+
         if item.status == ScheduleItemStatus.FAILED.value:
-            errors.append(f"المنشور «{item.post.knowledge_unit.title}» لديه فشل سابق ويجب إعادة المحاولة أولًا.")
+            blocked_items.append({
+                "item_id": str(item.id),
+                "post_id": str(item.post_id),
+                "position": item.position,
+                "reason_code": "PREVIOUS_FAILURE",
+                "message": f"المنشور «{item.post.knowledge_unit.title}» لديه فشل سابق؛ سيبقى معزولًا عن بقية العناصر.",
+            })
             continue
-        if item.status in (ScheduleItemStatus.CANCELLED.value, ScheduleItemStatus.SKIPPED.value, ScheduleItemStatus.PUBLISHED.value):
+        if item.status in (
+            ScheduleItemStatus.CANCELLED.value,
+            ScheduleItemStatus.SKIPPED.value,
+            ScheduleItemStatus.PUBLISHED.value,
+        ):
             continue
         if item.status != ScheduleItemStatus.PENDING.value:
-            errors.append(f"المنشور «{item.post.knowledge_unit.title}» في حالة تنفيذ غير قابلة للتفعيل: {item.status}.")
+            blocked_items.append({
+                "item_id": str(item.id),
+                "post_id": str(item.post_id),
+                "position": item.position,
+                "reason_code": "INVALID_ITEM_STATE",
+                "message": f"المنشور «{item.post.knowledge_unit.title}» في حالة تنفيذ غير قابلة للتنفيذ الآن: {item.status}.",
+            })
             continue
+
         post = item.post
         if post.status != "APPROVED":
-            errors.append(f"المنشور «{item.post.knowledge_unit.title}» غير معتمد حاليًا.")
+            blocked_items.append({
+                "item_id": str(item.id),
+                "post_id": str(item.post_id),
+                "position": item.position,
+                "reason_code": "POST_NOT_APPROVED",
+                "message": f"المنشور «{item.post.knowledge_unit.title}» غير معتمد حاليًا؛ لن يمنع بقية الخطة.",
+            })
         if not post.content.strip():
-            errors.append(f"المنشور «{item.post.knowledge_unit.title}» لا يحتوي على محتوى قابل للنشر.")
+            blocked_items.append({
+                "item_id": str(item.id),
+                "post_id": str(item.post_id),
+                "position": item.position,
+                "reason_code": "EMPTY_CONTENT",
+                "message": f"المنشور «{item.post.knowledge_unit.title}» لا يحتوي على محتوى قابل للنشر؛ لن يمنع بقية الخطة.",
+            })
         if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
-            errors.append(f"وقت نشر «{item.post.knowledge_unit.title}» غير صالح.")
+            blocked_items.append({
+                "item_id": str(item.id),
+                "post_id": str(item.post_id),
+                "position": item.position,
+                "reason_code": "INVALID_TIME",
+                "message": f"وقت نشر «{item.post.knowledge_unit.title}» غير صالح؛ لن يمنع بقية الخطة.",
+            })
         if any(publication.status == "PUBLISHED" for publication in item.post.publications):
-            errors.append(f"المنشور «{item.post.knowledge_unit.title}» سبق نشره وما زال Pending.")
+            blocked_items.append({
+                "item_id": str(item.id),
+                "post_id": str(item.post_id),
+                "position": item.position,
+                "reason_code": "ALREADY_PUBLISHED",
+                "message": f"المنشور «{item.post.knowledge_unit.title}» سبق نشره؛ سيتم تجاوزه ولن يعاد نشره.",
+            })
+
     try:
         validate_timezone(schedule.timezone)
     except ValueError as exc:
         errors.append(str(exc))
+
     if schedule.status == ScheduleStatus.PAUSED.value:
         warnings.append("الخطة متوقفة مؤقتًا؛ ستستأنف التنفيذ بعد التفعيل.")
+    if blocked_items:
+        warnings.append(f"توجد {len(blocked_items)} عناصر غير قابلة للتنفيذ حاليًا؛ ستُعالج كل منها دون إيقاف بقية الخطة.")
     if any(item.status == ScheduleItemStatus.PUBLISHED.value for item in items):
         warnings.append("توجد منشورات منشورة بالفعل داخل الخطة؛ لن يعاد نشرها.")
+
     return {
         "valid": not errors,
         "errors": errors,
         "warnings": warnings,
+        "blocked_items": blocked_items,
         "total_items": len(items),
         "pending_items": sum(item.status == ScheduleItemStatus.PENDING.value for item in items),
         "published_items": sum(item.status == ScheduleItemStatus.PUBLISHED.value for item in items),
         "failed_items": sum(item.status == ScheduleItemStatus.FAILED.value for item in items),
+        "skipped_items": sum(item.status == ScheduleItemStatus.SKIPPED.value for item in items),
+        "processable_pending_items": sum(
+            item.status == ScheduleItemStatus.PENDING.value
+            and item.post.status == "APPROVED"
+            and bool(item.post.content.strip())
+            and item.scheduled_at.tzinfo is not None
+            and not any(publication.status == "PUBLISHED" for publication in item.post.publications)
+            for item in items
+        ),
     }
 
 
