@@ -759,23 +759,23 @@ async def test_schedule_eligibility_excludes_published_and_existing_schedule() -
 
 
 @pytest.mark.asyncio
-async def test_create_schedule_rejects_already_published_or_scheduled_post() -> None:
+async def test_create_schedule_allows_already_published_but_rejects_duplicate_scheduled_post() -> None:
     _, _, _, published_post = await _post("Create published", published=True)
     _, _, _, scheduled_post = await _post("Create scheduled")
     async with SessionFactory() as session:
+        published_schedule = await create_schedule(
+            session,
+            "Published schedule",
+            "Asia/Aden",
+            [(published_post, datetime.now(timezone.utc) + timedelta(hours=1))],
+        )
+        assert published_schedule.id is not None
         await create_schedule(
             session,
             "Existing schedule",
             "Asia/Aden",
             [(scheduled_post, datetime.now(timezone.utc) + timedelta(hours=2))],
         )
-        with pytest.raises(RuntimeError, match="not eligible"):
-            await create_schedule(
-                session,
-                "Published schedule",
-                "Asia/Aden",
-                [(published_post, datetime.now(timezone.utc) + timedelta(hours=1))],
-            )
         with pytest.raises(RuntimeError, match="not eligible"):
             await create_schedule(
                 session,
