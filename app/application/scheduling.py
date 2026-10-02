@@ -163,8 +163,14 @@ async def create_schedule(
     if len(post_ids) != len(set(post_ids)):
         raise ValueError("A Post cannot appear more than once in a Schedule.")
     normalized = [(post_id, validate_scheduled_at(when)) for post_id, when in items]
-    result = await session.execute(select(PostModel.id).where(PostModel.id.in_(post_ids)))
-    found = set(result.scalars().all())
+    # Serialize schedule creation for the selected Posts so two concurrent plans
+    # cannot both pass eligibility and reserve the same Post.
+    locked_result = await session.execute(
+        select(PostModel.id)
+        .where(PostModel.id.in_(post_ids))
+        .with_for_update()
+    )
+    found = set(locked_result.scalars().all())
     missing = [post_id for post_id in post_ids if post_id not in found]
     if missing:
         raise LookupError("Post not found.")
