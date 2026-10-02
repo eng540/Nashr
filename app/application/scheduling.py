@@ -434,6 +434,35 @@ async def retry_failed_items(session: AsyncSession, schedule_id: UUID) -> int:
     return count
 
 
+async def retry_failed_item(
+    session: AsyncSession,
+    schedule_id: UUID,
+    item_id: UUID,
+) -> ScheduleItemModel:
+    schedule = await get_schedule(session, schedule_id)
+    if schedule is None:
+        raise LookupError("Schedule not found.")
+    if schedule.status not in (
+        ScheduleStatus.ACTIVE.value,
+        ScheduleStatus.PAUSED.value,
+        ScheduleStatus.COMPLETED.value,
+    ):
+        raise RuntimeError("A failed item can only be retried in ACTIVE, PAUSED, or COMPLETED schedules.")
+    item = next((candidate for candidate in schedule.items if candidate.id == item_id), None)
+    if item is None:
+        raise LookupError("Schedule item not found.")
+    if item.status != ScheduleItemStatus.FAILED.value:
+        raise RuntimeError("Only FAILED schedule items can be retried individually.")
+    item.status = ScheduleItemStatus.PENDING.value
+    item.last_error = None
+    item.processing_started_at = None
+    if schedule.status == ScheduleStatus.COMPLETED.value:
+        schedule.status = ScheduleStatus.ACTIVE.value
+        schedule.completed_at = None
+    await session.commit()
+    return item
+
+
 async def recover_stale_schedule_items(now: datetime | None = None) -> list[UUID]:
     now = now or datetime.now(timezone.utc)
     cutoff = now - STALE_PROCESSING_AFTER
