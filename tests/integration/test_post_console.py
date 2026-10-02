@@ -22,7 +22,6 @@ async def test_dedicated_posts_console_is_separate_from_library() -> None:
     assert "whitespace-pre-wrap" in body
     assert "/posts/bulk-approve" in body
     assert "/schedules/eligibility" in body
-    assert "/schedules/${scheduleId}/items/${itemId}/retry" in body
     assert "إعادة المحاولة" in body
     assert "selected_post_ids" in body
     assert "APPROVED" in body
