@@ -541,6 +541,8 @@ async def _execute_claimed_item(
                 item.last_error = "TELEGRAM_DESTINATION_ID is required."
                 item.processing_started_at = None
                 await session.commit()
+                await _finish_schedule_if_complete(session, item.schedule_id)
+                await session.commit()
         return
 
     async with SessionFactory() as session:
@@ -587,6 +589,8 @@ async def _execute_claimed_item(
             item.last_error = "Publication is already in progress; automatic retry is unsafe."
             item.publication_id = existing.id
             item.processing_started_at = None
+            await session.commit()
+            await _finish_schedule_if_complete(session, item.schedule_id)
             await session.commit()
             return
 
