@@ -14,7 +14,7 @@ async def test_dedicated_posts_console_is_separate_from_library() -> None:
     assert 'id="bank-title"' in body
     assert 'id="editor"' in body
     assert 'href="/console"' in body
-    assert 'href="/console#scheduling-section"' in body
+    assert "window.location.href='/publishing?selected_post_ids=" in body
     assert 'id="next-to-scheduling"' in body
     assert 'التالي: بناء خطة النشر' in body
     assert 'id="bulk-approve"' in body

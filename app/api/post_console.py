@@ -218,7 +218,7 @@ async function prepareScheduling(){
   if(blocked.length)showActionMessage('تم استبعاد '+blocked.length+' منشورًا من الجدولة: '+blocked.map(x=>x.message).join('؛ '),'info');
   updateSelected();
   if(!eligible.length)return;
-  window.location.href='/console?selected_post_ids='+encodeURIComponent(eligible.join(','))+'#scheduling-section';
+  window.location.href='/publishing?selected_post_ids='+encodeURIComponent(eligible.join(','));
 }
 async function openEditor(id){const p=await api('/posts/'+id);$('editor').dataset.id=id;$('editor-title').textContent=p.title;$('editor-meta').textContent=statusLabel(p.status)+' · '+(p.source_title||'')+' · '+(p.topic_title||'');$('content').value=p.content||'';$('note').value=p.review_note||'';$('provenance').innerHTML='<strong>المصدر:</strong> '+esc(p.source_title||'غير محدد')+'<br><strong>المحور:</strong> '+esc(p.topic_title||'بدون محور')+'<br><strong>المادة:</strong> '+esc(p.title||'غير محدد')+'<br><strong>المرجع:</strong> '+esc(p.source_reference||'غير محدد')+((p.discovery_page_start||p.discovery_page_end)?'<br><strong>الصفحات:</strong> '+esc((p.discovery_page_start||'?')+'–'+(p.discovery_page_end||'?')):'');$('editor-error').textContent='';$('editor').classList.remove('hidden');}
 async function savePost(){const id=$('editor').dataset.id,content=$('content').value.trim();if(!content)return $('editor-error').textContent='المحتوى لا يمكن أن يكون فارغًا.';try{const p=await api('/posts/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});if(p.status!=='APPROVED')state.selectedPosts.delete(id);$('editor').classList.add('hidden');await loadPosts();}catch(e){$('editor-error').textContent=e.message;}}
