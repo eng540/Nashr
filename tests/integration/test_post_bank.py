@@ -237,3 +237,46 @@ async def test_console_contains_editorial_review_controls_and_status_filters():
     assert "post-editor-reject" in NASHR_CONSOLE_HTML
     assert "/approve" in NASHR_CONSOLE_HTML
     assert "/reject" in NASHR_CONSOLE_HTML
+
+
+
+@pytest.mark.asyncio
+async def test_bulk_approve_is_server_side_partial_and_idempotent() -> None:
+    _, _, _, _, _, units, post_by_unit = await _fixture()
+    ids = [post_by_unit[units[0]], post_by_unit[units[1]]]
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/posts/bulk-approve", json={"post_ids": [str(ids[0]), str(ids[1])]})
+        second = await client.post("/posts/bulk-approve", json={"post_ids": [str(ids[0]), str(ids[1]), str(uuid4())]})
+    assert first.status_code == 200
+    assert first.json()["approved_count"] == 2
+    assert first.json()["failed_count"] == 0
+    assert second.status_code == 200
+    assert second.json()["approved_count"] == 0
+    assert second.json()["failed_count"] == 3
+    reasons = {row["reason_code"] for row in second.json()["results"]}
+    assert reasons == {"ALREADY_APPROVED", "POST_NOT_FOUND"}
+
+
+@pytest.mark.asyncio
+async def test_post_bank_exposes_publication_state_filters() -> None:
+    source_a, _, _, _, _, units, post_by_unit = await _fixture()
+    published_id = post_by_unit[units[0]]
+    async with SessionFactory() as session:
+        session.add(PublicationModel(
+            id=uuid4(), knowledge_unit_id=units[0], post_id=published_id,
+            platform="telegram", destination="@test", content="published",
+            status="PUBLISHED", external_id="published-filter",
+        ))
+        await session.commit()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        published = await client.get(f"/posts?source_id={source_a}&publication_state=PUBLISHED")
+        unpublished = await client.get(f"/posts?source_id={source_a}&publication_state=UNPUBLISHED")
+        eligible = await client.get(f"/posts?source_id={source_a}&publication_state=ELIGIBLE")
+    assert published.status_code == 200
+    assert unpublished.status_code == 200
+    assert eligible.status_code == 200
+    assert [row["post_id"] for row in published.json()["items"]] == [str(published_id)]
+    assert str(published_id) not in {row["post_id"] for row in unpublished.json()["items"]}
+    assert str(published_id) not in {row["post_id"] for row in eligible.json()["items"]}
