@@ -60,7 +60,7 @@ async def test_publishing_selection_action_and_schedule_creation_are_wired() -> 
     assert "async function openScheduleCreation()" in body
     assert "$('schedule-from-selection').onclick=openScheduleCreation;" in body
     assert "function renderSelectionCount()" in body
-    assert "$('post-selection-count').textContent=count+' محدد';" in body
+    assert "setText('post-selection-count',count+' محدد')" in body
     assert "async function hydrateSelection()" in body
     assert "await renderScheduleSelection();" in body
     assert "await request('/schedules/eligibility?'+params.toString())" in body
@@ -81,3 +81,40 @@ async def test_content_factory_synchronizes_selected_post_state_before_actions()
     assert "await syncSelectedPostMeta();" in NASHR_POSTS_HTML
     assert "const unapproved=ids.filter(id=>state.postMeta[id]?.status!=='APPROVED')" in NASHR_POSTS_HTML
     assert "لا يمكن الانتقال إلى الجدولة قبل اعتماد جميع المنشورات المحددة" in NASHR_POSTS_HTML
+
+
+async def test_publishing_console_has_no_dead_dom_references():
+    """Guard against stale Post Bank references leaking into Publishing HTML."""
+    from app.api.publishing_console import NASHR_PUBLISHING_HTML
+    body = NASHR_PUBLISHING_HTML
+
+    assert body.count("function renderSelectionCount") == 1,         "renderSelectionCount must have exactly one definition in Publishing HTML"
+
+    dead_ids = [
+        "post-bulk-approve",
+        "post-bank-action-message",
+        "post-bank-grid",
+        "post-bank-summary",
+        "post-page",
+        "post-prev",
+        "post-next",
+    ]
+    for dead in dead_ids:
+        assert dead not in body, f"Publishing HTML must not reference '{dead}'"
+
+    dead_functions = [
+        "function renderPostBank",
+        "function loadPostBank",
+        "function showPostBankMessage",
+        "function openPostEditor",
+        "function togglePostSelection",
+        "function selectedPost(",
+    ]
+    for dead in dead_functions:
+        assert dead not in body, f"Dead function survived refactor: {dead}"
+
+    assert "function renderEligiblePosts" in body
+    assert "function loadEligiblePosts" in body
+    assert "function showEligibleMessage" in body
+    assert "function filterSelectionForScheduling" in body
+    assert "function openScheduleCreation" in body

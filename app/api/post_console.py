@@ -150,11 +150,25 @@ function showActionMessage(message,kind='info'){
   box.classList.remove('hidden');
 }
 function selectedNonApproved(){
-  return [...state.selectedPosts].filter(id=>state.postMeta[id]?.status!=='APPROVED');
+  return [...state.selectedPosts].filter(id=>{
+    const m = state.postMeta[id];
+    if (!m) return false;
+    return m.status !== 'APPROVED';
+  });
 }
 async function syncSelectedPostMeta(){
   const missing=[...state.selectedPosts].filter(id=>!state.postMeta[id]||!state.postMeta[id].status);
-  if(missing.length)await Promise.all(missing.map(async id=>{try{state.postMeta[id]=await api('/posts/'+id);}catch(e){}}));
+  const failures=[];
+  if(missing.length){
+    await Promise.all(missing.map(async id=>{
+      try{ state.postMeta[id]=await api('/posts/'+id); }
+      catch(e){ failures.push({id, message: e.message}); }
+    }));
+  }
+  if(failures.length){
+    showActionMessage('تعذر جلب تفاصيل '+failures.length+' منشورًا محددًا؛ تم استبعادها من الاعتماد الجماعي.','info');
+    failures.forEach(f=>{ state.selectedPosts.delete(f.id); });
+  }
 }
 function renderPosts(d){
   $('summary').textContent=(d.total||0)+' Posts';

@@ -61,11 +61,11 @@ NASHR_PUBLISHING_HTML = r'''<!doctype html>
 
 <section id="telegram-preview" class="fixed inset-0 z-50 hidden grid place-items-center bg-slate-900/60 p-4"><div class="w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl"><div class="flex items-center justify-between"><div><p class="text-xs font-bold text-indigo-600">Telegram Preview</p><h2 class="text-xl font-bold">المعاينة النهائية</h2></div><button id="telegram-preview-close" class="rounded-xl border px-3 py-2">إغلاق</button></div><p id="telegram-preview-meta" class="mt-3 text-xs text-slate-500"></p><pre id="telegram-preview-content" dir="rtl" class="mt-4 max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-2xl border bg-slate-50 p-5 text-sm leading-8"></pre></div></section>
 </main><script>
-const $=id=>document.getElementById(id);const state={selectedPostIds:[],selectedPostMeta:{},eligiblePosts:[],scheduleIdempotencyKey:null,activeScheduleId:null,pendingActivationId:null};
+const $=id=>document.getElementById(id);const setText=(id,value)=>{const el=$(id);if(el)el.textContent=value;};const setDisabled=(id,value)=>{const el=$(id);if(el)el.disabled=value;};const state={selectedPostIds:[],selectedPostMeta:{},eligiblePosts:[],scheduleIdempotencyKey:null,activeScheduleId:null,pendingActivationId:null};
 async function request(url,opt={}){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');return d;}
 function esc(t){return(t??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function showPostBankMessage(message,kind='info'){const box=document.getElementById('schedule-create-error');if(box)box.textContent=message;}
-function renderSelectionCount(){const count=state.selectedPostIds.length;$('schedule-from-selection').disabled=count===0;$('post-selection-count').textContent=count+' محدد';$('eligible-selection-count').textContent=count+' محدد';}
+
+function renderSelectionCount(){const count=state.selectedPostIds.length;setDisabled('schedule-from-selection',count===0);setText('post-selection-count',count+' محدد');setText('eligible-selection-count',count+' محدد');}
 async function renderScheduleSelection(){
   const ids=[...new Set(state.selectedPostIds)];
   state.selectedPostIds=ids;
@@ -137,57 +137,6 @@ async function loadEligiblePosts(){const params=new URLSearchParams();const sour
 async function loadSourcesForEligibility(){try{const d=await request('/sources');$('eligible-source').innerHTML='<option value="">كل الكتب</option>'+d.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.book_title||s.filename)+'</option>').join('');}catch(e){showEligibleMessage('تعذر تحميل قائمة الكتب: '+e.message,'error');}}
 async function loadSelectedPostMeta(){const missing=state.selectedPostIds.filter(id=>!state.selectedPostMeta[id]);if(missing.length)await Promise.all(missing.map(async id=>{try{state.selectedPostMeta[id]=await request('/posts/'+id);}catch(e){}}));}
 async function selectAllEligible(){await loadEligiblePosts();state.selectedPostIds=[...new Set(state.selectedPostIds.concat(state.eligiblePosts.map(p=>p.post_id)))];renderEligiblePosts();renderSelectionCount();}
-function selectedPost(id){return state.selectedPostIds.includes(id)}
-function togglePostSelection(id){if(selectedPost(id))state.selectedPostIds=state.selectedPostIds.filter(x=>x!==id);else state.selectedPostIds.push(id);renderSelectionCount();}
-function renderSelectionCount(){
-  $('post-selection-count').textContent=state.selectedPostIds.length+' محدد';
-  const selectedNonApproved=state.selectedPostIds.filter(id=>{
-    const item=state.selectedPostMeta?.[id];
-    return item ? item.status!=='APPROVED' : true;
-  }).length;
-  $('post-bulk-approve').disabled=selectedNonApproved===0;
-  $('schedule-from-selection').disabled=state.selectedPostIds.length===0;
-
-}
-function statusLabel(status){return({DRAFT:'مسودة — تحتاج مراجعة',APPROVED:'معتمد — جاهز للجدولة',REJECTED:'مرفوض — يحتاج تعديل'}[status]||status);}
-function publicationStateLabel(state){return({PUBLISHED:'منشور سابقًا',SCHEDULED:'موجود في خطة',ELIGIBLE:'قابل للنشر',NOT_READY:'غير جاهز'}[state]||state);}
-function showPostBankMessage(message,kind='info'){
-  const box=$('post-bank-action-message');
-  box.textContent=message;
-  box.className='mt-4 rounded-xl border p-3 text-sm '+(kind==='error'?'border-rose-200 bg-rose-50 text-rose-700':kind==='success'?'border-emerald-200 bg-emerald-50 text-emerald-700':'border-indigo-200 bg-indigo-50 text-indigo-700');
-  box.classList.remove('hidden');
-}
-function renderPostBank(d){
-  state.postTotal=d.total;
-  state.postItems=d.items||[];
-  state.postItems.forEach(p=>{state.selectedPostMeta[p.post_id]=p;});
-  const grid=$('post-bank-grid');
-  grid.innerHTML=(d.items||[]).map(p=>{
-    const selectable=p.status!=='APPROVED' || p.eligible_for_scheduling;
-    const selected=selectedPost(p.post_id);
-    const stateText=p.published?'منشور سابقًا':p.scheduled?'موجود في خطة':p.eligible_for_scheduling?'قابل للنشر':'غير جاهز';
-    return '<article class="rounded-2xl border p-4 '+(selected?'border-indigo-400 bg-indigo-50':'bg-white')+'"><div class="flex items-start justify-between gap-3"><label class="flex items-start gap-3"><input type="checkbox" '+(selected?'checked':'')+' '+(selectable?'':'disabled')+' data-select-post="'+esc(p.post_id)+'" class="mt-1 h-4 w-4"><span><h3 class="font-bold">'+esc(p.title)+'</h3><p class="mt-1 text-xs text-slate-500">'+esc(p.topic_title||'بدون محور')+' · '+esc(p.source_title)+'</p></span></label><span class="rounded-full bg-slate-100 px-2 py-1 text-[11px]">'+esc(statusLabel(p.status))+'</span></div><p class="mt-3 whitespace-pre-wrap text-sm leading-8 text-slate-700">'+esc(p.content)+'</p><div class="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs"><span class="rounded-full bg-slate-100 px-2 py-1">'+esc(stateText)+'</span><div class="flex gap-2"><button data-open-post="'+esc(p.post_id)+'" class="rounded-lg border px-3 py-1.5 font-semibold text-slate-700 hover:border-indigo-400">تحرير / تفاصيل</button></div></div></article>';
-  }).join('');
-  document.querySelectorAll('[data-select-post]').forEach(el=>el.onchange=()=>{togglePostSelection(el.dataset.selectPost);renderPostBank({...d,items:d.items});});
-  document.querySelectorAll('[data-open-post]').forEach(el=>el.onclick=()=>openPostEditor(el.dataset.openPost));
-  $('post-bank-empty').classList.toggle('hidden',(d.items||[]).length>0);
-  $('post-bank-summary').textContent=d.total+' Posts · '+(d.items||[]).length+' معروضة';
-  const page=Math.floor(d.offset/d.limit)+1;const pages=Math.max(1,Math.ceil(d.total/d.limit));$('post-page').textContent='صفحة '+page+' من '+pages;
-  $('post-prev').disabled=d.offset===0;$('post-next').disabled=d.offset+d.limit>=d.total;
-  renderSelectionCount();
-}
-async function loadPostBank(){
-  const params=new URLSearchParams();
-  const source=$('post-source').value,topic=$('post-topic').value,status=$('post-status').value,q=$('post-search').value.trim(),publicationState=$('post-publication-state').value;
-  if(source)params.set('source_id',source);
-  if(topic)params.set('topic_id',topic);
-  if(status)params.set('status',status);
-  if(publicationState)params.set('publication_state',publicationState);
-  if(q)params.set('q',q);
-  params.set('limit','50');params.set('offset',String(state.postOffset));
-  try{renderPostBank(await request('/posts?'+params.toString()));}
-  catch(e){$('post-bank-summary').textContent=e.message;}
-}
 async function filterSelectionForScheduling(){
   const ids=[...state.selectedPostIds];
   if(!ids.length)return {eligible:[],blocked:[]};
@@ -203,7 +152,7 @@ async function filterSelectionForScheduling(){
   }
   state.selectedPostIds=ids.filter(id=>!blockedIds.has(id));
   if(blocked.length){
-    showPostBankMessage('تم استبعاد '+blocked.length+' منشورًا غير قابل للنشر من خطة الجدولة: '+blocked.map(x=>x.message).join('؛ '),'info');
+    showEligibleMessage('تم استبعاد '+blocked.length+' منشورًا غير قابل للنشر من خطة الجدولة: '+blocked.map(x=>x.message).join('؛ '),'info');
   }
   renderSelectionCount();
   return {eligible:state.selectedPostIds,blocked};
