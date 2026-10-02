@@ -176,15 +176,23 @@ async function bulkApproveSelected(){
   if(!ids.length)return showActionMessage('كل المنشورات المحددة معتمدة بالفعل.','info');
   $('bulk-approve').disabled=true;
   try{
-    const result=await api('/posts/bulk-approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_ids:ids})});
-    (result.results||[]).forEach(row=>{
-      state.postMeta[row.post_id]=state.postMeta[row.post_id]||{post_id:row.post_id};
-      if(row.status==='APPROVED')state.postMeta[row.post_id].status='APPROVED';
-    });
-    if(result.failed_count){
-      showActionMessage('تم اعتماد '+result.approved_count+' منشورًا، وتعذر اعتماد '+result.failed_count+'؛ '+(result.results||[]).filter(x=>x.status==='FAILED').map(x=>x.message).join('؛ '),result.approved_count?'success':'error');
+    const chunkSize=500;
+    const results=[];
+    for(let offset=0;offset<ids.length;offset+=chunkSize){
+      const chunk=ids.slice(offset,offset+chunkSize);
+      const result=await api('/posts/bulk-approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_ids:chunk})});
+      results.push(...(result.results||[]));
+      (result.results||[]).forEach(row=>{
+        state.postMeta[row.post_id]=state.postMeta[row.post_id]||{post_id:row.post_id};
+        if(row.status==='APPROVED')state.postMeta[row.post_id].status='APPROVED';
+      });
+    }
+    const approvedCount=results.filter(x=>x.status==='APPROVED').length;
+    const failed=results.filter(x=>x.status==='FAILED');
+    if(failed.length){
+      showActionMessage('تم اعتماد '+approvedCount+' منشورًا، وتعذر اعتماد '+failed.length+'؛ '+failed.map(x=>x.message).join('؛ '),approvedCount?'success':'error');
     }else{
-      showActionMessage('تم اعتماد '+result.approved_count+' منشورًا بنجاح. المجموعة ما زالت محددة ويمكنك الانتقال إلى الجدولة.','success');
+      showActionMessage('تم اعتماد '+approvedCount+' منشورًا بنجاح. المجموعة ما زالت محددة ويمكنك الانتقال إلى الجدولة.','success');
     }
     await loadPosts();
     state.selectedPosts=new Set([...state.selectedPosts].filter(id=>state.postMeta[id]?.status==='APPROVED'));
@@ -195,11 +203,16 @@ async function bulkApproveSelected(){
 async function prepareScheduling(){
   const ids=[...state.selectedPosts];
   if(!ids.length)return;
-  const params=new URLSearchParams();
-  ids.forEach(id=>params.append('post_ids',id));
-  const result=await api('/schedules/eligibility?'+params.toString());
-  const blocked=result.blocked||[];
-  const blockedIds=new Set(blocked.map(x=>x.post_id));
+  const chunkSize=500;
+  const blocked=[];
+  const blockedIds=new Set();
+  for(let offset=0;offset<ids.length;offset+=chunkSize){
+    const chunk=ids.slice(offset,offset+chunkSize);
+    const params=new URLSearchParams();
+    chunk.forEach(id=>params.append('post_ids',id));
+    const result=await api('/schedules/eligibility?'+params.toString());
+    (result.blocked||[]).forEach(row=>{blocked.push(row);blockedIds.add(row.post_id);});
+  }
   const eligible=ids.filter(id=>!blockedIds.has(id));
   state.selectedPosts=new Set(eligible);
   if(blocked.length)showActionMessage('تم استبعاد '+blocked.length+' منشورًا من الجدولة: '+blocked.map(x=>x.message).join('؛ '),'info');
@@ -207,7 +220,6 @@ async function prepareScheduling(){
   if(!eligible.length)return;
   window.location.href='/console?selected_post_ids='+encodeURIComponent(eligible.join(','))+'#scheduling-section';
 }
-
 async function openEditor(id){const p=await api('/posts/'+id);$('editor').dataset.id=id;$('editor-title').textContent=p.title;$('editor-meta').textContent=statusLabel(p.status)+' · '+(p.source_title||'')+' · '+(p.topic_title||'');$('content').value=p.content||'';$('note').value=p.review_note||'';$('provenance').innerHTML='<strong>المصدر:</strong> '+esc(p.source_title||'غير محدد')+'<br><strong>المحور:</strong> '+esc(p.topic_title||'بدون محور')+'<br><strong>المادة:</strong> '+esc(p.title||'غير محدد')+'<br><strong>المرجع:</strong> '+esc(p.source_reference||'غير محدد')+((p.discovery_page_start||p.discovery_page_end)?'<br><strong>الصفحات:</strong> '+esc((p.discovery_page_start||'?')+'–'+(p.discovery_page_end||'?')):'');$('editor-error').textContent='';$('editor').classList.remove('hidden');}
 async function savePost(){const id=$('editor').dataset.id,content=$('content').value.trim();if(!content)return $('editor-error').textContent='المحتوى لا يمكن أن يكون فارغًا.';try{const p=await api('/posts/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});if(p.status!=='APPROVED')state.selectedPosts.delete(id);$('editor').classList.add('hidden');await loadPosts();}catch(e){$('editor-error').textContent=e.message;}}
 async function review(action){const id=$('editor').dataset.id,note=$('note').value.trim();if(action==='reject'&&!note)return $('editor-error').textContent='سبب الرفض مطلوب.';try{const p=await api('/posts/'+id+'/'+(action==='approve'?'approve':'reject'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='approve'?{note}:{reason:note})});if(p.status!=='APPROVED')state.selectedPosts.delete(id);await loadPosts();$('editor').classList.add('hidden');}catch(e){$('editor-error').textContent=e.message;}}
