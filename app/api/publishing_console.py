@@ -8,7 +8,7 @@ NASHR_PUBLISHING_HTML = r'''<!doctype html>
 <section id="scheduling-section" class="mb-8 rounded-3xl border bg-white p-5 shadow-sm sm:p-7">
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div><p class="text-xs font-bold text-indigo-600">07 — خطة النشر</p><h2 id="scheduling-heading" class="mt-1 text-2xl font-bold">بناء خطة النشر</h2><p class="mt-2 max-w-3xl text-sm leading-7 text-slate-600">راجع الاختيار، رتّب المنشورات وحدد البداية والفاصل، ثم راجع الخطة كاملة قبل تفعيل النشر الآلي.</p></div>
-    <button id="schedule-from-selection" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">إنشاء خطة من المحدد</button>
+    <div class="flex flex-wrap items-center gap-2"><span id="post-selection-count" class="rounded-full bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700">0 محدد</span><button id="schedule-from-selection" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">إنشاء خطة من المحدد</button></div>
   </div>
   <div class="mt-5 grid gap-2 sm:grid-cols-5" aria-label="مراحل النشر">
     <div class="rounded-xl bg-slate-50 p-3 text-xs"><b>✓ الاختيار</b><span class="mt-1 block text-slate-500">منشورات معتمدة</span></div>
