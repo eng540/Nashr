@@ -60,7 +60,6 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
     <div class="rounded-xl bg-slate-50 p-3 text-xs"><b>النشر الآلي</b><span class="mt-1 block text-slate-500">تفعيل التنفيذ</span></div>
     <div class="rounded-xl bg-slate-50 p-3 text-xs"><b>السجل</b><span class="mt-1 block text-slate-500">Publication Ledger</span></div>
   </div>
-  </div>
   <div id="schedule-create-panel" class="mt-5 hidden rounded-2xl border bg-slate-50 p-4">
     <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       <input id="schedule-name" class="rounded-xl border bg-white p-3 text-sm" placeholder="اسم الخطة">
