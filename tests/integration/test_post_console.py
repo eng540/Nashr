@@ -13,3 +13,10 @@ async def test_dedicated_posts_console_is_separate_from_library() -> None:
     assert 'id="start-production"' in body
     assert 'id="bank-title"' in body
     assert 'id="editor"' in body
+    assert 'href="/console"' in body
+    assert 'href="/console#scheduling-section"' in body
+    assert "selectedMaterials:new Set()" in body
+    assert "selectedPosts:new Set()" in body
+    assert "state.selectedMaterials.clear()" in body
+    assert "state.selectedPosts.clear()" in body
+    assert 'value="SELECTION">مواد أحددها بنفسي</option>' in body
