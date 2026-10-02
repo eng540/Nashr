@@ -71,7 +71,7 @@ async def test_create_schedule_requires_approved_posts():
     _, _, _, approved_post = await _post("Approved schedule gate", status="APPROVED")
     now = datetime.now(timezone.utc) + timedelta(hours=1)
     async with SessionFactory() as session:
-        with pytest.raises(RuntimeError, match="must be APPROVED"):
+        with pytest.raises(RuntimeError, match="not eligible"):
             await create_schedule(session, "draft", "Asia/Aden", [(draft_post, now)])
         with pytest.raises(RuntimeError, match="must be APPROVED"):
             await create_schedule(session, "rejected", "Asia/Aden", [(rejected_post, now)])
@@ -629,7 +629,7 @@ async def test_schedule_scales_to_hundreds_of_posts_deterministically():
 
 
 @pytest.mark.asyncio
-async def test_schedule_validation_blocks_activation_when_post_is_no_longer_approved():
+async def test_schedule_validation_reports_unapproved_item_without_blocking_schedule():
     _, _, _, post = await _post("Activation recheck")
     async with SessionFactory() as session:
         schedule = await create_schedule(
@@ -648,13 +648,13 @@ async def test_schedule_validation_blocks_activation_when_post_is_no_longer_appr
         activation = await client.post(f"/schedules/{schedule.id}/activate")
 
     assert validation.status_code == 200
-    assert validation.json()["valid"] is False
-    assert any("غير معتمد" in error for error in validation.json()["errors"])
-    assert activation.status_code == 409
+    assert validation.json()["valid"] is True
+    assert any(item["reason_code"] == "POST_NOT_APPROVED" for item in validation.json()["blocked_items"])
+    assert activation.status_code == 200
 
     async with SessionFactory() as session:
         refreshed = (await session.execute(select(ScheduleModel).where(ScheduleModel.id == schedule.id))).scalar_one()
-    assert refreshed.status == "DRAFT"
+    assert refreshed.status == "ACTIVE"
 
 
 @pytest.mark.asyncio
