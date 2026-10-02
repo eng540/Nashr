@@ -57,7 +57,7 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 
 </main>
 <script>
-const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,pollTimer:null};async function request(url,opt={}){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');return d;}function esc(t){return(t??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}function setStage(stage){for(let i=1;i<=3;i++){const el=$('step-'+i);el.classList.remove('active','done');if(i<stage)el.classList.add('done');if(i===stage)el.classList.add('active');}}
+const $=id=>document.getElementById(id);const state={sourceId:null,jobId:null,pollTimer:null};async function request(url,opt={}){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');return d;}function esc(t){return(t??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}function setStage(stage){for(let i=1;i<=3;i++){const el=$('step-'+i);if(!el)continue;el.classList.remove('active','done');if(i<stage)el.classList.add('done');if(i===stage)el.classList.add('active');}}
 function setBusy(v){['upload-btn','source-btn','retry-btn','start-discovery-btn'].forEach(id=>{const el=$(id);if(el)el.disabled=v;});}
 function showProgress(message,done=0,total=0){$('progress').classList.remove('hidden');$('progress-message').textContent=message||'';const pct=total?Math.min(100,Math.round(done/total*100)):0;$('progress-percent').textContent=total?`${pct}%`:'';$('progress-bar').style.width=(total?pct:25)+'%';}
 function hideProgress(){$('progress').classList.add('hidden');}
