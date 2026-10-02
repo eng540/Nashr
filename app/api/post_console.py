@@ -106,7 +106,7 @@ body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const state={source:null,topics:[],units:[],jobId:null,selected:new Set(),posts:[],timer:null};
+const state={source:null,topics:[],units:[],jobId:null,selectedMaterials:new Set(),selectedPosts:new Set(),posts:[],timer:null};
 async function api(url,opt={}){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');return d;}
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function statusLabel(s){return({DRAFT:'DRAFT — يحتاج مراجعة',APPROVED:'APPROVED — جاهز للجدولة',REJECTED:'REJECTED — يحتاج تعديل'}[s]||s);}
