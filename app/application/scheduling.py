@@ -215,7 +215,7 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
             errors.append(f"المنشور «{item.post.knowledge_unit.title}» لا يحتوي على محتوى قابل للنشر.")
         if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
             errors.append(f"وقت نشر «{item.post.knowledge_unit.title}» غير صالح.")
-        if any(publication.status == "PUBLISHED" for publication in post.publications):
+        if item.publication is not None and item.publication.status == "PUBLISHED":
             errors.append(f"المنشور «{item.post.knowledge_unit.title}» سبق نشره وما زال Pending.")
     try:
         validate_timezone(schedule.timezone)
