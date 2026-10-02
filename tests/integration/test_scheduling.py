@@ -626,3 +626,55 @@ async def test_schedule_scales_to_hundreds_of_posts_deterministically():
     assert [item.position for item in items] == list(range(1, 201))
     assert [item.post_id for item in items] == post_ids
     assert len({item.scheduled_at for item in items}) == 200
+
+
+@pytest.mark.asyncio
+async def test_schedule_validation_blocks_activation_when_post_is_no_longer_approved():
+    _, _, _, post = await _post("Activation recheck")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Activation recheck",
+            "Asia/Aden",
+            [(post, datetime.now(timezone.utc) + timedelta(hours=1))],
+        )
+        loaded_post = (await session.execute(select(PostModel).where(PostModel.id == post))).scalar_one()
+        loaded_post.status = "DRAFT"
+        await session.commit()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        validation = await client.get(f"/schedules/{schedule.id}/validation")
+        activation = await client.post(f"/schedules/{schedule.id}/activate")
+
+    assert validation.status_code == 200
+    assert validation.json()["valid"] is False
+    assert any("غير معتمد" in error for error in validation.json()["errors"])
+    assert activation.status_code == 409
+
+    async with SessionFactory() as session:
+        refreshed = (await session.execute(select(ScheduleModel).where(ScheduleModel.id == schedule.id))).scalar_one()
+    assert refreshed.status == "DRAFT"
+
+
+@pytest.mark.asyncio
+async def test_schedule_validation_reports_publish_execution_summary():
+    _, _, _, post = await _post("Activation summary")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Activation summary",
+            "Asia/Aden",
+            [(post, datetime.now(timezone.utc) + timedelta(hours=1))],
+        )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/schedules/{schedule.id}/validation")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["valid"] is True
+    assert payload["total_items"] == 1
+    assert payload["pending_items"] == 1
+    assert payload["errors"] == []
