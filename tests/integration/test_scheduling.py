@@ -834,6 +834,14 @@ async def test_failed_item_can_be_retried_after_schedule_completed() -> None:
         )).scalar_one()
     assert completed.status == "COMPLETED"
 
+    async with SessionFactory() as session:
+        eligibility = await __import__(
+            "app.application.scheduling",
+            fromlist=["get_posts_publish_eligibility"],
+        ).get_posts_publish_eligibility(session, [post])
+    assert eligibility["eligible_ids"] == []
+    assert eligibility["blocked"][0]["reason_code"] == "ALREADY_SCHEDULED"
+
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(f"/schedules/{schedule.id}/retry-failed")
