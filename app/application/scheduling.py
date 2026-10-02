@@ -408,8 +408,12 @@ async def retry_failed_items(session: AsyncSession, schedule_id: UUID) -> int:
     schedule = await get_schedule(session, schedule_id)
     if schedule is None:
         raise LookupError("Schedule not found.")
-    if schedule.status not in (ScheduleStatus.ACTIVE.value, ScheduleStatus.PAUSED.value):
-        raise RuntimeError("Failed items can only be retried in ACTIVE or PAUSED schedules.")
+    if schedule.status not in (
+        ScheduleStatus.ACTIVE.value,
+        ScheduleStatus.PAUSED.value,
+        ScheduleStatus.COMPLETED.value,
+    ):
+        raise RuntimeError("Failed items can only be retried in ACTIVE, PAUSED, or COMPLETED schedules.")
     count = 0
     for item in schedule.items:
         if item.status == ScheduleItemStatus.FAILED.value:
@@ -417,6 +421,9 @@ async def retry_failed_items(session: AsyncSession, schedule_id: UUID) -> int:
             item.last_error = None
             item.processing_started_at = None
             count += 1
+    if count and schedule.status == ScheduleStatus.COMPLETED.value:
+        schedule.status = ScheduleStatus.ACTIVE.value
+        schedule.completed_at = None
     await session.commit()
     return count
 
@@ -510,6 +517,7 @@ async def _finish_schedule_if_complete(session: AsyncSession, schedule_id: UUID)
             status in (
                 ScheduleItemStatus.PUBLISHED.value,
                 ScheduleItemStatus.SKIPPED.value,
+                ScheduleItemStatus.FAILED.value,
                 ScheduleItemStatus.CANCELLED.value,
             )
             for status in statuses
@@ -640,6 +648,20 @@ async def process_due_schedule_items(
         item_id = await _claim_due_item(now)
         if item_id is None:
             break
-        await _execute_claimed_item(item_id, publisher=publisher, destination=destination)
+        try:
+            await _execute_claimed_item(item_id, publisher=publisher, destination=destination)
+        except Exception as exc:
+            # Never let one unexpected item-level exception stop the due batch.
+            async with SessionFactory() as session:
+                item = (
+                    await session.execute(
+                        select(ScheduleItemModel).where(ScheduleItemModel.id == item_id)
+                    )
+                ).scalar_one_or_none()
+                if item is not None and item.status == ScheduleItemStatus.PROCESSING.value:
+                    item.status = ScheduleItemStatus.FAILED.value
+                    item.last_error = str(exc)
+                    item.processing_started_at = None
+                    await session.commit()
         processed += 1
     return processed
