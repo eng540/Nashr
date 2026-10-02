@@ -17,6 +17,11 @@ async def test_dedicated_posts_console_is_separate_from_library() -> None:
     assert 'href="/console#scheduling-section"' in body
     assert 'id="next-to-scheduling"' in body
     assert 'التالي: بناء خطة النشر' in body
+    assert 'id="bulk-approve"' in body
+    assert 'id="publication-state"' in body
+    assert "whitespace-pre-wrap" in body
+    assert "/posts/bulk-approve" in body
+    assert "/schedules/eligibility" in body
     assert "selected_post_ids" in body
     assert "APPROVED" in body
     assert 'id="post-bulk-approve"' in body
