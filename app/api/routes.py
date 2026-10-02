@@ -916,23 +916,26 @@ async def list_posts(
         .limit(limit)
     )
     posts = result.scalars().all()
+    post_ids = [post.id for post in posts]
+    scheduled_ids = set()
+    if post_ids:
+        scheduled_ids = set(
+            (
+                await session.execute(
+                    select(ScheduleItemModel.post_id)
+                    .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
+                    .where(
+                        ScheduleItemModel.post_id.in_(post_ids),
+                        ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+                    )
+                )
+            ).scalars().all()
+        )
     payloads = []
     for post in posts:
         payload = _post_payload(post)
         published = payload["published"]
-        scheduled = bool(
-            (
-                await session.execute(
-                    select(ScheduleItemModel.id)
-                    .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
-                    .where(
-                        ScheduleItemModel.post_id == post.id,
-                        ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
-                    )
-                    .limit(1)
-                )
-            ).scalar_one_or_none()
-        )
+        scheduled = post.id in scheduled_ids
         payload["scheduled"] = scheduled
         payload["publish_state"] = (
             "PUBLISHED" if published else "SCHEDULED" if scheduled else "ELIGIBLE"
