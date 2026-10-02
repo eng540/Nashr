@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
@@ -15,15 +15,22 @@ from sqlalchemy.orm import defer, selectinload
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.posts import ProducePost
-from app.application.reviews import ReviewPost
+from app.application.reviews import ReviewPost, bulk_approve
 from app.application.production_jobs import create_production_job, resume_production_job, run_production_job
 from app.application.scheduling import (
     build_schedule_times, create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
     process_due_schedule_items, retry_failed_items, transition, update_schedule_item_time,
-    validate_timezone, validate_schedule_for_activation,
+    validate_timezone, validate_schedule_for_activation, get_posts_publish_eligibility,
+    retry_failed_item,
 )
 from app.domain.production_jobs import ProductionScope
-from app.infrastructure.database.models import ProductionJobItemModel, ProductionJobModel, ScheduleItemModel, ScheduleModel
+from app.infrastructure.database.models import (
+    ProductionJobItemModel,
+    ProductionJobModel,
+    ScheduleItemModel,
+    ScheduleModel,
+    PublicationModel,
+)
 from app.application.discovery_jobs import (
     DiscoveryJobStatus,
     create_discovery_job,
@@ -57,6 +64,11 @@ class PostUpdateRequest(BaseModel):
 
 
 class PostApproveRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=5_000)
+
+
+class BulkPostApproveRequest(BaseModel):
+    post_ids: list[UUID] = Field(min_length=1, max_length=500)
     note: str | None = Field(default=None, max_length=5_000)
 
 
@@ -721,6 +733,14 @@ async def list_schedules(limit: int = Query(default=50, ge=1, le=100), offset: i
     return {"items": [_schedule_payload(row) for row in rows], "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/schedules/eligibility")
+async def schedule_eligibility(
+    post_ids: list[UUID] = Query(..., min_length=1, max_length=500),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    return await get_posts_publish_eligibility(session, post_ids)
+
+
 @router.get("/schedules/{schedule_id}")
 async def schedule_detail(schedule_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     schedule = await get_schedule(session, schedule_id)
@@ -811,6 +831,23 @@ async def cancel_schedule_route(schedule_id: UUID, session: AsyncSession = Depen
     return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
 
 
+@router.post("/schedules/{schedule_id}/items/{item_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+async def retry_failed_schedule_item_route(
+    schedule_id: UUID,
+    item_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        await retry_failed_item(session, schedule_id, item_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # The existing lifespan scheduler owns execution; retry only changes durable
+    # DB state and never performs a hidden side effect inside this request.
+    return {"retried_item_id": str(item_id), "schedule": _schedule_payload(await get_schedule(session, schedule_id), detail=True)}
+
+
 @router.post("/schedules/{schedule_id}/retry-failed", status_code=status.HTTP_202_ACCEPTED)
 async def retry_failed_schedule_route(schedule_id: UUID, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     try:
@@ -836,6 +873,7 @@ async def list_posts(
     knowledge_unit_id: UUID | None = None,
     kind: str | None = Query(default=None, max_length=200),
     q: str | None = Query(default=None, max_length=500),
+    publication_state: str | None = Query(default=None, alias="publication_state", max_length=30),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -851,6 +889,39 @@ async def list_posts(
         filters.append(PostModel.status == status_filter)
     if kind is not None:
         filters.append(KnowledgeUnitModel.kind == kind)
+    published_exists = select(PublicationModel.id).where(
+        PublicationModel.post_id == PostModel.id,
+        PublicationModel.status == "PUBLISHED",
+    ).exists()
+    scheduled_exists = select(ScheduleItemModel.id).join(
+        ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id
+    ).where(
+        ScheduleItemModel.post_id == PostModel.id,
+        or_(
+            ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+            (
+                (ScheduleModel.status == "COMPLETED")
+                & ScheduleItemModel.status.in_(("PENDING", "PROCESSING", "FAILED"))
+            ),
+        ),
+    ).exists()
+
+    if publication_state == "PUBLISHED":
+        filters.append(published_exists)
+    elif publication_state == "UNPUBLISHED":
+        filters.append(~published_exists)
+    elif publication_state == "SCHEDULED":
+        filters.append(scheduled_exists)
+    elif publication_state == "ELIGIBLE":
+        filters.extend([
+            PostModel.status == "APPROVED",
+            func.trim(PostModel.content) != "",
+            ~published_exists,
+            ~scheduled_exists,
+        ])
+    elif publication_state not in (None, "", "ALL"):
+        raise HTTPException(status_code=400, detail="Invalid publication_state.")
+
     if q:
         pattern = f"%{q.strip()}%"
         filters.append(
@@ -868,8 +939,44 @@ async def list_posts(
         .limit(limit)
     )
     posts = result.scalars().all()
+    post_ids = [post.id for post in posts]
+    scheduled_ids = set()
+    if post_ids:
+        scheduled_ids = set(
+            (
+                await session.execute(
+                    select(ScheduleItemModel.post_id)
+                    .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
+                    .where(
+                        ScheduleItemModel.post_id.in_(post_ids),
+                        or_(
+                            ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+                            (
+                                (ScheduleModel.status == "COMPLETED")
+                                & ScheduleItemModel.status.in_(("PENDING", "PROCESSING", "FAILED"))
+                            ),
+                        ),
+                    )
+                )
+            ).scalars().all()
+        )
+    payloads = []
+    for post in posts:
+        payload = _post_payload(post)
+        published = payload["published"]
+        scheduled = post.id in scheduled_ids
+        payload["scheduled"] = scheduled
+        payload["publish_state"] = (
+            "PUBLISHED" if published else "SCHEDULED" if scheduled else "ELIGIBLE"
+            if post.status == "APPROVED" and bool(post.content.strip())
+            else "NOT_READY"
+        )
+        payload["eligible_for_scheduling"] = (
+            post.status == "APPROVED" and not published and not scheduled and bool(post.content.strip())
+        )
+        payloads.append(payload)
     return {
-        "items": [_post_payload(post) for post in posts],
+        "items": payloads,
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -952,6 +1059,17 @@ async def update_post(
         .where(PostModel.id == post_id)
     )
     return _post_payload(result.scalar_one())
+
+
+@router.post("/posts/bulk-approve")
+async def bulk_approve_posts(
+    payload: BulkPostApproveRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        return await bulk_approve(session, payload.post_ids, payload.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/posts/{post_id}/approve")
