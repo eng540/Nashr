@@ -893,6 +893,7 @@ async def list_posts(
     elif publication_state == "ELIGIBLE":
         filters.extend([
             PostModel.status == "APPROVED",
+            func.trim(PostModel.content) != "",
             ~published_exists,
             ~scheduled_exists,
         ])
