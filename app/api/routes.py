@@ -21,6 +21,7 @@ from app.application.scheduling import (
     build_schedule_times, create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
     process_due_schedule_items, retry_failed_items, transition, update_schedule_item_time,
     validate_timezone, validate_schedule_for_activation, get_posts_publish_eligibility,
+    retry_failed_item,
 )
 from app.domain.production_jobs import ProductionScope
 from app.infrastructure.database.models import (
@@ -828,6 +829,23 @@ async def cancel_schedule_route(schedule_id: UUID, session: AsyncSession = Depen
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await session.commit()
     return _schedule_payload(await get_schedule(session, schedule.id), detail=True)
+
+
+@router.post("/schedules/{schedule_id}/items/{item_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+async def retry_failed_schedule_item_route(
+    schedule_id: UUID,
+    item_id: UUID,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        await retry_failed_item(session, schedule_id, item_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background_tasks.add_task(process_due_schedule_items)
+    return {"retried_item_id": str(item_id), "schedule": _schedule_payload(await get_schedule(session, schedule_id), detail=True)}
 
 
 @router.post("/schedules/{schedule_id}/retry-failed", status_code=status.HTTP_202_ACCEPTED)
