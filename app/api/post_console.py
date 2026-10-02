@@ -115,7 +115,7 @@ body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const state={source:null,topics:[],units:[],jobId:null,selectedMaterials:new Set(),selectedPosts:new Set(),posts:[],timer:null};
+const state={source:null,topics:[],units:[],jobId:null,selectedMaterials:new Set(),selectedPosts:new Set(),postMeta:{},posts:[],timer:null};
 async function api(url,opt={}){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');return d;}
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function statusLabel(s){return({DRAFT:'DRAFT — يحتاج مراجعة',APPROVED:'APPROVED — جاهز للجدولة',REJECTED:'REJECTED — يحتاج تعديل'}[s]||s);}
@@ -140,6 +140,7 @@ function postParams(){
 async function loadPosts(){
   const d=await api('/posts?'+postParams());
   state.posts=d.items||[];
+  state.posts.forEach(p=>state.postMeta[p.post_id]=p);
   renderPosts(d);
 }
 function showActionMessage(message,kind='info'){
@@ -149,7 +150,7 @@ function showActionMessage(message,kind='info'){
   box.classList.remove('hidden');
 }
 function selectedNonApproved(){
-  return state.posts.filter(p=>state.selectedPosts.has(p.post_id)&&p.status!=='APPROVED').map(p=>p.post_id);
+  return [...state.selectedPosts].filter(id=>state.postMeta[id]?.status!=='APPROVED');
 }
 function renderPosts(d){
   $('summary').textContent=(d.total||0)+' Posts';
