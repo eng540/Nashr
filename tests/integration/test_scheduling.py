@@ -236,21 +236,40 @@ async def test_due_execution_refuses_rejected_post():
 
 @pytest.mark.asyncio
 async def test_due_processing_reuses_existing_publication_and_does_not_duplicate():
-    _, _, _, post = await _post(published=True)
+    _, _, _, published_post = await _post("Already published", published=True)
+    _, _, _, eligible_post = await _post("Sibling eligible")
     async with SessionFactory() as session:
-        schedule = await create_schedule(session, "Already published", "Asia/Aden", [(post, datetime.now(timezone.utc) - timedelta(minutes=1))])
+        schedule = await create_schedule(
+            session,
+            "Already published mixed",
+            "Asia/Aden",
+            [
+                (published_post, datetime.now(timezone.utc) - timedelta(minutes=1)),
+                (eligible_post, datetime.now(timezone.utc) - timedelta(minutes=1)),
+            ],
+        )
         schedule.status = "ACTIVE"
         await session.commit()
     publisher = CountingPublisher()
     before = publisher.calls
     processed = await process_due_schedule_items(publisher=publisher, destination="@test")
     async with SessionFactory() as session:
-        item = (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id))).scalar_one()
-        publications = (await session.execute(select(PublicationModel).where(PublicationModel.post_id == post))).scalars().all()
-    assert processed >= 1
-    assert item.status == "SKIPPED"
-    assert publisher.calls == before
+        items = (await session.execute(
+            select(ScheduleItemModel)
+            .where(ScheduleItemModel.schedule_id == schedule.id)
+            .order_by(ScheduleItemModel.position)
+        )).scalars().all()
+        publications = (await session.execute(
+            select(PublicationModel).where(PublicationModel.post_id == published_post)
+        )).scalars().all()
+        sibling_publications = (await session.execute(
+            select(PublicationModel).where(PublicationModel.post_id == eligible_post)
+        )).scalars().all()
+    assert processed >= 2
+    assert [item.status for item in items] == ["SKIPPED", "PUBLISHED"]
+    assert publisher.calls == before + 1
     assert len(publications) == 1
+    assert len(sibling_publications) == 1
 
 
 @pytest.mark.asyncio
