@@ -168,8 +168,10 @@ function renderPosts(d){
 function updateSelected(){
   $('selected-count').textContent=state.selectedPosts.size+' محدد';
   $('bulk-approve').disabled=selectedNonApproved().length===0;
-  $('next-to-scheduling').disabled=state.selectedPosts.size===0;
-  $('next-to-scheduling-help').textContent=state.selectedPosts.size?('تم تحديد '+state.selectedPosts.size+' منشورًا. سيتم التحقق من قابلية النشر قبل الجدولة.'):'حدد منشورًا واحدًا على الأقل للمتابعة.';
+  const selected=[...state.selectedPosts];
+  const unapproved=selected.filter(id=>state.postMeta[id]?.status!=='APPROVED');
+  $('next-to-scheduling').disabled=selected.length===0||unapproved.length>0;
+  $('next-to-scheduling-help').textContent=!selected.length?'حدد منشورًا واحدًا على الأقل للمتابعة.':unapproved.length?('اعتمد '+unapproved.length+' منشورًا محددًا قبل الانتقال إلى الجدولة.'):('تم تحديد '+selected.length+' منشورًا معتمدًا. سيتم التحقق من قابلية النشر قبل الجدولة.');
 }
 async function bulkApproveSelected(){
   const ids=selectedNonApproved();
