@@ -665,5 +665,7 @@ async def process_due_schedule_items(
                     item.last_error = str(exc)
                     item.processing_started_at = None
                     await session.commit()
+                    await _finish_schedule_if_complete(session, item.schedule_id)
+                    await session.commit()
         processed += 1
     return processed
