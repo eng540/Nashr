@@ -19,6 +19,12 @@ async def test_dedicated_posts_console_is_separate_from_library() -> None:
     assert 'التالي: بناء خطة النشر' in body
     assert "selected_post_ids" in body
     assert "APPROVED" in body
+    assert 'id="post-bulk-approve"' in body
+    assert "اعتماد المحدد" in body
+    assert 'id="post-publication-state"' in body
+    assert "غير منشور" in body
+    assert "whitespace-pre-wrap" in body
+    assert "bulk-approve" in body
     workspace_routes = [route for route in router.routes if getattr(route, "endpoint", None) is posts_console]
     assert [route.path for route in workspace_routes] == ["/posts/workspace"]
     assert "selectedMaterials:new Set()" in body
