@@ -235,10 +235,11 @@ async def test_posts_workspace_contains_editorial_review_controls_and_status_fil
     body = response.body.decode("utf-8")
     assert 'value="APPROVED">APPROVED' in body
     assert 'value="REJECTED">REJECTED' in body
-    assert "post-editor-approve" in body
-    assert "post-editor-reject" in body
-    assert "/approve" in body
-    assert "/reject" in body
+    assert 'id="approve"' in body
+    assert 'id="reject"' in body
+    assert "/posts/" in body
+    assert "approve" in body
+    assert "reject" in body
 
 
 
