@@ -775,7 +775,7 @@ async def activate_schedule_route(schedule_id: UUID, background_tasks: Backgroun
         raise HTTPException(status_code=404, detail="Schedule not found.")
     validation = await validate_schedule_for_activation(session, schedule_id)
     if not validation["valid"]:
-        raise HTTPException(status_code=409, detail="لا يمكن تفعيل الخطة.")
+        raise HTTPException(status_code=409, detail="لا يمكن تفعيل الخطة: " + "؛ ".join(validation["errors"][:6]))
     try:
         transition(schedule, "activate")
     except RuntimeError as exc:
