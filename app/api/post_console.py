@@ -177,13 +177,17 @@ async function bulkApproveSelected(){
   $('bulk-approve').disabled=true;
   try{
     const result=await api('/posts/bulk-approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_ids:ids})});
+    (result.results||[]).forEach(row=>{
+      state.postMeta[row.post_id]=state.postMeta[row.post_id]||{post_id:row.post_id};
+      if(row.status==='APPROVED')state.postMeta[row.post_id].status='APPROVED';
+    });
     if(result.failed_count){
       showActionMessage('تم اعتماد '+result.approved_count+' منشورًا، وتعذر اعتماد '+result.failed_count+'؛ '+(result.results||[]).filter(x=>x.status==='FAILED').map(x=>x.message).join('؛ '),result.approved_count?'success':'error');
     }else{
       showActionMessage('تم اعتماد '+result.approved_count+' منشورًا بنجاح. المجموعة ما زالت محددة ويمكنك الانتقال إلى الجدولة.','success');
     }
     await loadPosts();
-    state.selectedPosts=new Set([...state.selectedPosts].filter(id=>state.posts.some(p=>p.post_id===id&&(p.status==='APPROVED'||p.status==='DRAFT'))));
+    state.selectedPosts=new Set([...state.selectedPosts].filter(id=>state.postMeta[id]?.status==='APPROVED'));
     updateSelected();
   }catch(e){showActionMessage(e.message,'error');}
   finally{updateSelected();}
