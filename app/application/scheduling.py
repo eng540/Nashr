@@ -129,14 +129,17 @@ async def get_posts_publish_eligibility(
         if post is None:
             blocked.append({"post_id": str(post_id), "reason_code": "POST_NOT_FOUND", "message": "Post not found."})
             continue
+        # Existing publication is terminal for this workflow. It takes precedence
+        # over editorial/timing eligibility because the schedule must never attempt
+        # a second publication of an already-published Post.
+        if any(publication.status == "PUBLISHED" for publication in post.publications):
+            blocked.append({"post_id": str(post_id), "reason_code": "ALREADY_PUBLISHED", "message": "Post was already published."})
+            continue
         if post.status != "APPROVED":
             blocked.append({"post_id": str(post_id), "reason_code": "POST_NOT_APPROVED", "message": "Post must be APPROVED before scheduling."})
             continue
         if not post.content.strip():
             blocked.append({"post_id": str(post_id), "reason_code": "EMPTY_CONTENT", "message": "Post content is empty."})
-            continue
-        if any(publication.status == "PUBLISHED" for publication in post.publications):
-            blocked.append({"post_id": str(post_id), "reason_code": "ALREADY_PUBLISHED", "message": "Post was already published."})
             continue
         existing = scheduled_by_post.get(post_id, [])
         if existing:
