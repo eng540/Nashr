@@ -591,17 +591,6 @@ async def _execute_claimed_item(
     destination: str | None = None,
 ) -> None:
     destination = destination or os.getenv("TELEGRAM_DESTINATION_ID", "")
-    if not destination:
-        async with SessionFactory() as session:
-            item = (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.id == item_id))).scalar_one_or_none()
-            if item:
-                item.status = ScheduleItemStatus.FAILED.value
-                item.last_error = "TELEGRAM_DESTINATION_ID is required."
-                item.processing_started_at = None
-                await session.commit()
-                await _finish_schedule_if_complete(session, item.schedule_id)
-                await session.commit()
-        return
 
     async with SessionFactory() as session:
         item = (await session.execute(
@@ -612,6 +601,39 @@ async def _execute_claimed_item(
         if item is None:
             return
         post = item.post
+
+        # A previously published Post is terminal for this workflow. Detect it
+        # before approval/destination checks so it can never turn into a failed
+        # retry or trigger another Telegram publication.
+        published = (await session.execute(
+            select(PublicationModel)
+            .where(
+                PublicationModel.post_id == post.id,
+                PublicationModel.platform == "telegram",
+                PublicationModel.status == "PUBLISHED",
+            )
+            .order_by(PublicationModel.created_at.asc(), PublicationModel.id.asc())
+            .limit(1)
+        )).scalar_one_or_none()
+        if published is not None:
+            item.status = ScheduleItemStatus.SKIPPED.value
+            item.publication_id = published.id
+            item.published_at = published.published_at
+            item.processing_started_at = None
+            await session.commit()
+            await _finish_schedule_if_complete(session, item.schedule_id)
+            await session.commit()
+            return
+
+        if not destination:
+            item.status = ScheduleItemStatus.FAILED.value
+            item.last_error = "TELEGRAM_DESTINATION_ID is required."
+            item.processing_started_at = None
+            await session.commit()
+            await _finish_schedule_if_complete(session, item.schedule_id)
+            await session.commit()
+            return
+
         # Re-check the canonical editorial gate immediately before any publication work.
         if post.status != "APPROVED":
             item.status = ScheduleItemStatus.CANCELLED.value
@@ -631,16 +653,6 @@ async def _execute_claimed_item(
             .order_by(PublicationModel.created_at.asc(), PublicationModel.id.asc())
             .limit(1)
         )).scalar_one_or_none()
-
-        if existing is not None and existing.status == "PUBLISHED":
-            item.status = ScheduleItemStatus.SKIPPED.value
-            item.publication_id = existing.id
-            item.published_at = existing.published_at
-            item.processing_started_at = None
-            await session.commit()
-            await _finish_schedule_if_complete(session, item.schedule_id)
-            await session.commit()
-            return
 
         if existing is not None and existing.status in ("READY", "PUBLISHING"):
             item.status = ScheduleItemStatus.FAILED.value
