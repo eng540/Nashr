@@ -190,7 +190,7 @@ async function filterSelectionForScheduling(){
 }
 
 
-async function openScheduleCreation(){clearError?.();const result=await filterSelectionForScheduling();if(!result.eligible.length){$('schedule-create-panel').classList.add('hidden');state.scheduleIdempotencyKey=null;return;}await renderScheduleSelection();state.scheduleIdempotencyKey=crypto.randomUUID?crypto.randomUUID():String(Date.now());$('schedule-create-panel').classList.remove('hidden');$('schedule-name').focus();}
+async function openScheduleCreation(){const result=await filterSelectionForScheduling();if(!result.eligible.length){$('schedule-create-panel').classList.add('hidden');state.scheduleIdempotencyKey=null;return;}await renderScheduleSelection();state.scheduleIdempotencyKey=crypto.randomUUID?crypto.randomUUID():String(Date.now());$('schedule-create-panel').classList.remove('hidden');$('schedule-name').focus();}
 $('schedule-from-selection').onclick=openScheduleCreation;
 async function hydrateSelection(){const raw=new URLSearchParams(location.search).get('selected_post_ids');if(!raw){renderSelectionCount();return;}state.selectedPostIds=[...new Set(raw.split(',').map(x=>x.trim()).filter(Boolean))];await renderScheduleSelection();const result=await filterSelectionForScheduling();if(result.eligible.length){state.scheduleIdempotencyKey=crypto.randomUUID?crypto.randomUUID():String(Date.now());$('schedule-create-panel').classList.remove('hidden');}else{$('schedule-create-panel').classList.add('hidden');}renderSelectionCount();}
 $('schedule-cancel-create').onclick=()=>{$('schedule-create-panel').classList.add('hidden');state.scheduleIdempotencyKey=null;};
