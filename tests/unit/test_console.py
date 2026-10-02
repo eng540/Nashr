@@ -58,7 +58,6 @@ async def test_publishing_selection_action_and_schedule_creation_are_wired() -> 
     assert 'id="schedule-from-selection"' in body
     assert "async function openScheduleCreation()" in body
     assert "$('schedule-from-selection').onclick=openScheduleCreation;" in body
-    assert "async function renderSelectionCount(){".replace("async ","") not in body
     assert "function renderSelectionCount(){const button=$('schedule-from-selection');if(button)button.disabled=state.selectedPostIds.length===0;}" in body
     assert "async function hydrateSelection()" in body
     assert "await renderScheduleSelection();" in body
