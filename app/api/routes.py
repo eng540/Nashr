@@ -262,11 +262,6 @@ async def console() -> HTMLResponse:
     return HTMLResponse(content=NASHR_CONSOLE_HTML)
 
 
-@router.get("/posts", response_class=HTMLResponse, include_in_schema=False)
-async def posts_console() -> HTMLResponse:
-    return HTMLResponse(content=NASHR_POSTS_HTML)
-
-
 @router.post("/sources")
 async def create_source(
     file: UploadFile = File(...),
@@ -868,6 +863,11 @@ async def list_posts(
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get("/posts", response_class=HTMLResponse, include_in_schema=False)
+async def posts_console() -> HTMLResponse:
+    return HTMLResponse(content=NASHR_POSTS_HTML)
 
 
 @router.get("/posts/{post_id}/telegram-preview")
