@@ -130,7 +130,7 @@ async def get_posts_publish_eligibility(
             blocked.append({"post_id": str(post_id), "reason_code": "POST_NOT_FOUND", "message": "Post not found."})
             continue
         if post.status != "APPROVED":
-            blocked.append({"post_id": str(post_id), "reason_code": "POST_NOT_APPROVED", "message": "Post is not APPROVED."})
+            blocked.append({"post_id": str(post_id), "reason_code": "POST_NOT_APPROVED", "message": "Post must be APPROVED before scheduling."})
             continue
         if not post.content.strip():
             blocked.append({"post_id": str(post_id), "reason_code": "EMPTY_CONTENT", "message": "Post content is empty."})
@@ -188,9 +188,16 @@ async def create_schedule(
         raise LookupError("Post not found.")
     eligibility = await get_posts_publish_eligibility(session, post_ids)
     blocked = eligibility["blocked"]
-    if blocked:
+    # Previously published Posts are safe to retain as schedule items: execution
+    # will re-check the existing Publication and mark the item SKIPPED. They must
+    # not abort a mixed schedule containing otherwise eligible Posts.
+    blocking = [
+        entry for entry in blocked
+        if entry["reason_code"] != "ALREADY_PUBLISHED"
+    ]
+    if blocking:
         details = "؛ ".join(
-            f"{entry['post_id']}: {entry['message']}" for entry in blocked[:8]
+            f"{entry['post_id']}: {entry['message']}" for entry in blocking[:8]
         )
         raise RuntimeError("Some Posts are not eligible for scheduling: " + details)
     schedule = ScheduleModel(id=uuid4(), name=name, timezone=timezone_name, status=ScheduleStatus.DRAFT.value, idempotency_key=idempotency_key.strip() if idempotency_key else None)
