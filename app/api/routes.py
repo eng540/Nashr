@@ -20,7 +20,7 @@ from app.application.production_jobs import create_production_job, resume_produc
 from app.application.scheduling import (
     build_schedule_times, create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
     process_due_schedule_items, retry_failed_items, transition, update_schedule_item_time,
-    validate_timezone,
+    validate_timezone, validate_schedule_for_activation,
 )
 from app.domain.production_jobs import ProductionScope
 from app.infrastructure.database.models import ProductionJobItemModel, ProductionJobModel, ScheduleItemModel, ScheduleModel
@@ -758,6 +758,14 @@ async def update_schedule_item_route(schedule_id: UUID, item_id: UUID, payload: 
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _schedule_payload(await get_schedule(session, schedule_id), detail=True)
+
+
+@router.get("/schedules/{schedule_id}/validation")
+async def schedule_validation_route(schedule_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    try:
+        return await validate_schedule_for_activation(session, schedule_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/schedules/{schedule_id}/activate")
