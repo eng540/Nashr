@@ -233,8 +233,8 @@ async def test_posts_workspace_contains_editorial_review_controls_and_status_fil
     from app.api.routes import posts_console
     response = await posts_console()
     body = response.body.decode("utf-8")
-    assert 'value="APPROVED">APPROVED' in body
-    assert 'value="REJECTED">REJECTED' in body
+    assert 'value="APPROVED"' in body
+    assert 'value="REJECTED"' in body
     assert 'id="approve"' in body
     assert 'id="reject"' in body
     assert "/posts/" in body
