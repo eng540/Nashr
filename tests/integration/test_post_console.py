@@ -1,7 +1,7 @@
 from fastapi.responses import HTMLResponse
 import pytest
 
-from app.api.routes import posts_console
+from app.api.routes import posts_console, router
 
 
 @pytest.mark.asyncio
@@ -15,6 +15,8 @@ async def test_dedicated_posts_console_is_separate_from_library() -> None:
     assert 'id="editor"' in body
     assert 'href="/console"' in body
     assert 'href="/console#scheduling-section"' in body
+    workspace_routes = [route for route in router.routes if getattr(route, "endpoint", None) is posts_console]
+    assert [route.path for route in workspace_routes] == ["/posts/workspace"]
     assert "selectedMaterials:new Set()" in body
     assert "selectedPosts:new Set()" in body
     assert "state.selectedMaterials.clear()" in body
