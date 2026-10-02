@@ -257,16 +257,22 @@ async function loadPostBank(){
 async function filterSelectionForScheduling(){
   const ids=[...state.selectedPostIds];
   if(!ids.length)return {eligible:[],blocked:[]};
-  const params=new URLSearchParams();
-  ids.forEach(id=>params.append('post_ids',id));
-  const result=await request('/schedules/eligibility?'+params.toString());
-  const blockedIds=new Set((result.blocked||[]).map(x=>x.post_id));
+  const chunkSize=500;
+  const blocked=[];
+  const blockedIds=new Set();
+  for(let offset=0;offset<ids.length;offset+=chunkSize){
+    const chunk=ids.slice(offset,offset+chunkSize);
+    const params=new URLSearchParams();
+    chunk.forEach(id=>params.append('post_ids',id));
+    const result=await request('/schedules/eligibility?'+params.toString());
+    (result.blocked||[]).forEach(row=>{blocked.push(row);blockedIds.add(row.post_id);});
+  }
   state.selectedPostIds=ids.filter(id=>!blockedIds.has(id));
-  if(blockedIds.size){
-    showPostBankMessage('تم استبعاد '+blockedIds.size+' منشورًا غير قابل للنشر من خطة الجدولة: '+(result.blocked||[]).map(x=>x.message).join('؛ '),'info');
+  if(blocked.length){
+    showPostBankMessage('تم استبعاد '+blocked.length+' منشورًا غير قابل للنشر من خطة الجدولة: '+blocked.map(x=>x.message).join('؛ '),'info');
   }
   renderSelectionCount();
-  return {eligible:state.selectedPostIds,blocked:result.blocked||[]};
+  return {eligible:state.selectedPostIds,blocked};
 }
 
 async function openPostEditor(id){try{const p=await request('/posts/'+id);$('post-editor-title').textContent=p.title;$('post-editor-status').textContent=statusLabel(p.status);$('post-editor-reviewed-at').textContent=p.reviewed_at?'آخر مراجعة: '+new Date(p.reviewed_at).toLocaleString('ar'):'لم تُراجع بعد';$('post-editor-provenance').textContent=(p.source_title||'المصدر')+' ← '+(p.topic_title||'بدون محور')+' ← '+(p.title||'المادة');$('post-editor-content').value=p.content;$('post-review-note').value=p.review_note||'';$('post-editor-source').textContent='المصدر: '+(p.source_title||'غير محدد')+' · المحور: '+(p.topic_title||'بدون محور')+' · المادة: '+(p.title||'غير محدد')+' · المرجع: '+(p.source_reference||'غير محدد')+((p.discovery_page_start||p.discovery_page_end)?' · الصفحات: '+(p.discovery_page_start||'?')+'–'+(p.discovery_page_end||'?'):'');$('post-editor-review-help').textContent=p.status==='APPROVED'?'أي تعديل على النص سيعيد الحالة إلى DRAFT ويُلغي عناصر الجدولة المعلقة للمادة.':p.status==='REJECTED'?'عدّل النص ثم احفظه لإعادته إلى DRAFT، أو اعتمده بعد اكتمال المراجعة.':'راجع النص ثم اعتمده أو ارفضه بسبب واضح.';$('post-editor').dataset.postId=id;$('post-editor-error').textContent='';$('post-editor').classList.remove('hidden');}catch(e){alert(e.message);}}
@@ -279,16 +285,26 @@ async function bulkApproveSelected(){
   if(!pending.length)return showPostBankMessage('كل المنشورات المحددة معتمدة بالفعل.','info');
   $('post-bulk-approve').disabled=true;
   try{
-    const result=await request('/posts/bulk-approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_ids:pending})});
-    const approvedIds=new Set((result.results||[]).filter(x=>x.status==='APPROVED').map(x=>x.post_id));
-    (result.results||[]).forEach(x=>{if(state.selectedPostMeta[x.post_id])state.selectedPostMeta[x.post_id].status=x.status==='APPROVED'?'APPROVED':state.selectedPostMeta[x.post_id].status;});
-    if(result.failed_count){
-      showPostBankMessage('تم اعتماد '+result.approved_count+' منشورًا، وتعذر اعتماد '+result.failed_count+'؛ '+(result.results||[]).filter(x=>x.status==='FAILED').map(x=>x.message).join('؛ '),result.approved_count?'success':'error');
+    const chunkSize=500;
+    const results=[];
+    for(let offset=0;offset<pending.length;offset+=chunkSize){
+      const chunk=pending.slice(offset,offset+chunkSize);
+      const result=await request('/posts/bulk-approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_ids:chunk})});
+      results.push(...(result.results||[]));
+      (result.results||[]).forEach(x=>{
+        state.selectedPostMeta[x.post_id]=state.selectedPostMeta[x.post_id]||{post_id:x.post_id};
+        if(x.status==='APPROVED')state.selectedPostMeta[x.post_id].status='APPROVED';
+      });
+    }
+    const approvedCount=results.filter(x=>x.status==='APPROVED').length;
+    const failed=results.filter(x=>x.status==='FAILED');
+    if(failed.length){
+      showPostBankMessage('تم اعتماد '+approvedCount+' منشورًا، وتعذر اعتماد '+failed.length+'؛ '+failed.map(x=>x.message).join('؛ '),approvedCount?'success':'error');
     }else{
-      showPostBankMessage('تم اعتماد '+result.approved_count+' منشورًا بنجاح. المجموعة ما زالت محددة ويمكنك الانتقال إلى الجدولة.','success');
+      showPostBankMessage('تم اعتماد '+approvedCount+' منشورًا بنجاح. المجموعة ما زالت محددة ويمكنك الانتقال إلى الجدولة.','success');
     }
     await loadPostBank();
-    state.selectedPostIds=ids.filter(id=>approvedIds.has(id)||state.selectedPostMeta[id]?.status==='APPROVED');
+    state.selectedPostIds=ids.filter(id=>state.selectedPostMeta[id]?.status==='APPROVED');
     renderSelectionCount();
   }catch(e){showPostBankMessage(e.message,'error');}
   finally{renderSelectionCount();}
@@ -324,6 +340,7 @@ $('schedule-save-create').onclick=async()=>{
   if(!$('schedule-name').value.trim())return $('schedule-create-error').textContent='اسم الخطة مطلوب.';
   if(!timezone)return $('schedule-create-error').textContent='المنطقة الزمنية مطلوبة.';
   if(!ids.length)return $('schedule-create-error').textContent='اختر Posts أولًا.';
+  if(ids.length>500)return $('schedule-create-error').textContent='الخطة الواحدة تدعم 500 منشورًا كحد أقصى. تم الحفاظ على كامل الاختيار؛ قلّل الاختيار قبل حفظ هذه الخطة.';
   if(!start)return $('schedule-create-error').textContent='وقت البداية مطلوب.';
   if(!interval||interval<1)return $('schedule-create-error').textContent='الفاصل بالدقائق مطلوب.';
   $('schedule-save-create').disabled=true;
