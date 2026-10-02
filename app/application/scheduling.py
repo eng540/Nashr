@@ -142,6 +142,7 @@ async def get_schedule(session: AsyncSession, schedule_id: UUID) -> ScheduleMode
             .selectinload(KnowledgeUnitModel.source)
             .defer(SourceModel.file_payload),
             selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.publication),
+            selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.post).selectinload(PostModel.publications),
         )
         .where(ScheduleModel.id == schedule_id)
     )
@@ -215,7 +216,7 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
             errors.append(f"المنشور «{item.post.knowledge_unit.title}» لا يحتوي على محتوى قابل للنشر.")
         if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
             errors.append(f"وقت نشر «{item.post.knowledge_unit.title}» غير صالح.")
-        if item.publication is not None and item.publication.status == "PUBLISHED":
+        if any(publication.status == "PUBLISHED" for publication in item.post.publications):
             errors.append(f"المنشور «{item.post.knowledge_unit.title}» سبق نشره وما زال Pending.")
     try:
         validate_timezone(schedule.timezone)
