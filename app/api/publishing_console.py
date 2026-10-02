@@ -147,7 +147,7 @@ function renderSelectionCount(){
   }).length;
   $('post-bulk-approve').disabled=selectedNonApproved===0;
   $('schedule-from-selection').disabled=state.selectedPostIds.length===0;
-  window.nashrPostSelection=()=>[...state.selectedPostIds];
+
 }
 function statusLabel(status){return({DRAFT:'مسودة — تحتاج مراجعة',APPROVED:'معتمد — جاهز للجدولة',REJECTED:'مرفوض — يحتاج تعديل'}[status]||status);}
 function publicationStateLabel(state){return({PUBLISHED:'منشور سابقًا',SCHEDULED:'موجود في خطة',ELIGIBLE:'قابل للنشر',NOT_READY:'غير جاهز'}[state]||state);}
