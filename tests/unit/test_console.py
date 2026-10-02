@@ -42,6 +42,7 @@ async def test_library_discovery_controls_are_wired_without_cross_workspace_publ
     assert "$('start-discovery-btn').onclick=()=>{if(state.sourceId)startDiscovery(state.sourceId);};" in body
     assert "renderDiscoveryStatus(d);" in body
     assert "clearTimeout(state.pollTimer)" in body
+    assert "if(!el)continue" in body
 
 
 async def test_content_factory_approval_gates_next_transition() -> None:
@@ -63,3 +64,19 @@ async def test_publishing_selection_action_and_schedule_creation_are_wired() -> 
     assert "await renderScheduleSelection();" in body
     assert "await request('/schedules/eligibility?'+params.toString())" in body
     assert "await request('/schedules',{method:'POST'" in body
+    assert 'id="post-selection-count"' in body
+    assert 'id="eligible-inventory"' in body
+    assert 'id="eligible-posts"' in body
+    assert "status','APPROVED'" in body
+    assert "publication_state','ELIGIBLE'" in body
+    assert "async function loadEligiblePosts()" in body
+    assert "async function loadSourcesForEligibility()" in body
+    assert "window.nashrPostSelection" not in body
+
+async def test_content_factory_synchronizes_selected_post_state_before_actions() -> None:
+    from app.api.post_console import NASHR_POSTS_HTML
+
+    assert "async function syncSelectedPostMeta()" in NASHR_POSTS_HTML
+    assert "await syncSelectedPostMeta();" in NASHR_POSTS_HTML
+    assert "const unapproved=ids.filter(id=>state.postMeta[id]?.status!=='APPROVED')" in NASHR_POSTS_HTML
+    assert "لا يمكن الانتقال إلى الجدولة قبل اعتماد جميع المنشورات المحددة" in NASHR_POSTS_HTML
