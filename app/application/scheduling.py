@@ -237,7 +237,7 @@ async def get_schedule(session: AsyncSession, schedule_id: UUID) -> ScheduleMode
 
 
 def schedule_counts(schedule: ScheduleModel) -> dict[str, int]:
-    counts = {key: 0 for key in ("total_items", "pending_items", "published_items", "failed_items")}
+    counts = {key: 0 for key in ("total_items", "pending_items", "published_items", "failed_items", "skipped_items", "cancelled_items")}
     counts["total_items"] = len(schedule.items)
     for item in schedule.items:
         if item.status == ScheduleItemStatus.PENDING.value:
@@ -246,6 +246,10 @@ def schedule_counts(schedule: ScheduleModel) -> dict[str, int]:
             counts["published_items"] += 1
         elif item.status == ScheduleItemStatus.FAILED.value:
             counts["failed_items"] += 1
+        elif item.status == ScheduleItemStatus.SKIPPED.value:
+            counts["skipped_items"] += 1
+        elif item.status == ScheduleItemStatus.CANCELLED.value:
+            counts["cancelled_items"] += 1
     return counts
 
 
