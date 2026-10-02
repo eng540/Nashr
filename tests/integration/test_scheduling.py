@@ -913,3 +913,47 @@ async def test_concurrent_schedule_creation_reserves_a_post_once() -> None:
     failures = [result for result in results if isinstance(result, RuntimeError)]
     assert len(successes) == 1
     assert len(failures) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_item_can_be_retried_individually() -> None:
+    _, _, _, post_a = await _post("Individual retry A")
+    _, _, _, post_b = await _post("Individual retry B")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Individual retry",
+            "Asia/Aden",
+            [
+                (post_a, datetime.now(timezone.utc) - timedelta(minutes=1)),
+                (post_b, datetime.now(timezone.utc) + timedelta(hours=1)),
+            ],
+        )
+        schedule.status = "ACTIVE"
+        item = (await session.execute(
+            select(ScheduleItemModel).where(
+                ScheduleItemModel.schedule_id == schedule.id,
+                ScheduleItemModel.post_id == post_a,
+            )
+        )).scalar_one()
+        item.status = "FAILED"
+        item.last_error = "temporary"
+        await session.commit()
+        item_id = item.id
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/schedules/{schedule.id}/items/{item_id}/retry")
+    assert response.status_code == 202
+    async with SessionFactory() as session:
+        refreshed_a = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.id == item_id)
+        )).scalar_one()
+        refreshed_b = (await session.execute(
+            select(ScheduleItemModel).where(
+                ScheduleItemModel.schedule_id == schedule.id,
+                ScheduleItemModel.post_id == post_b,
+            )
+        )).scalar_one()
+    assert refreshed_a.status == "PENDING"
+    assert refreshed_b.status == "PENDING"
