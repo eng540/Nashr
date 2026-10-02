@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select
 
 from app.adapters.publishing.fake import FakePublisher
 from app.application.scheduling import (
@@ -678,3 +678,214 @@ async def test_schedule_validation_reports_publish_execution_summary():
     assert payload["total_items"] == 1
     assert payload["pending_items"] == 1
     assert payload["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_schedule_eligibility_excludes_published_and_existing_schedule() -> None:
+    _, _, _, published_post = await _post("Already published", published=True)
+    _, _, _, scheduled_post = await _post("Already scheduled")
+    _, _, _, eligible_post = await _post("Eligible")
+    async with SessionFactory() as session:
+        await create_schedule(
+            session,
+            "Existing",
+            "Asia/Aden",
+            [(scheduled_post, datetime.now(timezone.utc) + timedelta(hours=1))],
+        )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/schedules/eligibility",
+            params=[
+                ("post_ids", str(published_post)),
+                ("post_ids", str(scheduled_post)),
+                ("post_ids", str(eligible_post)),
+            ],
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(eligible_post) in payload["eligible_ids"]
+    blocked = {row["post_id"]: row["reason_code"] for row in payload["blocked"]}
+    assert blocked[str(published_post)] == "ALREADY_PUBLISHED"
+    assert blocked[str(scheduled_post)] == "ALREADY_SCHEDULED"
+
+
+@pytest.mark.asyncio
+async def test_create_schedule_rejects_already_published_or_scheduled_post() -> None:
+    _, _, _, published_post = await _post("Create published", published=True)
+    _, _, _, scheduled_post = await _post("Create scheduled")
+    async with SessionFactory() as session:
+        await create_schedule(
+            session,
+            "Existing schedule",
+            "Asia/Aden",
+            [(scheduled_post, datetime.now(timezone.utc) + timedelta(hours=2))],
+        )
+        with pytest.raises(RuntimeError, match="not eligible"):
+            await create_schedule(
+                session,
+                "Published schedule",
+                "Asia/Aden",
+                [(published_post, datetime.now(timezone.utc) + timedelta(hours=1))],
+            )
+        with pytest.raises(RuntimeError, match="not eligible"):
+            await create_schedule(
+                session,
+                "Duplicate schedule",
+                "Asia/Aden",
+                [(scheduled_post, datetime.now(timezone.utc) + timedelta(hours=3))],
+            )
+
+
+@pytest.mark.asyncio
+async def test_schedule_validation_keeps_item_blockers_from_blocking_siblings() -> None:
+    _, _, _, published_post = await _post("Legacy published", published=True)
+    _, _, _, good_post = await _post("Legacy good")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Legacy mixed",
+            "Asia/Aden",
+            [(good_post, datetime.now(timezone.utc) + timedelta(hours=1))],
+        )
+        unit_id = (await session.execute(
+            select(PostModel.knowledge_unit_id).where(PostModel.id == good_post)
+        )).scalar_one()
+        session.add(PublicationModel(
+            id=uuid4(), knowledge_unit_id=unit_id, post_id=good_post,
+            platform="telegram", destination="@test", content="legacy",
+            status="PUBLISHED", external_id="legacy-published",
+        ))
+        await session.commit()
+        session.add(ScheduleItemModel(
+            id=uuid4(), schedule_id=schedule.id, post_id=published_post, position=2,
+            scheduled_at=datetime.now(timezone.utc) + timedelta(hours=2),
+            status="PENDING",
+        ))
+        await session.commit()
+        validation = await __import__(
+            "app.application.scheduling",
+            fromlist=["validate_schedule_for_activation"],
+        ).validate_schedule_for_activation(session, schedule.id)
+    assert validation["valid"] is True
+    assert validation["blocked_items"]
+
+
+@pytest.mark.asyncio
+async def test_due_processing_isolates_one_item_failure_and_completes_schedule() -> None:
+    posts = [await _post(f"Isolation {index}") for index in range(5)]
+    post_ids = [row[3] for row in posts]
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Failure isolation",
+            "Asia/Aden",
+            [(post_id, datetime.now(timezone.utc) - timedelta(minutes=1)) for post_id in post_ids],
+        )
+        schedule.status = "ACTIVE"
+        await session.commit()
+
+    class OneFailsPublisher(FakePublisher):
+        async def publish(self, *, destination: str, content: str):
+            if "Isolation 2" in content:
+                raise RuntimeError("telegram failure for one item")
+            return await super().publish(destination=destination, content=content)
+
+    processed = await process_due_schedule_items(
+        limit=20,
+        publisher=OneFailsPublisher(),
+        destination="@test",
+    )
+    assert processed == 5
+    async with SessionFactory() as session:
+        schedule_row = (await session.execute(
+            select(ScheduleModel).where(ScheduleModel.id == schedule.id)
+        )).scalar_one()
+        items = (await session.execute(
+            select(ScheduleItemModel)
+            .where(ScheduleItemModel.schedule_id == schedule.id)
+            .order_by(ScheduleItemModel.position)
+        )).scalars().all()
+    assert [item.status for item in items] == ["PUBLISHED", "PUBLISHED", "FAILED", "PUBLISHED", "PUBLISHED"]
+    assert schedule_row.status == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_failed_item_can_be_retried_after_schedule_completed() -> None:
+    _, _, _, post = await _post("Retry completed")
+    async with SessionFactory() as session:
+        schedule = await create_schedule(
+            session,
+            "Retry completed",
+            "Asia/Aden",
+            [(post, datetime.now(timezone.utc) - timedelta(minutes=1))],
+        )
+        schedule.status = "ACTIVE"
+        await session.commit()
+
+    class BrokenPublisher(FakePublisher):
+        async def publish(self, *, destination: str, content: str):
+            raise RuntimeError("temporary retry failure")
+
+    await process_due_schedule_items(publisher=BrokenPublisher(), destination="@test")
+    async with SessionFactory() as session:
+        completed = (await session.execute(
+            select(ScheduleModel).where(ScheduleModel.id == schedule.id)
+        )).scalar_one()
+    assert completed.status == "COMPLETED"
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/schedules/{schedule.id}/retry-failed")
+    assert response.status_code == 202
+    assert response.json()["retried_items"] == 1
+
+    await process_due_schedule_items(publisher=FakePublisher(), destination="@test")
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.schedule_id == schedule.id)
+        )).scalar_one()
+        publications = (await session.execute(
+            select(PublicationModel).where(
+                PublicationModel.post_id == post,
+                PublicationModel.status == "PUBLISHED",
+            )
+        )).scalars().all()
+    assert item.status == "PUBLISHED"
+    assert len(publications) == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_after_existing_publication_never_creates_duplicate() -> None:
+    _, _, _, post = await _post("Retry duplicate", published=True)
+    async with SessionFactory() as session:
+        schedule = ScheduleModel(
+            id=uuid4(), name="Retry duplicate", timezone="Asia/Aden", status="ACTIVE",
+        )
+        schedule.items = [ScheduleItemModel(
+            id=uuid4(), post_id=post, position=1,
+            scheduled_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            status="FAILED",
+        )]
+        session.add(schedule)
+        await session.commit()
+
+    from app.application.scheduling import retry_failed_items
+    async with SessionFactory() as session:
+        count_before = int((await session.execute(
+            select(func.count(PublicationModel.id)).where(
+                PublicationModel.post_id == post,
+                PublicationModel.status == "PUBLISHED",
+            )
+        )).scalar_one())
+        await retry_failed_items(session, schedule.id)
+
+    await process_due_schedule_items(publisher=FakePublisher(), destination="@test")
+    async with SessionFactory() as session:
+        count_after = int((await session.execute(
+            select(func.count(PublicationModel.id)).where(
+                PublicationModel.post_id == post,
+                PublicationModel.status == "PUBLISHED",
+            )
+        )).scalar_one())
+    assert count_before == count_after == 1
