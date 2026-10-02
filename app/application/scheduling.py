@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
@@ -96,12 +96,24 @@ async def get_posts_publish_eligibility(
             .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
             .where(
                 ScheduleItemModel.post_id.in_(unique_ids),
-                ScheduleModel.status.in_(
+                or_(
+                    ScheduleModel.status.in_(
+                        (
+                            ScheduleStatus.DRAFT.value,
+                            ScheduleStatus.ACTIVE.value,
+                            ScheduleStatus.PAUSED.value,
+                        )
+                    ),
                     (
-                        ScheduleStatus.DRAFT.value,
-                        ScheduleStatus.ACTIVE.value,
-                        ScheduleStatus.PAUSED.value,
-                    )
+                        (ScheduleModel.status == ScheduleStatus.COMPLETED.value)
+                        & ScheduleItemModel.status.in_(
+                            (
+                                ScheduleItemStatus.PENDING.value,
+                                ScheduleItemStatus.PROCESSING.value,
+                                ScheduleItemStatus.FAILED.value,
+                            )
+                        )
+                    ),
                 ),
             )
         )
