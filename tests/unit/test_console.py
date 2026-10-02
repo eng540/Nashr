@@ -74,8 +74,8 @@ async def test_publishing_selection_action_and_schedule_creation_are_wired() -> 
     assert "async function loadSourcesForEligibility()" in body
     assert "window.nashrPostSelection" not in body
     assert "function localDateTimeToUtcISOString(value,timeZone)" in body
-    assert r"const match=/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})$/.exec(value)" in body
-    assert r"const match=/^(\\\\d{4})" not in body
+    assert "const match=/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})$/.exec(value)" in body
+    assert "const match=/^(\\\\d{4})" not in body
 
 async def test_content_factory_synchronizes_selected_post_state_before_actions() -> None:
     from app.api.post_console import NASHR_POSTS_HTML
