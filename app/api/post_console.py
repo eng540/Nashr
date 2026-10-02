@@ -152,6 +152,10 @@ function showActionMessage(message,kind='info'){
 function selectedNonApproved(){
   return [...state.selectedPosts].filter(id=>state.postMeta[id]?.status!=='APPROVED');
 }
+async function syncSelectedPostMeta(){
+  const missing=[...state.selectedPosts].filter(id=>!state.postMeta[id]||!state.postMeta[id].status);
+  if(missing.length)await Promise.all(missing.map(async id=>{try{state.postMeta[id]=await api('/posts/'+id);}catch(e){}}));
+}
 function renderPosts(d){
   $('summary').textContent=(d.total||0)+' Posts';
   $('empty').classList.toggle('hidden',state.posts.length>0);
@@ -174,6 +178,7 @@ function updateSelected(){
   $('next-to-scheduling-help').textContent=!selected.length?'حدد منشورًا واحدًا على الأقل للمتابعة.':unapproved.length?('اعتمد '+unapproved.length+' منشورًا محددًا قبل الانتقال إلى الجدولة.'):('تم تحديد '+selected.length+' منشورًا معتمدًا. سيتم التحقق من قابلية النشر قبل الجدولة.');
 }
 async function bulkApproveSelected(){
+  await syncSelectedPostMeta();
   const ids=selectedNonApproved();
   if(!ids.length)return showActionMessage('كل المنشورات المحددة معتمدة بالفعل.','info');
   $('bulk-approve').disabled=true;
@@ -203,8 +208,11 @@ async function bulkApproveSelected(){
   finally{updateSelected();}
 }
 async function prepareScheduling(){
+  await syncSelectedPostMeta();
   const ids=[...state.selectedPosts];
   if(!ids.length)return;
+  const unapproved=ids.filter(id=>state.postMeta[id]?.status!=='APPROVED');
+  if(unapproved.length){showActionMessage('لا يمكن الانتقال إلى الجدولة قبل اعتماد جميع المنشورات المحددة.','error');updateSelected();return;}
   const chunkSize=500;
   const blocked=[];
   const blockedIds=new Set();
