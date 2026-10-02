@@ -117,7 +117,9 @@ async def bulk_approve(
     posts = {
         post.id: post
         for post in (
-            await session.execute(select(PostModel).where(PostModel.id.in_(unique_ids)))
+            await session.execute(
+                select(PostModel).where(PostModel.id.in_(unique_ids)).with_for_update()
+            )
         ).scalars().all()
     }
     processing_ids = {
