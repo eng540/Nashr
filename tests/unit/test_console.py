@@ -60,7 +60,7 @@ async def test_publishing_selection_action_and_schedule_creation_are_wired() -> 
     assert "async function openScheduleCreation()" in body
     assert "$('schedule-from-selection').onclick=openScheduleCreation;" in body
     assert "function renderSelectionCount()" in body
-    assert "$('post-selection-count').textContent=count+' محدد';" in body
+    assert "setText('post-selection-count',count+' محدد')" in body
     assert "async function hydrateSelection()" in body
     assert "await renderScheduleSelection();" in body
     assert "await request('/schedules/eligibility?'+params.toString())" in body
