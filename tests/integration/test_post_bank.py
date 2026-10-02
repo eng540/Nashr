@@ -229,14 +229,16 @@ async def test_production_post_is_created_as_draft():
 
 
 @pytest.mark.asyncio
-async def test_console_contains_editorial_review_controls_and_status_filters():
-    from app.api.console import NASHR_CONSOLE_HTML
-    assert 'value="APPROVED">APPROVED' in NASHR_CONSOLE_HTML
-    assert 'value="REJECTED">REJECTED' in NASHR_CONSOLE_HTML
-    assert "post-editor-approve" in NASHR_CONSOLE_HTML
-    assert "post-editor-reject" in NASHR_CONSOLE_HTML
-    assert "/approve" in NASHR_CONSOLE_HTML
-    assert "/reject" in NASHR_CONSOLE_HTML
+async def test_posts_workspace_contains_editorial_review_controls_and_status_filters():
+    from app.api.routes import posts_console
+    response = await posts_console()
+    body = response.body.decode("utf-8")
+    assert 'value="APPROVED">APPROVED' in body
+    assert 'value="REJECTED">REJECTED' in body
+    assert "post-editor-approve" in body
+    assert "post-editor-reject" in body
+    assert "/approve" in body
+    assert "/reject" in body
 
 
 
