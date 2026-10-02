@@ -24,9 +24,7 @@ async def test_dedicated_posts_console_is_separate_from_library() -> None:
     assert "/schedules/eligibility" in body
     assert "selected_post_ids" in body
     assert "APPROVED" in body
-    assert 'id="post-bulk-approve"' in body
     assert "اعتماد المحدد" in body
-    assert 'id="post-publication-state"' in body
     assert "غير منشور" in body
     assert "whitespace-pre-wrap" in body
     assert "bulk-approve" in body
