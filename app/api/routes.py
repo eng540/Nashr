@@ -835,7 +835,6 @@ async def cancel_schedule_route(schedule_id: UUID, session: AsyncSession = Depen
 async def retry_failed_schedule_item_route(
     schedule_id: UUID,
     item_id: UUID,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     try:
@@ -844,7 +843,8 @@ async def retry_failed_schedule_item_route(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    background_tasks.add_task(process_due_schedule_items)
+    # The existing lifespan scheduler owns execution; retry only changes durable
+    # DB state and never performs a hidden side effect inside this request.
     return {"retried_item_id": str(item_id), "schedule": _schedule_payload(await get_schedule(session, schedule_id), detail=True)}
 
 
@@ -856,8 +856,6 @@ async def retry_failed_schedule_route(schedule_id: UUID, background_tasks: Backg
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if count:
-        background_tasks.add_task(process_due_schedule_items)
     return {"retried_items": count, "schedule": _schedule_payload(await get_schedule(session, schedule_id), detail=True)}
 
 
@@ -899,7 +897,13 @@ async def list_posts(
         ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id
     ).where(
         ScheduleItemModel.post_id == PostModel.id,
-        ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+        or_(
+            ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+            (
+                (ScheduleModel.status == "COMPLETED")
+                & ScheduleItemModel.status.in_(("PENDING", "PROCESSING", "FAILED"))
+            ),
+        ),
     ).exists()
 
     if publication_state == "PUBLISHED":
@@ -945,7 +949,13 @@ async def list_posts(
                     .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
                     .where(
                         ScheduleItemModel.post_id.in_(post_ids),
-                        ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+                        or_(
+                            ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+                            (
+                                (ScheduleModel.status == "COMPLETED")
+                                & ScheduleItemModel.status.in_(("PENDING", "PROCESSING", "FAILED"))
+                            ),
+                        ),
                     )
                 )
             ).scalars().all()
