@@ -838,6 +838,8 @@ async def retry_failed_schedule_route(schedule_id: UUID, background_tasks: Backg
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if count:
+        background_tasks.add_task(process_due_schedule_items)
     return {"retried_items": count, "schedule": _schedule_payload(await get_schedule(session, schedule_id), detail=True)}
 
 
