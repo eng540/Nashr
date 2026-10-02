@@ -142,6 +142,7 @@ async def get_schedule(session: AsyncSession, schedule_id: UUID) -> ScheduleMode
             .selectinload(KnowledgeUnitModel.source)
             .defer(SourceModel.file_payload),
             selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.publication),
+            selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.post).selectinload(PostModel.publications),
         )
         .where(ScheduleModel.id == schedule_id)
     )
@@ -183,6 +184,57 @@ def next_scheduled_at(schedule: ScheduleModel) -> datetime | None:
         if item.status == ScheduleItemStatus.PENDING.value
     ]
     return min(values) if values else None
+
+
+async def validate_schedule_for_activation(session: AsyncSession, schedule_id: UUID) -> dict[str, object]:
+    """Validate a persisted schedule immediately before activation."""
+    schedule = await get_schedule(session, schedule_id)
+    if schedule is None:
+        raise LookupError("Schedule not found.")
+    errors: list[str] = []
+    warnings: list[str] = []
+    items = sorted(schedule.items, key=lambda item: item.position)
+    if not items:
+        errors.append("الخطة لا تحتوي على أي منشور.")
+    seen: set[UUID] = set()
+    for item in items:
+        if item.post_id in seen:
+            errors.append(f"المنشور في الموضع {item.position} مكرر داخل الخطة.")
+        seen.add(item.post_id)
+        if item.status == ScheduleItemStatus.FAILED.value:
+            errors.append(f"المنشور «{item.post.knowledge_unit.title}» لديه فشل سابق ويجب إعادة المحاولة أولًا.")
+            continue
+        if item.status in (ScheduleItemStatus.CANCELLED.value, ScheduleItemStatus.SKIPPED.value, ScheduleItemStatus.PUBLISHED.value):
+            continue
+        if item.status != ScheduleItemStatus.PENDING.value:
+            errors.append(f"المنشور «{item.post.knowledge_unit.title}» في حالة تنفيذ غير قابلة للتفعيل: {item.status}.")
+            continue
+        post = item.post
+        if post.status != "APPROVED":
+            errors.append(f"المنشور «{item.post.knowledge_unit.title}» غير معتمد حاليًا.")
+        if not post.content.strip():
+            errors.append(f"المنشور «{item.post.knowledge_unit.title}» لا يحتوي على محتوى قابل للنشر.")
+        if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
+            errors.append(f"وقت نشر «{item.post.knowledge_unit.title}» غير صالح.")
+        if any(publication.status == "PUBLISHED" for publication in item.post.publications):
+            errors.append(f"المنشور «{item.post.knowledge_unit.title}» سبق نشره وما زال Pending.")
+    try:
+        validate_timezone(schedule.timezone)
+    except ValueError as exc:
+        errors.append(str(exc))
+    if schedule.status == ScheduleStatus.PAUSED.value:
+        warnings.append("الخطة متوقفة مؤقتًا؛ ستستأنف التنفيذ بعد التفعيل.")
+    if any(item.status == ScheduleItemStatus.PUBLISHED.value for item in items):
+        warnings.append("توجد منشورات منشورة بالفعل داخل الخطة؛ لن يعاد نشرها.")
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "total_items": len(items),
+        "pending_items": sum(item.status == ScheduleItemStatus.PENDING.value for item in items),
+        "published_items": sum(item.status == ScheduleItemStatus.PUBLISHED.value for item in items),
+        "failed_items": sum(item.status == ScheduleItemStatus.FAILED.value for item in items),
+    }
 
 
 def transition(schedule: ScheduleModel, action: str, now: datetime | None = None) -> None:
