@@ -615,6 +615,8 @@ async def _execute_claimed_item(
                 item.publication_id = publication_id
                 item.processing_started_at = None
                 await session.commit()
+                await _finish_schedule_if_complete(session, item.schedule_id)
+                await session.commit()
             return
         item = (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.id == item_id))).scalar_one_or_none()
         if item is None:
