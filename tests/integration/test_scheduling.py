@@ -456,10 +456,11 @@ async def test_schedule_trigger_runs_from_application_lifespan(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_console_schedule_time_conversion_is_timezone_aware():
-    assert "localDateTimeToUtcISOString" in NASHR_CONSOLE_HTML
-    assert "timeZone,hourCycle:'h23'" in NASHR_CONSOLE_HTML
-    assert "new Date(x.value).toISOString()" not in NASHR_CONSOLE_HTML
+async def test_publishing_schedule_time_conversion_is_timezone_aware():
+    from app.api.publishing_console import NASHR_PUBLISHING_HTML
+    assert "localDateTimeToUtcISOString" in NASHR_PUBLISHING_HTML
+    assert "timeZone,hourCycle:'h23'" in NASHR_PUBLISHING_HTML
+    assert "new Date(x.value).toISOString()" not in NASHR_PUBLISHING_HTML
 
 
 @pytest.mark.asyncio
