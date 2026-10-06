@@ -29,3 +29,8 @@
 إذا أدى PR لاحق إلى تغيير قرار معماري أو حدود أساسية، يجب تحديث الوثائق في نفس PR أو إنشاء ADR جديد يوضح السبب والأثر.
 
 هذه الوثائق لا تستبدل اختبارات النظام أو مراجعة الكود أو التحقق التشغيلي.
+
+
+## Frontend Foundation
+
+- [Frontend Architecture](architecture/frontend.md) — React/API boundary, workspace isolation, state and E2E migration policy.
