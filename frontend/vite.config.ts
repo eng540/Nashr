@@ -7,7 +7,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/posts": {\n        target: "http://127.0.0.1:8000",\n        bypass(req) {\n          if (req.url?.startsWith("/posts/workspace")) return req.url;\n          return undefined;\n        },\n      },
+      "/posts": {
+        target: "http://127.0.0.1:8000",
+        bypass(req) {
+          if (req.url?.startsWith("/posts/workspace")) return req.url;
+          return undefined;
+        },
+      },
       "/schedules": "http://127.0.0.1:8000",
       "/sources": "http://127.0.0.1:8000",
     },
