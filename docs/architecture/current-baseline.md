@@ -1,9 +1,9 @@
 # Nashr Current Architecture Baseline
 
-Baseline commit: 4adc1abc609c0b6f67e95bd49313603f11cf7b42
+Baseline commit: 13e2de95c49c665fc2f534380a82356befffd0bb
 Branch: main
 
-الغرض: تسجيل الحالة الفعلية التي بُنيت عليها Target Architecture، وليس الادعاء بأن النظام وصل إلى الهدف النهائي.
+الغرض: تسجيل الحالة الفعلية بعد دمج PR #47 وقبل تنفيذ Artifact Boundary.
 
 ## 1. الموجود حاليًا
 
@@ -23,6 +23,8 @@ API → Application → Domain → Infrastructure / Adapters
 - editorial review
 - publication/scheduling
 - Telegram publishing adapter
+- React + TypeScript + Vite + Tailwind + TanStack Query frontend foundation
+- Playwright browser E2E for the migrated workspaces
 - unit/integration tests
 - CI workflow
 
@@ -68,13 +70,11 @@ Telegram موجود كAdapter، لكن أجزاء من scheduling/application م
 
 ### Frontend architecture
 
-لا يوجد Frontend application مستقل بمعمارية React/TypeScript/build pipeline.
-
-الهدف: React + TypeScript + Vite + Tailwind production build + Query layer + E2E.
+Frontend Foundation is now established for Publishing and Post Bank; remaining legacy surfaces are intentionally outside this migration.
 
 ### Browser E2E
 
-اختبارات التكامل الحالية ليست بديلًا كاملًا لاختبار Browser E2E.
+Chromium E2E now covers the migrated critical journeys.
 
 ### Security / ownership
 
@@ -93,7 +93,7 @@ Telegram موجود كAdapter، لكن أجزاء من scheduling/application م
 ## 5. توصيف الحالة
 
 الوصف الأدق:
-Production-capable vertical slice + early platform core، مع ارتباطات تحتاج تثبيتًا قبل التحول إلى منصة متعددة الهويات والمسارات والمخرجات.
+Production-capable vertical slice + early platform core، مع Frontend Foundation مثبتة، ومع Post-centric coupling هو الحاجز الرئيسي قبل الانتقال إلى منصة متعددة المخرجات.
 
 النظام ليس بدائيًا ولا يحتاج Rewrite، لكنه يحتاج Foundation Refactoring في الحدود المذكورة.
 
