@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
 import { schedulesApi } from "../../shared/api/schedulesApi";
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
+import { localDateTimeToUtcISOString } from "../../shared/utils/timezone";
 
 const DEFAULT_TIMEZONE = "Asia/Aden";
 
@@ -25,13 +26,12 @@ export function PublishingPage() {
 
   const createSchedule = useMutation({
     mutationFn: () => {
-      const local = new Date(form.startAt);
-      if (Number.isNaN(local.getTime())) throw new Error("حدد وقت بداية صالح.");
+      if (!form.startAt) throw new Error("حدد وقت بداية صالح.");
       return schedulesApi.create({
         name: form.name.trim(),
         timezone: form.timezone.trim(),
         post_ids: selectedIds,
-        start_at: local.toISOString(),
+        start_at: localDateTimeToUtcISOString(form.startAt, form.timezone),
         interval_minutes: Number(form.interval),
         idempotency_key: crypto.randomUUID(),
       });
