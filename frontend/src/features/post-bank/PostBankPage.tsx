@@ -7,7 +7,7 @@ import { toggleSelection } from "../../shared/utils/selection";
 export function PostBankPage() {
   const navigate = useNavigate();
   const client = useQueryClient();
-  const [status, setStatus] = useState("APPROVED");
+  const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
