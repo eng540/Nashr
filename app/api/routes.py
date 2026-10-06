@@ -39,7 +39,8 @@ from app.application.discovery_jobs import (
 )
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
-from app.api.frontend import frontend_index_response\nfrom app.api.console import NASHR_CONSOLE_HTML
+from app.api.frontend import frontend_index_response
+from app.api.console import NASHR_CONSOLE_HTML
 from app.api.post_console import NASHR_POSTS_HTML
 from app.api.publishing_console import NASHR_PUBLISHING_HTML
 from app.infrastructure.database.models import BookMapSectionModel, DiscoveryJobModel, KnowledgeUnitModel, PostModel, SourceModel, TopicModel
