@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.application.posts import ProducePost
+from app.application.artifacts import post_to_artifact
 from app.domain.production_jobs import (
     ProductionJobItemStatus,
     ProductionJobStatus,
@@ -430,7 +431,8 @@ class ProductionJobRunner:
                 try:
                     async with SessionFactory() as session:
                         post = await self.producer.execute(session, knowledge_unit_id)
-                    await _complete_item(job_id, item_id, post.id)
+                        artifact = post_to_artifact(post)
+                    await _complete_item(job_id, item_id, artifact.id)
                     await _update_progress(job_id, None)
                 except Exception as exc:
                     logger.exception(
