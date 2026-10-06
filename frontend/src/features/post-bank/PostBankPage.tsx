@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
 import { toggleSelection } from "../../shared/utils/selection";
@@ -7,7 +7,8 @@ import { toggleSelection } from "../../shared/utils/selection";
 export function PostBankPage() {
   const navigate = useNavigate();
   const client = useQueryClient();
-  const [status, setStatus] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [status, setStatus] = useState(searchParams.get("status") ?? "");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export function PostBankPage() {
 
       <div className="rounded-2xl border bg-white p-4 shadow-sm">
         <div className="grid gap-3 sm:grid-cols-[180px_1fr_auto]">
-          <select aria-label="حالة المنشور" value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-xl border p-3">
+          <select aria-label="حالة المنشور" value={status} onChange={(e) => { setStatus(e.target.value); setSearchParams(e.target.value ? { status: e.target.value } : {}); }} className="rounded-xl border p-3">
             <option value="">كل الحالات</option>
             <option value="DRAFT">مسودة</option>
             <option value="APPROVED">معتمد</option>
