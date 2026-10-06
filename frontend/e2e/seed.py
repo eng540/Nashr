@@ -1,7 +1,11 @@
 from pathlib import Path
 from uuid import uuid4
+import sys
 
 import asyncio
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 import json
 
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel, TopicModel
