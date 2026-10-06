@@ -1014,9 +1014,6 @@ async def list_posts(
     }
 
 
-@router.get("/posts/workspace", response_class=HTMLResponse, include_in_schema=False)
-async def posts_console() -> HTMLResponse:
-    return HTMLResponse(content=NASHR_POSTS_HTML)
 
 
 @router.get("/posts/{post_id}/telegram-preview")
