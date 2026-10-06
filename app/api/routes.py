@@ -39,6 +39,7 @@ from app.application.discovery_jobs import (
 )
 from app.application.ingest_pdf import IngestPdf
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
+from app.api.frontend import frontend_index_response
 from app.api.console import NASHR_CONSOLE_HTML
 from app.api.post_console import NASHR_POSTS_HTML
 from app.api.publishing_console import NASHR_PUBLISHING_HTML
@@ -277,8 +278,32 @@ async def console() -> HTMLResponse:
 
 @router.get("/publishing", response_class=HTMLResponse, include_in_schema=False)
 async def publishing_console() -> HTMLResponse:
-    """Dedicated publishing workspace; scheduling domain remains unchanged."""
+    """Serve React publishing workspace, with legacy HTML as a local-dev fallback."""
+    frontend = frontend_index_response()
+    if frontend is not None:
+        return frontend
     return HTMLResponse(content=NASHR_PUBLISHING_HTML)
+
+
+@router.get("/posts/workspace", response_class=HTMLResponse, include_in_schema=False)
+async def posts_console() -> HTMLResponse:
+    """Serve React Post Bank, with legacy HTML as a local-dev fallback."""
+    frontend = frontend_index_response()
+    if frontend is not None:
+        return frontend
+    return HTMLResponse(content=NASHR_POSTS_HTML)
+
+
+@router.get("/assets/{path:path}", include_in_schema=False)
+async def frontend_asset(path: str):
+    """Serve Vite production assets without changing API contracts."""
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+
+    asset = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "assets" / path
+    if not asset.is_file():
+        raise HTTPException(status_code=404, detail="Frontend asset not found.")
+    return FileResponse(asset)
 
 
 @router.post("/sources")
@@ -990,9 +1015,6 @@ async def list_posts(
     }
 
 
-@router.get("/posts/workspace", response_class=HTMLResponse, include_in_schema=False)
-async def posts_console() -> HTMLResponse:
-    return HTMLResponse(content=NASHR_POSTS_HTML)
 
 
 @router.get("/posts/{post_id}/telegram-preview")

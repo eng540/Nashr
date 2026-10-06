@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+:root {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  direction: rtl;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
