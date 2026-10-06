@@ -56,6 +56,12 @@ Distribution
 
 بوابة النجاح: ملكية كل مفهوم ومسؤولية كل module وعقده واضحة.
 
+## بوابة ما بعد المرحلة 1 — Artifact Gate
+
+بعد نجاح Frontend Foundation يجب تنفيذ Architecture Gate على main الفعلي. تم تسجيل هذا gate في docs/architecture/gates/2026-10-06-post-pr47.md.
+
+نتيجة gate الحالي: PASS. المرحلة التالية هي Artifact Boundary بحدود صغيرة وتوافقية، وليس schema rewrite.
+
 ## المرحلة 3 — Artifact Boundary
 
 الانتقال من Post-centric إلى Artifact-centric:
