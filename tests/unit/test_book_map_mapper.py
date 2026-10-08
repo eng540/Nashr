@@ -13,6 +13,38 @@ def test_book_map_page_ranges_are_contiguous_and_bounded() -> None:
     ]
 
 
+def test_book_map_section_normalizes_relative_provenance_to_absolute_pages() -> None:
+    items = [
+        type("Topic", (), {
+            "page_start": 1,
+            "page_end": 4,
+            "model_copy": lambda self, update: type("Topic", (), {
+                "page_start": update["page_start"],
+                "page_end": update["page_end"],
+            })(),
+        })(),
+    ]
+
+    normalized = GeminiBookMapper._normalize_section_topics(items, 65, 128)
+
+    assert normalized[0].page_start == 65
+    assert normalized[0].page_end == 68
+
+
+def test_book_map_section_rejects_absolute_pages_as_relative_provenance() -> None:
+    item = type("Topic", (), {
+        "page_start": 129,
+        "page_end": 158,
+    })()
+
+    try:
+        GeminiBookMapper._normalize_section_topics([item], 65, 128)
+    except GeminiOperationError as exc:
+        assert exc.code == "GEMINI_PROVENANCE_UNAVAILABLE"
+    else:
+        raise AssertionError("Absolute-looking pages must not be accepted as relative provenance.")
+
+
 def test_book_map_section_adapts_after_context_limit() -> None:
     mapper = object.__new__(GeminiBookMapper)
     source = SimpleNamespace(id=uuid4())

@@ -314,13 +314,18 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
         section_index: int,
     ) -> GeminiBookMap:
         bounded_pdf = self._bounded_pdf(reader, page_start, page_end)
+        window_page_count = page_end - page_start + 1
         prompt = (
             "هذه نافذة محدودة من كتاب وليست الكتاب كاملاً. "
-            f"حلّل فقط صفحات PDF {page_start}-{page_end}. "
+            f"النافذة تحتوي {window_page_count} صفحة PDF، وتمثل الصفحات المطلقة {page_start}-{page_end} من الكتاب. "
+            "حلّل فقط الصفحات الموجودة في الملف الممرر لك. "
+            "مهم جداً: حقلا page_start و page_end في إجابتك يجب أن يكونا أرقام الصفحات النسبية "
+            "داخل الملف الممرر فقط، ويجب أن يتراوح كل منهما بين 1 و "
+            f"{window_page_count}. لا تستخدم أرقام الصفحات المطبوعة داخل الكتاب ولا أرقام الصفحات المطلقة "
+            "في هذه الحقول. سيحوّل النظام هذه الأرقام النسبية لاحقاً إلى أرقام PDF مطلقة. "
             "استخرج البنية الموضوعية الظاهرة في هذه النافذة، ويمكن للموضوع أن يبدأ أو ينتهي خارجها؛ "
-            "في هذه الحالة اجعل page_start/page_end حدوداً محافظة لما تثبته هذه النافذة فقط. "
-            "لا تنشئ مواد منشورات. "
-            "أعد page_start و page_end كأرقام الصفحات المطلقة في الكتاب، وليس أرقاماً نسبية داخل النافذة."
+            "في هذه الحالة اجعل page_start/page_end حدوداً محافظة لما تثبته النافذة فقط. "
+            "لا تنشئ مواد منشورات."
         )
         try:
             response = generate_gemini_content(
@@ -352,22 +357,44 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
         if parsed is None:
             raise GeminiOperationError("GEMINI_INVALID_RESPONSE", "Gemini returned no section book map.")
 
-        topics: list[GeminiTopic] = []
-        for item in parsed.topics:
-            if item.page_start > item.page_end:
-                raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned an inverted section topic range.")
-            if item.page_start < page_start or item.page_end > page_end:
-                raise GeminiOperationError(
-                    "GEMINI_PROVENANCE_UNAVAILABLE",
-                    f"Section topic pages {item.page_start}-{item.page_end} escape bounded window {page_start}-{page_end}.",
-                )
-            topics.append(item)
+        topics = self._normalize_section_topics(parsed.topics, page_start, page_end)
 
         return GeminiBookMap(
             title=parsed.title.strip(),
             description=parsed.description.strip(),
             topics=topics,
         )
+
+    @staticmethod
+    def _normalize_section_topics(
+        items: list[GeminiTopic],
+        page_start: int,
+        page_end: int,
+    ) -> list[GeminiTopic]:
+        """Convert model-relative page coordinates into absolute PDF pages."""
+        window_page_count = page_end - page_start + 1
+        topics: list[GeminiTopic] = []
+        for item in items:
+            if item.page_start > item.page_end:
+                raise GeminiOperationError(
+                    "GEMINI_SCHEMA_ERROR",
+                    "Gemini returned an inverted section topic range.",
+                )
+            if item.page_start < 1 or item.page_end > window_page_count:
+                raise GeminiOperationError(
+                    "GEMINI_PROVENANCE_UNAVAILABLE",
+                    f"Section topic relative pages {item.page_start}-{item.page_end} escape supplied window "
+                    f"1-{window_page_count} (absolute window {page_start}-{page_end}).",
+                )
+            topics.append(
+                item.model_copy(
+                    update={
+                        "page_start": page_start + item.page_start - 1,
+                        "page_end": page_start + item.page_end - 1,
+                    }
+                )
+            )
+        return topics
 
     def _merge_local_maps(
         self,
