@@ -130,6 +130,9 @@ class GeminiEditorialDrafter(IEditorialDrafter):
         instruction layer.
         """
 
+        if not system_prompt or not system_prompt.strip():
+            raise ValueError("Resolved editorial prompt is required.")
+
         prompt = (
             f"اسم المصدر: {source_name}\n"
             f"عنوان/موضوع المادة: {title}\n"
