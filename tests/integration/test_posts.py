@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.application.posts import ProducePost
+from app.application.control_plane import ControlPlaneResolver, PromptTemplateService
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel, TopicModel
 from app.infrastructure.database.session import SessionFactory
 
@@ -130,3 +131,37 @@ async def test_existing_post_is_returned_without_regeneration() -> None:
         post = await ProducePost(FailingDrafter()).execute(session, unit_id)
         assert post.id == row.id
         assert post.content == "Existing post"
+
+
+class PromptRecordingDrafter:
+    def __init__(self):
+        self.prompts = []
+
+    async def draft(self, *, title: str, content: str, source_name: str, pdf_slice: bytes | None = None, system_prompt: str | None = None) -> str:
+        self.prompts.append(system_prompt)
+        return content
+
+
+async def test_runtime_uses_new_published_prompt_without_code_change(monkeypatch):
+    key = "editorial.test." + str(uuid4())
+    monkeypatch.setattr("app.application.posts.EDITORIAL_PROMPT_KEY", key)
+
+    async with SessionFactory() as session:
+        service = PromptTemplateService(session)
+        _, version1 = await service.create_template(key, "Runtime test", "Resolver test", "PROMPT_V1")
+        await service.publish(key, version1.version)
+
+    _, _, unit1 = await _unit()
+    drafter = PromptRecordingDrafter()
+    async with SessionFactory() as session:
+        await ProducePost(drafter, ControlPlaneResolver()).execute(session, unit1)
+    assert drafter.prompts[-1] == "PROMPT_V1"
+
+    async with SessionFactory() as session:
+        version2 = await PromptTemplateService(session).create_draft(key, "PROMPT_V2")
+        await PromptTemplateService(session).publish(key, version2.version)
+
+    _, _, unit2 = await _unit()
+    async with SessionFactory() as session:
+        await ProducePost(drafter, ControlPlaneResolver()).execute(session, unit2)
+    assert drafter.prompts[-1] == "PROMPT_V2"
