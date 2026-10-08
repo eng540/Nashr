@@ -1,6 +1,6 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "python -m pip install --no-cache-dir --disable-pip-version-check . && npm --prefix frontend install && npm --prefix frontend run build"
+buildCommand = "python -m pip install --no-cache-dir --disable-pip-version-check . && npm --prefix frontend ci && npm --prefix frontend run build"
 
 [deploy]
 startCommand = "sh -c 'python -m pip install --no-cache-dir --disable-pip-version-check . && python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
