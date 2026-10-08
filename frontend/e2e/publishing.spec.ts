@@ -28,3 +28,23 @@ test("approved post can be scheduled through the real API", async ({ page }) => 
   expect(request.name).toBe("E2E خطة نشر");
   await expect(page.getByRole("status")).toContainText("تم إنشاء الخطة بنجاح");
 });
+
+
+test("publishing workspace separates ready, plans, and calendar sections", async ({ page }) => {
+  await page.goto("/publishing");
+  await expect(page.getByTestId("publishing-workspace")).toBeVisible();
+
+  await expect(page.getByTestId("publishing-ready")).toBeVisible();
+  await expect(page.getByLabel("بحث المنشورات الجاهزة")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "أقسام مساحة النشر" })).toContainText("خطط النشر");
+  await expect(page.getByRole("navigation", { name: "أقسام مساحة النشر" })).toContainText("التقويم");
+
+  await page.getByRole("button", { name: /خطط النشر/ }).click();
+  await expect(page.getByTestId("publishing-plans")).toBeVisible();
+  await expect(page.getByLabel("بحث الخطط")).toBeVisible();
+  await expect(page.getByLabel("حالة الخطة")).toBeVisible();
+
+  await page.getByRole("button", { name: /التقويم/ }).click();
+  await expect(page.getByTestId("publishing-calendar")).toBeVisible();
+  await expect(page.getByLabel("تاريخ التقويم")).toBeVisible();
+});
