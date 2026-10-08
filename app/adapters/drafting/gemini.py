@@ -70,13 +70,9 @@ class GeminiEditorialDrafter(IEditorialDrafter):
         self,
         client: genai.Client | None = None,
         model: str | None = None,
-        system_prompt: str | None = None,
     ) -> None:
         """Initialize with a prioritized cascade of models."""
-        if system_prompt is not None:
-            raise ValueError("Editorial prompt must be resolved by the application runtime.")
         self._client = client
-        self._configured_system_prompt = system_prompt
 
         raw_models = model or os.getenv("GEMINI_MODEL", "")
         self.model = raw_models
