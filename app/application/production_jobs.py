@@ -395,8 +395,8 @@ async def _finalize(job_id: UUID) -> None:
 class ProductionJobRunner:
     """Durable sequential runner; each material delegates to ProducePost."""
 
-    def __init__(self, drafter, resolver: ControlPlaneResolver) -> None:
-        self.producer = ProducePost(drafter, resolver)
+    def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
+        self.producer = ProducePost(drafter, resolver or ControlPlaneResolver())
 
     async def run(self, job_id: UUID) -> None:
         await _recover_stale(job_id)
