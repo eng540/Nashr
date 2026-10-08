@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.domain.editorial import IEditorialDrafter
 from app.domain.publications import IPublisher, Publication, PublicationStatus
+from app.domain.artifacts import Artifact
 from app.application.posts import ProducePost
 from app.application.artifacts import post_model_to_artifact, post_to_artifact
 from app.application.editorial_context import slice_pdf_pages_as_bytes
@@ -49,7 +50,7 @@ class CreateTelegramDraft:
         return await CreateTelegramDraft.execute_for_artifact(session, post_model_to_artifact(post), destination)
 
     @staticmethod
-    async def execute_for_artifact(session: AsyncSession, artifact, destination: str) -> Publication:
+    async def execute_for_artifact(session: AsyncSession, artifact: Artifact, destination: str) -> Publication:
         existing_result = await session.execute(
             select(PublicationModel)
             .where(
@@ -70,7 +71,7 @@ class CreateTelegramDraft:
             post_id=artifact.id,
             platform="telegram",
             destination=destination,
-            content=post.content,
+            content=artifact.content,
             status=PublicationStatus.DRAFT.value,
         )
         session.add(row)
@@ -81,7 +82,7 @@ class CreateTelegramDraft:
             result = await session.execute(
                 select(PublicationModel)
                 .where(
-                    PublicationModel.post_id == post.id,
+                    PublicationModel.post_id == artifact.id,
                     PublicationModel.platform == "telegram",
                     PublicationModel.destination == destination,
                 )
