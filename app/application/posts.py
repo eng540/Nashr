@@ -29,7 +29,7 @@ def _to_domain(row: PostModel) -> Post:
 class ProducePost:
     """Produce and persist one editorial Post from one KnowledgeUnit."""
 
-    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver | None = None) -> None:
+    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver) -> None:
         self.drafter = drafter
         self.resolver = resolver
 
@@ -63,9 +63,7 @@ class ProducePost:
                 # Preserve the existing text fallback for missing or malformed source PDFs.
                 pdf_slice = None
 
-        system_prompt = None
-        if self.resolver is not None:
-            system_prompt = (await self.resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)).body
+        system_prompt = (await self.resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)).body
 
         content = await self.drafter.draft(
             title=unit.title,
