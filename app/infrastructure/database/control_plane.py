@@ -81,6 +81,12 @@ class PromptTemplateRepository:
         template = await self.get_template(key)
         if template is None:
             raise LookupError("Prompt template not found.")
+        target_id = target.id
+        template_id = target.prompt_template_id
+        target_version = target.version
+        target_body = target.body
+        target_created_at = target.created_at
+        target_updated_at = target.updated_at
         await self.session.execute(
             update(PromptTemplateVersionModel)
             .where(
@@ -91,7 +97,15 @@ class PromptTemplateRepository:
         )
         target.status = "PUBLISHED"
         await self.session.flush()
-        return _version(target)
+        return PromptTemplateVersion(
+            id=target_id,
+            prompt_template_id=template_id,
+            version=target_version,
+            body=target_body,
+            status="PUBLISHED",
+            created_at=target_created_at,
+            updated_at=target_updated_at,
+        )
 
     async def archive(self, key: str, version: int) -> PromptTemplateVersion:
         row = await self._get_version_row(key, version)
