@@ -286,6 +286,15 @@ async def publishing_console() -> HTMLResponse:
     return HTMLResponse(content=NASHR_PUBLISHING_HTML)
 
 
+@router.get("/control", response_class=HTMLResponse, include_in_schema=False)
+async def control_plane_console() -> HTMLResponse:
+    """Serve the React Control Plane workspace."""
+    frontend = frontend_index_response()
+    if frontend is not None:
+        return frontend
+    return HTMLResponse(content="<h1>Control Plane frontend bundle is not available.</h1>")
+
+
 @router.get("/posts/workspace", response_class=HTMLResponse, include_in_schema=False)
 async def posts_console() -> HTMLResponse:
     """Serve React Post Bank, with legacy HTML as a local-dev fallback."""
