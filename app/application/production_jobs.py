@@ -395,7 +395,7 @@ async def _finalize(job_id: UUID) -> None:
 class ProductionJobRunner:
     """Durable sequential runner; each material delegates to ProducePost."""
 
-    def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
+    def __init__(self, drafter, resolver: ControlPlaneResolver) -> None:
         self.producer = ProducePost(drafter, resolver)
 
     async def run(self, job_id: UUID) -> None:
@@ -567,6 +567,4 @@ async def recover_stale_production_jobs() -> list[UUID]:
 
 
 async def run_production_job(job_id: UUID) -> None:
-    async with SessionFactory() as session:
-        resolved = await ControlPlaneResolver().resolve_prompt(session, EDITORIAL_PROMPT_KEY)
-    await ProductionJobRunner(GeminiEditorialDrafter(system_prompt=resolved.body)).run(job_id)
+    await ProductionJobRunner(GeminiEditorialDrafter(), ControlPlaneResolver()).run(job_id)
