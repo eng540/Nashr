@@ -30,9 +30,9 @@ export function PublishingPage() {
     },
     onSuccess: (schedule) => { setMessage(`تم إنشاء الخطة بنجاح: ${schedule.name}`); setScheduleOpen(false); setDetail(schedule); void refresh(); },
   });
-  const refresh = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["publishing", "schedules"] }), client.invalidateQueries({ queryKey: ["publishing", "upcoming"] }), client.invalidateQueries({ queryKey: ["publishing", "calendar"])]); };
+  const refresh = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["publishing", "schedules"] }), client.invalidateQueries({ queryKey: ["publishing", "upcoming"] }), client.invalidateQueries({ queryKey: ["publishing", "calendar"] })]); };
   const action = useMutation({
-    mutationFn: ({ type, id }: { type: "activate"|"pause"|"cancel"|"retry"; id: string }) => type === "activate" ? schedulesApi.activate(id) : type === "pause" ? schedulesApi.pause(id) : type === "cancel" ? schedulesApi.cancel(id) : schedulesApi.retryFailed(id),
+    mutationFn: ({ type, id }: { type: "activate"|"pause"|"cancel"|"retry"; id: string }) => type === "activate" ? schedulesApi.activate(id) : type === "pause" ? schedulesApi.pause(id) : type === "cancel" ? schedulesApi.cancel(id) : schedulesApi.retryFailed(id).then(r => r.schedule),
     onSuccess: (data) => { setDetail(data); setMessage(`تم تنفيذ العملية. حالة الخطة: ${data.status}`); void refresh(); },
   });
   const openDetail = async (id: string) => { try { setDetail(await schedulesApi.get(id)); } catch (e) { setMessage(e instanceof Error ? e.message : "تعذر تحميل الخطة."); } };
