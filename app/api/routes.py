@@ -906,6 +906,7 @@ async def list_posts(
     kind: str | None = Query(default=None, max_length=200),
     q: str | None = Query(default=None, max_length=500),
     publication_state: str | None = Query(default=None, alias="publication_state", max_length=30),
+    sort: str = Query(default="created", pattern="^(created|title|kind|topic)$"),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -964,9 +965,15 @@ async def list_posts(
     total = int((await session.execute(
         select(func.count(PostModel.id)).select_from(PostModel).join(PostModel.knowledge_unit).where(*filters)
     )).scalar_one() or 0)
+    order_by = {
+        "created": (PostModel.created_at.desc(), PostModel.id.desc()),
+        "title": (KnowledgeUnitModel.title.asc(), PostModel.id.desc()),
+        "kind": (KnowledgeUnitModel.kind.asc().nulls_last(), KnowledgeUnitModel.title.asc(), PostModel.id.desc()),
+        "topic": (KnowledgeUnitModel.topic_id.asc().nulls_last(), KnowledgeUnitModel.title.asc(), PostModel.id.desc()),
+    }[sort]
     result = await session.execute(
         base.options(*_post_query_options())
-        .order_by(PostModel.created_at.desc(), PostModel.id.desc())
+        .order_by(*order_by)
         .offset(offset)
         .limit(limit)
     )
@@ -1012,6 +1019,41 @@ async def list_posts(
         "total": total,
         "limit": limit,
         "offset": offset,
+    }
+
+
+@router.get("/posts/filter-options")
+async def post_filter_options(
+    source_id: UUID | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Return data-backed kind and topic options for the post bank filters."""
+    unit_filters = [KnowledgeUnitModel.kind.is_not(None)]
+    topic_filters = []
+    if source_id is not None:
+        unit_filters.append(KnowledgeUnitModel.source_id == source_id)
+        topic_filters.append(TopicModel.source_id == source_id)
+    kinds = (
+        await session.execute(
+            select(KnowledgeUnitModel.kind)
+            .where(*unit_filters)
+            .distinct()
+            .order_by(KnowledgeUnitModel.kind.asc())
+        )
+    ).scalars().all()
+    topics = (
+        await session.execute(
+            select(TopicModel.id, TopicModel.title, TopicModel.position)
+            .where(*topic_filters)
+            .order_by(TopicModel.position.asc())
+        )
+    ).all() if source_id is not None else []
+    return {
+        "kinds": [kind for kind in kinds if kind],
+        "topics": [
+            {"id": str(topic_id), "title": title, "position": position}
+            for topic_id, title, position in topics
+        ],
     }
 
 
