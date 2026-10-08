@@ -1,63 +1,139 @@
 # Nashr Current Architecture Baseline
 
-Baseline commit: bf62b410136224f20ef2bc4fee6d4ad89e5deb19
+Baseline commit: 89d672a24783099e6d586f501baada7e9a6be363
 Branch: main
 
-الغرض: تسجيل الحالة الفعلية بعد دمج PR #49 (Artifact Boundary Foundation).
+الغرض: تسجيل الحالة الفعلية بعد PR #53، الذي فعّل Artifact consumption عند حدود Publication دون تغيير persistence/API/browser contracts.
 
 ## 1. الحالة الفعلية
 
 الأساس الحالي:
 API → Application → Domain → Infrastructure / Adapters
 
-تم تثبيت Frontend Foundation للمساحات المهاجرة، كما توجد مصادر ومعرفة وBook Map واستخراج وإنتاج ومراجعة وجدولة ونشر وتوزيع وjobs durable وidempotency وprovenance.
+Frontend Foundation موجودة للمساحات المهاجرة، مع React + TypeScript + Vite + Tailwind + TanStack Query + Playwright، بينما بقية المساحات legacy تعمل ضمن الهجرة التدريجية.
 
-تمت إضافة Artifact Boundary في PR #49:
-- `Artifact` كـdomain output contract.
-- `ArtifactKind.POST` كأول نوع مخرج.
-- `post_to_artifact()` كـadapter صريح من Post إلى Artifact.
-- Production Job Runner يكمل العنصر من خلال artifact.id مع إبقاء `post_id` persistence contract كما هو.
-- characterization test يحمي التحويل.
+المسار التشغيلي الحالي:
+Source → Knowledge / Inventory → Production → Post-backed Artifact → Review → Publication → Telegram Distribution.
 
-## 2. ما لم يتغير عمدًا
+تم تنفيذ Artifact Boundary على مرحلتين:
+- PR #49: إنشاء `Artifact` كـdomain output contract وadapter من Post.
+- PR #53: جعل Publication يستهلك Artifact عند الحد الفعلي للنشر، بما في ذلك إنشاء مسودة Telegram، والتحقق من الحالة والمحتوى، ومسار Scheduling قبل استدعاء Telegram.
 
-- Post ما زال مصدر الحقيقة persistence للمحتوى الحالي.
-- Review ما زال يغيّر حالة Post.
-- Publication persistence ما زالت تحمل `post_id`.
-- Scheduling persistence ما زالت تحمل `post_id`.
-- Telegram ما زال adapter خارجيًا.
+## 2. الملكية الحالية
+
+### Artifact
+- `Artifact` هو contract محايد للمخرج.
+- `ArtifactKind.POST` هو النوع الحالي.
+- لا يعرف Artifact شيئًا عن Telegram أو أي provider.
+
+### Post
+- ما زال مصدر الحقيقة persistence للمحتوى والحالة التحريرية الحالية.
+- Review ما زال يملك انتقالات DRAFT / APPROVED / REJECTED.
+- لا يوجد قرار بنقل Post أو إزالته الآن.
+
+### Publication
+- Publication persistence ما زالت تحمل `post_id` للتوافق.
+- المحتوى الذي يذهب إلى publisher يأتي من Artifact في المسار الجديد.
+- توجد compatibility path داخل `ApproveAndPublish` لتحويل Post persisted إلى Artifact عند عدم تمرير Artifact صراحة.
+- لذلك Publication هو أول consumer حقيقي للـArtifact، لكنه ليس boundary مكتمل الاستقلال بعد.
+
+### Scheduling
+- Schedule/ScheduleItem ما زالت Post-centric في الهوية وeligibility/persistence.
+- التنفيذ يستخرج Artifact قبل إنشاء Publication وقبل استدعاء `ApproveAndPublish`.
+- يجب أن يبقى فحص APPROVED النهائي قبل النشر.
+- يجب أن يبقى PUBLISHED → SKIPPED وidempotency.
+
+### Review
+- Review ما زال Post-centric عمدًا.
+- تعديل المحتوى يعيد الحالة إلى DRAFT ويلغي العناصر المجدولة المعلقة.
+- لا ننقل Review إلى Artifact في هذه المرحلة.
+
+### Distribution
+- Telegram يبقى Adapter خارجيًا.
+- لا يدخل Telegram في Artifact أو Domain.
+
+## 3. ما تم إثباته في PR #53
+
+- Post → Artifact adapter موجود ومستخدم.
+- CreateTelegramDraft يستطيع العمل من Artifact.
+- ApproveAndPublish يقبل Artifact صريحًا ويفرض APPROVED قبل النشر.
+- Scheduling يمرر Artifact إلى مسار النشر.
+- `post_id` persistence محفوظ.
+- API/browser contracts لم تتغير.
+- لا migration.
 - لا Identity / Recipe / Product.
-- لا queue/worker infrastructure.
-- لا schema rewrite.
+- لا queues/workers.
+- PUBLISHED → SKIPPED وidempotency محفوظان.
 
-## 3. الملاحظة المعمارية
+## 4. الفجوة الحالية
 
-Artifact أصبح boundary حقيقيًا لكنه ما زال transitional:
-Production يعرف نتيجة generic عبر adapter، بينما Review/Publication/Scheduling ما زالت تقرأ Post مباشرة.
+Artifact Boundary أصبح حقيقيًا، لكنه **Transitional**.
 
-هذا مقبول مؤقتًا لأن نقل ownership دفعة واحدة سيكسر contracts الحالية ويجمع عدة تغييرات عالية المخاطر.
+الفجوة الأساسية ليست غياب Artifact؛ بل وجود compatibility coupling داخل Publication:
+- `ApproveAndPublish` ما زال يستطيع تحميل `PostModel` مباشرة عندما لا يُمرر Artifact.
+- توجد بعض فحوص approval/content المكررة على Post لضمان التوافق.
+- لذلك لا يصح بعد القول إن Post اختفى من Publication application boundary.
 
-## 4. قرار ما بعد PR #49
+هذه الفجوة صغيرة ومحددة، ولا تبرر migration أو إعادة تصميم واسعة.
 
-**PASS — الانتقال إلى Artifact Consumption تدريجيًا.**
+## 5. قرارات KEEP / REFACTOR / DEFER / PROHIBIT
 
-القاعدة التالية:
-1. لا ننقل persistence ownership قبل وجود consumer حقيقي للـArtifact.
-2. أول consumer مرشح هو Publication domain/application لأنه يمثل output بعد الإنتاج وقبل distribution.
-3. Review وScheduling يبقيان متوافقين مع Post حتى يصبح Artifact state/identity contract أكثر نضجًا.
-4. لا نضيف `artifact_id` migration في هذه المرحلة.
-5. يمكن جعل Publication domain يرى `artifact_id` كهوية المخرج الحالية، مع استمرار `post_id` في persistence عبر adapter.
-6. يجب أن يبقى فحص APPROVED النهائي قبل النشر.
-7. يجب أن يبقى PUBLISHED→SKIPPED وidempotency.
-8. Telegram لا يدخل Domain Artifact.
+| Area | Decision |
+|---|---|
+| Artifact domain contract | KEEP |
+| Post → Artifact adapter | KEEP |
+| Production → Artifact | KEEP |
+| Publication → Artifact | KEEP + HARDEN |
+| Post persistence | KEEP |
+| Review | KEEP / DEFER refactor |
+| Scheduling persistence & eligibility | KEEP / DEFER refactor |
+| Telegram adapter | KEEP |
+| Identity | DEFER |
+| Recipe | DEFER |
+| Product | DEFER |
+| `artifact_id` migration | PROHIBIT NOW |
+| Post removal/rename | PROHIBIT NOW |
+| Queue/worker infrastructure | PROHIBIT NOW |
+| Domain-specific Telegram logic | PROHIBIT |
 
-## 5. القرار
+## 6. القرار الحالي
 
-التالي هو PR صغير بعنوان Artifact Consumption in Publication:
-- تحويل Post إلى Artifact عند حدود publication.
-- جعل Publication domain يتعامل مع هوية artifact الحالية.
-- إبقاء DB/API compatibility.
-- إضافة characterization tests.
-- دون migration.
+**PASS WITH CONTROLLED REFACTOR.**
 
-بعد نجاحه نعيد gate قبل أي نقل ملكية persistence.
+يمكن الاستمرار بعد PR #53، لكن لا ننقل ملكية Review أو Scheduling إلى Artifact بعد.
+
+الخطوة التنفيذية التالية هي PR صغير بعنوان تقريبي:
+
+**Harden Publication Artifact Boundary**
+
+هدفه:
+1. جعل Artifact هو المدخل الداخلي الواضح لمسار publication.
+2. حصر PostModel → Artifact compatibility في adapter/application edge بدل تكرارها داخل منطق النشر.
+3. إزالة/تقليل فحوص Post المباشرة المكررة داخل `ApproveAndPublish` دون تغيير السلوك.
+4. الحفاظ على `post_id`, API/browser contracts, APPROVED gate, idempotency, وPUBLISHED → SKIPPED.
+5. إضافة tests تثبت أن publication لا يستخدم content مختلفًا عن Artifact.
+6. لا migration، ولا نقل Review/Scheduling ownership.
+
+بعد هذا PR فقط نعيد Architecture Gate لتحديد هل أصبحت Review/Scheduling جاهزة لخطوة لاحقة.
+
+## 7. ممنوعات المرحلة
+
+- لا `artifact_id` migration.
+- لا حذف Post.
+- لا نقل Review إلى Artifact لمجرد وجود Artifact.
+- لا إعادة كتابة Scheduling.
+- لا Identity / Recipe / Product.
+- لا queues/workers/microservices.
+- لا تغيير API/browser contracts.
+- لا إدخال Telegram في Domain.
+- لا تحسينات جودة/ذكاء واسعة داخل هذا المسار.
+
+## 8. Definition of Done للمرحلة الحالية
+
+1. Publication يستهلك Artifact بوضوح.
+2. Post compatibility محصورة عند الحافة.
+3. السلوك الحالي محفوظ باختبارات backend وE2E القائمة.
+4. APPROVED gate النهائي محفوظ.
+5. idempotency وPUBLISHED → SKIPPED محفوظان.
+6. لا schema/API/browser migration.
+7. هذه الوثيقة وGate مرتبطان بـmain الحالي.
