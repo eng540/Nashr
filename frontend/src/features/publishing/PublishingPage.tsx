@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
@@ -28,7 +28,7 @@ export function PublishingPage() {
       if (!form.startAt) throw new Error("حدد وقت بداية صالح.");
       return schedulesApi.create({ name: form.name.trim(), timezone: form.timezone.trim(), post_ids: selectedIds, start_at: localDateTimeToUtcISOString(form.startAt, form.timezone), interval_minutes: Number(form.interval), idempotency_key: crypto.randomUUID() });
     },
-    onSuccess: (schedule) => { setMessage(`تم إنشاء الخطة بنجاح: ${schedule.name}`); setScheduleOpen(false); setDetail(schedule); void refresh(); },
+    onSuccess: async (schedule) => { setMessage(`تم إنشاء الخطة بنجاح: ${schedule.name}`); setScheduleOpen(false); setDetail(await schedulesApi.get(schedule.id)); void refresh(); },
   });
   const refresh = async () => { await Promise.all([client.invalidateQueries({ queryKey: ["publishing", "schedules"] }), client.invalidateQueries({ queryKey: ["publishing", "upcoming"] }), client.invalidateQueries({ queryKey: ["publishing", "calendar"] })]); };
   const action = useMutation({
@@ -36,7 +36,6 @@ export function PublishingPage() {
     onSuccess: (data) => { setDetail(data); setMessage(`تم تنفيذ العملية. حالة الخطة: ${data.status}`); void refresh(); },
   });
   const openDetail = async (id: string) => { try { setDetail(await schedulesApi.get(id)); } catch (e) { setMessage(e instanceof Error ? e.message : "تعذر تحميل الخطة."); } };
-  const selectedPosts = useMemo(() => (posts.data?.items ?? []).filter(p => selectedIds.includes(p.post_id)), [posts.data?.items, selectedIds]);
   const setSelection = (id: string, checked: boolean) => { const next = toggleSelection(selectedIds, id, checked); setSelectedIds(next); setSearchParams(next.length ? { selected_post_ids: next.join(",") } : {}); };
   const openSchedule = async () => {
     if (!selectedIds.length) return;
