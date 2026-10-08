@@ -1,102 +1,63 @@
 # Nashr Current Architecture Baseline
 
-Baseline commit: 13e2de95c49c665fc2f534380a82356befffd0bb
+Baseline commit: bf62b410136224f20ef2bc4fee6d4ad89e5deb19
 Branch: main
 
-الغرض: تسجيل الحالة الفعلية بعد دمج PR #47 وقبل تنفيذ Artifact Boundary.
+الغرض: تسجيل الحالة الفعلية بعد دمج PR #49 (Artifact Boundary Foundation).
 
-## 1. الموجود حاليًا
+## 1. الحالة الفعلية
 
-المستودع يملك أساسًا layered واضحًا:
+الأساس الحالي:
 API → Application → Domain → Infrastructure / Adapters
 
-وتوجد وحدات فعلية للمصادر، المعرفة، Book Map، الاستخراج، الإنتاج، المراجعة، الجدولة، المنشورات والتوزيع.
+تم تثبيت Frontend Foundation للمساحات المهاجرة، كما توجد مصادر ومعرفة وBook Map واستخراج وإنتاج ومراجعة وجدولة ونشر وتوزيع وjobs durable وidempotency وprovenance.
 
-كما توجد:
-- PostgreSQL / SQLAlchemy / Alembic
-- migrations متتابعة حتى 0014_schedule_idempotency
-- Gemini adapters وسياسة Gemini مركزية
-- fake adapters للاختبار
-- durable discovery/production/scheduling job state
-- provenance للمادة
-- Book Map وcheckpoints
-- editorial review
-- publication/scheduling
-- Telegram publishing adapter
-- React + TypeScript + Vite + Tailwind + TanStack Query frontend foundation
-- Playwright browser E2E for the migrated workspaces
-- unit/integration tests
-- CI workflow
+تمت إضافة Artifact Boundary في PR #49:
+- `Artifact` كـdomain output contract.
+- `ArtifactKind.POST` كأول نوع مخرج.
+- `post_to_artifact()` كـadapter صريح من Post إلى Artifact.
+- Production Job Runner يكمل العنصر من خلال artifact.id مع إبقاء `post_id` persistence contract كما هو.
+- characterization test يحمي التحويل.
 
-## 2. ما يجب الحفاظ عليه
+## 2. ما لم يتغير عمدًا
 
-- FastAPI / Python / PostgreSQL / SQLAlchemy / Alembic.
-- طبقات Domain/Application/Infrastructure.
-- Gemini adapter boundary وسياسة Gemini المركزية.
-- durable jobs والاسترداد وidempotency.
-- provenance وBook Map.
-- فصل Review عن Scheduling/Publication.
-- الاختبارات الحالية كأساس، مع توسيعها.
+- Post ما زال مصدر الحقيقة persistence للمحتوى الحالي.
+- Review ما زال يغيّر حالة Post.
+- Publication persistence ما زالت تحمل `post_id`.
+- Scheduling persistence ما زالت تحمل `post_id`.
+- Telegram ما زال adapter خارجيًا.
+- لا Identity / Recipe / Product.
+- لا queue/worker infrastructure.
+- لا schema rewrite.
 
-## 3. الفجوات المعمارية
+## 3. الملاحظة المعمارية
 
-### Post-centric domain
+Artifact أصبح boundary حقيقيًا لكنه ما زال transitional:
+Production يعرف نتيجة generic عبر adapter، بينما Review/Publication/Scheduling ما زالت تقرأ Post مباشرة.
 
-الإنتاج والمخرجات ما زالت مرتبطة بـPost في أجزاء من النظام.
+هذا مقبول مؤقتًا لأن نقل ownership دفعة واحدة سيكسر contracts الحالية ويجمع عدة تغييرات عالية المخاطر.
 
-الهدف: Artifact عام، وPost يصبح نوعًا من المخرجات.
+## 4. قرار ما بعد PR #49
 
-الإجراء: Refactor تدريجي، لا Rewrite.
+**PASS — الانتقال إلى Artifact Consumption تدريجيًا.**
 
-### Identity
+القاعدة التالية:
+1. لا ننقل persistence ownership قبل وجود consumer حقيقي للـArtifact.
+2. أول consumer مرشح هو Publication domain/application لأنه يمثل output بعد الإنتاج وقبل distribution.
+3. Review وScheduling يبقيان متوافقين مع Post حتى يصبح Artifact state/identity contract أكثر نضجًا.
+4. لا نضيف `artifact_id` migration في هذه المرحلة.
+5. يمكن جعل Publication domain يرى `artifact_id` كهوية المخرج الحالية، مع استمرار `post_id` في persistence عبر adapter.
+6. يجب أن يبقى فحص APPROVED النهائي قبل النشر.
+7. يجب أن يبقى PUBLISHED→SKIPPED وidempotency.
+8. Telegram لا يدخل Domain Artifact.
 
-لا توجد حاليًا طبقة مكتملة first-class تعبر عن Identity كـControl Plane.
+## 5. القرار
 
-### Production Recipe
+التالي هو PR صغير بعنوان Artifact Consumption in Publication:
+- تحويل Post إلى Artifact عند حدود publication.
+- جعل Publication domain يتعامل مع هوية artifact الحالية.
+- إبقاء DB/API compatibility.
+- إضافة characterization tests.
+- دون migration.
 
-Book → Post موجود كمسار تطبيقي، لكنه ليس Recipe مستقلة قابلة للتهيئة.
-
-### Product
-
-لا يوجد Product عام يفصل تجميع/تقديم المخرجات عن Artifact.
-
-### Distribution coupling
-
-Telegram موجود كAdapter، لكن أجزاء من scheduling/application ما زالت مرتبطة بمفاهيم Telegram/وجهة Telegram.
-
-### Frontend boundary
-
-الواجهة الحالية تحتوي HTML/JS داخل app/api/*.py، ما يسمح بتداخل DOM ومسؤوليات الـworkspaces. ظهرت هذه الفئة من المشاكل فعليًا في Publishing.
-
-### Frontend architecture
-
-Frontend Foundation is now established for Publishing and Post Bank; remaining legacy surfaces are intentionally outside this migration.
-
-### Browser E2E
-
-Chromium E2E now covers the migrated critical journeys.
-
-### Security / ownership
-
-الهدف المستقبلي يحتاج Authentication/Authorization وownership/workspace boundary قبل التوسع متعدد الهويات والمستخدمين.
-
-### Observability
-
-يوجد structured/event-like logging، لكن target architecture يحتاج correlation عبر Request → Job → Run → Artifact → Publication.
-
-## 4. ما لا نعتبره فجوة تلقائيًا
-
-لا نعتبر Microservices أو Kafka/RabbitMQ أو Kubernetes أو Redis كـqueue أو Graph DB أو Vector DB أو Agent swarm ديونًا لمجرد عدم وجودها.
-
-تدخل فقط عند وجود حاجة مثبتة.
-
-## 5. توصيف الحالة
-
-الوصف الأدق:
-Production-capable vertical slice + early platform core، مع Frontend Foundation مثبتة، ومع Post-centric coupling هو الحاجز الرئيسي قبل الانتقال إلى منصة متعددة المخرجات.
-
-النظام ليس بدائيًا ولا يحتاج Rewrite، لكنه يحتاج Foundation Refactoring في الحدود المذكورة.
-
-## 6. حدود هذه الوثيقة
-
-هذه baseline عند commit المحدد أعلاه. إذا تغير main لاحقًا، يجب تحديث baseline أو إنشاء baseline جديد بدل افتراض أن الوثيقة ما زالت تصف الحالة الحالية.
+بعد نجاحه نعيد gate قبل أي نقل ملكية persistence.
