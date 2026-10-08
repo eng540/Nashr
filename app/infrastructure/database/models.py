@@ -288,3 +288,26 @@ class DiscoveryJobModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source: Mapped[SourceModel] = relationship(back_populates="discovery_jobs")
+class PromptTemplateModel(Base):
+    __tablename__ = "prompt_templates"
+    __table_args__ = (UniqueConstraint("key", name="uq_prompt_templates_key"),)
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    key: Mapped[str] = mapped_column(String(200), nullable=False)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    versions: Mapped[list["PromptTemplateVersionModel"]] = relationship(back_populates="template", cascade="all, delete-orphan", order_by="PromptTemplateVersionModel.version")
+
+
+class PromptTemplateVersionModel(Base):
+    __tablename__ = "prompt_template_versions"
+    __table_args__ = (UniqueConstraint("prompt_template_id", "version", name="uq_prompt_template_versions_template_version"),)
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    prompt_template_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("prompt_templates.id", ondelete="CASCADE"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    template: Mapped[PromptTemplateModel] = relationship(back_populates="versions")

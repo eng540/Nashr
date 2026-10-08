@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
+from app.application.control_plane import ControlPlaneResolver, EDITORIAL_PROMPT_KEY
 from app.application.posts import ProducePost
 from app.application.artifacts import post_to_artifact
 from app.domain.production_jobs import (
@@ -394,8 +395,8 @@ async def _finalize(job_id: UUID) -> None:
 class ProductionJobRunner:
     """Durable sequential runner; each material delegates to ProducePost."""
 
-    def __init__(self, drafter) -> None:
-        self.producer = ProducePost(drafter)
+    def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
+        self.producer = ProducePost(drafter, resolver or ControlPlaneResolver())
 
     async def run(self, job_id: UUID) -> None:
         await _recover_stale(job_id)
@@ -566,4 +567,4 @@ async def recover_stale_production_jobs() -> list[UUID]:
 
 
 async def run_production_job(job_id: UUID) -> None:
-    await ProductionJobRunner(GeminiEditorialDrafter()).run(job_id)
+    await ProductionJobRunner(GeminiEditorialDrafter(), ControlPlaneResolver()).run(job_id)

@@ -15,6 +15,7 @@ from sqlalchemy.orm import defer, selectinload
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.posts import ProducePost
+from app.application.control_plane import ControlPlaneResolver
 from app.application.reviews import ReviewPost, bulk_approve
 from app.application.production_jobs import create_production_job, resume_production_job, run_production_job
 from app.application.scheduling import (
@@ -150,7 +151,7 @@ def get_ingest_pdf() -> IngestPdf:
 
 
 def get_create_telegram_draft() -> CreateTelegramDraft:
-    return CreateTelegramDraft(GeminiEditorialDrafter())
+    return CreateTelegramDraft(GeminiEditorialDrafter(), ControlPlaneResolver())
 
 
 def get_approve_and_publish() -> ApproveAndPublish:
@@ -283,6 +284,15 @@ async def publishing_console() -> HTMLResponse:
     if frontend is not None:
         return frontend
     return HTMLResponse(content=NASHR_PUBLISHING_HTML)
+
+
+@router.get("/control", response_class=HTMLResponse, include_in_schema=False)
+async def control_plane_console() -> HTMLResponse:
+    """Serve the React Control Plane workspace."""
+    frontend = frontend_index_response()
+    if frontend is not None:
+        return frontend
+    return HTMLResponse(content="<h1>Control Plane frontend bundle is not available.</h1>")
 
 
 @router.get("/posts/workspace", response_class=HTMLResponse, include_in_schema=False)
@@ -443,7 +453,7 @@ async def get_book_map(source_id: UUID, session: AsyncSession = Depends(get_sess
 
 
 def get_produce_post() -> ProducePost:
-    return ProducePost(GeminiEditorialDrafter())
+    return ProducePost(GeminiEditorialDrafter(), ControlPlaneResolver())
 
 
 @router.post("/knowledge-units/{knowledge_unit_id}/post")

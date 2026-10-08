@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.domain.editorial import IEditorialDrafter
+from app.application.control_plane import ControlPlaneResolver
 from app.domain.publications import IPublisher, Publication, PublicationStatus
 from app.domain.artifacts import Artifact
 from app.application.posts import ProducePost
@@ -43,11 +44,12 @@ def _to_domain(row: PublicationModel) -> Publication:
 class CreateTelegramDraft:
     """Create the existing Telegram draft flow from the canonical Post."""
 
-    def __init__(self, drafter: IEditorialDrafter) -> None:
+    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver | None = None) -> None:
         self.drafter = drafter
+        self.resolver = resolver or ControlPlaneResolver()
 
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID, destination: str) -> Publication:
-        post = await ProducePost(self.drafter).execute(session, knowledge_unit_id)
+        post = await ProducePost(self.drafter, self.resolver).execute(session, knowledge_unit_id)
         return await self.execute_for_artifact(session, post_to_artifact(post), destination)
 
     @staticmethod

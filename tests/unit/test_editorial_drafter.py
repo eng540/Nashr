@@ -27,11 +27,12 @@ def test_editorial_drafter_returns_structured_markdown() -> None:
     client = FakeClient()
     drafter = GeminiEditorialDrafter(client=client)
 
-    result = drafter._draft_sync("فكرة", "مادة المصدر", "كتاب.pdf")
+    result = drafter._draft_sync("فكرة", "مادة المصدر", "كتاب.pdf", system_prompt="resolved editorial instruction")
 
     assert result.startswith("**افتتاحية**")
     call = client.models.calls[0]
     assert call["config"].response_mime_type == "application/json"
+    assert call["contents"][0] == "resolved editorial instruction"
     assert "اسم المصدر:" in call["contents"][1]
     assert "المادة المصدرية:" in call["contents"][1]
 
@@ -40,7 +41,7 @@ def test_editorial_drafter_attaches_visual_pdf_slice() -> None:
     client = FakeClient()
     drafter = GeminiEditorialDrafter(client=client)
 
-    drafter._draft_sync("فكرة", "مادة المصدر", "كتاب.pdf", b"%PDF-visual-slice")
+    drafter._draft_sync("فكرة", "مادة المصدر", "كتاب.pdf", b"%PDF-visual-slice", "resolved editorial instruction")
 
     part = client.models.calls[0]["contents"][2]
     assert part.inline_data.mime_type == "application/pdf"

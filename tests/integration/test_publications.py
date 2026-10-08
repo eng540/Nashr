@@ -98,7 +98,7 @@ class RecordingDrafter(FakeEditorialDrafter):
     def __init__(self) -> None:
         self.pdf_slice: bytes | None = None
 
-    async def draft(self, *, title: str, content: str, source_name: str, pdf_slice: bytes | None = None) -> str:
+    async def draft(self, *, title: str, content: str, source_name: str, pdf_slice: bytes | None = None, system_prompt: str | None = None) -> str:
         self.pdf_slice = pdf_slice
         return await super().draft(
             title=title,
