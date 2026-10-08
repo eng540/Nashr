@@ -44,9 +44,9 @@ def _to_domain(row: PublicationModel) -> Publication:
 class CreateTelegramDraft:
     """Create the existing Telegram draft flow from the canonical Post."""
 
-    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver) -> None:
+    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver | None = None) -> None:
         self.drafter = drafter
-        self.resolver = resolver
+        self.resolver = resolver or ControlPlaneResolver()
 
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID, destination: str) -> Publication:
         post = await ProducePost(self.drafter, self.resolver).execute(session, knowledge_unit_id)
