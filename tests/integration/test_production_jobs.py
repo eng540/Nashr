@@ -41,7 +41,7 @@ class RecordingDrafter:
         self.calls = []
         self.fail_titles = fail_titles or set()
 
-    async def draft(self, *, title: str, content: str, source_name: str, pdf_slice: bytes | None = None) -> str:
+    async def draft(self, *, title: str, content: str, source_name: str, pdf_slice: bytes | None = None, system_prompt: str | None = None) -> str:
         self.calls.append(title)
         if title in self.fail_titles:
             raise RuntimeError(f"failed: {title}")
