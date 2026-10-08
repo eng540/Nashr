@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 import json
 
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel, TopicModel
+from app.application.control_plane import PromptTemplateService
 from app.infrastructure.database.session import SessionFactory
 
 SEED_FILE = Path(__file__).resolve().parent / ".seed.json"
@@ -45,6 +46,17 @@ async def main() -> None:
                 review_note="E2E seed",
             ),
         ])
+        service = PromptTemplateService(session)
+        if await service.repository.get_template("e2e.control"):
+            pass
+        else:
+            await service.create_template(
+                "e2e.control",
+                "E2E Control Prompt",
+                "Control Plane UI fixture",
+                "E2E prompt body",
+            )
+            await service.publish("e2e.control", 1)
         await session.commit()
 
     SEED_FILE.write_text(json.dumps({"post_id": str(post_id)}), encoding="utf-8")
