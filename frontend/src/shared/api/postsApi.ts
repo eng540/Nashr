@@ -10,7 +10,7 @@ export interface PostListParams {
   offset?: number;
 }
 
-export const postsApi = {
+export interface BulkApproveResult { approved_count: number; failed_count: number; results: Array<{ post_id: string; status: string; reason_code?: string | null; message?: string | null }>; }\n\nexport const postsApi = {
   list(params: PostListParams = {}): Promise<PostListResponse> {
     const query = new URLSearchParams();
     if (params.sourceId) query.set("source_id", params.sourceId);
