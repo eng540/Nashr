@@ -357,16 +357,34 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
         if parsed is None:
             raise GeminiOperationError("GEMINI_INVALID_RESPONSE", "Gemini returned no section book map.")
 
-        topics: list[GeminiTopic] = []
+        topics = self._normalize_section_topics(parsed.topics, page_start, page_end)
+
+        return GeminiBookMap(
+            title=parsed.title.strip(),
+            description=parsed.description.strip(),
+            topics=topics,
+        )
+
+    @staticmethod
+    def _normalize_section_topics(
+        items: list[GeminiTopic],
+        page_start: int,
+        page_end: int,
+    ) -> list[GeminiTopic]:
+        """Convert model-relative page coordinates into absolute PDF pages."""
         window_page_count = page_end - page_start + 1
-        for item in parsed.topics:
+        topics: list[GeminiTopic] = []
+        for item in items:
             if item.page_start > item.page_end:
-                raise GeminiOperationError("GEMINI_SCHEMA_ERROR", "Gemini returned an inverted section topic range.")
+                raise GeminiOperationError(
+                    "GEMINI_SCHEMA_ERROR",
+                    "Gemini returned an inverted section topic range.",
+                )
             if item.page_start < 1 or item.page_end > window_page_count:
                 raise GeminiOperationError(
                     "GEMINI_PROVENANCE_UNAVAILABLE",
-                    f"Section topic relative pages {item.page_start}-{item.page_end} escape supplied window 1-{window_page_count} "
-                    f"(absolute window {page_start}-{page_end}).",
+                    f"Section topic relative pages {item.page_start}-{item.page_end} escape supplied window "
+                    f"1-{window_page_count} (absolute window {page_start}-{page_end}).",
                 )
             topics.append(
                 item.model_copy(
@@ -376,12 +394,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
                     }
                 )
             )
-
-        return GeminiBookMap(
-            title=parsed.title.strip(),
-            description=parsed.description.strip(),
-            topics=topics,
-        )
+        return topics
 
     def _merge_local_maps(
         self,
