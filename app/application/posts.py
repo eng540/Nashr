@@ -29,9 +29,9 @@ def _to_domain(row: PostModel) -> Post:
 class ProducePost:
     """Produce and persist one editorial Post from one KnowledgeUnit."""
 
-    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver) -> None:
+    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver | None = None) -> None:
         self.drafter = drafter
-        self.resolver = resolver
+        self.resolver = resolver or ControlPlaneResolver()
 
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID) -> Post:
         existing = await self._find_existing(session, knowledge_unit_id)
