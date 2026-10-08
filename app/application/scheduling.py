@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
 from app.adapters.publishing.telegram import TelegramPublisher
+from app.application.artifacts import post_model_to_artifact
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.domain.scheduling import ScheduleItemStatus, ScheduleStatus
 from app.infrastructure.database.models import (
@@ -675,14 +676,17 @@ async def _execute_claimed_item(
         elif existing is not None:
             publication_id = existing.id
         else:
-            draft = await CreateTelegramDraft.execute_for_post(session, post, destination)
+            artifact = post_model_to_artifact(post)
+            draft = await CreateTelegramDraft.execute_for_artifact(session, artifact, destination)
             publication_id = draft.id
 
     # All DB work above is committed before the external Telegram call.
     publisher = publisher or TelegramPublisher()
     async with SessionFactory() as session:
         try:
-            publication = await ApproveAndPublish(publisher).execute(session, publication_id)
+            publication = await ApproveAndPublish(publisher).execute(
+                session, publication_id, artifact=post_model_to_artifact(post)
+            )
         except Exception as exc:
             result = await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.id == item_id))
             item = result.scalar_one_or_none()
