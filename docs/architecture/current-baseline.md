@@ -1,23 +1,23 @@
 # Nashr Current Architecture Baseline
 
-Baseline commit: 89d672a24783099e6d586f501baada7e9a6be363
+Baseline commit: f25764e91bc8f704dd080d5270d894cfc4011607
 Branch: main
 
-الغرض: تسجيل الحالة الفعلية بعد PR #53، الذي فعّل Artifact consumption عند حدود Publication دون تغيير persistence/API/browser contracts.
+الغرض: تسجيل الحالة الفعلية بعد PR #55، الذي أنهى مرحلة Harden Publication Artifact Boundary دون تغيير persistence أو API/browser contracts.
 
 ## 1. الحالة الفعلية
 
 الأساس الحالي:
-API → Application → Domain → Infrastructure / Adapters
-
-Frontend Foundation موجودة للمساحات المهاجرة، مع React + TypeScript + Vite + Tailwind + TanStack Query + Playwright، بينما بقية المساحات legacy تعمل ضمن الهجرة التدريجية.
+Frontend / Presentation → HTTP API → FastAPI → Application → Domain → Infrastructure / Adapters
 
 المسار التشغيلي الحالي:
-Source → Knowledge / Inventory → Production → Post-backed Artifact → Review → Publication → Telegram Distribution.
+Source → Knowledge / Inventory → Production → Post-backed Artifact → Review → Scheduling / Publication → Telegram Distribution.
 
-تم تنفيذ Artifact Boundary على مرحلتين:
-- PR #49: إنشاء `Artifact` كـdomain output contract وadapter من Post.
-- PR #53: جعل Publication يستهلك Artifact عند الحد الفعلي للنشر، بما في ذلك إنشاء مسودة Telegram، والتحقق من الحالة والمحتوى، ومسار Scheduling قبل استدعاء Telegram.
+الحدود الأساسية الحالية:
+- Library: Source / Knowledge / Inventory.
+- Content Factory: Production / Post / Review.
+- Publishing: Publication / Scheduling / Telegram Distribution.
+- Artifact: contract عام للمخرج بين الإنتاج والاستهلاك، وليس مخزن بيانات مستقلًا.
 
 ## 2. الملكية الحالية
 
@@ -25,115 +25,125 @@ Source → Knowledge / Inventory → Production → Post-backed Artifact → Rev
 - `Artifact` هو contract محايد للمخرج.
 - `ArtifactKind.POST` هو النوع الحالي.
 - لا يعرف Artifact شيئًا عن Telegram أو أي provider.
+- `post_to_artifact` و`post_model_to_artifact` يحولان التمثيل الحالي إلى Artifact.
+- التحميل من persistence إلى Artifact محصور في application adapter.
 
 ### Post
-- ما زال مصدر الحقيقة persistence للمحتوى والحالة التحريرية الحالية.
-- Review ما زال يملك انتقالات DRAFT / APPROVED / REJECTED.
-- لا يوجد قرار بنقل Post أو إزالته الآن.
-
-### Publication
-- Publication persistence ما زالت تحمل `post_id` للتوافق.
-- المحتوى الذي يذهب إلى publisher يأتي من Artifact في المسار الجديد.
-- توجد compatibility path داخل `ApproveAndPublish` لتحويل Post persisted إلى Artifact عند عدم تمرير Artifact صراحة.
-- لذلك Publication هو أول consumer حقيقي للـArtifact، لكنه ليس boundary مكتمل الاستقلال بعد.
-
-### Scheduling
-- Schedule/ScheduleItem ما زالت Post-centric في الهوية وeligibility/persistence.
-- التنفيذ يستخرج Artifact قبل إنشاء Publication وقبل استدعاء `ApproveAndPublish`.
-- يجب أن يبقى فحص APPROVED النهائي قبل النشر.
-- يجب أن يبقى PUBLISHED → SKIPPED وidempotency.
+- ما زال مصدر الحقيقة للـpersistence التحريرية الحالية.
+- يملك DRAFT / APPROVED / REJECTED.
+- يظل هو الهوية المستخدمة حاليًا في Review وScheduling persistence.
+- لا يوجد قرار بحذفه أو استبداله.
 
 ### Review
 - Review ما زال Post-centric عمدًا.
-- تعديل المحتوى يعيد الحالة إلى DRAFT ويلغي العناصر المجدولة المعلقة.
-- لا ننقل Review إلى Artifact في هذه المرحلة.
+- الموافقة/الرفض/التعديل تتم على Post.
+- تعديل المحتوى يعيد الحالة إلى DRAFT ويلغي عناصر الجدولة المعلقة.
+- توجد حماية تمنع التعديل التحريري أثناء تنفيذ عنصر نشر PROCESSING.
+- لا توجد حاجة معمارية حالية لنقل ملكية Review إلى Artifact.
+
+### Publication
+- Publication يستهلك Artifact صريحًا داخل مسار النشر.
+- `ApproveAndPublish` يعتمد داخليًا على Artifact في فحوص الحالة والمحتوى.
+- Post → Artifact fallback موجود فقط عند حافة التوافق مع callers/persistence الحالية.
+- `post_id` ما زال محفوظًا عمدًا.
+- provider call خارج transaction قاعدة البيانات.
+- APPROVED gate وidempotency وPUBLISHED → SKIPPED محفوظة.
+
+### Scheduling
+- Schedule/ScheduleItem ما زالت Post-centric في الهوية وeligibility وpersistence وواجهات API.
+- مسار التنفيذ يحول Post إلى Artifact قبل Publication.
+- فحص APPROVED النهائي قبل النشر محفوظ.
+- التزامن/منع التكرار وحالات PUBLISHED/SKIPPED وdurable state محفوظة.
+- لا ننقل ملكية Scheduling إلى Artifact الآن.
 
 ### Distribution
 - Telegram يبقى Adapter خارجيًا.
-- لا يدخل Telegram في Artifact أو Domain.
+- لا Telegram داخل Artifact أو Domain.
 
-## 3. ما تم إثباته في PR #53
+## 3. نتيجة PR #55
 
-- Post → Artifact adapter موجود ومستخدم.
-- CreateTelegramDraft يستطيع العمل من Artifact.
-- ApproveAndPublish يقبل Artifact صريحًا ويفرض APPROVED قبل النشر.
-- Scheduling يمرر Artifact إلى مسار النشر.
-- `post_id` persistence محفوظ.
-- API/browser contracts لم تتغير.
-- لا migration.
-- لا Identity / Recipe / Product.
-- لا queues/workers.
-- PUBLISHED → SKIPPED وidempotency محفوظان.
+PR #55 أغلق الفجوة المحددة في Gate بعد PR #53:
+- Publication أصبح Artifact-first داخل منطق النشر.
+- compatibility path محصورة عند application edge.
+- فحوص approval/content الأساسية لم تعد تعتمد مباشرة على PostModel.
+- أضيفت تغطية لاستخدام محتوى Artifact الصريح.
+- أضيفت regression coverage لمسار PostModel compatibility.
+- لم تتغير schema أو API/browser contracts.
 
-## 4. الفجوة الحالية
+## 4. قرار Architecture Gate الحالي
 
-Artifact Boundary أصبح حقيقيًا، لكنه **Transitional**.
+**PASS — BOUNDARY HARDENED**
 
-الفجوة الأساسية ليست غياب Artifact؛ بل وجود compatibility coupling داخل Publication:
-- `ApproveAndPublish` ما زال يستطيع تحميل `PostModel` مباشرة عندما لا يُمرر Artifact.
-- توجد بعض فحوص approval/content المكررة على Post لضمان التوافق.
-- لذلك لا يصح بعد القول إن Post اختفى من Publication application boundary.
+لم تعد هناك فجوة معمارية صغيرة تستدعي PR آخر داخل Publication قبل الانتقال.
 
-هذه الفجوة صغيرة ومحددة، ولا تبرر migration أو إعادة تصميم واسعة.
+الأهم: نجاح PR #55 لا يعني أن كل شيء يجب أن يتحول إلى Artifact.
 
-## 5. قرارات KEEP / REFACTOR / DEFER / PROHIBIT
+الملكية الحالية مقصودة:
+- Post → editorial persistence/state.
+- Artifact → generic production output contract.
+- Publication → distribution ledger.
+- Schedule → timing/execution state.
+
+وجود Artifact لا يبرر نقل Review أو Scheduling تلقائيًا.
+
+## 5. KEEP / REFACTOR / ADD / DEFER / PROHIBIT
 
 | Area | Decision |
 |---|---|
 | Artifact domain contract | KEEP |
 | Post → Artifact adapter | KEEP |
-| Production → Artifact | KEEP |
-| Publication → Artifact | KEEP + HARDEN |
-| Post persistence | KEEP |
-| Review | KEEP / DEFER refactor |
-| Scheduling persistence & eligibility | KEEP / DEFER refactor |
+| Publication → Artifact | KEEP |
+| Publication compatibility edge | KEEP AS COMPATIBILITY EDGE |
+| Post persistence/editorial state | KEEP |
+| Review ownership | KEEP / DEFER |
+| Scheduling ownership | KEEP / DEFER |
+| Scheduling execution → Artifact | KEEP |
 | Telegram adapter | KEEP |
+| Frontend workspace separation | KEEP |
 | Identity | DEFER |
 | Recipe | DEFER |
-| Product | DEFER |
-| `artifact_id` migration | PROHIBIT NOW |
+| Product abstraction | DEFER |
+| artifact_id migration | PROHIBIT NOW |
 | Post removal/rename | PROHIBIT NOW |
-| Queue/worker infrastructure | PROHIBIT NOW |
-| Domain-specific Telegram logic | PROHIBIT |
+| Review → Artifact ownership migration | PROHIBIT NOW |
+| Scheduling → Artifact persistence migration | PROHIBIT NOW |
+| Queue/worker/microservice expansion | PROHIBIT NOW |
+| Telegram logic inside Artifact/Domain | PROHIBIT |
 
-## 6. القرار الحالي
+## 6. ما يجب فحصه قبل PR تنفيذي جديد
 
-**PASS WITH CONTROLLED REFACTOR.**
+المرحلة المعمارية Artifact/Publication مكتملة بما يكفي للانتقال.
 
-يمكن الاستمرار بعد PR #53، لكن لا ننقل ملكية Review أو Scheduling إلى Artifact بعد.
+قبل إنشاء PR تنفيذي جديد يجب أن يكون القرار مبنيًا على قيمة تشغيلية فعلية، وليس على الرغبة في مزيد من التجريد.
 
-الخطوة التنفيذية التالية هي PR صغير بعنوان تقريبي:
+الأولوية الآن:
+1. التحقق من أن Library / Content Factory / Publishing تمثل حدود المنتج فعليًا في الواجهة.
+2. التحقق من أن Content Factory يركز على Production → Draft/Edit → Review → Approval دون إدخال scheduling controls فيه.
+3. التحقق من أن Publishing يعرض APPROVED + eligible فقط عند التخطيط للنشر.
+4. التحقق من رحلة المستخدم الكاملة عبر Browser E2E.
+5. التحقق من المسار التشغيلي الفعلي حتى Telegram/Publication Ledger.
+6. بعد ثبات الرحلة، الانتقال إلى capability/identity configuration فقط إذا أثبت الاستخدام حاجة حقيقية.
 
-**Harden Publication Artifact Boundary**
+## 7. ممنوعات المرحلة التالية
 
-هدفه:
-1. جعل Artifact هو المدخل الداخلي الواضح لمسار publication.
-2. حصر PostModel → Artifact compatibility في adapter/application edge بدل تكرارها داخل منطق النشر.
-3. إزالة/تقليل فحوص Post المباشرة المكررة داخل `ApproveAndPublish` دون تغيير السلوك.
-4. الحفاظ على `post_id`, API/browser contracts, APPROVED gate, idempotency, وPUBLISHED → SKIPPED.
-5. إضافة tests تثبت أن publication لا يستخدم content مختلفًا عن Artifact.
-6. لا migration، ولا نقل Review/Scheduling ownership.
-
-بعد هذا PR فقط نعيد Architecture Gate لتحديد هل أصبحت Review/Scheduling جاهزة لخطوة لاحقة.
-
-## 7. ممنوعات المرحلة
-
+- لا Artifact database table.
 - لا `artifact_id` migration.
 - لا حذف Post.
-- لا نقل Review إلى Artifact لمجرد وجود Artifact.
-- لا إعادة كتابة Scheduling.
-- لا Identity / Recipe / Product.
+- لا نقل Review إلى Artifact لمجرد التماثل.
+- لا إعادة كتابة Scheduling ownership.
+- لا Identity / Recipe / Product قبل الحاجة التشغيلية.
 - لا queues/workers/microservices.
-- لا تغيير API/browser contracts.
 - لا إدخال Telegram في Domain.
-- لا تحسينات جودة/ذكاء واسعة داخل هذا المسار.
+- لا مزج Library / Factory / Publishing في workspace واحد.
+- لا إضافة abstraction جديد دون consumer حقيقي واختبار واضح.
 
-## 8. Definition of Done للمرحلة الحالية
+## 8. Definition of Done لهذه المرحلة
 
-1. Publication يستهلك Artifact بوضوح.
-2. Post compatibility محصورة عند الحافة.
-3. السلوك الحالي محفوظ باختبارات backend وE2E القائمة.
-4. APPROVED gate النهائي محفوظ.
-5. idempotency وPUBLISHED → SKIPPED محفوظان.
-6. لا schema/API/browser migration.
-7. هذه الوثيقة وGate مرتبطان بـmain الحالي.
+1. Publication boundary hardened.
+2. Artifact contract provider-neutral.
+3. Post remains editorial source of truth.
+4. Review/Scheduling ownership remains explicit and stable.
+5. API/browser/schema contracts preserved.
+6. Existing backend/E2E regression coverage remains green.
+7. Architecture documentation points to main HEAD f25764e9.
+8. Next implementation is selected from operational/product evidence, not speculative model migration.
