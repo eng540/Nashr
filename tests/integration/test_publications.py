@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.adapters.publishing.fake import FakePublisher
+from app.application.posts import ProducePost
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.application.reviews import ReviewPost
 from app.domain.artifacts import Artifact, ArtifactKind
@@ -60,9 +61,7 @@ async def test_create_telegram_draft_compatibility_accepts_post_model() -> None:
     """Keep the legacy PostModel caller working at the application edge."""
     unit_id = await _knowledge_unit()
     async with SessionFactory() as session:
-        post = await __import__("app.application.posts", fromlist=["ProducePost"]).ProducePost(FakeEditorialDrafter()).execute(
-            session, unit_id
-        )
+        post = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
         draft = await CreateTelegramDraft.execute_for_post(session, post, "@test")
         assert draft.status.value == "DRAFT"
         assert draft.content == post.content
