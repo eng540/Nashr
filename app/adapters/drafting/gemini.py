@@ -111,7 +111,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
             content,
             source_name,
             pdf_slice,
-            self.system_prompt,
+            system_prompt or self.system_prompt,
         )
 
     def _draft_sync(
@@ -120,6 +120,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
         content: str,
         source_name: str,
         pdf_slice: bytes | None = None,
+        system_prompt: str | None = None,
     ) -> str:
         """
         Run the blocking request.
