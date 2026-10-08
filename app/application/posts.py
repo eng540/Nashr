@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.domain.editorial import IEditorialDrafter
+from app.application.control_plane import ControlPlaneResolver, EDITORIAL_PROMPT_KEY
 from app.domain.posts import Post, PostStatus
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ScheduleItemModel
 from app.application.editorial_context import slice_pdf_pages_as_bytes
@@ -28,8 +29,9 @@ def _to_domain(row: PostModel) -> Post:
 class ProducePost:
     """Produce and persist one editorial Post from one KnowledgeUnit."""
 
-    def __init__(self, drafter: IEditorialDrafter) -> None:
+    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver | None = None) -> None:
         self.drafter = drafter
+        self.resolver = resolver
 
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID) -> Post:
         existing = await self._find_existing(session, knowledge_unit_id)
@@ -61,11 +63,16 @@ class ProducePost:
                 # Preserve the existing text fallback for missing or malformed source PDFs.
                 pdf_slice = None
 
+        system_prompt = None
+        if self.resolver is not None:
+            system_prompt = (await self.resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)).body
+
         content = await self.drafter.draft(
             title=unit.title,
             content=unit.content,
             source_name=source_name,
             pdf_slice=pdf_slice,
+            system_prompt=system_prompt,
         )
         content = content.strip()
         if not content:
