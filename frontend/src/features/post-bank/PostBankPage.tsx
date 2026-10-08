@@ -22,7 +22,9 @@ export function PostBankPage() {
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  // A filtered deep link (for example ?status=APPROVED) is an explicit request
+  // to open that result set; the plain workspace still waits for the user's scope.
+  const [hasLoaded, setHasLoaded] = useState(() => Boolean(searchParams.get("status")));
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [content, setContent] = useState("");
