@@ -10,7 +10,18 @@ export interface PostListParams {
   offset?: number;
 }
 
-export interface BulkApproveResult { approved_count: number; failed_count: number; results: Array<{ post_id: string; status: string; reason_code?: string | null; message?: string | null }>; }\n\nexport const postsApi = {
+export interface BulkApproveResult {
+  approved_count: number;
+  failed_count: number;
+  results: Array<{
+    post_id: string;
+    status: string;
+    reason_code?: string | null;
+    message?: string | null;
+  }>;
+}
+
+export const postsApi = {
   list(params: PostListParams = {}): Promise<PostListResponse> {
     const query = new URLSearchParams();
     if (params.sourceId) query.set("source_id", params.sourceId);
@@ -32,5 +43,11 @@ export interface BulkApproveResult { approved_count: number; failed_count: numbe
   },
   reject(postId: string, reason: string): Promise<Post> {
     return post<Post>(`/posts/${postId}/reject`, { reason });
+  },
+  bulkApprove(postIds: string[], note = ""): Promise<BulkApproveResult> {
+    return post<BulkApproveResult>("/posts/bulk-approve", {
+      post_ids: postIds,
+      note: note || undefined,
+    });
   },
 };
