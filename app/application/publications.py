@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.domain.editorial import IEditorialDrafter
 from app.domain.publications import IPublisher, Publication, PublicationStatus
 from app.application.posts import ProducePost
+from app.application.artifacts import post_model_to_artifact, post_to_artifact
 from app.application.editorial_context import slice_pdf_pages_as_bytes
 from app.infrastructure.database.models import PostModel
 from app.infrastructure.database.models import KnowledgeUnitModel, PublicationModel
@@ -41,14 +42,18 @@ class CreateTelegramDraft:
 
     async def execute(self, session: AsyncSession, knowledge_unit_id: UUID, destination: str) -> Publication:
         post = await ProducePost(self.drafter).execute(session, knowledge_unit_id)
-        return await self.execute_for_post(session, post, destination)
+        return await self.execute_for_artifact(session, post_to_artifact(post), destination)
 
     @staticmethod
     async def execute_for_post(session: AsyncSession, post: PostModel, destination: str) -> Publication:
+        return await CreateTelegramDraft.execute_for_artifact(session, post_model_to_artifact(post), destination)
+
+    @staticmethod
+    async def execute_for_artifact(session: AsyncSession, artifact, destination: str) -> Publication:
         existing_result = await session.execute(
             select(PublicationModel)
             .where(
-                PublicationModel.post_id == post.id,
+                PublicationModel.post_id == artifact.id,
                 PublicationModel.platform == "telegram",
                 PublicationModel.destination == destination,
             )
@@ -61,8 +66,8 @@ class CreateTelegramDraft:
 
         row = PublicationModel(
             id=uuid4(),
-            knowledge_unit_id=post.knowledge_unit_id,
-            post_id=post.id,
+            knowledge_unit_id=artifact.source_knowledge_unit_id,
+            post_id=artifact.id,
             platform="telegram",
             destination=destination,
             content=post.content,
@@ -97,8 +102,24 @@ class ApproveAndPublish:
         """Initialize the publisher."""
         self.publisher = publisher
 
-    async def execute(self, session: AsyncSession, publication_id: UUID, content: str | None = None) -> Publication:
+    async def execute(self, session: AsyncSession, publication_id: UUID, content: str | None = None, artifact=None) -> Publication:
         """Persist optional user edits, then publish and record the final content."""
+        if artifact is None:
+            publication_result = await session.execute(select(PublicationModel).where(PublicationModel.id == publication_id))
+            publication_row = publication_result.scalar_one_or_none()
+            if publication_row is None:
+                raise ValueError("Publication not found.")
+            post_result = await session.execute(select(PostModel).where(PostModel.id == publication_row.post_id))
+            post_row = post_result.scalar_one_or_none()
+            if post_row is not None:
+                artifact = post_model_to_artifact(post_row)
+
+        if artifact is not None:
+            if artifact.status != "APPROVED":
+                raise ValueError("Artifact must be APPROVED before publication.")
+            if content is not None and content.strip() != artifact.content:
+                raise ValueError("Edit and approve the Artifact before publication.")
+
         if content is not None:
             content = content.strip()
             if not content:
@@ -137,17 +158,12 @@ class ApproveAndPublish:
         current_row = current.scalar_one_or_none()
         if current_row is None:
             raise ValueError("Publication not found.")
-        if current_row.post_id is not None:
-            post_result = await session.execute(
-                select(PostModel).where(PostModel.id == current_row.post_id)
-            )
-            post = post_result.scalar_one_or_none()
-            if post is not None:
-                if post.status != "APPROVED":
-                    raise ValueError("Post must be APPROVED before publication.")
-                if content is None:
-                    current_row.content = post.content
-                    await session.commit()
+        if artifact is not None:
+            if current_row.post_id != artifact.id:
+                raise ValueError("Publication does not belong to the supplied Artifact.")
+            if content is None:
+                current_row.content = artifact.content
+                await session.commit()
 
         claimed = await session.execute(
             update(PublicationModel)
