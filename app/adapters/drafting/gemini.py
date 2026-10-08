@@ -74,7 +74,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
     ) -> None:
         """Initialize with a prioritized cascade of models."""
         self._client = client
-        self.system_prompt = system_prompt
+        self._configured_system_prompt = system_prompt
 
         raw_models = model or os.getenv("GEMINI_MODEL", "")
         self.model = raw_models
@@ -111,7 +111,7 @@ class GeminiEditorialDrafter(IEditorialDrafter):
             content,
             source_name,
             pdf_slice,
-            system_prompt or self.system_prompt,
+            system_prompt,
         )
 
     def _draft_sync(
