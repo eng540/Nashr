@@ -16,6 +16,7 @@ from app.adapters.gemini_policy import (
     retry_after_seconds,
 )
 from app.api.benchmark import benchmark_router
+from app.api.control_plane import router as control_plane_router
 from app.api.routes import router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 from app.application.production_jobs import recover_stale_production_jobs, run_production_job
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
     application = FastAPI(title="Nashr", lifespan=lifespan)
     register_gemini_error_handlers(application)
     application.include_router(router)
+    application.include_router(control_plane_router)
     application.include_router(benchmark_router)  # <--- أضف هذا السطر فقط
     log_gemini_startup_config()
     return application
