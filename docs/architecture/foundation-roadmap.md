@@ -79,6 +79,8 @@ Post يصبح نوعًا مناسبًا للمخرج الحالي.
 
 ## المرحلة 4 — Control Plane Foundation
 
+التنفيذ الأول لهذه المرحلة هو Prompt Control Plane Foundation: Prompt Template + Versioning + Resolver + API + UI + Runtime Consumer. هذا لا يعني تنفيذ Identity أو Policy أو Recipe كاملة.
+
 إدخال:
 - Identity
 - Policy
