@@ -44,7 +44,7 @@ def _to_domain(row: PublicationModel) -> Publication:
 class CreateTelegramDraft:
     """Create the existing Telegram draft flow from the canonical Post."""
 
-    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver | None = None) -> None:
+    def __init__(self, drafter: IEditorialDrafter, resolver: ControlPlaneResolver) -> None:
         self.drafter = drafter
         self.resolver = resolver
 
