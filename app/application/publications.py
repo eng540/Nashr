@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -12,9 +14,13 @@ from app.domain.editorial import IEditorialDrafter
 from app.domain.publications import IPublisher, Publication, PublicationStatus
 from app.domain.artifacts import Artifact
 from app.application.posts import ProducePost
-from app.application.artifacts import load_post_model_to_artifact, post_to_artifact
+from app.application.artifacts import load_post_model_to_artifact, post_model_to_artifact, post_to_artifact
 from app.application.editorial_context import slice_pdf_pages_as_bytes
 from app.infrastructure.database.models import KnowledgeUnitModel, PublicationModel
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.infrastructure.database.models import PostModel
 
 
 def _to_domain(row: PublicationModel) -> Publication:
