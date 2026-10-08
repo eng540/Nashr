@@ -40,6 +40,13 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("prompt_template_id", "version", name="uq_prompt_template_versions_template_version"),
     )
+    op.create_index(
+        "uq_prompt_template_versions_active",
+        "prompt_template_versions",
+        ["prompt_template_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'PUBLISHED'"),
+    )
     bind = op.get_bind()
     template_id = uuid4()
     bind.execute(
@@ -52,5 +59,6 @@ def upgrade() -> None:
     )
 
 def downgrade() -> None:
+    op.drop_index("uq_prompt_template_versions_active", table_name="prompt_template_versions")
     op.drop_table("prompt_template_versions")
     op.drop_table("prompt_templates")
