@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import io
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
+from typing import TYPE_CHECKING
 
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import select, update
@@ -12,10 +15,12 @@ from app.domain.editorial import IEditorialDrafter
 from app.domain.publications import IPublisher, Publication, PublicationStatus
 from app.domain.artifacts import Artifact
 from app.application.posts import ProducePost
-from app.application.artifacts import post_model_to_artifact, post_to_artifact
+from app.application.artifacts import load_post_model_to_artifact, post_model_to_artifact, post_to_artifact
 from app.application.editorial_context import slice_pdf_pages_as_bytes
-from app.infrastructure.database.models import PostModel
 from app.infrastructure.database.models import KnowledgeUnitModel, PublicationModel
+
+if TYPE_CHECKING:
+    from app.infrastructure.database.models import PostModel
 
 
 def _to_domain(row: PublicationModel) -> Publication:
@@ -103,28 +108,38 @@ class ApproveAndPublish:
         """Initialize the publisher."""
         self.publisher = publisher
 
-    async def execute(self, session: AsyncSession, publication_id: UUID, content: str | None = None, artifact=None) -> Publication:
-        """Persist optional user edits, then publish and record the final content."""
+    async def execute(
+        self,
+        session: AsyncSession,
+        publication_id: UUID,
+        content: str | None = None,
+        artifact: Artifact | None = None,
+    ) -> Publication:
+        """Persist optional edits, then publish the supplied Artifact.
+
+        The PostModel fallback is a compatibility edge for existing callers and
+        persistence contracts. Core publication checks operate only on Artifact.
+        """
         if artifact is None:
-            publication_result = await session.execute(select(PublicationModel).where(PublicationModel.id == publication_id))
+            publication_result = await session.execute(
+                select(PublicationModel).where(PublicationModel.id == publication_id)
+            )
             publication_row = publication_result.scalar_one_or_none()
             if publication_row is None:
                 raise ValueError("Publication not found.")
-            post_result = await session.execute(select(PostModel).where(PostModel.id == publication_row.post_id))
-            post_row = post_result.scalar_one_or_none()
-            if post_row is not None:
-                artifact = post_model_to_artifact(post_row)
+            if publication_row.post_id is None:
+                raise ValueError("Publication requires an Artifact-backed Post.")
+            artifact = await load_post_model_to_artifact(session, publication_row.post_id)
 
-        if artifact is not None:
-            if artifact.status != "APPROVED":
-                raise ValueError("Artifact must be APPROVED before publication.")
-            if content is not None and content.strip() != artifact.content:
-                raise ValueError("Edit and approve the Artifact before publication.")
-
+        if artifact.status != "APPROVED":
+            raise ValueError("Artifact must be APPROVED before publication.")
         if content is not None:
             content = content.strip()
             if not content:
                 raise ValueError("Publication content cannot be empty.")
+            if content != artifact.content:
+                raise ValueError("Edit and approve the Artifact before publication.")
+
             current = await session.execute(
                 select(PublicationModel).where(
                     PublicationModel.id == publication_id,
@@ -134,19 +149,14 @@ class ApproveAndPublish:
             current_row = current.scalar_one_or_none()
             if current_row is None:
                 raise ValueError("Publication is not a DRAFT.")
-            if current_row.post_id is not None:
-                post_result = await session.execute(
-                    select(PostModel).where(PostModel.id == current_row.post_id)
-                )
-                post = post_result.scalar_one_or_none()
-                if post is not None:
-                    if post.status != "APPROVED":
-                        raise ValueError("Post must be APPROVED before publication.")
-                    if content != post.content:
-                        raise ValueError("Edit and approve the Post before publication.")
+            if current_row.post_id != artifact.id:
+                raise ValueError("Publication does not belong to the supplied Artifact.")
             edited = await session.execute(
                 update(PublicationModel)
-                .where(PublicationModel.id == publication_id, PublicationModel.status == PublicationStatus.DRAFT.value)
+                .where(
+                    PublicationModel.id == publication_id,
+                    PublicationModel.status == PublicationStatus.DRAFT.value,
+                )
                 .values(content=content)
             )
             if edited.rowcount != 1:
@@ -159,12 +169,11 @@ class ApproveAndPublish:
         current_row = current.scalar_one_or_none()
         if current_row is None:
             raise ValueError("Publication not found.")
-        if artifact is not None:
-            if current_row.post_id != artifact.id:
-                raise ValueError("Publication does not belong to the supplied Artifact.")
-            if content is None:
-                current_row.content = artifact.content
-                await session.commit()
+        if current_row.post_id != artifact.id:
+            raise ValueError("Publication does not belong to the supplied Artifact.")
+        if content is None:
+            current_row.content = artifact.content
+            await session.commit()
 
         claimed = await session.execute(
             update(PublicationModel)

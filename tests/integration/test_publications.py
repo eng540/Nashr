@@ -7,8 +7,10 @@ from sqlalchemy import select
 
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.adapters.publishing.fake import FakePublisher
+from app.application.posts import ProducePost
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.application.reviews import ReviewPost
+from app.domain.artifacts import Artifact, ArtifactKind
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
@@ -42,6 +44,52 @@ async def test_create_and_publish_with_fake_publisher() -> None:
         assert published.status.value == "PUBLISHED"
         assert published.external_id == "test_msg_999"
         assert published.content == edited_content
+
+
+class RecordingPublisher(FakePublisher):
+    """Capture the exact content supplied by the publication boundary."""
+
+    def __init__(self) -> None:
+        self.contents: list[str] = []
+
+    async def publish(self, *, destination: str, content: str):
+        self.contents.append(content)
+        return await super().publish(destination=destination, content=content)
+
+
+async def test_create_telegram_draft_compatibility_accepts_post_model() -> None:
+    """Keep the legacy PostModel caller working at the application edge."""
+    unit_id = await _knowledge_unit()
+    async with SessionFactory() as session:
+        post = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
+        draft = await CreateTelegramDraft.execute_for_post(session, post, "@test")
+        assert draft.status.value == "DRAFT"
+        assert draft.content == post.content
+
+
+async def test_publication_uses_explicit_artifact_content() -> None:
+    """Verify publication uses the explicit Artifact rather than rereading Post content."""
+    unit_id = await _knowledge_unit()
+    async with SessionFactory() as session:
+        draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit_id, "@test")
+        post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_id))).scalar_one()
+        await ReviewPost().approve(session, post.id, "تمت المراجعة")
+        artifact = Artifact(
+            id=post.id,
+            source_knowledge_unit_id=post.knowledge_unit_id,
+            kind=ArtifactKind.POST,
+            content="**Artifact canonical content**",
+            status="APPROVED",
+            created_at=post.created_at,
+            updated_at=post.updated_at,
+        )
+        publisher = RecordingPublisher()
+        published = await ApproveAndPublish(publisher).execute(session, draft.id, artifact=artifact)
+
+        assert published.status.value == "PUBLISHED"
+        assert published.content == artifact.content
+        assert publisher.contents == [artifact.content]
+
 
 
 class RecordingDrafter(FakeEditorialDrafter):
