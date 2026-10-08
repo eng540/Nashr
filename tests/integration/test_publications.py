@@ -56,6 +56,18 @@ class RecordingPublisher(FakePublisher):
         return await super().publish(destination=destination, content=content)
 
 
+async def test_create_telegram_draft_compatibility_accepts_post_model() -> None:
+    """Keep the legacy PostModel caller working at the application edge."""
+    unit_id = await _knowledge_unit()
+    async with SessionFactory() as session:
+        post = await __import__("app.application.posts", fromlist=["ProducePost"]).ProducePost(FakeEditorialDrafter()).execute(
+            session, unit_id
+        )
+        draft = await CreateTelegramDraft.execute_for_post(session, post, "@test")
+        assert draft.status.value == "DRAFT"
+        assert draft.content == post.content
+
+
 async def test_publication_uses_explicit_artifact_content() -> None:
     """Verify publication uses the explicit Artifact rather than rereading Post content."""
     unit_id = await _knowledge_unit()
