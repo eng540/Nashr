@@ -428,6 +428,7 @@ class ProductionJobRunner:
                 )).scalar_one_or_none()
                 if job is None:
                     return
+                resolved_context = None
                 if job.resolved_context is not None:
                     try:
                         resolved_context = ResolvedProductionContext.from_dict(job.resolved_context)
