@@ -509,7 +509,6 @@ class ProductionJobRunner:
                                     }
                                 },
                                 run_id=job_id,
-                                run_item_id=item_id,
                                 resolved_context=pinned_context_payload,
                             ),
                         )
