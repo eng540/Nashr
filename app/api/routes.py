@@ -28,7 +28,6 @@ from app.application.scheduling import (
 from app.domain.production_jobs import ProductionScope
 from app.domain.production_context import ResolvedProductionContext
 from app.infrastructure.database.models import (
-    ArtifactModel,
     KnowledgeUnitModel,
     ProductionJobItemModel,
     ProductionJobModel,
