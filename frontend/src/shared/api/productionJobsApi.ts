@@ -1,6 +1,7 @@
 import { get, post } from "./client";
 
 export type ProductionScope = "SOURCE" | "TOPIC" | "SELECTION";
+export interface EditorialIdentityOption { id: string; key: string; name: string; purpose: string; active_version: number | null; versions: Array<{ version: number; status: string }> }
 export interface SourceSummary { id: string; filename: string; book_title: string; status: string; material_count: number; produced_count: number; pending_count: number; }
 export interface BookTopic { id: string; position: number; title: string; description: string; materials: Array<{ id: string; title: string; kind: string | null; content: string; has_post: boolean; }>; }
 export interface BookMap { source_id: string; book: { title: string; description: string }; topics: BookTopic[]; count: number; }
@@ -16,6 +17,7 @@ export interface ProductionJob {
     captured_at: string | null;
     prompt_template: { template_id: string; version_id: string; key: string; version: number; body: string } | null;
     recipe?: { key: string; version: number; recipe_id?: string; version_id?: string; stages: Array<{ key: string; capability_key: string; capability_version: number }> } | null;
+    identity?: { identity_id: string; version_id: string; key: string; version: number; definition: { purpose: string; audience: string; voice: string; tone: string; principles: string[]; objectives: string[]; constraints: string[] } } | null;
   };
 }
 export interface ProductionJobItem {
@@ -28,8 +30,9 @@ export interface ProductionJobItem {
 export interface ProductionJobItemsPage { job_id: string; total: number; limit: number; offset: number; items: ProductionJobItem[]; }
 export const productionJobsApi = {
   sources(): Promise<SourceSummary[]> { return get<SourceSummary[]>("/sources"); },
+  identities(): Promise<EditorialIdentityOption[]> { return get<EditorialIdentityOption[]>("/api/control/identities"); },
   bookMap(sourceId: string): Promise<BookMap> { return get<BookMap>(`/sources/${sourceId}/book-map`); },
-  create(input: { source_id: string; scope: ProductionScope; topic_id?: string; knowledge_unit_ids?: string[] }): Promise<ProductionJob> { return post<ProductionJob>("/production-jobs", input); },
+  create(input: { source_id: string; scope: ProductionScope; topic_id?: string; knowledge_unit_ids?: string[]; identity_key?: string }): Promise<ProductionJob> { return post<ProductionJob>("/production-jobs", input); },
   get(jobId: string): Promise<ProductionJob> { return get<ProductionJob>(`/production-jobs/${jobId}`); },
   items(jobId: string, offset = 0, limit = 20): Promise<ProductionJobItemsPage> {
     return get<ProductionJobItemsPage>(`/production-jobs/${jobId}/items?offset=${offset}&limit=${limit}`);
