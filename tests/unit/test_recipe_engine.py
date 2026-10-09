@@ -95,15 +95,3 @@ def test_recipe_stage_rejects_invalid_capability_versions(version):
 def test_recipe_rejects_invalid_versions(version):
     with pytest.raises(ValueError, match="positive version"):
         ProductionRecipe(key="INVALID", version=version, stages=(RecipeStage("stage", "capability", 1),))
-
-
-@pytest.mark.parametrize("version", [True, 0, -1, 1.5])
-def test_recipe_stage_rejects_non_positive_or_non_integer_versions(version):
-    with pytest.raises(ValueError, match="positive integer"):
-        RecipeStage("stage", "capability", version)
-
-
-@pytest.mark.parametrize("version", [True, 0, -1, 1.5])
-def test_recipe_rejects_non_positive_or_non_integer_versions(version):
-    with pytest.raises(ValueError, match="positive version"):
-        ProductionRecipe(key="INVALID", version=version, stages=(RecipeStage("stage", "capability", 1),))
