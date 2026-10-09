@@ -12,7 +12,7 @@ _suppress_missing_object_warning: ContextVar[bool] = ContextVar(
 )
 _filter_lock = Lock()
 _filter_installed = False
-_MISSING_OBJECT_WARNING = re.compile(r"^Object \d+ \d+ not defined\.$")
+_MISSING_OBJECT_WARNING = re.compile(r"^(?:Object \d+ \d+ not defined\.|Ignoring wrong pointing object \d+ \d+ \(offset \d+\))$")
 
 class _PypdfWarningFilter(logging.Filter):
     """Filter only the known warning while the calling context opts in."""

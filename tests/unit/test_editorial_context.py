@@ -17,6 +17,7 @@ def pdf_with_noisy_reader(monkeypatch):
 
     def noisy_reader(path):
         logging.getLogger("pypdf._reader").warning("Object 17 0 not defined.")
+        logging.getLogger("pypdf._reader").warning("Ignoring wrong pointing object 48299 0 (offset 0)")
         logging.getLogger("pypdf._reader").warning("A different pypdf warning.")
         return real_reader(path)
 
@@ -46,6 +47,7 @@ def test_slice_suppresses_only_known_warning_and_preserves_page_count(
 
     assert len(PdfReader(BytesIO(sliced)).pages) == 10
     assert "Object 17 0 not defined." not in caplog.text
+    assert "Ignoring wrong pointing object 48299 0 (offset 0)" not in caplog.text
     assert "A different pypdf warning." in caplog.text
     assert pdf_logger.level == previous_level
 
@@ -60,9 +62,11 @@ def test_slice_does_not_suppress_known_warning_outside_its_scope(
     with caplog.at_level(logging.WARNING, logger="pypdf._reader"):
         editorial_context.slice_pdf_pages_as_bytes(str(source), 1, 1, window_size=2)
         pdf_logger.warning("Object 21 0 not defined.")
+        pdf_logger.warning("Ignoring wrong pointing object 48299 0 (offset 0)")
 
     assert "Object 17 0 not defined." not in caplog.text
     assert "Object 21 0 not defined." in caplog.text
+    assert "Ignoring wrong pointing object 48299 0 (offset 0)" in caplog.text
 
 
 def test_invalid_pdf_raises_instead_of_becoming_a_successful_slice(tmp_path: Path) -> None:

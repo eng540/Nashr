@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -371,24 +372,84 @@ def http_status_for(code: str) -> int:
 
 
 def retry_after_seconds(exc: Exception) -> float | None:
-    """Read a ``Retry-After`` hint from a structured provider error, if present."""
+    """Read a provider retry hint from HTTP headers, structured details, or text."""
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None)
     if headers is None:
         headers = getattr(exc, "headers", None)
-    if headers is None:
-        return None
-    try:
-        raw = headers.get("retry-after") or headers.get("Retry-After")
-    except Exception:  # pragma: no cover - defensive fallback only
-        return None
-    if raw is None:
-        return None
-    try:
-        return max(0.0, float(str(raw).strip()))
-    except (TypeError, ValueError):
+    if headers is not None:
+        try:
+            raw = headers.get("retry-after") or headers.get("Retry-After")
+        except Exception:  # pragma: no cover - defensive fallback only
+            raw = None
+        if raw is not None:
+            try:
+                return max(0.0, float(str(raw).strip()))
+            except (TypeError, ValueError):
+                pass
+
+    def parse_duration(value: Any) -> float | None:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return max(0.0, float(value))
+        if isinstance(value, str):
+            import re
+
+            match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*s?\s*", value)
+            if match:
+                return max(0.0, float(match.group(1)))
         return None
 
+    def find_hint(value: Any) -> float | None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                normalized_key = str(key).replace("_", "").lower()
+                if normalized_key in {"retrydelay", "retryafter"}:
+                    parsed = parse_duration(child)
+                    if parsed is not None:
+                        return parsed
+                nested = find_hint(child)
+                if nested is not None:
+                    return nested
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                nested = find_hint(child)
+                if nested is not None:
+                    return nested
+        elif isinstance(value, str):
+            import re
+
+            match = re.search(
+                r"(?:retry(?:\s+in)?|retryDelay\s*[=:]?\s*)"
+                r"(?:\s*[:=]?\s*)(\d+(?:\.\d+)?)\s*s",
+                value,
+                re.IGNORECASE,
+            )
+            if match:
+                return max(0.0, float(match.group(1)))
+        return None
+
+    candidates: list[Any] = [
+        getattr(exc, "details", None),
+        getattr(exc, "message", None),
+        str(exc),
+    ]
+    if response is not None:
+        for attribute in ("text", "content"):
+            value = getattr(response, attribute, None)
+            if value:
+                candidates.append(value)
+        json_method = getattr(response, "json", None)
+        if callable(json_method):
+            try:
+                candidates.append(json_method())
+            except Exception:
+                pass
+
+    for candidate in candidates:
+        result = find_hint(candidate)
+        if result is not None:
+            return result
+    return None
 
 # ---------------------------------------------------------------------------
 # Canonical log events (identical field names and event names in every layer)
