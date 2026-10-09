@@ -133,8 +133,8 @@ class ApproveAndPublish:
                 raise ValueError("Publication requires an Artifact-backed Post.")
             artifact = await load_post_model_to_artifact(session, publication_row.post_id)
 
-        if artifact.status != "APPROVED":
-            raise ValueError("Artifact must be APPROVED before publication.")
+        if artifact.editorial_status != "APPROVED":
+            raise ValueError("Post must be APPROVED before publication.")
         if content is not None:
             content = content.strip()
             if not content:

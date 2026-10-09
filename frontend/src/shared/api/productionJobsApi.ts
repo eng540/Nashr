@@ -22,7 +22,7 @@ export interface ProductionJobItem {
   item_id: string; position: number; status: string; attempts: number;
   knowledge_unit_id: string; title: string; source_id: string; source_title: string;
   source_reference: string | null; page_start: number | null; page_end: number | null;
-  post_id: string | null; error_code: string | null; error_message: string | null;
+  post_id: string | null; artifact_id: string | null; error_code: string | null; error_message: string | null;
   created_at: string; updated_at: string; completed_at: string | null;
 }
 export interface ProductionJobItemsPage { job_id: string; total: number; limit: number; offset: number; items: ProductionJobItem[]; }

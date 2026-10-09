@@ -35,7 +35,7 @@ async def test_recipe_engine_runs_registered_stages_in_order():
         source_knowledge_unit_id=uuid4(),
         kind=ArtifactKind.POST,
         content="draft",
-        status="DRAFT",
+        status="AVAILABLE",
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     ))

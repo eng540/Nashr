@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.artifacts import post_to_artifact
+from app.application.artifacts import ensure_post_artifact
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import ProducePost
 from app.domain.artifacts import Artifact
@@ -18,6 +18,8 @@ class ProductionExecutionContext:
     session: AsyncSession
     inputs: Mapping[str, object]
     configuration: Mapping[str, object]
+    run_id: UUID | None = None
+    resolved_context: Mapping[str, object] | None = None
 
 
 class RecipeCapability(Protocol):
@@ -90,7 +92,16 @@ class ProducePostCapability:
             knowledge_unit_id,
             system_prompt=editorial_prompt["body"],
         )
-        return post_to_artifact(post)
+        return await ensure_post_artifact(
+            context.session,
+            post,
+            production_job_id=context.run_id,
+            resolved_context=(
+                dict(context.resolved_context)
+                if context.resolved_context is not None
+                else None
+            ),
+        )
 
 
 class ProductionRecipeEngine:

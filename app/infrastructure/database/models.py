@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -171,12 +171,62 @@ class ProductionJobItemModel(Base):
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="RESTRICT"), nullable=True)
+    artifact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="RESTRICT"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     job: Mapped[ProductionJobModel] = relationship(back_populates="items")
     knowledge_unit: Mapped[KnowledgeUnitModel] = relationship()
     post: Mapped[PostModel | None] = relationship()
+
+
+class ArtifactModel(Base):
+    __tablename__ = "artifacts"
+    __table_args__ = (
+        UniqueConstraint("post_id", name="uq_artifacts_post_id"),
+        CheckConstraint(
+            "kind IN ('POST', 'TEXT', 'IMAGE', 'VIDEO', 'AUDIO')",
+            name="ck_artifacts_kind",
+        ),
+        CheckConstraint(
+            "status IN ('AVAILABLE', 'FAILED', 'ARCHIVED')",
+            name="ck_artifacts_status",
+        ),
+        CheckConstraint(
+            "kind <> 'POST' OR post_id IS NOT NULL",
+            name="ck_artifacts_post_reference",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_knowledge_unit_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("knowledge_units.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="AVAILABLE")
+    post_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("posts.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_uri: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    output_contract_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    output_contract_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    production_job_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("production_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    resolved_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    artifact_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
 
 class PublicationModel(Base):

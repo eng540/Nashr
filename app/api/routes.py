@@ -18,6 +18,7 @@ from app.application.posts import ProducePost
 from app.application.control_plane import ControlPlaneResolver
 from app.application.reviews import ReviewPost, bulk_approve
 from app.application.production_jobs import create_production_job, resume_production_job, run_production_job
+from app.application.artifacts import load_artifact
 from app.application.scheduling import (
     build_schedule_times, create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
     process_due_schedule_items, retry_failed_items, transition, update_schedule_item_time,
@@ -27,11 +28,13 @@ from app.application.scheduling import (
 from app.domain.production_jobs import ProductionScope
 from app.domain.production_context import ResolvedProductionContext
 from app.infrastructure.database.models import (
+    KnowledgeUnitModel,
     ProductionJobItemModel,
     ProductionJobModel,
     ScheduleItemModel,
     ScheduleModel,
     PublicationModel,
+    SourceModel,
 )
 from app.application.discovery_jobs import (
     DiscoveryJobStatus,
@@ -566,6 +569,54 @@ async def production_job_status(job_id: UUID, session: AsyncSession = Depends(ge
     return await _load_production_job_payload(session, job)
 
 
+@router.get("/artifacts/{artifact_id}")
+async def artifact_detail(artifact_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    artifact = await load_artifact(session, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+    unit = (await session.execute(
+        select(KnowledgeUnitModel)
+        .options(selectinload(KnowledgeUnitModel.source).defer(SourceModel.file_payload))
+        .where(KnowledgeUnitModel.id == artifact.source_knowledge_unit_id)
+    )).scalar_one_or_none()
+    linked_items = (await session.execute(
+        select(ProductionJobItemModel)
+        .where(ProductionJobItemModel.artifact_id == artifact.id)
+        .order_by(ProductionJobItemModel.created_at)
+    )).scalars().all()
+    return {
+        "id": str(artifact.id),
+        "kind": artifact.kind.value,
+        "status": artifact.status,
+        "source_knowledge_unit_id": str(artifact.source_knowledge_unit_id),
+        "source": ({
+            "knowledge_unit_id": str(unit.id),
+            "title": unit.title,
+            "source_id": str(unit.source_id),
+            "source_title": unit.source.book_title or unit.source.filename,
+            "source_reference": unit.source_reference,
+            "page_start": unit.discovery_page_start,
+            "page_end": unit.discovery_page_end,
+        } if unit is not None else None),
+        "post_id": str(artifact.post_id) if artifact.post_id else None,
+        "editorial_status": artifact.editorial_status,
+        "production_job_id": str(artifact.production_job_id) if artifact.production_job_id else None,
+        "production_job_items": [
+            {"item_id": str(item.id), "job_id": str(item.job_id), "position": item.position}
+            for item in linked_items
+        ],
+        "content": artifact.content,
+        "storage_uri": artifact.storage_uri,
+        "mime_type": artifact.mime_type,
+        "output_contract_key": artifact.output_contract_key,
+        "output_contract_version": artifact.output_contract_version,
+        "resolved_context": artifact.resolved_context,
+        "metadata": artifact.metadata or {},
+        "created_at": artifact.created_at,
+        "updated_at": artifact.updated_at,
+    }
+
+
 @router.get("/production-jobs/{job_id}/items")
 async def production_job_items(
     job_id: UUID,
@@ -623,6 +674,7 @@ async def production_job_items(
                 "page_start": item.knowledge_unit.discovery_page_start,
                 "page_end": item.knowledge_unit.discovery_page_end,
                 "post_id": str(item.post_id) if item.post_id else None,
+                "artifact_id": str(item.artifact_id) if item.artifact_id else None,
                 "error_code": item.error_code,
                 "error_message": item.error_message,
                 "created_at": item.created_at,
