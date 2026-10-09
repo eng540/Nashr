@@ -94,7 +94,7 @@ export function PostBankPage() {
     onSuccess: (data) => { setJobId(data.job_id); setJobItemsPage(0); setMessage("بدأ إنتاج المنشورات."); void client.invalidateQueries({ queryKey: ["post-bank"] }); },
     onError: (error) => setMessage(error instanceof Error ? error.message : "تعذر بدء الإنتاج."),
   });
-  const retryProduction = useMutation({ mutationFn: () => productionJobsApi.resume(jobId!), onSuccess: (data) => { setJobId(data.job_id); setJobItemsPage(0); void client.invalidateQueries({ queryKey: ["production", "job-items", jobId] }); } });
+  const retryProduction = useMutation({ mutationFn: () => productionJobsApi.resume(jobId!), onSuccess: (data) => { setJobId(data.job_id); setJobItemsPage(0); void client.invalidateQueries({ queryKey: ["production", "job", jobId] }); void client.invalidateQueries({ queryKey: ["production", "job-items", jobId] }); } });
 
   const items = posts.data?.items ?? [];
   const total = posts.data?.total ?? 0;
