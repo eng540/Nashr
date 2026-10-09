@@ -60,6 +60,7 @@ class ProductionJobRequest(BaseModel):
     scope: ProductionScope
     topic_id: UUID | None = None
     knowledge_unit_ids: list[UUID] = Field(default_factory=list)
+    recipe_key: str = Field(default="BOOK_TO_TELEGRAM_POST", min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
 
 
 class ProductionJobResumeRequest(BaseModel):
@@ -552,11 +553,14 @@ async def create_production_job_route(
             payload.scope,
             payload.topic_id,
             payload.knowledge_unit_ids,
+            recipe_key=payload.recipe_key,
         )
         background_tasks.add_task(run_production_job, job.id)
         return await _load_production_job_payload(session, job)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/production-jobs/{job_id}")
