@@ -171,7 +171,7 @@ class ProductionJobItemModel(Base):
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="RESTRICT"), nullable=True)
-    artifact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="RESTRICT"), nullable=True)
+    artifact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="RESTRICT"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -203,6 +203,7 @@ class ArtifactModel(Base):
         PGUUID(as_uuid=True),
         ForeignKey("knowledge_units.id", ondelete="RESTRICT"),
         nullable=False,
+        index=True,
     )
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="AVAILABLE")
@@ -220,6 +221,7 @@ class ArtifactModel(Base):
         PGUUID(as_uuid=True),
         ForeignKey("production_jobs.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     resolved_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     artifact_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
