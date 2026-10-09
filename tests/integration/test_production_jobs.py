@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.application.production_jobs import ProductionJobRunner, create_production_job, resume_production_job
 from app.application.control_plane import PromptTemplateService
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
-from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
 from app.infrastructure.database.control_plane import PromptTemplateRepository
 from app.infrastructure.database.session import SessionFactory
 
