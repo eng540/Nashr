@@ -6,6 +6,8 @@ from sqlalchemy import select
 
 from app.application.production_jobs import ProductionJobRunner, create_production_job, resume_production_job
 from app.application.control_plane import PromptTemplateService
+from app.application.recipe_control_plane import ProductionRecipeControlPlaneService
+from app.domain.production_context import ResolvedProductionContext
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
 from app.infrastructure.database.control_plane import PromptTemplateRepository
@@ -102,6 +104,37 @@ async def test_explicit_selection_snapshots_only_requested_materials():
             select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id).order_by(ProductionJobItemModel.position)
         )).scalars().all()
         assert [item.knowledge_unit_id for item in items] == [unit_ids[1], unit_ids[4]]
+
+
+async def test_job_pins_recipe_version_when_a_new_version_is_published():
+    source_id, _, _ = await _fixture(materials=1)
+    stages_v1 = [{"key": "produce-post", "capability_key": "produce_post", "capability_version": 1}]
+    stages_v2 = [{"key": "produce-post-v2", "capability_key": "produce_post", "capability_version": 1}]
+
+    async with SessionFactory() as session:
+        recipes = ProductionRecipeControlPlaneService(session)
+        await recipes.create_recipe(
+            "TEST_JOB_RECIPE", "Test job recipe", "Verify run-level recipe pinning.", stages_v1
+        )
+        await recipes.publish("TEST_JOB_RECIPE", 1)
+        job = await create_production_job(
+            session, source_id, ProductionScope.SOURCE, recipe_key="TEST_JOB_RECIPE"
+        )
+        original_context = job.resolved_context.copy()
+        context = ResolvedProductionContext.from_dict(original_context)
+        assert context.recipe.key == "TEST_JOB_RECIPE"
+        assert context.recipe.version == 1
+        assert context.recipe.recipe_id
+        assert context.recipe.version_id
+
+        await recipes.create_draft("TEST_JOB_RECIPE", stages_v2)
+        await recipes.publish("TEST_JOB_RECIPE", 2)
+        await session.refresh(job)
+        assert job.resolved_context == original_context
+
+    drafter = RecordingDrafter()
+    await ProductionJobRunner(drafter).run(job.id)
+    assert drafter.prompts == ["editorial prompt"]
 
 
 async def test_published_prompt_change_does_not_mutate_existing_job_context():
