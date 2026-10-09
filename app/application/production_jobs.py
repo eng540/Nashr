@@ -9,14 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.application.control_plane import ControlPlaneResolver, EDITORIAL_PROMPT_KEY
-from app.application.posts import ProducePost
-from app.application.artifacts import post_to_artifact
 from app.domain.production_jobs import (
     ProductionJobItemStatus,
     ProductionJobStatus,
     ProductionScope,
 )
 from app.domain.production_context import ResolvedProductionContext
+from app.domain.recipes import BOOK_TO_TELEGRAM_POST
+from app.application.recipe_engine import (
+    ProductionExecutionContext,
+    build_book_to_telegram_post_engine,
+)
 from app.infrastructure.database.models import (
     KnowledgeUnitModel,
     PostModel,
@@ -130,7 +133,9 @@ async def create_production_job(
         editorial_prompt_key=resolved_prompt.key,
         editorial_prompt_version=resolved_prompt.version,
         editorial_prompt_body=resolved_prompt.body,
-        resolved_context=ResolvedProductionContext.capture(resolved_prompt).to_dict(),
+        resolved_context=ResolvedProductionContext.capture(
+            resolved_prompt, recipe=BOOK_TO_TELEGRAM_POST
+        ).to_dict(),
     )
     session.add(job)
     for position, unit in enumerate(units, start=1):
@@ -405,10 +410,10 @@ async def _finalize(job_id: UUID) -> None:
 
 
 class ProductionJobRunner:
-    """Durable sequential runner; each material delegates to ProducePost."""
+    """Durable item runner that executes each material through its pinned recipe."""
 
     def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
-        self.producer = ProducePost(drafter, resolver or ControlPlaneResolver())
+        self.engine = build_book_to_telegram_post_engine(drafter, resolver or ControlPlaneResolver())
 
     async def run(self, job_id: UUID) -> None:
         await _recover_stale(job_id)
@@ -423,6 +428,8 @@ class ProductionJobRunner:
                 )).scalar_one_or_none()
                 if job is None:
                     return
+                resolved_context = None
+                pinned_recipe = BOOK_TO_TELEGRAM_POST
                 if job.resolved_context is not None:
                     try:
                         resolved_context = ResolvedProductionContext.from_dict(job.resolved_context)
@@ -445,6 +452,17 @@ class ProductionJobRunner:
                             "Production job has no pinned editorial prompt; "
                             "historical prompt provenance cannot be established."
                         )
+
+                # Schema-v1 and pre-snapshot jobs predate recipe pinning; their only
+                # existing path was BOOK_TO_TELEGRAM_POST, retained as the compatibility route.
+                if resolved_context is not None and resolved_context.recipe is not None:
+                    pinned_recipe = resolved_context.recipe
+                registered_recipe = self.engine.recipes.resolve(pinned_recipe.key, pinned_recipe.version)
+                if registered_recipe != pinned_recipe:
+                    raise LookupError(
+                        f"Production job recipe '{pinned_recipe.key}' v{pinned_recipe.version} "
+                        "does not match its registered immutable definition."
+                    )
 
             while True:
                 item_id = await _claim_next_item(job_id)
@@ -473,10 +491,20 @@ class ProductionJobRunner:
 
                 try:
                     async with SessionFactory() as session:
-                        post = await self.producer.execute(
-                            session, knowledge_unit_id, system_prompt=pinned_prompt
+                        artifact = await self.engine.execute(
+                            pinned_recipe,
+                            ProductionExecutionContext(
+                                session=session,
+                                inputs={"knowledge_unit_id": knowledge_unit_id},
+                                configuration={
+                                    "editorial_prompt": {
+                                        "key": job.editorial_prompt_key,
+                                        "version": job.editorial_prompt_version,
+                                        "body": pinned_prompt,
+                                    }
+                                },
+                            ),
                         )
-                        artifact = post_to_artifact(post)
                     await _complete_item(job_id, item_id, artifact.id)
                     await _update_progress(job_id, None)
                 except Exception as exc:
@@ -499,7 +527,9 @@ class ProductionJobRunner:
                     .values(
                         status=ProductionJobStatus.FAILED.value,
                         error_code=(
-                            "PRODUCTION_CONTEXT_INVALID"
+                            "PRODUCTION_RECIPE_UNAVAILABLE"
+                            if isinstance(exc, LookupError) and "recipe" in str(exc).lower()
+                            else "PRODUCTION_CONTEXT_INVALID"
                             if isinstance(exc, LookupError) and "resolved context" in str(exc).lower()
                             else "PRODUCTION_PROMPT_UNPINNED"
                             if isinstance(exc, LookupError) and "pinned editorial prompt" in str(exc)

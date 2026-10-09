@@ -15,6 +15,7 @@ export interface ProductionJob {
     available: boolean; invalid: boolean; schema_version: number | null; origin: string | null;
     captured_at: string | null;
     prompt_template: { template_id: string; version_id: string; key: string; version: number; body: string } | null;
+    recipe?: { key: string; version: number; stages: Array<{ key: string; capability_key: string; capability_version: number }> } | null;
   };
 }
 export interface ProductionJobItem {
