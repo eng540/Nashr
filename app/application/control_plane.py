@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.control_plane import PromptTemplate
 from app.infrastructure.database.control_plane import PromptTemplateRepository
+from app.infrastructure.database.recipes import ProductionRecipeRepository
 
 
 EDITORIAL_PROMPT_KEY = "editorial.drafter"
@@ -10,6 +11,9 @@ EDITORIAL_PROMPT_KEY = "editorial.drafter"
 class ControlPlaneResolver:
     async def resolve_prompt(self, session: AsyncSession, key: str):
         return await PromptTemplateRepository(session).resolve_active(key)
+
+    async def resolve_recipe(self, session: AsyncSession, key: str):
+        return await ProductionRecipeRepository(session).resolve_active(key)
 
 
 class PromptTemplateService:
