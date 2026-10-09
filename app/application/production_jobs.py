@@ -112,11 +112,11 @@ async def create_production_job(
     knowledge_unit_ids: list[UUID] | None = None,
 ) -> ProductionJobModel:
     # Resolve once before persisting the job. The resolver reads one committed version.
-    resolved_prompt = await ControlPlaneResolver().resolve_prompt(
-        session, EDITORIAL_PROMPT_KEY
-    )
+    resolver = ControlPlaneResolver()
+    resolved_prompt = await resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)
     if not resolved_prompt.body.strip():
         raise LookupError(f"Published editorial prompt '{EDITORIAL_PROMPT_KEY}' is empty.")
+    resolved_recipe = await resolver.resolve_recipe(session, BOOK_TO_TELEGRAM_POST.key)
 
     units = await _resolve_units(
         session,
@@ -135,7 +135,7 @@ async def create_production_job(
         editorial_prompt_version=resolved_prompt.version,
         editorial_prompt_body=resolved_prompt.body,
         resolved_context=ResolvedProductionContext.capture(
-            resolved_prompt, recipe=BOOK_TO_TELEGRAM_POST
+            resolved_prompt, recipe=resolved_recipe
         ).to_dict(),
     )
     session.add(job)
