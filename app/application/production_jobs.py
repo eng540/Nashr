@@ -19,7 +19,7 @@ from app.domain.artifacts import Artifact, ArtifactKind
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST
 from app.application.recipe_engine import (
     ProductionExecutionContext,
-    build_book_to_telegram_post_engine,
+    build_production_recipe_engine,
 )
 from app.infrastructure.database.models import (
     KnowledgeUnitModel,
@@ -415,7 +415,7 @@ class ProductionJobRunner:
     """Durable item runner that executes each material through its pinned recipe."""
 
     def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
-        self.engine = build_book_to_telegram_post_engine(drafter, resolver or ControlPlaneResolver())
+        self.engine = build_production_recipe_engine(drafter, resolver or ControlPlaneResolver())
 
     async def run(self, job_id: UUID) -> None:
         await _recover_stale(job_id)
@@ -462,12 +462,7 @@ class ProductionJobRunner:
                 # existing path was BOOK_TO_TELEGRAM_POST, retained as the compatibility route.
                 if resolved_context is not None and resolved_context.recipe is not None:
                     pinned_recipe = resolved_context.recipe
-                registered_recipe = self.engine.recipes.resolve(pinned_recipe.key, pinned_recipe.version)
-                if registered_recipe != pinned_recipe:
-                    raise LookupError(
-                        f"Production job recipe '{pinned_recipe.key}' v{pinned_recipe.version} "
-                        "does not match its registered immutable definition."
-                    )
+                self.engine.validate_recipe(pinned_recipe)
 
             while True:
                 item_id = await _claim_next_item(job_id)
