@@ -27,7 +27,7 @@ class PromptVersionRequest(BaseModel):
 class RecipeStageRequest(BaseModel):
     key: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9._-]+$")
     capability_key: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9._-]+$")
-    capability_version: int = Field(ge=1)
+    capability_version: int = Field(ge=1, strict=True)
 
 
 class RecipeCreateRequest(BaseModel):
