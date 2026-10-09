@@ -83,3 +83,15 @@ def test_recipe_definition_round_trips_as_data_and_rejects_empty_stages():
     assert ProductionRecipe.from_dict(BOOK_TO_TELEGRAM_POST.to_dict()) == BOOK_TO_TELEGRAM_POST
     with pytest.raises(ValueError, match="at least one stage"):
         ProductionRecipe(key="EMPTY", version=1, stages=())
+
+
+@pytest.mark.parametrize("version", [True, 0, -1, 1.5])
+def test_recipe_stage_rejects_invalid_capability_versions(version):
+    with pytest.raises(ValueError, match="positive integer"):
+        RecipeStage("stage", "capability", version)
+
+
+@pytest.mark.parametrize("version", [True, 0, -1, 1.5])
+def test_recipe_rejects_invalid_versions(version):
+    with pytest.raises(ValueError, match="positive version"):
+        ProductionRecipe(key="INVALID", version=version, stages=(RecipeStage("stage", "capability", 1),))
