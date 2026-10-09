@@ -495,8 +495,14 @@ class ProductionJobRunner:
                             pinned_recipe,
                             ProductionExecutionContext(
                                 session=session,
-                                knowledge_unit_id=knowledge_unit_id,
-                                system_prompt=pinned_prompt,
+                                inputs={"knowledge_unit_id": knowledge_unit_id},
+                                configuration={
+                                    "editorial_prompt": {
+                                        "key": job.editorial_prompt_key,
+                                        "version": job.editorial_prompt_version,
+                                        "body": pinned_prompt,
+                                    }
+                                },
                             ),
                         )
                     await _complete_item(job_id, item_id, artifact.id)
