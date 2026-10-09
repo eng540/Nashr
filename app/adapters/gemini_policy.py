@@ -430,7 +430,7 @@ def retry_after_seconds(exc: Exception) -> float | None:
             if match:
                 return max(0.0, float(match.group(1)))
             stripped = value.strip()
-            duration = re.fullmatch(r"(\\d+(?:\\.\\d+)?)s", stripped)
+            duration = re.fullmatch(r"(\d+(?:\.\d+)?)s", stripped)
             if duration:
                 return max(0.0, float(duration.group(1)))
         return None
@@ -440,7 +440,7 @@ def retry_after_seconds(exc: Exception) -> float | None:
             return max(0.0, float(value))
         if isinstance(value, str):
             stripped = value.strip()
-            duration = re.fullmatch(r"(\\d+(?:\\.\\d+)?)s", stripped)
+            duration = re.fullmatch(r"(\d+(?:\.\d+)?)s", stripped)
             if duration:
                 return max(0.0, float(duration.group(1)))
             try:
