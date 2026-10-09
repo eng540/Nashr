@@ -120,7 +120,9 @@ class PromptTemplateRepository:
     async def resolve_active(self, key: str) -> ResolvedPrompt:
         result = await self.session.execute(
             select(
+                PromptTemplateModel.id.label("template_id"),
                 PromptTemplateModel.key,
+                PromptTemplateVersionModel.id.label("version_id"),
                 PromptTemplateVersionModel.version,
                 PromptTemplateVersionModel.body,
             )
@@ -137,7 +139,13 @@ class PromptTemplateRepository:
         if len(rows) != 1:
             raise LookupError(f"No unique active published prompt exists for key '{key}'.")
         row = rows[0]
-        return ResolvedPrompt(key=row.key, version=row.version, body=row.body)
+        return ResolvedPrompt(
+            key=row.key,
+            version=row.version,
+            body=row.body,
+            template_id=row.template_id,
+            version_id=row.version_id,
+        )
 
     async def _get_version_row(self, key: str, version: int) -> PromptTemplateVersionModel | None:
         result = await self.session.execute(
