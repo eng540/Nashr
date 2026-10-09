@@ -10,7 +10,7 @@ from app.application.artifacts import ensure_post_artifact
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import ProducePost
 from app.domain.artifacts import Artifact
-from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe
+from app.domain.recipes import ProductionRecipe
 
 
 @dataclass(frozen=True)
@@ -50,25 +50,6 @@ class CapabilityRegistry:
         return capability
 
 
-class RecipeRegistry:
-    def __init__(self, recipes: tuple[ProductionRecipe, ...] = ()) -> None:
-        self._recipes: dict[tuple[str, int], ProductionRecipe] = {}
-        for recipe in recipes:
-            self.register(recipe)
-
-    def register(self, recipe: ProductionRecipe) -> None:
-        identity = (recipe.key, recipe.version)
-        if identity in self._recipes:
-            raise ValueError(f"Recipe '{recipe.key}' v{recipe.version} is already registered.")
-        self._recipes[identity] = recipe
-
-    def resolve(self, key: str, version: int) -> ProductionRecipe:
-        recipe = self._recipes.get((key, version))
-        if recipe is None:
-            raise LookupError(f"Recipe '{key}' v{version} is not registered.")
-        return recipe
-
-
 class ProducePostCapability:
     key = "produce_post"
     version = 1
@@ -105,22 +86,21 @@ class ProducePostCapability:
 
 
 class ProductionRecipeEngine:
-    def __init__(self, recipes: RecipeRegistry, capabilities: CapabilityRegistry) -> None:
-        self.recipes = recipes
+    def __init__(self, capabilities: CapabilityRegistry) -> None:
         self.capabilities = capabilities
+
+    def validate_recipe(self, pinned_recipe: ProductionRecipe) -> None:
+        # The persisted snapshot is the recipe source of truth for this run.
+        # Only registered capability implementations may execute its declarative stages.
+        for stage in pinned_recipe.stages:
+            self.capabilities.resolve(stage.capability_key, stage.capability_version)
 
     async def execute(
         self,
         pinned_recipe: ProductionRecipe,
         context: ProductionExecutionContext,
     ) -> Artifact:
-        registered = self.recipes.resolve(pinned_recipe.key, pinned_recipe.version)
-        if registered != pinned_recipe:
-            raise LookupError(
-                f"Pinned recipe '{pinned_recipe.key}' v{pinned_recipe.version} "
-                "does not match the registered immutable definition."
-            )
-
+        self.validate_recipe(pinned_recipe)
         output: object | None = None
         for stage in pinned_recipe.stages:
             capability = self.capabilities.resolve(
@@ -133,13 +113,10 @@ class ProductionRecipeEngine:
         return output
 
 
-def build_book_to_telegram_post_engine(
+def build_production_recipe_engine(
     drafter,
     resolver: ControlPlaneResolver | None = None,
 ) -> ProductionRecipeEngine:
     capabilities = CapabilityRegistry()
     capabilities.register(ProducePostCapability(drafter, resolver))
-    return ProductionRecipeEngine(
-        recipes=RecipeRegistry((BOOK_TO_TELEGRAM_POST,)),
-        capabilities=capabilities,
-    )
+    return ProductionRecipeEngine(capabilities=capabilities)

@@ -94,3 +94,31 @@ def test_legacy_backfill_origin_is_distinct_from_runtime_resolution():
     context = ResolvedProductionContext.from_dict(value)
     assert context.origin == LEGACY_PIN_BACKFILL
     assert context.captured_at is None
+
+
+@pytest.mark.parametrize("version", [True, 0, -1, 1.5])
+def test_pinned_prompt_rejects_invalid_version_types(version):
+    from app.domain.production_context import PinnedPrompt
+
+    with pytest.raises(ValueError, match="positive version"):
+        PinnedPrompt(
+            template_id="00000000-0000-0000-0000-000000000001",
+            version_id="00000000-0000-0000-0000-000000000002",
+            key="editorial.drafter",
+            version=version,
+            body="prompt",
+        )
+
+
+def test_resolved_context_rejects_boolean_schema_version():
+    from app.domain.production_context import PinnedPrompt
+
+    prompt = PinnedPrompt(
+        template_id="00000000-0000-0000-0000-000000000001",
+        version_id="00000000-0000-0000-0000-000000000002",
+        key="editorial.drafter",
+        version=1,
+        body="prompt",
+    )
+    with pytest.raises(ValueError, match="Unsupported resolved production context schema version"):
+        ResolvedProductionContext(schema_version=True, origin=RUNTIME_RESOLUTION, captured_at=None, prompt_template=prompt)
