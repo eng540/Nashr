@@ -410,7 +410,7 @@ async def _finalize(job_id: UUID) -> None:
 
 
 class ProductionJobRunner:
-    """Durable sequential runner; each material delegates to ProducePost."""
+    """Durable item runner that executes each material through its pinned recipe."""
 
     def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
         self.engine = build_book_to_telegram_post_engine(drafter, resolver or ControlPlaneResolver())
