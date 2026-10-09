@@ -91,6 +91,9 @@ async def test_single_job_produces_posts_and_completes():
         )).scalars().all()
         posts = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id.in_(unit_ids)))).scalars().all()
         assert final.status == ProductionJobStatus.COMPLETED.value
+        assert final.started_at is not None
+        assert final.completed_at is not None
+        assert final.updated_at is not None
         assert final.completed_items == 3
         assert final.failed_items == 0
         assert [item.status for item in items] == [ProductionJobItemStatus.COMPLETED.value] * 3
@@ -109,6 +112,10 @@ async def test_failure_is_isolated_and_later_items_continue():
             select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id).order_by(ProductionJobItemModel.position)
         )).scalars().all()
         assert final.status == ProductionJobStatus.FAILED.value
+        assert final.started_at is not None
+        assert final.completed_at is not None
+        assert final.updated_at is not None
+        assert final.error_code == "PRODUCTION_ITEMS_FAILED"
         assert final.completed_items == 3
         assert final.failed_items == 1
         assert [item.status for item in items] == ["COMPLETED", "FAILED", "COMPLETED", "COMPLETED"]
