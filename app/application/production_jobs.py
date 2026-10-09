@@ -106,6 +106,13 @@ async def create_production_job(
     topic_id: UUID | None = None,
     knowledge_unit_ids: list[UUID] | None = None,
 ) -> ProductionJobModel:
+    # Resolve once before persisting the job. The resolver reads one committed version.
+    resolved_prompt = await ControlPlaneResolver().resolve_prompt(
+        session, EDITORIAL_PROMPT_KEY
+    )
+    if not resolved_prompt.body.strip():
+        raise LookupError(f"Published editorial prompt '{EDITORIAL_PROMPT_KEY}' is empty.")
+
     units = await _resolve_units(
         session,
         source_id,
@@ -119,6 +126,9 @@ async def create_production_job(
         scope=scope.value,
         status=ProductionJobStatus.QUEUED.value,
         total_items=len(units),
+        editorial_prompt_key=resolved_prompt.key,
+        editorial_prompt_version=resolved_prompt.version,
+        editorial_prompt_body=resolved_prompt.body,
     )
     session.add(job)
     for position, unit in enumerate(units, start=1):
@@ -404,6 +414,20 @@ class ProductionJobRunner:
             return
 
         try:
+            # Legacy jobs have no provable prompt provenance; never guess a version.
+            async with SessionFactory() as session:
+                job = (await session.execute(
+                    select(ProductionJobModel).where(ProductionJobModel.id == job_id)
+                )).scalar_one_or_none()
+                if job is None:
+                    return
+                pinned_prompt = job.editorial_prompt_body
+                if not job.editorial_prompt_key or job.editorial_prompt_version is None or not pinned_prompt:
+                    raise LookupError(
+                        "Production job has no pinned editorial prompt; "
+                        "historical prompt provenance cannot be established."
+                    )
+
             while True:
                 item_id = await _claim_next_item(job_id)
                 if item_id is None:
@@ -431,7 +455,9 @@ class ProductionJobRunner:
 
                 try:
                     async with SessionFactory() as session:
-                        post = await self.producer.execute(session, knowledge_unit_id)
+                        post = await self.producer.execute(
+                            session, knowledge_unit_id, system_prompt=pinned_prompt
+                        )
                         artifact = post_to_artifact(post)
                     await _complete_item(job_id, item_id, artifact.id)
                     await _update_progress(job_id, None)
@@ -454,7 +480,11 @@ class ProductionJobRunner:
                     .where(ProductionJobModel.id == job_id)
                     .values(
                         status=ProductionJobStatus.FAILED.value,
-                        error_code="PRODUCTION_RUNNER_ERROR",
+                        error_code=(
+                            "PRODUCTION_PROMPT_UNPINNED"
+                            if isinstance(exc, LookupError) and "pinned editorial prompt" in str(exc)
+                            else "PRODUCTION_RUNNER_ERROR"
+                        ),
                         error_message=str(exc),
                         current_item_id=None,
                         updated_at=datetime.now(timezone.utc),
