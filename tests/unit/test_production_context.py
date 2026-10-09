@@ -60,6 +60,24 @@ def test_resolved_production_context_rejects_unknown_schema_and_missing_ids():
         ResolvedProductionContext.from_dict(value)
 
 
+def test_schema_v2_pins_recipe_key_version_and_stages():
+    from app.domain.recipes import BOOK_TO_TELEGRAM_POST
+
+    prompt = ResolvedPrompt(
+        key="editorial.drafter",
+        version=4,
+        body="prompt",
+        template_id=UUID("00000000-0000-0000-0000-000000000001"),
+        version_id=UUID("00000000-0000-0000-0000-000000000002"),
+    )
+    context = ResolvedProductionContext.capture(prompt, recipe=BOOK_TO_TELEGRAM_POST)
+    restored = ResolvedProductionContext.from_dict(context.to_dict())
+
+    assert restored.schema_version == 2
+    assert restored.recipe == BOOK_TO_TELEGRAM_POST
+    assert restored.recipe.to_dict()["stages"][0]["capability_key"] == "produce_post"
+
+
 def test_legacy_backfill_origin_is_distinct_from_runtime_resolution():
     value = {
         "schema_version": 1,
