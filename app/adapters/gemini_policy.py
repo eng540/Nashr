@@ -419,8 +419,8 @@ def retry_after_seconds(exc: Exception) -> float | None:
             import re
 
             match = re.search(
-                r"(?:retry(?:\s+in)?|retryDelay\s*[=:]?\s*[\\"']?)"
-                r"(?:\s*[:=]?\s*[\\"']?)(\d+(?:\.\d+)?)\s*s",
+                r"(?:retry(?:\s+in)?|retryDelay\s*[=:]?\s*)"
+                r"(?:\s*[:=]?\s*)(\d+(?:\.\d+)?)\s*s",
                 value,
                 re.IGNORECASE,
             )
