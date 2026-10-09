@@ -455,7 +455,7 @@ class ProductionJobRunner:
                     # existing path was BOOK_TO_TELEGRAM_POST, so retain that compatibility route.
                     pinned_recipe = BOOK_TO_TELEGRAM_POST
 
-                if resolved_context.recipe is not None:
+                if resolved_context is not None and resolved_context.recipe is not None:
                     pinned_recipe = resolved_context.recipe
                 registered_recipe = self.engine.recipes.resolve(pinned_recipe.key, pinned_recipe.version)
                 if registered_recipe != pinned_recipe:
