@@ -6,7 +6,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0021_output_contract_control_plane"
+revision: str = "0021_output_contracts"
 down_revision: Union[str, Sequence[str], None] = "0020_identity_control_plane"
 branch_labels = None
 depends_on = None
