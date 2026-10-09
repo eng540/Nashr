@@ -33,7 +33,13 @@ class ProducePost:
         self.drafter = drafter
         self.resolver = resolver or ControlPlaneResolver()
 
-    async def execute(self, session: AsyncSession, knowledge_unit_id: UUID) -> Post:
+    async def execute(
+        self,
+        session: AsyncSession,
+        knowledge_unit_id: UUID,
+        *,
+        system_prompt: str | None = None,
+    ) -> Post:
         existing = await self._find_existing(session, knowledge_unit_id)
         if existing is not None:
             return _to_domain(existing)
@@ -64,7 +70,8 @@ class ProducePost:
                 # PDF parsing errors must propagate rather than masquerade as success.
                 pdf_slice = None
 
-        system_prompt = (await self.resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)).body
+        if system_prompt is None:
+            system_prompt = (await self.resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)).body
 
         content = await self.drafter.draft(
             title=unit.title,
