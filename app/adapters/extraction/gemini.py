@@ -14,6 +14,8 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from pypdf import PdfReader, PdfWriter
 
+from app.application.pdf_warnings import quiet_known_pypdf_warnings
+
 from app.adapters.gemini_policy import (
     GeminiOperationError,
     classify_gemini_error,
@@ -547,13 +549,8 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
     @staticmethod
     @contextmanager
     def _quiet_pypdf_warnings():
-        pdf_logger = logging.getLogger("pypdf._reader")
-        previous_level = pdf_logger.level
-        pdf_logger.setLevel(logging.ERROR)
-        try:
+        with quiet_known_pypdf_warnings():
             yield
-        finally:
-            pdf_logger.setLevel(previous_level)
 
     @staticmethod
     def _bounded_pdf(reader: PdfReader, page_start: int, page_end: int) -> bytes:
