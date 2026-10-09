@@ -17,10 +17,11 @@ class ProductionRecipeRepository:
         )
         return list(result.scalars().all())
 
-    async def get_recipe(self, key: str) -> ProductionRecipeModel | None:
-        result = await self.session.execute(
-            select(ProductionRecipeModel).where(ProductionRecipeModel.key == key)
-        )
+    async def get_recipe(self, key: str, *, for_update: bool = False) -> ProductionRecipeModel | None:
+        statement = select(ProductionRecipeModel).where(ProductionRecipeModel.key == key)
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
     async def get_versions(self, key: str) -> list[ProductionRecipeVersionModel]:
@@ -90,7 +91,7 @@ class ProductionRecipeRepository:
         key: str,
         stages: list[dict[str, object]],
     ) -> ProductionRecipeVersionModel:
-        recipe = await self.get_recipe(key)
+        recipe = await self.get_recipe(key, for_update=True)
         if recipe is None:
             raise LookupError("Production recipe not found.")
         latest = (
@@ -117,6 +118,9 @@ class ProductionRecipeRepository:
         version: int,
         stages: list[dict[str, object]],
     ) -> ProductionRecipeVersionModel:
+        recipe = await self.get_recipe(key, for_update=True)
+        if recipe is None:
+            raise LookupError("Production recipe not found.")
         row = await self._get_version_row(key, version)
         if row is None:
             raise LookupError("Production recipe version not found.")
@@ -127,14 +131,14 @@ class ProductionRecipeRepository:
         return row
 
     async def publish(self, key: str, version: int) -> ProductionRecipeVersionModel:
+        recipe = await self.get_recipe(key, for_update=True)
+        if recipe is None:
+            raise LookupError("Production recipe not found.")
         target = await self._get_version_row(key, version)
         if target is None:
             raise LookupError("Production recipe version not found.")
         if target.status != "DRAFT":
             raise ValueError("Only DRAFT recipe versions can be published.")
-        recipe = await self.get_recipe(key)
-        if recipe is None:
-            raise LookupError("Production recipe not found.")
         await self.session.execute(
             update(ProductionRecipeVersionModel)
             .where(
@@ -148,6 +152,9 @@ class ProductionRecipeRepository:
         return target
 
     async def archive(self, key: str, version: int) -> ProductionRecipeVersionModel:
+        recipe = await self.get_recipe(key, for_update=True)
+        if recipe is None:
+            raise LookupError("Production recipe not found.")
         row = await self._get_version_row(key, version)
         if row is None:
             raise LookupError("Production recipe version not found.")
