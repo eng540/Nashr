@@ -372,7 +372,7 @@ def http_status_for(code: str) -> int:
 
 
 def retry_after_seconds(exc: Exception) -> float | None:
-    """Read a retry delay from HTTP headers or Gemini's structured error body."""
+    """Read a provider retry hint from HTTP headers, structured details, or text."""
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None)
     if headers is None:
@@ -388,9 +388,46 @@ def retry_after_seconds(exc: Exception) -> float | None:
             except (TypeError, ValueError):
                 pass
 
-    # Google API errors may carry google.rpc.RetryInfo in details rather than
-    # an HTTP Retry-After header. SDK versions expose the response body through
-    # different attributes, so inspect structured details and the message.
+    def parse_duration(value: Any) -> float | None:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return max(0.0, float(value))
+        if isinstance(value, str):
+            import re
+
+            match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*s?\s*", value)
+            if match:
+                return max(0.0, float(match.group(1)))
+        return None
+
+    def find_hint(value: Any) -> float | None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                normalized_key = str(key).replace("_", "").lower()
+                if normalized_key in {"retrydelay", "retryafter"}:
+                    parsed = parse_duration(child)
+                    if parsed is not None:
+                        return parsed
+                nested = find_hint(child)
+                if nested is not None:
+                    return nested
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                nested = find_hint(child)
+                if nested is not None:
+                    return nested
+        elif isinstance(value, str):
+            import re
+
+            match = re.search(
+                r"(?:retry(?:\s+in)?|retryDelay\s*[=:]?\s*[\\"']?)"
+                r"(?:\s*[:=]?\s*[\\"']?)(\d+(?:\.\d+)?)\s*s",
+                value,
+                re.IGNORECASE,
+            )
+            if match:
+                return max(0.0, float(match.group(1)))
+        return None
+
     candidates: list[Any] = [
         getattr(exc, "details", None),
         getattr(exc, "message", None),
@@ -408,49 +445,8 @@ def retry_after_seconds(exc: Exception) -> float | None:
             except Exception:
                 pass
 
-    def find_retry_delay(value: Any) -> float | None:
-        if isinstance(value, Mapping):
-            for key, child in value.items():
-                if str(key).replace("_", "").lower() in {"retrydelay", "retryafter"}:
-                    parsed = parse_duration(child)
-                    if parsed is not None:
-                        return parsed
-                nested = find_retry_delay(child)
-                if nested is not None:
-                    return nested
-        elif isinstance(value, (list, tuple)):
-            for child in value:
-                nested = find_retry_delay(child)
-                if nested is not None:
-                    return nested
-        elif isinstance(value, str):
-            # Covers protobuf duration strings (e.g. "13.8s") and the
-            # human-readable quota message ("Please retry in 13.8s").
-            match = re.search(r"(?:retry(?:\s+in)?|retryDelay\s*[=:]?\s*[\"']?)(?:\s*[:=]?\s*[\"']?)(\d+(?:\.\d+)?)\s*s", value, re.IGNORECASE)
-            if match:
-                return max(0.0, float(match.group(1)))
-            stripped = value.strip()
-            duration = re.fullmatch(r"(\d+(?:\.\d+)?)s", stripped)
-            if duration:
-                return max(0.0, float(duration.group(1)))
-        return None
-
-    def parse_duration(value: Any) -> float | None:
-        if isinstance(value, (int, float)):
-            return max(0.0, float(value))
-        if isinstance(value, str):
-            stripped = value.strip()
-            duration = re.fullmatch(r"(\d+(?:\.\d+)?)s", stripped)
-            if duration:
-                return max(0.0, float(duration.group(1)))
-            try:
-                return max(0.0, float(stripped))
-            except ValueError:
-                return None
-        return None
-
     for candidate in candidates:
-        result = find_retry_delay(candidate)
+        result = find_hint(candidate)
         if result is not None:
             return result
     return None
