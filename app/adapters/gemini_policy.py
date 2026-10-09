@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -371,24 +372,88 @@ def http_status_for(code: str) -> int:
 
 
 def retry_after_seconds(exc: Exception) -> float | None:
-    """Read a ``Retry-After`` hint from a structured provider error, if present."""
+    """Read a retry delay from HTTP headers or Gemini's structured error body."""
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None)
     if headers is None:
         headers = getattr(exc, "headers", None)
-    if headers is None:
-        return None
-    try:
-        raw = headers.get("retry-after") or headers.get("Retry-After")
-    except Exception:  # pragma: no cover - defensive fallback only
-        return None
-    if raw is None:
-        return None
-    try:
-        return max(0.0, float(str(raw).strip()))
-    except (TypeError, ValueError):
+    if headers is not None:
+        try:
+            raw = headers.get("retry-after") or headers.get("Retry-After")
+        except Exception:  # pragma: no cover - defensive fallback only
+            raw = None
+        if raw is not None:
+            try:
+                return max(0.0, float(str(raw).strip()))
+            except (TypeError, ValueError):
+                pass
+
+    # Google API errors may carry google.rpc.RetryInfo in details rather than
+    # an HTTP Retry-After header. SDK versions expose the response body through
+    # different attributes, so inspect structured details and the message.
+    candidates: list[Any] = [
+        getattr(exc, "details", None),
+        getattr(exc, "message", None),
+        str(exc),
+    ]
+    if response is not None:
+        for attribute in ("text", "content"):
+            value = getattr(response, attribute, None)
+            if value:
+                candidates.append(value)
+        json_method = getattr(response, "json", None)
+        if callable(json_method):
+            try:
+                candidates.append(json_method())
+            except Exception:
+                pass
+
+    def find_retry_delay(value: Any) -> float | None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                if str(key).replace("_", "").lower() in {"retrydelay", "retryafter"}:
+                    parsed = parse_duration(child)
+                    if parsed is not None:
+                        return parsed
+                nested = find_retry_delay(child)
+                if nested is not None:
+                    return nested
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                nested = find_retry_delay(child)
+                if nested is not None:
+                    return nested
+        elif isinstance(value, str):
+            # Covers protobuf duration strings (e.g. "13.8s") and the
+            # human-readable quota message ("Please retry in 13.8s").
+            match = re.search(r"(?:retry(?:\\s+in)?|retryDelay\\s*[=:]?\\s*[\"']?)(?:\\s*[:=]?\\s*[\"']?)(\\d+(?:\\.\\d+)?)\\s*s", value, re.IGNORECASE)
+            if match:
+                return max(0.0, float(match.group(1)))
+            stripped = value.strip()
+            duration = re.fullmatch(r"(\\d+(?:\\.\\d+)?)s", stripped)
+            if duration:
+                return max(0.0, float(duration.group(1)))
         return None
 
+    def parse_duration(value: Any) -> float | None:
+        if isinstance(value, (int, float)):
+            return max(0.0, float(value))
+        if isinstance(value, str):
+            stripped = value.strip()
+            duration = re.fullmatch(r"(\\d+(?:\\.\\d+)?)s", stripped)
+            if duration:
+                return max(0.0, float(duration.group(1)))
+            try:
+                return max(0.0, float(stripped))
+            except ValueError:
+                return None
+        return None
+
+    for candidate in candidates:
+        result = find_retry_delay(candidate)
+        if result is not None:
+            return result
+    return None
 
 # ---------------------------------------------------------------------------
 # Canonical log events (identical field names and event names in every layer)
@@ -504,7 +569,7 @@ def generate_content(
                     delay = policy.delay_for(attempt)
                     hint = retry_after_seconds(exc)
                     if hint is not None:
-                        delay = max(delay, min(hint, policy.backoff_max_seconds))
+                        delay = max(delay, hint)
                     if deadline is not None:
                         remaining = deadline - now()
                         if remaining <= 0:
