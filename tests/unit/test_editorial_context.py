@@ -3,7 +3,8 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from pypdf import PdfReadError, PdfReader, PdfWriter
+from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PdfReadError
 
 import app.application.editorial_context as editorial_context
 from app.adapters.extraction.gemini import GeminiBookMapper
