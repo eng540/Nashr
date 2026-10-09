@@ -25,7 +25,7 @@ class PinnedPrompt:
             UUID(self.version_id)
         except (TypeError, ValueError) as exc:
             raise ValueError("Pinned prompt requires valid template and version IDs.") from exc
-        if not self.key.strip() or self.version < 1 or not self.body.strip():
+        if not self.key.strip() or isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1 or not self.body.strip():
             raise ValueError("Pinned prompt key, positive version, and body are required.")
 
     def to_dict(self) -> dict[str, object]:
@@ -90,7 +90,7 @@ class ResolvedProductionContext:
         )
 
     def __post_init__(self) -> None:
-        if self.schema_version not in SUPPORTED_CONTEXT_SCHEMA_VERSIONS:
+        if isinstance(self.schema_version, bool) or not isinstance(self.schema_version, int) or self.schema_version not in SUPPORTED_CONTEXT_SCHEMA_VERSIONS:
             raise ValueError(f"Unsupported resolved production context schema version: {self.schema_version}.")
         if self.origin not in (RUNTIME_RESOLUTION, LEGACY_PIN_BACKFILL):
             raise ValueError("Resolved context origin is invalid.")
