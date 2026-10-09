@@ -6,7 +6,8 @@ from sqlalchemy import select
 
 from app.application.production_jobs import ProductionJobRunner, create_production_job, resume_production_job
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
-from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel
+from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
+from app.infrastructure.database.control_plane import PromptTemplateRepository
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -39,10 +40,12 @@ async def _fixture(materials: int = 5, topics: int = 2):
 class RecordingDrafter:
     def __init__(self, fail_titles: set[str] | None = None):
         self.calls = []
+        self.prompts = []
         self.fail_titles = fail_titles or set()
 
     async def draft(self, *, title: str, content: str, source_name: str, pdf_slice: bytes | None = None, system_prompt: str | None = None) -> str:
         self.calls.append(title)
+        self.prompts.append(system_prompt)
         if title in self.fail_titles:
             raise RuntimeError(f"failed: {title}")
         return f"POST::{title}"
@@ -258,3 +261,68 @@ async def test_invalid_source_pdf_fails_job_instead_of_using_text_fallback(tmp_p
         assert item.error_code == "PRODUCTION_ERROR"
         assert any(marker in (item.error_message or "") for marker in ("EOF marker", "PDF", "Stream has ended unexpectedly"))
         assert posts == []
+
+
+async def test_production_job_pins_prompt_across_publish_retry_and_new_job():
+    source_id, _, unit_ids = await _fixture(materials=4, topics=1)
+    async with SessionFactory() as session:
+        template = PromptTemplateModel(
+            id=uuid4(), key="editorial.drafter", name="Editorial Drafter",
+            purpose="Draft posts",
+        )
+        session.add(template)
+        await session.flush()
+        session.add(PromptTemplateVersionModel(
+            id=uuid4(), prompt_template_id=template.id, version=1,
+            body="prompt-v1", status="DRAFT",
+        ))
+        await session.flush()
+        await PromptTemplateRepository(session).publish("editorial.drafter", 1)
+        await session.commit()
+
+        old_job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        assert old_job.editorial_prompt_key == "editorial.drafter"
+        assert old_job.editorial_prompt_version == 1
+        assert old_job.editorial_prompt_body == "prompt-v1"
+
+        session.add(PromptTemplateVersionModel(
+            id=uuid4(), prompt_template_id=template.id, version=2,
+            body="draft-v2-must-not-run", status="DRAFT",
+        ))
+        await session.commit()
+        # A draft does not affect the currently published production prompt.
+        draft_job = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=[unit_ids[3]],
+        )
+        assert draft_job.editorial_prompt_version == 1
+        await PromptTemplateRepository(session).publish("editorial.drafter", 2)
+        await session.commit()
+
+        new_job = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=[unit_ids[3]],
+        )
+        assert new_job.editorial_prompt_version == 2
+        assert new_job.editorial_prompt_body == "draft-v2-must-not-run"
+
+    drafter = RecordingDrafter(fail_titles={"Material 2"})
+    await ProductionJobRunner(drafter).run(old_job.id)
+    assert drafter.prompts == ["prompt-v1", "prompt-v1", "prompt-v1"]
+
+    # Retry the failed item after v2 is published. The old job must still use v1.
+    async with SessionFactory() as session:
+        await resume_production_job(session, old_job.id, retry_failed=True)
+    retry_drafter = RecordingDrafter()
+    await ProductionJobRunner(retry_drafter).run(old_job.id)
+    assert retry_drafter.prompts == ["prompt-v1"]
+    async with SessionFactory() as session:
+        pinned = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == old_job.id)
+        )).scalar_one()
+        assert pinned.editorial_prompt_version == 1
+        assert pinned.editorial_prompt_body == "prompt-v1"
+
+    new_drafter = RecordingDrafter()
+    await ProductionJobRunner(new_drafter).run(new_job.id)
+    assert new_drafter.prompts == ["draft-v2-must-not-run"]
