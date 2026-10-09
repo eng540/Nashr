@@ -61,7 +61,7 @@ def upgrade() -> None:
             {"key": "produce-post", "capability_key": "produce_post", "capability_version": 1}
         ]
     }
-    op.execute(
+    op.get_bind().execute(
         sa.text("""
             INSERT INTO production_recipe_versions (id, recipe_id, version, definition, status)
             VALUES (
