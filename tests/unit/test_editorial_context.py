@@ -88,3 +88,20 @@ def test_gemini_book_mapper_keeps_scoped_warning_behavior(
     assert "A different pypdf warning." in caplog.text
     assert "Object 10 0 not defined." in caplog.text
     assert pdf_logger.level == previous_level
+
+
+def test_suppression_does_not_hide_warning_from_another_thread(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    pdf_logger = logging.getLogger("pypdf._reader")
+
+    with caplog.at_level(logging.WARNING, logger="pypdf._reader"):
+        with editorial_context.quiet_known_pypdf_warnings():
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                executor.submit(
+                    pdf_logger.warning, "Object 31 0 not defined."
+                ).result()
+
+    assert "Object 31 0 not defined." in caplog.text
