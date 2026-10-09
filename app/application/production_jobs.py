@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.application.control_plane import ControlPlaneResolver, EDITORIAL_PROMPT_KEY
+from app.application.identity_context import compose_editorial_prompt
 from app.domain.production_jobs import (
     ProductionJobItemStatus,
     ProductionJobStatus,
@@ -111,6 +112,7 @@ async def create_production_job(
     topic_id: UUID | None = None,
     knowledge_unit_ids: list[UUID] | None = None,
     recipe_key: str = BOOK_TO_TELEGRAM_POST.key,
+    identity_key: str | None = None,
 ) -> ProductionJobModel:
     # Resolve once before persisting the job. The resolver reads one committed version.
     resolver = ControlPlaneResolver()
@@ -118,6 +120,11 @@ async def create_production_job(
     if not resolved_prompt.body.strip():
         raise LookupError(f"Published editorial prompt '{EDITORIAL_PROMPT_KEY}' is empty.")
     resolved_recipe = await resolver.resolve_recipe(session, recipe_key)
+    resolved_identity = (
+        await resolver.resolve_identity(session, identity_key)
+        if identity_key is not None
+        else None
+    )
 
     units = await _resolve_units(
         session,
@@ -136,7 +143,7 @@ async def create_production_job(
         editorial_prompt_version=resolved_prompt.version,
         editorial_prompt_body=resolved_prompt.body,
         resolved_context=ResolvedProductionContext.capture(
-            resolved_prompt, recipe=resolved_recipe
+            resolved_prompt, recipe=resolved_recipe, identity=resolved_identity
         ).to_dict(),
     )
     session.add(job)
@@ -464,6 +471,8 @@ class ProductionJobRunner:
                 if resolved_context is not None and resolved_context.recipe is not None:
                     pinned_recipe = resolved_context.recipe
                 self.engine.validate_recipe(pinned_recipe)
+                if resolved_context is not None:
+                    pinned_prompt = compose_editorial_prompt(pinned_prompt, resolved_context.identity)
 
             while True:
                 item_id = await _claim_next_item(job_id)
@@ -530,7 +539,9 @@ class ProductionJobRunner:
                     .values(
                         status=ProductionJobStatus.FAILED.value,
                         error_code=(
-                            "PRODUCTION_RECIPE_UNAVAILABLE"
+                            "PRODUCTION_IDENTITY_UNAVAILABLE"
+                            if isinstance(exc, LookupError) and "identity" in str(exc).lower()
+                            else "PRODUCTION_RECIPE_UNAVAILABLE"
                             if isinstance(exc, LookupError) and "recipe" in str(exc).lower()
                             else "PRODUCTION_CONTEXT_INVALID"
                             if isinstance(exc, LookupError) and "resolved context" in str(exc).lower()

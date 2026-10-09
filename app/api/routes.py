@@ -61,6 +61,7 @@ class ProductionJobRequest(BaseModel):
     topic_id: UUID | None = None
     knowledge_unit_ids: list[UUID] = Field(default_factory=list)
     recipe_key: str = Field(default="BOOK_TO_TELEGRAM_POST", min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
+    identity_key: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
 
 
 class ProductionJobResumeRequest(BaseModel):
@@ -554,6 +555,7 @@ async def create_production_job_route(
             payload.topic_id,
             payload.knowledge_unit_ids,
             recipe_key=payload.recipe_key,
+            identity_key=payload.identity_key,
         )
         background_tasks.add_task(run_production_job, job.id)
         return await _load_production_job_payload(session, job)

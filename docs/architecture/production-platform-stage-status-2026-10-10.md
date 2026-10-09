@@ -4,32 +4,20 @@ This is an additive implementation record. It does not replace earlier baseline,
 
 ## Verified baseline
 
-- Main commit: `6f93a01b88ea3c3cb05c66d4cc7eec5fc2d00896`.
+- Recipe Control Plane baseline commit: `6f93a01b88ea3c3cb05c66d4cc7eec5fc2d00896`. Identity lifecycle implementation is recorded in PR #83.
 - Recipe Control Plane is persisted and versioned in PostgreSQL.
 - The CI run for that exact main commit passed migrations, backend tests, frontend typecheck, frontend unit tests, production build, and browser E2E.
 - Duplicate PR #81 was closed because its change was already present on main; it was not merged.
 
-## Identity Control Plane — current change
+## Identity Control Plane and runtime — current implementation
 
-This stage adds a persisted, versioned editorial identity definition with:
-- stable identity key and descriptive metadata;
-- structured purpose, audience, voice, tone, principles, objectives, and constraints;
-- DRAFT / PUBLISHED / ARCHIVED lifecycle;
-- immutable published versions and one active published version per identity;
-- API lifecycle tests and a database migration.
+The identity lifecycle API persists structured purpose, audience, voice, tone, principles, objectives, and constraints with DRAFT / PUBLISHED / ARCHIVED versioning and a database-enforced single published version.
 
-Identity is kept distinct from recipe, prompt template, policy, and output contract.
+The runtime integration resolves an explicitly selected published identity at ProductionJob creation, pins its IDs/version/full definition in resolved-context schema v3, and composes the pinned identity into the model prompt. The Content Factory now exposes a selector for published identities. If no identity is selected, schema v2 and the existing prompt behavior remain unchanged.
 
-## Explicit completion boundary
+Acceptance tests cover v3 snapshot round-tripping, required recipe+identity, and version immutability: publishing identity v2 must not alter an existing job's v1 snapshot or prompt. Schema-v1/v2 contexts and the existing Post → Review → Scheduling → Publication → Telegram path remain compatible.
 
-This change alone does **not** mean Identity has influenced generated content. Runtime integration is still required:
-1. Resolve the selected identity when creating a ProductionJob.
-2. Pin identity ID, version ID, and full validated definition in a new resolved-context schema version.
-3. Make the existing production capability consume the pinned identity through a provider-neutral prompt/context composition boundary.
-4. Prove that publishing a new identity version does not change an existing job's output context or retry behavior.
-5. Preserve schema-v1/v2 contexts and the existing Post → Review → Scheduling → Publication → Telegram path.
-
-Do not describe this foundation as complete until those runtime acceptance checks pass.
+This stage should only be called complete if the latest CI passes, including browser E2E.
 
 ## Remaining Control Plane layers
 

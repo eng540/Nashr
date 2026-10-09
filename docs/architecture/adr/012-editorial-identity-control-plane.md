@@ -17,11 +17,15 @@ The first implementation exposes a Control Plane API for listing and inspecting 
 
 ## Runtime boundary
 
-This stage establishes the durable identity contract and lifecycle. It does **not** claim the production runner already consumes or pins identity versions. Runtime resolution and immutable identity snapshots in ProductionJob are the next required integration gate. Until that is implemented, an identity configured through this API does not alter production output.
+The runtime integration adds resolved-context schema v3. When a caller selects an identity, new ProductionJobs resolve the active PUBLISHED version once and snapshot identity ID, version-row ID, key, version, and the complete validated definition alongside the recipe and prompt. The Content Factory exposes the published identities and lets the operator select one for a production run.
+
+The production runner composes only the identity snapshot stored on the job into the editorial prompt. It does not re-resolve the current identity during retries. Jobs created without an identity retain schema v2 and the existing prompt behavior; schema-v1/v2 historical snapshots remain readable.
+
+Acceptance requires tests proving that publishing a replacement identity leaves an existing job's snapshot and effective prompt unchanged. This still does not mean Policy or Output Contract is implemented.
 
 ## Consequences
 
-- Multiple editorial purposes can be configured without changing the generic engine's orchestration code.
-- A later runtime change must pin the exact identity version in the ProductionJob's resolved context so publishing a new version cannot change retries or existing jobs.
+- Multiple editorial purposes can be configured and selected without adding identity-specific orchestration branches to the generic engine.
+- Identity data is passed through a provider-neutral composition boundary; provider adapters remain outside the identity domain.
 - Policy and Output Contract remain separate entities and are not implied by this identity model.
 - Existing BOOK_TO_TELEGRAM_POST, Post review, scheduling, publication, and Telegram distribution remain unchanged.

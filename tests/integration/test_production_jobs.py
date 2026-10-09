@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.application.production_jobs import ProductionJobRunner, create_production_job, resume_production_job
 from app.application.control_plane import PromptTemplateService
 from app.application.recipe_control_plane import ProductionRecipeControlPlaneService
+from app.application.identity_control_plane import EditorialIdentityControlPlaneService
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
@@ -449,3 +450,62 @@ async def test_legacy_job_without_prompt_provenance_fails_without_active_fallbac
         )).scalar_one()
         assert failed.status == ProductionJobStatus.FAILED.value
         assert failed.error_code == "PRODUCTION_PROMPT_UNPINNED"
+
+
+async def test_job_retry_uses_original_identity_version_after_replacement_is_published():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    identity_definition_v1 = {
+        "purpose": "Preserve Arabic literary heritage",
+        "audience": "Readers of Arabic literature",
+        "voice": "Rooted, dignified, and clear",
+        "tone": "Warm and precise",
+        "principles": ["Stay faithful to source material"],
+        "objectives": ["Encourage close reading"],
+        "constraints": ["Never fabricate quotations"],
+    }
+    identity_definition_v2 = {
+        **identity_definition_v1,
+        "voice": "Modern and conversational",
+    }
+    async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "base prompt")
+        identities = EditorialIdentityControlPlaneService(session)
+        await identities.create_identity(
+            "TEST_RUN_IDENTITY", "Test Run Identity", "Test production identity pinning.",
+            identity_definition_v1,
+        )
+        await identities.publish("TEST_RUN_IDENTITY", 1)
+        job = await create_production_job(
+            session, source_id, ProductionScope.SOURCE, identity_key="TEST_RUN_IDENTITY"
+        )
+        original = job.resolved_context.copy()
+        context = ResolvedProductionContext.from_dict(original)
+        assert context.schema_version == 3
+        assert context.identity is not None
+        assert context.identity.version == 1
+        assert context.identity.definition["voice"] == "Rooted, dignified, and clear"
+
+    drafter = RecordingDrafter({"Material 1"})
+    await ProductionJobRunner(drafter).run(job.id)
+    assert len(drafter.prompts) == 1
+    assert "Identity version: 1" in drafter.prompts[0]
+    assert "Rooted, dignified, and clear" in drafter.prompts[0]
+
+    async with SessionFactory() as session:
+        identities = EditorialIdentityControlPlaneService(session)
+        await identities.create_draft("TEST_RUN_IDENTITY", identity_definition_v2)
+        await identities.publish("TEST_RUN_IDENTITY", 2)
+        persisted_job = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+        assert persisted_job.resolved_context == original
+        await resume_production_job(session, job.id, retry_failed=True)
+
+    drafter.fail_titles.clear()
+    await ProductionJobRunner(drafter).run(job.id)
+    assert len(drafter.prompts) == 2
+    for prompt in drafter.prompts:
+        assert "Identity key: TEST_RUN_IDENTITY" in prompt
+        assert "Identity version: 1" in prompt
+        assert "Rooted, dignified, and clear" in prompt
+        assert "Modern and conversational" not in prompt
