@@ -565,7 +565,7 @@ def generate_content(
                     delay = policy.delay_for(attempt)
                     hint = retry_after_seconds(exc)
                     if hint is not None:
-                        delay = max(delay, hint)
+                        delay = max(delay, min(hint, policy.backoff_max_seconds))
                     if deadline is not None:
                         remaining = deadline - now()
                         if remaining <= 0:
