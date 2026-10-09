@@ -280,7 +280,10 @@ async def test_production_job_pins_prompt_across_publish_retry_and_new_job():
         await PromptTemplateRepository(session).publish("editorial.drafter", 1)
         await session.commit()
 
-        old_job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        old_job = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=unit_ids[:3],
+        )
         assert old_job.editorial_prompt_key == "editorial.drafter"
         assert old_job.editorial_prompt_version == 1
         assert old_job.editorial_prompt_body == "prompt-v1"
