@@ -426,7 +426,7 @@ def retry_after_seconds(exc: Exception) -> float | None:
         elif isinstance(value, str):
             # Covers protobuf duration strings (e.g. "13.8s") and the
             # human-readable quota message ("Please retry in 13.8s").
-            match = re.search(r"(?:retry(?:\\s+in)?|retryDelay\\s*[=:]?\\s*[\"']?)(?:\\s*[:=]?\\s*[\"']?)(\\d+(?:\\.\\d+)?)\\s*s", value, re.IGNORECASE)
+            match = re.search(r"(?:retry(?:\s+in)?|retryDelay\s*[=:]?\s*["']?)(?:\s*[:=]?\s*["']?)(\d+(?:\.\d+)?)\s*s", value, re.IGNORECASE)
             if match:
                 return max(0.0, float(match.group(1)))
             stripped = value.strip()
