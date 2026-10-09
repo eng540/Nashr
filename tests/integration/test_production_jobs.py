@@ -397,6 +397,7 @@ async def test_legacy_job_without_prompt_provenance_fails_without_active_fallbac
         job.editorial_prompt_key = None
         job.editorial_prompt_version = None
         job.editorial_prompt_body = None
+        job.resolved_context = None
         await session.commit()
 
     drafter = RecordingDrafter()
