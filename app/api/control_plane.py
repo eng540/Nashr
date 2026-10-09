@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.control_plane import PromptTemplateService
@@ -198,6 +198,8 @@ async def archive_recipe_version(key: str, version: int, session: AsyncSession =
 
 
 class IdentityDefinitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     purpose: str = Field(min_length=1, max_length=10000)
     audience: str = Field(min_length=1, max_length=5000)
     voice: str = Field(min_length=1, max_length=5000)
@@ -208,6 +210,8 @@ class IdentityDefinitionRequest(BaseModel):
 
 
 class IdentityCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     name: str = Field(min_length=1, max_length=300)
     purpose: str = Field(min_length=1, max_length=2000)
@@ -215,6 +219,8 @@ class IdentityCreateRequest(BaseModel):
 
 
 class IdentityVersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     definition: IdentityDefinitionRequest
 
 
