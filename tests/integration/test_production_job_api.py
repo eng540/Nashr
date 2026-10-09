@@ -57,7 +57,10 @@ async def test_create_and_read_production_job_api(monkeypatch: pytest.MonkeyPatc
         assert status_payload["resolved_prompt"]["key"]
         assert status_payload["resolved_prompt"]["version"] >= 1
         assert status_payload["resolved_context"]["available"] is True
-        assert status_payload["resolved_context"]["schema_version"] == 1
+        assert status_payload["resolved_context"]["schema_version"] == 2
+        assert status_payload["resolved_context"]["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST"
+        assert status_payload["resolved_context"]["recipe"]["version"] == 1
+        assert status_payload["resolved_context"]["recipe"]["stages"][0]["capability_key"] == "produce_post"
         assert status_payload["resolved_context"]["origin"] == "RUNTIME_RESOLUTION"
         assert status_payload["resolved_context"]["prompt_template"]["key"] == status_payload["resolved_prompt"]["key"]
         assert status_payload["resolved_context"]["prompt_template"]["version"] == status_payload["resolved_prompt"]["version"]
