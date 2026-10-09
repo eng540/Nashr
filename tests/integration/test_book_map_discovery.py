@@ -1,4 +1,7 @@
+from io import BytesIO
+
 import pytest
+from pypdf import PdfWriter
 from sqlalchemy import select
 from uuid import uuid4
 
@@ -10,11 +13,19 @@ from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel, 
 from app.infrastructure.database.session import SessionFactory
 
 
+def _valid_pdf_bytes() -> bytes:
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 @pytest.mark.parametrize("count", [0, 1, 5, 6, 17])
 async def test_hierarchical_discovery_supports_zero_and_arbitrary_counts(count: int) -> None:
     source_id = uuid4()
     async with SessionFactory() as session:
-        session.add(SourceModel(id=source_id, filename="book.pdf", mime_type="application/pdf", storage_path="./storage/test/book.pdf", size_bytes=10, status="STORED", content_sha256="test-hash", file_payload=b"%PDF-test"))
+        session.add(SourceModel(id=source_id, filename="book.pdf", mime_type="application/pdf", storage_path="./storage/test/book.pdf", size_bytes=10, status="STORED", content_sha256="test-hash", file_payload=_valid_pdf_bytes()))
         await session.commit()
         book_map, units = await DiscoverBook(FakeBookMapper(), FakeTopicMaterialDiscoverer(count)).execute(session, source_id)
         assert book_map.title == "book.pdf"
