@@ -91,6 +91,9 @@ async def test_single_job_produces_posts_and_completes():
         )).scalars().all()
         posts = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id.in_(unit_ids)))).scalars().all()
         assert final.status == ProductionJobStatus.COMPLETED.value
+        assert final.started_at is not None
+        assert final.completed_at is not None
+        assert final.updated_at is not None
         assert final.completed_items == 3
         assert final.failed_items == 0
         assert [item.status for item in items] == [ProductionJobItemStatus.COMPLETED.value] * 3
@@ -109,6 +112,10 @@ async def test_failure_is_isolated_and_later_items_continue():
             select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id).order_by(ProductionJobItemModel.position)
         )).scalars().all()
         assert final.status == ProductionJobStatus.FAILED.value
+        assert final.started_at is not None
+        assert final.completed_at is not None
+        assert final.updated_at is not None
+        assert final.error_code == "PRODUCTION_ITEMS_FAILED"
         assert final.completed_items == 3
         assert final.failed_items == 1
         assert [item.status for item in items] == ["COMPLETED", "FAILED", "COMPLETED", "COMPLETED"]
@@ -210,3 +217,44 @@ async def test_concurrent_job_execution_claims_job_once():
         assert final.completed_items == 5
         assert len(posts) == 5
         assert [item.status for item in items] == ["COMPLETED"] * 5
+
+
+async def test_invalid_source_pdf_fails_job_instead_of_using_text_fallback(tmp_path):
+    source_id, _, unit_ids = await _fixture(materials=1)
+    invalid_pdf = tmp_path / "invalid.pdf"
+    invalid_pdf.write_bytes(b"this is not a PDF")
+
+    async with SessionFactory() as session:
+        source = (await session.execute(
+            select(SourceModel).where(SourceModel.id == source_id)
+        )).scalar_one()
+        unit = (await session.execute(
+            select(KnowledgeUnitModel).where(KnowledgeUnitModel.id == unit_ids[0])
+        )).scalar_one()
+        source.storage_path = str(invalid_pdf)
+        unit.discovery_page_start = 1
+        unit.discovery_page_end = 1
+        await session.commit()
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+
+    await ProductionJobRunner(RecordingDrafter()).run(job.id)
+
+    async with SessionFactory() as session:
+        final = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(
+                ProductionJobItemModel.job_id == job.id
+            )
+        )).scalar_one()
+        posts = (await session.execute(
+            select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0])
+        )).scalars().all()
+        assert final.status == ProductionJobStatus.FAILED.value
+        assert final.failed_items == 1
+        assert final.completed_at is not None
+        assert item.status == ProductionJobItemStatus.FAILED.value
+        assert item.error_code == "PRODUCTION_ERROR"
+        assert any(marker in (item.error_message or "") for marker in ("EOF marker", "PDF", "Stream has ended unexpectedly"))
+        assert posts == []
