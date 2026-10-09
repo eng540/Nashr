@@ -3,7 +3,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
-CONTEXT_SCHEMA_VERSION = 1
+from app.domain.recipes import ProductionRecipe
+
+CONTEXT_SCHEMA_VERSION = 2
+SUPPORTED_CONTEXT_SCHEMA_VERSIONS = (1, 2)
 RUNTIME_RESOLUTION = "RUNTIME_RESOLUTION"
 LEGACY_PIN_BACKFILL = "LEGACY_PIN_BACKFILL"
 
@@ -59,14 +62,21 @@ class ResolvedProductionContext:
     origin: str
     captured_at: str | None
     prompt_template: PinnedPrompt
+    recipe: ProductionRecipe | None = None
 
     @classmethod
-    def capture(cls, prompt, *, captured_at: datetime | None = None) -> "ResolvedProductionContext":
+    def capture(
+        cls,
+        prompt,
+        *,
+        recipe: ProductionRecipe | None = None,
+        captured_at: datetime | None = None,
+    ) -> "ResolvedProductionContext":
         if prompt.template_id is None or prompt.version_id is None:
             raise ValueError("Resolved prompt must include template and version IDs.")
         timestamp = captured_at or datetime.now(timezone.utc)
         return cls(
-            schema_version=CONTEXT_SCHEMA_VERSION,
+            schema_version=CONTEXT_SCHEMA_VERSION if recipe is not None else 1,
             origin=RUNTIME_RESOLUTION,
             captured_at=timestamp.astimezone(timezone.utc).isoformat(),
             prompt_template=PinnedPrompt(
@@ -76,10 +86,11 @@ class ResolvedProductionContext:
                 version=prompt.version,
                 body=prompt.body,
             ),
+            recipe=recipe,
         )
 
     def __post_init__(self) -> None:
-        if self.schema_version != CONTEXT_SCHEMA_VERSION:
+        if self.schema_version not in SUPPORTED_CONTEXT_SCHEMA_VERSIONS:
             raise ValueError(f"Unsupported resolved production context schema version: {self.schema_version}.")
         if self.origin not in (RUNTIME_RESOLUTION, LEGACY_PIN_BACKFILL):
             raise ValueError("Resolved context origin is invalid.")
@@ -88,14 +99,21 @@ class ResolvedProductionContext:
                 datetime.fromisoformat(self.captured_at)
             except ValueError as exc:
                 raise ValueError("Resolved context captured_at must be an ISO-8601 timestamp or null.") from exc
+        if self.schema_version == 1 and self.recipe is not None:
+            raise ValueError("Resolved context schema version 1 cannot contain a recipe.")
+        if self.schema_version == 2 and self.recipe is None:
+            raise ValueError("Resolved context schema version 2 requires a pinned recipe.")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "schema_version": self.schema_version,
             "origin": self.origin,
             "captured_at": self.captured_at,
             "prompt_template": self.prompt_template.to_dict(),
         }
+        if self.schema_version >= 2 and self.recipe is not None:
+            value["recipe"] = self.recipe.to_dict()
+        return value
 
     @classmethod
     def from_dict(cls, value: object) -> "ResolvedProductionContext":
@@ -114,9 +132,20 @@ class ResolvedProductionContext:
             raise ValueError("Resolved context origin must be a string.")
         if captured_at is not None and not isinstance(captured_at, str):
             raise ValueError("Resolved context captured_at must be a string or null.")
+        if schema_version not in SUPPORTED_CONTEXT_SCHEMA_VERSIONS:
+            raise ValueError(f"Unsupported resolved production context schema version: {schema_version}.")
+        if schema_version == 1:
+            if "recipe" in value:
+                raise ValueError("Resolved context schema version 1 cannot contain a recipe.")
+            recipe = None
+        else:
+            if "recipe" not in value:
+                raise ValueError("Resolved context schema version 2 is missing recipe.")
+            recipe = ProductionRecipe.from_dict(value["recipe"])
         return cls(
             schema_version=schema_version,
             origin=origin,
             captured_at=captured_at,
             prompt_template=PinnedPrompt.from_dict(prompt_value),
+            recipe=recipe,
         )
