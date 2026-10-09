@@ -48,7 +48,9 @@ def test_persisted_post_is_exposed_through_same_artifact_boundary():
     assert artifact.source_knowledge_unit_id == post.knowledge_unit_id
     assert artifact.kind is ArtifactKind.POST
     assert artifact.content == post.content
-    assert artifact.status == PostStatus.APPROVED.value
+    assert artifact.status == ArtifactStatus.AVAILABLE.value
+    assert artifact.editorial_status == PostStatus.APPROVED.value
+    assert artifact.post_id == post.id
 
 def test_artifact_contract_represents_image_and_video_storage_without_post_fields():
     from app.domain.artifacts import Artifact
