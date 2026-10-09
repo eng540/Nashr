@@ -1,4 +1,5 @@
 """Bounded recipe execution over explicitly registered capabilities."""
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
@@ -15,8 +16,8 @@ from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe
 @dataclass(frozen=True)
 class ProductionExecutionContext:
     session: AsyncSession
-    knowledge_unit_id: UUID
-    system_prompt: str
+    inputs: Mapping[str, object]
+    configuration: Mapping[str, object]
 
 
 class RecipeCapability(Protocol):
@@ -78,10 +79,16 @@ class ProducePostCapability:
         context: ProductionExecutionContext,
         previous_output: object | None = None,
     ) -> Artifact:
+        knowledge_unit_id = context.inputs.get("knowledge_unit_id")
+        editorial_prompt = context.configuration.get("editorial_prompt")
+        if not isinstance(knowledge_unit_id, UUID):
+            raise ValueError("produce_post capability requires a knowledge_unit_id input.")
+        if not isinstance(editorial_prompt, Mapping) or not isinstance(editorial_prompt.get("body"), str):
+            raise ValueError("produce_post capability requires a resolved editorial_prompt body.")
         post = await self.producer.execute(
             context.session,
-            context.knowledge_unit_id,
-            system_prompt=context.system_prompt,
+            knowledge_unit_id,
+            system_prompt=editorial_prompt["body"],
         )
         return post_to_artifact(post)
 
