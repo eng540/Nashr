@@ -7,7 +7,6 @@ from app.application.recipe_engine import (
     CapabilityRegistry,
     ProductionExecutionContext,
     ProductionRecipeEngine,
-    RecipeRegistry,
 )
 from app.domain.artifacts import Artifact, ArtifactKind
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe, RecipeStage
@@ -51,7 +50,7 @@ async def test_recipe_engine_runs_registered_stages_in_order():
     capabilities = CapabilityRegistry()
     capabilities.register(first)
     capabilities.register(second)
-    engine = ProductionRecipeEngine(RecipeRegistry((recipe,)), capabilities)
+    engine = ProductionRecipeEngine(capabilities)
     context = ProductionExecutionContext(
         session=None,
         inputs={"knowledge_unit_id": uuid4()},
@@ -66,18 +65,18 @@ async def test_recipe_engine_runs_registered_stages_in_order():
 
 
 @pytest.mark.asyncio
-async def test_recipe_engine_rejects_definition_drift_for_a_pinned_version():
+async def test_recipe_engine_rejects_unregistered_capabilities_from_recipe_data():
     capabilities = CapabilityRegistry()
-    engine = ProductionRecipeEngine(RecipeRegistry((BOOK_TO_TELEGRAM_POST,)), capabilities)
-    changed_definition = ProductionRecipe(
-        key=BOOK_TO_TELEGRAM_POST.key,
-        version=BOOK_TO_TELEGRAM_POST.version,
-        stages=(RecipeStage("different-stage", "produce_post", 1),),
+    engine = ProductionRecipeEngine(capabilities)
+    recipe = ProductionRecipe(
+        key="DATA_DRIVEN_RECIPE",
+        version=1,
+        stages=(RecipeStage("unknown-stage", "not_registered", 1),),
     )
-    context = ProductionExecutionContext(session=None, inputs={"knowledge_unit_id": uuid4()}, configuration={"editorial_prompt": {"body": "p"}})
+    context = ProductionExecutionContext(session=None, inputs={"knowledge_unit_id": uuid4()}, configuration={})
 
-    with pytest.raises(LookupError, match="immutable definition"):
-        await engine.execute(changed_definition, context)
+    with pytest.raises(LookupError, match="not registered"):
+        await engine.execute(recipe, context)
 
 
 def test_recipe_definition_round_trips_as_data_and_rejects_empty_stages():
@@ -94,5 +93,17 @@ def test_recipe_stage_rejects_invalid_capability_versions(version):
 
 @pytest.mark.parametrize("version", [True, 0, -1, 1.5])
 def test_recipe_rejects_invalid_versions(version):
+    with pytest.raises(ValueError, match="positive version"):
+        ProductionRecipe(key="INVALID", version=version, stages=(RecipeStage("stage", "capability", 1),))
+
+
+@pytest.mark.parametrize("version", [True, 0, -1, 1.5])
+def test_recipe_stage_rejects_non_positive_or_non_integer_versions(version):
+    with pytest.raises(ValueError, match="positive integer"):
+        RecipeStage("stage", "capability", version)
+
+
+@pytest.mark.parametrize("version", [True, 0, -1, 1.5])
+def test_recipe_rejects_non_positive_or_non_integer_versions(version):
     with pytest.raises(ValueError, match="positive version"):
         ProductionRecipe(key="INVALID", version=version, stages=(RecipeStage("stage", "capability", 1),))
