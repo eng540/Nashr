@@ -37,6 +37,27 @@ async def _fixture(materials: int = 5, topics: int = 2):
     return source_id, topic_ids, unit_ids
 
 
+async def _reset_editorial_prompt(session, body: str):
+    """Restore the migration-seeded canonical prompt for order-independent tests."""
+    template = (await session.execute(
+        select(PromptTemplateModel).where(PromptTemplateModel.key == "editorial.drafter")
+    )).scalar_one()
+    versions = (await session.execute(
+        select(PromptTemplateVersionModel).where(
+            PromptTemplateVersionModel.prompt_template_id == template.id
+        )
+    )).scalars().all()
+    for version in versions:
+        if version.version != 1:
+            await session.delete(version)
+    await session.flush()
+    version_one = next(version for version in versions if version.version == 1)
+    version_one.body = body
+    version_one.status = "PUBLISHED"
+    await session.flush()
+    return template
+
+
 class RecordingDrafter:
     def __init__(self, fail_titles: set[str] | None = None):
         self.calls = []
@@ -266,17 +287,7 @@ async def test_invalid_source_pdf_fails_job_instead_of_using_text_fallback(tmp_p
 async def test_production_job_pins_prompt_across_publish_retry_and_new_job():
     source_id, _, unit_ids = await _fixture(materials=4, topics=1)
     async with SessionFactory() as session:
-        template = (await session.execute(
-            select(PromptTemplateModel).where(PromptTemplateModel.key == "editorial.drafter")
-        )).scalar_one()
-        version_one = (await session.execute(
-            select(PromptTemplateVersionModel).where(
-                PromptTemplateVersionModel.prompt_template_id == template.id,
-                PromptTemplateVersionModel.version == 1,
-            )
-        )).scalar_one()
-        # Migration 0015 seeds the canonical template and its published v1.
-        version_one.body = "prompt-v1"
+        template = await _reset_editorial_prompt(session, "prompt-v1")
         await session.commit()
 
         old_job = await create_production_job(
@@ -333,9 +344,7 @@ async def test_production_job_pins_prompt_across_publish_retry_and_new_job():
 async def test_missing_published_editorial_prompt_blocks_job_creation():
     source_id, _, _ = await _fixture(materials=1, topics=1)
     async with SessionFactory() as session:
-        template = (await session.execute(
-            select(PromptTemplateModel).where(PromptTemplateModel.key == "editorial.drafter")
-        )).scalar_one()
+        template = await _reset_editorial_prompt(session, "prompt-to-archive")
         published = (await session.execute(
             select(PromptTemplateVersionModel).where(
                 PromptTemplateVersionModel.prompt_template_id == template.id,
@@ -351,16 +360,7 @@ async def test_missing_published_editorial_prompt_blocks_job_creation():
 async def test_legacy_job_without_prompt_provenance_fails_without_active_fallback():
     source_id, _, _ = await _fixture(materials=1, topics=1)
     async with SessionFactory() as session:
-        template = (await session.execute(
-            select(PromptTemplateModel).where(PromptTemplateModel.key == "editorial.drafter")
-        )).scalar_one()
-        published = (await session.execute(
-            select(PromptTemplateVersionModel).where(
-                PromptTemplateVersionModel.prompt_template_id == template.id,
-                PromptTemplateVersionModel.status == "PUBLISHED",
-            )
-        )).scalar_one()
-        published.body = "currently-published"
+        await _reset_editorial_prompt(session, "currently-published")
         await session.commit()
         job = await create_production_job(session, source_id, ProductionScope.SOURCE)
         job.editorial_prompt_key = None
