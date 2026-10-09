@@ -29,15 +29,18 @@ class EditorialIdentityDefinition:
             "audience": self.audience.strip(),
             "voice": self.voice.strip(),
             "tone": self.tone.strip(),
-            "principles": list(self.principles),
-            "objectives": list(self.objectives),
-            "constraints": list(self.constraints),
+            "principles": [item.strip() for item in self.principles],
+            "objectives": [item.strip() for item in self.objectives],
+            "constraints": [item.strip() for item in self.constraints],
         }
 
     @classmethod
     def from_dict(cls, value: object) -> "EditorialIdentityDefinition":
         if not isinstance(value, dict):
             raise ValueError("Identity definition must be an object.")
+        expected_fields = {"purpose", "audience", "voice", "tone", "principles", "objectives", "constraints"}
+        if set(value) != expected_fields:
+            raise ValueError("Identity definition contains missing or unsupported fields.")
         scalar_fields = ("purpose", "audience", "voice", "tone")
         if any(not isinstance(value.get(field), str) for field in scalar_fields):
             raise ValueError("Identity purpose, audience, voice, and tone must be strings.")
