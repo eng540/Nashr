@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.main import app
+from app.application.identity_control_plane import EditorialIdentityControlPlaneService
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
@@ -122,3 +123,46 @@ async def test_create_production_job_api_rejects_empty_selection():
             json={"source_id": str(source_id), "scope": "SELECTION", "knowledge_unit_ids": []},
         )
         assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_production_job_api_pins_selected_editorial_identity(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+    async with SessionFactory() as session:
+        identities = EditorialIdentityControlPlaneService(session)
+        await identities.create_identity(
+            "API_TEST_EDITORIAL_IDENTITY",
+            "API Test Identity",
+            "Verify identity is passed through the production API.",
+            {
+                "purpose": "Help readers understand literary source material",
+                "audience": "Arabic literature readers",
+                "voice": "Precise and respectful",
+                "tone": "Warm",
+                "principles": ["Stay faithful to source"],
+                "objectives": ["Encourage close reading"],
+                "constraints": ["Do not invent quotations"],
+            },
+        )
+        await identities.publish("API_TEST_EDITORIAL_IDENTITY", 1)
+
+    async def noop(job_id):
+        return None
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/production-jobs",
+            json={
+                "source_id": str(source_id),
+                "scope": "SOURCE",
+                "identity_key": "API_TEST_EDITORIAL_IDENTITY",
+            },
+        )
+        assert response.status_code == 202, response.text
+        payload = response.json()
+        assert payload["resolved_context"]["schema_version"] == 3
+        assert payload["resolved_context"]["identity"]["key"] == "API_TEST_EDITORIAL_IDENTITY"
+        assert payload["resolved_context"]["identity"]["version"] == 1
+        assert payload["resolved_context"]["identity"]["definition"]["voice"] == "Precise and respectful"
