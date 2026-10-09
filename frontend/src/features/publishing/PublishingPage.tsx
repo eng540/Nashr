@@ -20,6 +20,8 @@ export function PublishingPage() {
   const [detail, setDetail] = useState<ScheduleDetail | null>(null);
   const [readyQuery, setReadyQuery] = useState("");
   const [readySort, setReadySort] = useState<"created" | "title" | "kind" | "topic">("created");
+  const [readySourceId, setReadySourceId] = useState("");
+  const [readyKind, setReadyKind] = useState("");
   const [readyPage, setReadyPage] = useState(0);
   const [planQuery, setPlanQuery] = useState("");
   const [planStatus, setPlanStatus] = useState("");
@@ -28,16 +30,22 @@ export function PublishingPage() {
   const [form, setForm] = useState({ name: "خطة نشر", timezone: DEFAULT_TIMEZONE, startAt: "", interval: "60" });
 
   const posts = useQuery({
-    queryKey: ["publishing", "eligible-posts", readyQuery, readySort, readyPage],
+    queryKey: ["publishing", "eligible-posts", readyQuery, readySort, readySourceId, readyKind, readyPage],
     queryFn: () => postsApi.list({
       status: "APPROVED",
       publicationState: "ELIGIBLE",
+      sourceId: readySourceId || undefined,
+      kind: readyKind || undefined,
       query: readyQuery.trim() || undefined,
       sort: readySort,
       limit: PAGE_SIZE,
       offset: readyPage * PAGE_SIZE,
     }),
     placeholderData: (previous) => previous,
+  });
+  const readyFilterOptions = useQuery({
+    queryKey: ["publishing", "filter-options", readySourceId],
+    queryFn: () => postsApi.filterOptions(readySourceId || undefined, "ELIGIBLE"),
   });
   const schedules = useQuery({ queryKey: ["publishing", "schedules"], queryFn: schedulesApi.list });
   const upcoming = useQuery({ queryKey: ["publishing", "upcoming"], queryFn: schedulesApi.upcoming });
@@ -199,10 +207,12 @@ export function PublishingPage() {
               <div><h3 className="text-xl font-bold">المنشورات الجاهزة</h3><p className="mt-1 text-sm text-slate-500">لا يظهر هنا إلا ما هو معتمد ومؤهل للنشر.</p></div>
               <span data-testid="selection-count" className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-bold text-indigo-700">{selectedIds.length} محدد</span>
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_auto]">
+            <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-[1fr_220px_220px_220px_auto]">
               <label className="text-sm font-semibold"><span className="sr-only">بحث المنشورات الجاهزة</span><input aria-label="بحث المنشورات الجاهزة" value={readyQuery} onChange={(e) => { setReadyQuery(e.target.value); setReadyPage(0); }} placeholder="ابحث في العنوان أو النص..." className="w-full rounded-xl border p-3 font-normal" /></label>
+              <label className="text-sm font-semibold">الكتاب<select aria-label="كتاب المنشورات الجاهزة" value={readySourceId} onChange={(e) => { setReadySourceId(e.target.value); setReadyKind(""); setReadyPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الكتب المتاحة</option>{(readyFilterOptions.data?.sources ?? []).map((source) => <option key={source.id} value={source.id}>{source.title}</option>)}</select></label>
+              <label className="text-sm font-semibold">نوع المحتوى<select aria-label="نوع المنشورات الجاهزة" value={readyKind} onChange={(e) => { setReadyKind(e.target.value); setReadyPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الأنواع المتاحة</option>{(readyFilterOptions.data?.kinds ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
               <label className="text-sm font-semibold">الفرز<select aria-label="فرز المنشورات الجاهزة" value={readySort} onChange={(e) => { setReadySort(e.target.value as typeof readySort); setReadyPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="created">الأحدث أولًا</option><option value="title">العنوان: أ - ي</option><option value="kind">النوع</option><option value="topic">المحور</option></select></label>
-              <button type="button" onClick={() => { setReadyQuery(""); setReadySort("created"); setReadyPage(0); setSelectedIds([]); setSearchParams({}); }} className="rounded-xl border px-4 py-3 text-sm font-semibold">مسح البحث</button>
+              <button type="button" onClick={() => { setReadyQuery(""); setReadySourceId(""); setReadyKind(""); setReadySort("created"); setReadyPage(0); setSelectedIds([]); setSearchParams({}); }} className="rounded-xl border px-4 py-3 text-sm font-semibold">مسح الفلاتر</button>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {allReadySelected
