@@ -495,8 +495,10 @@ async def test_job_retry_uses_original_identity_version_after_replacement_is_pub
         identities = EditorialIdentityControlPlaneService(session)
         await identities.create_draft("TEST_RUN_IDENTITY", identity_definition_v2)
         await identities.publish("TEST_RUN_IDENTITY", 2)
-        await session.refresh(job)
-        assert job.resolved_context == original
+        persisted_job = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+        assert persisted_job.resolved_context == original
         await resume_production_job(session, job.id, retry_failed=True)
 
     drafter.fail_titles.clear()
