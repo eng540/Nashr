@@ -19,7 +19,6 @@ class ProductionExecutionContext:
     inputs: Mapping[str, object]
     configuration: Mapping[str, object]
     run_id: UUID | None = None
-    run_item_id: UUID | None = None
     resolved_context: Mapping[str, object] | None = None
 
 
