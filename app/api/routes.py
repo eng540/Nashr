@@ -28,11 +28,14 @@ from app.application.scheduling import (
 from app.domain.production_jobs import ProductionScope
 from app.domain.production_context import ResolvedProductionContext
 from app.infrastructure.database.models import (
+    ArtifactModel,
+    KnowledgeUnitModel,
     ProductionJobItemModel,
     ProductionJobModel,
     ScheduleItemModel,
     ScheduleModel,
     PublicationModel,
+    SourceModel,
 )
 from app.application.discovery_jobs import (
     DiscoveryJobStatus,
@@ -572,14 +575,37 @@ async def artifact_detail(artifact_id: UUID, session: AsyncSession = Depends(get
     artifact = await load_artifact(session, artifact_id)
     if artifact is None:
         raise HTTPException(status_code=404, detail="Artifact not found.")
+    unit = (await session.execute(
+        select(KnowledgeUnitModel)
+        .options(selectinload(KnowledgeUnitModel.source).defer(SourceModel.file_payload))
+        .where(KnowledgeUnitModel.id == artifact.source_knowledge_unit_id)
+    )).scalar_one_or_none()
+    linked_items = (await session.execute(
+        select(ProductionJobItemModel)
+        .where(ProductionJobItemModel.artifact_id == artifact.id)
+        .order_by(ProductionJobItemModel.created_at)
+    )).scalars().all()
     return {
         "id": str(artifact.id),
         "kind": artifact.kind.value,
         "status": artifact.status,
         "source_knowledge_unit_id": str(artifact.source_knowledge_unit_id),
+        "source": ({
+            "knowledge_unit_id": str(unit.id),
+            "title": unit.title,
+            "source_id": str(unit.source_id),
+            "source_title": unit.source.book_title or unit.source.filename,
+            "source_reference": unit.source_reference,
+            "page_start": unit.discovery_page_start,
+            "page_end": unit.discovery_page_end,
+        } if unit is not None else None),
         "post_id": str(artifact.post_id) if artifact.post_id else None,
         "editorial_status": artifact.editorial_status,
         "production_job_id": str(artifact.production_job_id) if artifact.production_job_id else None,
+        "production_job_items": [
+            {"item_id": str(item.id), "job_id": str(item.job_id), "position": item.position}
+            for item in linked_items
+        ],
         "content": artifact.content,
         "storage_uri": artifact.storage_uri,
         "mime_type": artifact.mime_type,
