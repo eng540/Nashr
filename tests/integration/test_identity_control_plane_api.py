@@ -88,3 +88,11 @@ async def test_identity_control_plane_rejects_invalid_definition_and_duplicate_k
         }
         response = await client.post("/api/control/identities", json=invalid)
         assert response.status_code == 409
+
+        unknown_field = {
+            **payload,
+            "key": "TEST_IDENTITY_UNKNOWN_FIELD",
+            "definition": {**definition(), "provider": "provider-specific setting"},
+        }
+        rejected = await client.post("/api/control/identities", json=unknown_field)
+        assert rejected.status_code == 422
