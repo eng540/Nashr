@@ -5,7 +5,8 @@ import pytest
 from sqlalchemy import select
 
 from app.main import app
-from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, SourceModel
+from app.infrastructure.database.session import SessionFactory
 
 
 async def _api_fixture():
@@ -75,6 +76,38 @@ async def test_create_and_read_production_job_api(monkeypatch: pytest.MonkeyPatc
         assert items_payload["items"][0]["title"] == "API Material 1"
         assert items_payload["items"][0]["source_id"] == str(source_id)
         assert items_payload["items"][0]["status"] == "PENDING"
+
+
+@pytest.mark.asyncio
+async def test_artifact_detail_api_returns_durable_output_and_provenance():
+    source_id, unit_ids = await _api_fixture()
+    artifact_id = uuid4()
+    async with SessionFactory() as session:
+        session.add(ArtifactModel(
+            id=artifact_id,
+            source_knowledge_unit_id=unit_ids[0],
+            kind="TEXT",
+            status="AVAILABLE",
+            content="Durable text artifact",
+            mime_type="text/plain",
+            artifact_metadata={"test": True},
+        ))
+        await session.commit()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/artifacts/{artifact_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["id"] == str(artifact_id)
+        assert payload["kind"] == "TEXT"
+        assert payload["status"] == "AVAILABLE"
+        assert payload["source_knowledge_unit_id"] == str(unit_ids[0])
+        assert payload["content"] == "Durable text artifact"
+        assert payload["metadata"] == {"test": True}
+
+        missing = await client.get(f"/artifacts/{uuid4()}")
+        assert missing.status_code == 404
 
 
 @pytest.mark.asyncio
