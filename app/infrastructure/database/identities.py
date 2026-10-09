@@ -69,6 +69,11 @@ class EditorialIdentityRepository:
     async def update_draft(
         self, key: str, version: int, definition: dict[str, object]
     ) -> EditorialIdentityVersionModel:
+        # Serialize every lifecycle mutation on the parent identity row. This
+        # prevents an edit racing with publish and changing a just-published version.
+        identity = await self.get_identity(key, for_update=True)
+        if identity is None:
+            raise LookupError("Editorial identity not found.")
         row = await self._get_version_row(key, version)
         if row is None:
             raise LookupError("Editorial identity version not found.")
@@ -100,6 +105,10 @@ class EditorialIdentityRepository:
         return target
 
     async def archive(self, key: str, version: int) -> EditorialIdentityVersionModel:
+        # Use the same lock as publish/update/create_draft to serialize lifecycle transitions.
+        identity = await self.get_identity(key, for_update=True)
+        if identity is None:
+            raise LookupError("Editorial identity not found.")
         row = await self._get_version_row(key, version)
         if row is None:
             raise LookupError("Editorial identity version not found.")
