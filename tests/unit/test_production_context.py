@@ -40,7 +40,7 @@ def test_resolved_production_context_round_trips_explicit_prompt_identity():
 
 def test_resolved_production_context_rejects_unknown_schema_and_missing_ids():
     value = {
-        "schema_version": 3,
+        "schema_version": 4,
         "origin": RUNTIME_RESOLUTION,
         "captured_at": None,
         "prompt_template": {
@@ -122,3 +122,60 @@ def test_resolved_context_rejects_boolean_schema_version():
     )
     with pytest.raises(ValueError, match="Unsupported resolved production context schema version"):
         ResolvedProductionContext(schema_version=True, origin=RUNTIME_RESOLUTION, captured_at=None, prompt_template=prompt)
+
+
+def test_schema_v3_pins_identity_definition_and_ids():
+    from app.domain.production_context import PinnedIdentity
+    from app.domain.recipes import BOOK_TO_TELEGRAM_POST
+
+    prompt = ResolvedPrompt(
+        key="editorial.drafter",
+        version=5,
+        body="base prompt",
+        template_id=UUID("00000000-0000-0000-0000-000000000001"),
+        version_id=UUID("00000000-0000-0000-0000-000000000002"),
+    )
+    identity = PinnedIdentity(
+        identity_id="00000000-0000-0000-0000-000000000003",
+        version_id="00000000-0000-0000-0000-000000000004",
+        key="ARABIC_LITERATURE",
+        version=2,
+        definition={
+            "purpose": "Preserve literary heritage",
+            "audience": "Arabic readers",
+            "voice": "Rooted and clear",
+            "tone": "Warm",
+            "principles": ["Source fidelity"],
+            "objectives": ["Encourage reading"],
+            "constraints": ["Never fabricate quotations"],
+        },
+    )
+    context = ResolvedProductionContext.capture(
+        prompt, recipe=BOOK_TO_TELEGRAM_POST, identity=identity
+    )
+    restored = ResolvedProductionContext.from_dict(context.to_dict())
+    assert restored.schema_version == 3
+    assert restored.identity == identity
+    assert restored.recipe == BOOK_TO_TELEGRAM_POST
+
+
+def test_schema_v3_requires_identity_and_recipe():
+    value = {
+        "schema_version": 3,
+        "origin": RUNTIME_RESOLUTION,
+        "captured_at": None,
+        "prompt_template": {
+            "template_id": "00000000-0000-0000-0000-000000000001",
+            "version_id": "00000000-0000-0000-0000-000000000002",
+            "key": "editorial.drafter",
+            "version": 1,
+            "body": "prompt",
+        },
+        "recipe": {
+            "key": "BOOK_TO_TELEGRAM_POST",
+            "version": 1,
+            "stages": [{"key": "produce-post", "capability_key": "produce_post", "capability_version": 1}],
+        },
+    }
+    with pytest.raises(ValueError, match="requires recipe and identity"):
+        ResolvedProductionContext.from_dict(value)
