@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from pypdf import PdfReader, PdfWriter
-from pypdf.errors import PdfReadError
+from pypdf.errors import PdfReadError, PdfStreamError
 
 import app.application.editorial_context as editorial_context
 from app.adapters.extraction.gemini import GeminiBookMapper
@@ -69,7 +69,7 @@ def test_invalid_pdf_raises_instead_of_becoming_a_successful_slice(tmp_path: Pat
     invalid = tmp_path / "invalid.pdf"
     invalid.write_bytes(b"this is not a PDF")
 
-    with pytest.raises(PdfReadError):
+    with pytest.raises((PdfReadError, PdfStreamError)):
         editorial_context.slice_pdf_pages_as_bytes(str(invalid), 1, 1)
 
 
