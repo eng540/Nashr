@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -35,8 +36,8 @@ async def test_recipe_engine_runs_registered_stages_in_order():
         kind=ArtifactKind.POST,
         content="draft",
         status="DRAFT",
-        created_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
-        updated_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     ))
     second.key = "second"
     recipe = ProductionRecipe(
