@@ -16,6 +16,7 @@ from app.domain.production_jobs import (
     ProductionJobStatus,
     ProductionScope,
 )
+from app.domain.production_context import ResolvedProductionContext
 from app.infrastructure.database.models import (
     KnowledgeUnitModel,
     PostModel,
@@ -129,6 +130,7 @@ async def create_production_job(
         editorial_prompt_key=resolved_prompt.key,
         editorial_prompt_version=resolved_prompt.version,
         editorial_prompt_body=resolved_prompt.body,
+        resolved_context=ResolvedProductionContext.capture(resolved_prompt).to_dict(),
     )
     session.add(job)
     for position, unit in enumerate(units, start=1):
@@ -421,12 +423,28 @@ class ProductionJobRunner:
                 )).scalar_one_or_none()
                 if job is None:
                     return
-                pinned_prompt = job.editorial_prompt_body
-                if not job.editorial_prompt_key or job.editorial_prompt_version is None or not pinned_prompt:
-                    raise LookupError(
-                        "Production job has no pinned editorial prompt; "
-                        "historical prompt provenance cannot be established."
-                    )
+                if job.resolved_context is not None:
+                    try:
+                        resolved_context = ResolvedProductionContext.from_dict(job.resolved_context)
+                    except ValueError as exc:
+                        raise LookupError(f"Production job has invalid resolved context: {exc}") from exc
+                    pinned = resolved_context.prompt_template
+                    if (
+                        pinned.key != job.editorial_prompt_key
+                        or pinned.version != job.editorial_prompt_version
+                        or pinned.body != job.editorial_prompt_body
+                    ):
+                        raise LookupError("Production job resolved context conflicts with its legacy prompt pin.")
+                    pinned_prompt = pinned.body
+                else:
+                    # Compatibility for jobs created before the context snapshot migration.
+                    # These fields are an existing pin, not a lookup of the current published version.
+                    pinned_prompt = job.editorial_prompt_body
+                    if not job.editorial_prompt_key or job.editorial_prompt_version is None or not pinned_prompt:
+                        raise LookupError(
+                            "Production job has no pinned editorial prompt; "
+                            "historical prompt provenance cannot be established."
+                        )
 
             while True:
                 item_id = await _claim_next_item(job_id)
@@ -481,7 +499,9 @@ class ProductionJobRunner:
                     .values(
                         status=ProductionJobStatus.FAILED.value,
                         error_code=(
-                            "PRODUCTION_PROMPT_UNPINNED"
+                            "PRODUCTION_CONTEXT_INVALID"
+                            if isinstance(exc, LookupError) and "resolved context" in str(exc).lower()
+                            else "PRODUCTION_PROMPT_UNPINNED"
                             if isinstance(exc, LookupError) and "pinned editorial prompt" in str(exc)
                             else "PRODUCTION_RUNNER_ERROR"
                         ),

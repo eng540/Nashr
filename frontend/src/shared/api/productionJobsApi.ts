@@ -11,6 +11,11 @@ export interface ProductionJob {
   attempts: number; created_at: string; updated_at: string; started_at: string | null; completed_at: string | null;
   progress_percent: number; next_action: "RETRY_FAILED_ITEMS" | "INSPECT_FAILURE" | "WAIT" | "REVIEW_DRAFTS" | "NONE";
   resolved_prompt: { key: string | null; version: number | null; body: string | null; available: boolean };
+  resolved_context: {
+    available: boolean; invalid: boolean; schema_version: number | null; origin: string | null;
+    captured_at: string | null;
+    prompt_template: { template_id: string; version_id: string; key: string; version: number; body: string } | null;
+  };
 }
 export interface ProductionJobItem {
   item_id: string; position: number; status: string; attempts: number;

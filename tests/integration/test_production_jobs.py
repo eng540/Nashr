@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.application.production_jobs import ProductionJobRunner, create_production_job, resume_production_job
+from app.application.control_plane import PromptTemplateService
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
 from app.infrastructure.database.control_plane import PromptTemplateRepository
@@ -101,6 +102,36 @@ async def test_explicit_selection_snapshots_only_requested_materials():
             select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id).order_by(ProductionJobItemModel.position)
         )).scalars().all()
         assert [item.knowledge_unit_id for item in items] == [unit_ids[1], unit_ids[4]]
+
+
+async def test_published_prompt_change_does_not_mutate_existing_job_context():
+    source_id, _, _ = await _fixture(materials=2)
+    async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "prompt-v1")
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        original_context = job.resolved_context.copy()
+        service = PromptTemplateService(session)
+        draft = await service.create_draft("editorial.drafter", "prompt-v2")
+        await service.publish("editorial.drafter", draft.version)
+        await session.refresh(job)
+        assert job.resolved_context == original_context
+
+    drafter = RecordingDrafter()
+    await ProductionJobRunner(drafter).run(job.id)
+    assert drafter.prompts == ["prompt-v1", "prompt-v1"]
+
+
+async def test_legacy_pinned_job_without_context_keeps_its_existing_prompt():
+    source_id, _, _ = await _fixture(materials=1)
+    async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "legacy-pinned-prompt")
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        job.resolved_context = None
+        await session.commit()
+
+    drafter = RecordingDrafter()
+    await ProductionJobRunner(drafter).run(job.id)
+    assert drafter.prompts == ["legacy-pinned-prompt"]
 
 
 async def test_single_job_produces_posts_and_completes():
@@ -366,6 +397,7 @@ async def test_legacy_job_without_prompt_provenance_fails_without_active_fallbac
         job.editorial_prompt_key = None
         job.editorial_prompt_version = None
         job.editorial_prompt_body = None
+        job.resolved_context = None
         await session.commit()
 
     drafter = RecordingDrafter()

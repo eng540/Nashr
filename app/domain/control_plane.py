@@ -29,3 +29,5 @@ class ResolvedPrompt:
     key: str
     version: int
     body: str
+    template_id: UUID | None = None
+    version_id: UUID | None = None
