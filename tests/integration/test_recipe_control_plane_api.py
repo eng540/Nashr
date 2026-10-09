@@ -91,3 +91,19 @@ async def test_recipe_control_plane_draft_publish_and_immutable_versions():
             },
         )
         assert invalid.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_recipe_control_plane_rejects_blank_name_and_purpose():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        for field in ("name", "purpose"):
+            payload = {
+                "key": f"TEST_RECIPE_BLANK_{field.upper()}",
+                "name": "Valid name",
+                "purpose": "Valid purpose",
+                "stages": [{"key": "stage", "capability_key": "produce_post", "capability_version": 1}],
+            }
+            payload[field] = "   "
+            response = await client.post("/api/control/recipes", json=payload)
+            assert response.status_code == 409
