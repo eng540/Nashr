@@ -11,7 +11,7 @@ class RecipeStage:
     def __post_init__(self) -> None:
         if not self.key.strip() or not self.capability_key.strip():
             raise ValueError("Recipe stage and capability keys are required.")
-        if self.capability_version < 1:
+        if isinstance(self.capability_version, bool) or not isinstance(self.capability_version, int) or self.capability_version < 1:
             raise ValueError("Recipe capability version must be positive.")
 
     def to_dict(self) -> dict[str, object]:
@@ -45,7 +45,7 @@ class ProductionRecipe:
     stages: tuple[RecipeStage, ...]
 
     def __post_init__(self) -> None:
-        if not self.key.strip() or self.version < 1:
+        if not self.key.strip() or isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
             raise ValueError("Recipe key and positive version are required.")
         if not self.stages:
             raise ValueError("A production recipe must contain at least one stage.")
