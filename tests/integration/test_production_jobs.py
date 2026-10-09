@@ -452,7 +452,7 @@ async def test_legacy_job_without_prompt_provenance_fails_without_active_fallbac
         assert failed.error_code == "PRODUCTION_PROMPT_UNPINNED"
 
 
-async def test_job_pins_selected_identity_and_retries_use_the_original_version():
+async def test_job_retry_uses_original_identity_version_after_replacement_is_published():
     source_id, _, _ = await _fixture(materials=1, topics=1)
     identity_definition_v1 = {
         "purpose": "Preserve Arabic literary heritage",
@@ -485,15 +485,25 @@ async def test_job_pins_selected_identity_and_retries_use_the_original_version()
         assert context.identity.version == 1
         assert context.identity.definition["voice"] == "Rooted, dignified, and clear"
 
+    drafter = RecordingDrafter({"Material 1"})
+    await ProductionJobRunner(drafter).run(job.id)
+    assert len(drafter.prompts) == 1
+    assert "Identity version: 1" in drafter.prompts[0]
+    assert "Rooted, dignified, and clear" in drafter.prompts[0]
+
+    async with SessionFactory() as session:
+        identities = EditorialIdentityControlPlaneService(session)
         await identities.create_draft("TEST_RUN_IDENTITY", identity_definition_v2)
         await identities.publish("TEST_RUN_IDENTITY", 2)
         await session.refresh(job)
         assert job.resolved_context == original
+        await resume_production_job(session, job.id, retry_failed=True)
 
-    drafter = RecordingDrafter()
+    drafter.fail_titles.clear()
     await ProductionJobRunner(drafter).run(job.id)
-    assert len(drafter.prompts) == 1
-    assert "Identity key: TEST_RUN_IDENTITY" in drafter.prompts[0]
-    assert "Identity version: 1" in drafter.prompts[0]
-    assert "Rooted, dignified, and clear" in drafter.prompts[0]
-    assert "Modern and conversational" not in drafter.prompts[0]
+    assert len(drafter.prompts) == 2
+    for prompt in drafter.prompts:
+        assert "Identity key: TEST_RUN_IDENTITY" in prompt
+        assert "Identity version: 1" in prompt
+        assert "Rooted, dignified, and clear" in prompt
+        assert "Modern and conversational" not in prompt
