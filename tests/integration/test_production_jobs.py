@@ -329,3 +329,43 @@ async def test_production_job_pins_prompt_across_publish_retry_and_new_job():
     new_drafter = RecordingDrafter()
     await ProductionJobRunner(new_drafter).run(new_job.id)
     assert new_drafter.prompts == ["draft-v2-must-not-run"]
+
+
+async def test_missing_published_editorial_prompt_blocks_job_creation():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        with pytest.raises(LookupError, match="No unique active published prompt"):
+            await create_production_job(session, source_id, ProductionScope.SOURCE)
+
+
+async def test_legacy_job_without_prompt_provenance_fails_without_active_fallback():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        template = PromptTemplateModel(
+            id=uuid4(), key="editorial.drafter", name="Editorial Drafter",
+            purpose="Draft posts",
+        )
+        session.add(template)
+        await session.flush()
+        session.add(PromptTemplateVersionModel(
+            id=uuid4(), prompt_template_id=template.id, version=1,
+            body="currently-published", status="DRAFT",
+        ))
+        await session.flush()
+        await PromptTemplateRepository(session).publish("editorial.drafter", 1)
+        await session.commit()
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        job.editorial_prompt_key = None
+        job.editorial_prompt_version = None
+        job.editorial_prompt_body = None
+        await session.commit()
+
+    drafter = RecordingDrafter()
+    await ProductionJobRunner(drafter).run(job.id)
+    assert drafter.prompts == []
+    async with SessionFactory() as session:
+        failed = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+        assert failed.status == ProductionJobStatus.FAILED.value
+        assert failed.error_code == "PRODUCTION_PROMPT_UNPINNED"
