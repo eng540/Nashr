@@ -52,6 +52,19 @@ async def test_create_and_read_production_job_api(monkeypatch: pytest.MonkeyPatc
         assert status_payload["job_id"] == payload["job_id"]
         assert status_payload["scope"] == "SOURCE"
         assert status_payload["pending_items"] == 2
+        assert status_payload["progress_percent"] == 0
+        assert status_payload["resolved_prompt"]["available"] is True
+        assert status_payload["resolved_prompt"]["key"]
+        assert status_payload["resolved_prompt"]["version"] >= 1
+        assert status_payload["next_action"] == "WAIT"
+
+        items_response = await client.get(f"/production-jobs/{payload['job_id']}/items")
+        assert items_response.status_code == 200
+        items_payload = items_response.json()
+        assert items_payload["total"] == 2
+        assert items_payload["items"][0]["title"] == "API Material 1"
+        assert items_payload["items"][0]["source_id"] == str(source_id)
+        assert items_payload["items"][0]["status"] == "PENDING"
 
 
 @pytest.mark.asyncio
