@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
@@ -42,8 +43,9 @@ async def ensure_post_artifact(
         await session.execute(select(ArtifactModel).where(ArtifactModel.id == post.id))
     ).scalar_one_or_none()
     if existing is None:
-        session.add(
-            ArtifactModel(
+        await session.execute(
+            insert(ArtifactModel)
+            .values(
                 id=post.id,
                 source_knowledge_unit_id=post.knowledge_unit_id,
                 kind=ArtifactKind.POST.value,
@@ -55,6 +57,7 @@ async def ensure_post_artifact(
                 updated_at=post.updated_at,
                 artifact_metadata={},
             )
+            .on_conflict_do_nothing(index_elements=[ArtifactModel.id])
         )
         await session.commit()
     artifact = await load_artifact(session, post.id)
