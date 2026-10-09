@@ -27,6 +27,7 @@ export interface BulkApproveResult {
 export interface PostFilterOptions {
   kinds: string[];
   topics: Array<{ id: string; title: string; position: number }>;
+  sources: Array<{ id: string; title: string }>;
 }
 
 export const postsApi = {
@@ -43,9 +44,11 @@ export const postsApi = {
     query.set("offset", String(params.offset ?? 0));
     return get<PostListResponse>(`/posts?${query.toString()}`);
   },
-  filterOptions(sourceId?: string): Promise<PostFilterOptions> {
-    const query = sourceId ? `?source_id=${encodeURIComponent(sourceId)}` : "";
-    return get<PostFilterOptions>(`/posts/filter-options${query}`);
+  filterOptions(sourceId?: string, publicationState?: string): Promise<PostFilterOptions> {
+    const query = new URLSearchParams();
+    if (sourceId) query.set("source_id", sourceId);
+    if (publicationState) query.set("publication_state", publicationState);
+    return get<PostFilterOptions>(`/posts/filter-options${query.toString() ? `?${query}` : ""}`);
   },
   get(postId: string): Promise<Post> {
     return get<Post>(`/posts/${postId}`);

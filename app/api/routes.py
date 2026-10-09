@@ -238,7 +238,7 @@ def _book_map_checkpoint_payload(sections: list[BookMapSectionModel]) -> dict[st
     }
 
 
-def _topic_payload(topic: TopicModel, units: list[KnowledgeUnitModel]) -> dict[str, Any]:
+def _topic_payload(topic: TopicModel, units: list[KnowledgeUnitModel], produced_ids: set[UUID] | None = None) -> dict[str, Any]:
     return {
         "id": str(topic.id),
         "position": topic.position,
@@ -255,6 +255,7 @@ def _topic_payload(topic: TopicModel, units: list[KnowledgeUnitModel]) -> dict[s
                 "position": unit.position,
                 "title": unit.title,
                 "kind": unit.kind,
+                "has_post": unit.id in (produced_ids or set()),
                 "content": unit.content,
                 "original_text": unit.original_text,
                 "source_reference": unit.source_reference,
@@ -339,15 +340,30 @@ async def list_sources(session: AsyncSession = Depends(get_session)) -> list[dic
     result = await session.execute(
         select(SourceModel).options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
     )
+    sources = result.scalars().all()
+    unit_counts = dict((await session.execute(
+        select(KnowledgeUnitModel.source_id, func.count(KnowledgeUnitModel.id))
+        .where(KnowledgeUnitModel.source_id.in_([source.id for source in sources]))
+        .group_by(KnowledgeUnitModel.source_id)
+    )).all()) if sources else {}
+    post_counts = dict((await session.execute(
+        select(KnowledgeUnitModel.source_id, func.count(PostModel.id))
+        .join(PostModel, PostModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(KnowledgeUnitModel.source_id.in_([source.id for source in sources]))
+        .group_by(KnowledgeUnitModel.source_id)
+    )).all()) if sources else {}
     return [
         {
             "id": str(source.id),
             "filename": source.filename,
             "status": source.status,
             "book_title": source.book_title or source.filename,
+            "material_count": int(unit_counts.get(source.id, 0)),
+            "produced_count": int(post_counts.get(source.id, 0)),
+            "pending_count": max(int(unit_counts.get(source.id, 0)) - int(post_counts.get(source.id, 0)), 0),
             "created_at": source.created_at,
         }
-        for source in result.scalars().all()
+        for source in sources
     ]
 
 
@@ -432,6 +448,9 @@ async def get_book_map(source_id: UUID, session: AsyncSession = Depends(get_sess
         select(KnowledgeUnitModel).where(KnowledgeUnitModel.source_id == source_id).order_by(KnowledgeUnitModel.position)
     )
     units = units_result.scalars().all()
+    produced_ids = set((await session.execute(
+        select(PostModel.knowledge_unit_id).where(PostModel.knowledge_unit_id.in_([unit.id for unit in units]))
+    )).scalars().all()) if units else set()
     grouped = {topic.id: [] for topic in topics}
     for unit in units:
         if unit.topic_id in grouped:
@@ -446,7 +465,7 @@ async def get_book_map(source_id: UUID, session: AsyncSession = Depends(get_sess
     return {
         "source_id": str(source_id),
         "book": {"title": source.book_title or source.filename, "description": source.book_description or ""},
-        "topics": [_topic_payload(topic, grouped[topic.id]) for topic in topics],
+        "topics": [_topic_payload(topic, grouped[topic.id], produced_ids) for topic in topics],
         "count": len(units),
         "job": _job_payload(job) if job else None,
     }
@@ -1035,6 +1054,7 @@ async def list_posts(
 @router.get("/posts/filter-options")
 async def post_filter_options(
     source_id: UUID | None = None,
+    publication_state: str | None = Query(default=None, alias="publication_state", max_length=30),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Return data-backed kind and topic options for the post bank filters."""
@@ -1058,11 +1078,38 @@ async def post_filter_options(
             .order_by(TopicModel.position.asc())
         )
     ).all() if source_id is not None else []
+    source_query = select(SourceModel.id, SourceModel.book_title, SourceModel.filename).join(
+        KnowledgeUnitModel, KnowledgeUnitModel.source_id == SourceModel.id
+    ).join(PostModel, PostModel.knowledge_unit_id == KnowledgeUnitModel.id)
+    if publication_state == "ELIGIBLE":
+        published_exists = select(PublicationModel.id).where(
+            PublicationModel.post_id == PostModel.id,
+            PublicationModel.status == "PUBLISHED",
+        ).exists()
+        scheduled_exists = select(ScheduleItemModel.id).join(
+            ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id
+        ).where(
+            ScheduleItemModel.post_id == PostModel.id,
+            ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+        ).exists()
+        source_query = source_query.where(
+            PostModel.status == "APPROVED",
+            func.trim(PostModel.content) != "",
+            ~published_exists,
+            ~scheduled_exists,
+        )
+    sources = (await session.execute(
+        source_query.distinct().order_by(SourceModel.book_title.asc(), SourceModel.filename.asc())
+    )).all()
     return {
         "kinds": [kind for kind in kinds if kind],
         "topics": [
             {"id": str(topic_id), "title": title, "position": position}
             for topic_id, title, position in topics
+        ],
+        "sources": [
+            {"id": str(source_id), "title": title or filename}
+            for source_id, title, filename in sources
         ],
     }
 
