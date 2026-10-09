@@ -72,26 +72,32 @@ class ProductionRecipeControlPlaneService:
             raise ValueError("Production recipe key already exists.")
         recipe, version = await self.repository.create_recipe(key, name.strip(), purpose.strip(), stages)
         await self.session.commit()
+        await self.session.refresh(recipe)
+        await self.session.refresh(version)
         return {**_recipe_payload(recipe), "created_version": _version_payload(version)}
 
     async def create_draft(self, key: str, stages: list[dict[str, object]]) -> dict[str, object]:
         stages = _validate_stages(key, 1, stages)
         version = await self.repository.create_draft(key, stages)
         await self.session.commit()
+        await self.session.refresh(version)
         return _version_payload(version)
 
     async def update_draft(self, key: str, version: int, stages: list[dict[str, object]]) -> dict[str, object]:
         stages = _validate_stages(key, version, stages)
         result = await self.repository.update_draft(key, version, stages)
         await self.session.commit()
+        await self.session.refresh(result)
         return _version_payload(result)
 
     async def publish(self, key: str, version: int) -> dict[str, object]:
         result = await self.repository.publish(key, version)
         await self.session.commit()
+        await self.session.refresh(result)
         return _version_payload(result)
 
     async def archive(self, key: str, version: int) -> dict[str, object]:
         result = await self.repository.archive(key, version)
         await self.session.commit()
+        await self.session.refresh(result)
         return _version_payload(result)
