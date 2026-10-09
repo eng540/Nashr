@@ -107,3 +107,20 @@ async def test_recipe_control_plane_rejects_blank_name_and_purpose():
             payload[field] = "   "
             response = await client.post("/api/control/recipes", json=payload)
             assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_recipe_control_plane_rejects_non_integer_capability_versions():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        for index, version in enumerate((True, 1.5, 0)):
+            response = await client.post(
+                "/api/control/recipes",
+                json={
+                    "key": f"TEST_RECIPE_BAD_VERSION_{index}",
+                    "name": "Invalid version",
+                    "purpose": "API must reject non-integer or non-positive capability versions.",
+                    "stages": [{"key": "stage", "capability_key": "produce_post", "capability_version": version}],
+                },
+            )
+            assert response.status_code == 422
