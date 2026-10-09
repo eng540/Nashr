@@ -145,6 +145,7 @@ async def test_single_job_produces_posts_and_completes():
             select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id).order_by(ProductionJobItemModel.position)
         )).scalars().all()
         posts = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id.in_(unit_ids)))).scalars().all()
+        artifacts = (await session.execute(select(ArtifactModel).where(ArtifactModel.source_knowledge_unit_id.in_(unit_ids)))).scalars().all()
         assert final.status == ProductionJobStatus.COMPLETED.value
         assert final.started_at is not None
         assert final.completed_at is not None
@@ -153,7 +154,12 @@ async def test_single_job_produces_posts_and_completes():
         assert final.failed_items == 0
         assert [item.status for item in items] == [ProductionJobItemStatus.COMPLETED.value] * 3
         assert len(posts) == 3
+        assert len(artifacts) == 3
         assert all(item.post_id is not None for item in items)
+        assert all(item.artifact_id is not None for item in items)
+        assert all(artifact.kind == "POST" and artifact.status == "AVAILABLE" for artifact in artifacts)
+        assert all(artifact.production_job_id == job.id for artifact in artifacts)
+        assert all(artifact.resolved_context == final.resolved_context for artifact in artifacts)
 
 
 async def test_failure_is_isolated_and_later_items_continue():
