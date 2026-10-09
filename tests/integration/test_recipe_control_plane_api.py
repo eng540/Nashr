@@ -76,7 +76,7 @@ async def test_recipe_control_plane_draft_publish_and_immutable_versions():
         assert versions[2]["stages"][0]["key"] == "produce-post-v2"
 
         invalid = await client.post(
-            "/api/control/recipes/TEST_RECIPE_INVALID",
+            "/api/control/recipes",
             json={
                 "key": "TEST_RECIPE_INVALID",
                 "name": "Invalid",
