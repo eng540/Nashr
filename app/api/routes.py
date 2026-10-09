@@ -200,6 +200,27 @@ def _production_job_payload(job: ProductionJobModel, pending_items: int | None =
         "updated_at": job.updated_at,
         "started_at": job.started_at,
         "completed_at": job.completed_at,
+        "progress_percent": (
+            round((job.completed_items + job.failed_items) * 100 / job.total_items)
+            if job.total_items else 100 if job.status in ("COMPLETED", "FAILED") else 0
+        ),
+        "resolved_prompt": {
+            "key": job.editorial_prompt_key,
+            "version": job.editorial_prompt_version,
+            "body": job.editorial_prompt_body,
+            "available": bool(
+                job.editorial_prompt_key
+                and job.editorial_prompt_version is not None
+                and job.editorial_prompt_body
+            ),
+        },
+        "next_action": (
+            "RETRY_FAILED_ITEMS" if job.status == "FAILED" and job.failed_items
+            else "INSPECT_FAILURE" if job.status == "FAILED"
+            else "WAIT" if job.status in ("QUEUED", "RUNNING")
+            else "REVIEW_DRAFTS" if job.status == "COMPLETED"
+            else "NONE"
+        ),
     }
 
 
@@ -517,6 +538,74 @@ async def production_job_status(job_id: UUID, session: AsyncSession = Depends(ge
     if job is None:
         raise HTTPException(status_code=404, detail="Production job not found.")
     return await _load_production_job_payload(session, job)
+
+
+@router.get("/production-jobs/{job_id}/items")
+async def production_job_items(
+    job_id: UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    job = (await session.execute(
+        select(ProductionJobModel.id).where(ProductionJobModel.id == job_id)
+    )).scalar_one_or_none()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Production job not found.")
+
+    total = int(
+        (await session.execute(
+            select(func.count(ProductionJobItemModel.id)).where(
+                ProductionJobItemModel.job_id == job_id
+            )
+        )).scalar_one() or 0
+    )
+    result = await session.execute(
+        select(ProductionJobItemModel)
+        .options(
+            selectinload(ProductionJobItemModel.knowledge_unit)
+            .selectinload(KnowledgeUnitModel.source)
+            .defer(SourceModel.file_payload),
+            selectinload(ProductionJobItemModel.knowledge_unit)
+            .selectinload(KnowledgeUnitModel.topic),
+        )
+        .where(ProductionJobItemModel.job_id == job_id)
+        .order_by(ProductionJobItemModel.position)
+        .limit(limit)
+        .offset(offset)
+    )
+    items = result.scalars().all()
+    return {
+        "job_id": str(job_id),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [
+            {
+                "item_id": str(item.id),
+                "position": item.position,
+                "status": item.status,
+                "attempts": item.attempts,
+                "knowledge_unit_id": str(item.knowledge_unit_id),
+                "title": item.knowledge_unit.title,
+                "source_id": str(item.knowledge_unit.source_id),
+                "source_title": (
+                    item.knowledge_unit.source.book_title
+                    or item.knowledge_unit.source.filename
+                ),
+                "source_reference": item.knowledge_unit.source_reference,
+                "page_start": item.knowledge_unit.discovery_page_start,
+                "page_end": item.knowledge_unit.discovery_page_end,
+                "post_id": str(item.post_id) if item.post_id else None,
+                "error_code": item.error_code,
+                "error_message": item.error_message,
+                "created_at": item.created_at,
+                "updated_at": item.updated_at,
+                "completed_at": item.completed_at,
+            }
+            for item in items
+        ],
+    }
 
 
 @router.post("/production-jobs/{job_id}/resume", status_code=status.HTTP_202_ACCEPTED)
