@@ -12,7 +12,7 @@ class RecipeStage:
         if not self.key.strip() or not self.capability_key.strip():
             raise ValueError("Recipe stage and capability keys are required.")
         if isinstance(self.capability_version, bool) or not isinstance(self.capability_version, int) or self.capability_version < 1:
-            raise ValueError("Recipe capability version must be positive.")
+            raise ValueError("Recipe capability version must be a positive integer.")
 
     def to_dict(self) -> dict[str, object]:
         return {
