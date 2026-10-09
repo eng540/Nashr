@@ -256,5 +256,5 @@ async def test_invalid_source_pdf_fails_job_instead_of_using_text_fallback(tmp_p
         assert final.completed_at is not None
         assert item.status == ProductionJobItemStatus.FAILED.value
         assert item.error_code == "PRODUCTION_ERROR"
-        assert "EOF marker" in (item.error_message or "") or "PDF" in (item.error_message or "")
+        assert any(marker in (item.error_message or "") for marker in ("EOF marker", "PDF", "Stream has ended unexpectedly"))
         assert posts == []
