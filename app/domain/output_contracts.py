@@ -1,5 +1,6 @@
 """Versioned output contracts independent of any production capability/provider."""
 from dataclasses import dataclass
+import re
 
 
 ARTIFACT_KINDS = frozenset({"POST", "TEXT", "IMAGE", "VIDEO", "AUDIO"})
@@ -15,9 +16,15 @@ class OutputContractDefinition:
     max_content_chars: int | None = None
 
     def __post_init__(self) -> None:
-        if self.artifact_kind not in ARTIFACT_KINDS:
+        if not isinstance(self.artifact_kind, str) or self.artifact_kind not in ARTIFACT_KINDS:
+            raise ValueError("Output contract artifact_kind is unsupported.")
+        if not isinstance(self.mime_type, str) or re.fullmatch(r"[A-Za-z0-9!#        if self.artifact_kind not in ARTIFACT_KINDS:
             raise ValueError("Output contract artifact_kind is unsupported.")
         if not isinstance(self.mime_type, str) or "/" not in self.mime_type or self.mime_type.startswith("/") or self.mime_type.endswith("/"):
+            raise ValueError("Output contract mime_type must be a valid type/subtype string.")^_.+-]+/[A-Za-z0-9!#        if self.artifact_kind not in ARTIFACT_KINDS:
+            raise ValueError("Output contract artifact_kind is unsupported.")
+        if not isinstance(self.mime_type, str) or "/" not in self.mime_type or self.mime_type.startswith("/") or self.mime_type.endswith("/"):
+            raise ValueError("Output contract mime_type must be a valid type/subtype string.")^_.+-]+", self.mime_type) is None:
             raise ValueError("Output contract mime_type must be a valid type/subtype string.")
         expected_prefix = {
             "POST": "text/",
@@ -28,8 +35,10 @@ class OutputContractDefinition:
         }[self.artifact_kind]
         if not self.mime_type.lower().startswith(expected_prefix):
             raise ValueError(f"Output contract MIME type must match artifact kind {self.artifact_kind}.")
-        if self.content_mode not in CONTENT_MODES:
+        if not isinstance(self.content_mode, str) or self.content_mode not in CONTENT_MODES:
             raise ValueError("Output contract content_mode must be INLINE or STORAGE_URI.")
+        if not isinstance(self.required_metadata_fields, tuple):
+            raise ValueError("Output contract required_metadata_fields must be a tuple.")
         if self.artifact_kind in {"POST", "TEXT"} and self.content_mode != "INLINE":
             raise ValueError("POST and TEXT contracts must use INLINE content.")
         if self.artifact_kind in {"IMAGE", "VIDEO", "AUDIO"} and self.content_mode != "STORAGE_URI":
@@ -40,10 +49,15 @@ class OutputContractDefinition:
             or self.max_content_chars < 1
         ):
             raise ValueError("Output contract max_content_chars must be a positive integer or null.")
+        if self.content_mode == "STORAGE_URI" and self.max_content_chars is not None:
+            raise ValueError("STORAGE_URI contracts cannot define an inline content length.")
         if len(self.required_metadata_fields) != len(set(self.required_metadata_fields)):
             raise ValueError("Output contract required metadata fields must be unique.")
-        if any(not isinstance(field, str) or not field.strip() for field in self.required_metadata_fields):
-            raise ValueError("Output contract metadata field names must be non-empty strings.")
+        if any(
+            not isinstance(field, str) or re.fullmatch(r"[A-Za-z0-9._-]+", field) is None
+            for field in self.required_metadata_fields
+        ):
+            raise ValueError("Output contract metadata field names must be non-empty identifiers.")
 
     def to_dict(self) -> dict[str, object]:
         return {
