@@ -146,6 +146,9 @@ class ProductionJobModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    editorial_prompt_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    editorial_prompt_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    editorial_prompt_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[SourceModel] = relationship(back_populates="production_jobs")
     items: Mapped[list["ProductionJobItemModel"]] = relationship(back_populates="job", cascade="all, delete-orphan")
 
