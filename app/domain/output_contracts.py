@@ -18,13 +18,7 @@ class OutputContractDefinition:
     def __post_init__(self) -> None:
         if not isinstance(self.artifact_kind, str) or self.artifact_kind not in ARTIFACT_KINDS:
             raise ValueError("Output contract artifact_kind is unsupported.")
-        if not isinstance(self.mime_type, str) or re.fullmatch(r"[A-Za-z0-9!#        if self.artifact_kind not in ARTIFACT_KINDS:
-            raise ValueError("Output contract artifact_kind is unsupported.")
-        if not isinstance(self.mime_type, str) or "/" not in self.mime_type or self.mime_type.startswith("/") or self.mime_type.endswith("/"):
-            raise ValueError("Output contract mime_type must be a valid type/subtype string.")^_.+-]+/[A-Za-z0-9!#        if self.artifact_kind not in ARTIFACT_KINDS:
-            raise ValueError("Output contract artifact_kind is unsupported.")
-        if not isinstance(self.mime_type, str) or "/" not in self.mime_type or self.mime_type.startswith("/") or self.mime_type.endswith("/"):
-            raise ValueError("Output contract mime_type must be a valid type/subtype string.")^_.+-]+", self.mime_type) is None:
+        if not isinstance(self.mime_type, str) or re.fullmatch(r"[A-Za-z0-9._+-]+/[A-Za-z0-9._+-]+", self.mime_type) is None:
             raise ValueError("Output contract mime_type must be a valid type/subtype string.")
         expected_prefix = {
             "POST": "text/",
