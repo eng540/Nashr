@@ -22,7 +22,7 @@ class RecordingCapability:
         self.calls = []
 
     async def execute(self, context, previous_output):
-        self.calls.append((context.knowledge_unit_id, previous_output))
+        self.calls.append((context.inputs["knowledge_unit_id"], previous_output))
         return self.output
 
 
@@ -54,15 +54,15 @@ async def test_recipe_engine_runs_registered_stages_in_order():
     engine = ProductionRecipeEngine(RecipeRegistry((recipe,)), capabilities)
     context = ProductionExecutionContext(
         session=None,
-        knowledge_unit_id=uuid4(),
-        system_prompt="pinned prompt",
+        inputs={"knowledge_unit_id": uuid4()},
+        configuration={"editorial_prompt": {"body": "pinned prompt"}},
     )
 
     result = await engine.execute(recipe, context)
 
     assert result is second.output
-    assert first.calls == [(context.knowledge_unit_id, None)]
-    assert second.calls == [(context.knowledge_unit_id, "intermediate")]
+    assert first.calls == [(context.inputs["knowledge_unit_id"], None)]
+    assert second.calls == [(context.inputs["knowledge_unit_id"], "intermediate")]
 
 
 @pytest.mark.asyncio
@@ -74,7 +74,7 @@ async def test_recipe_engine_rejects_definition_drift_for_a_pinned_version():
         version=BOOK_TO_TELEGRAM_POST.version,
         stages=(RecipeStage("different-stage", "produce_post", 1),),
     )
-    context = ProductionExecutionContext(session=None, knowledge_unit_id=uuid4(), system_prompt="p")
+    context = ProductionExecutionContext(session=None, inputs={"knowledge_unit_id": uuid4()}, configuration={"editorial_prompt": {"body": "p"}})
 
     with pytest.raises(LookupError, match="immutable definition"):
         await engine.execute(changed_definition, context)
