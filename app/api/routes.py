@@ -25,6 +25,7 @@ from app.application.scheduling import (
     retry_failed_item,
 )
 from app.domain.production_jobs import ProductionScope
+from app.domain.production_context import ResolvedProductionContext
 from app.infrastructure.database.models import (
     ProductionJobItemModel,
     ProductionJobModel,
@@ -182,6 +183,30 @@ def _job_payload(job: DiscoveryJobModel) -> dict[str, Any]:
     }
 
 
+def _resolved_context_payload(job: ProductionJobModel) -> dict[str, Any]:
+    if job.resolved_context is None:
+        return {
+            "available": False,
+            "invalid": False,
+            "schema_version": None,
+            "origin": None,
+            "captured_at": None,
+            "prompt_template": None,
+        }
+    try:
+        context = ResolvedProductionContext.from_dict(job.resolved_context).to_dict()
+    except ValueError:
+        return {
+            "available": False,
+            "invalid": True,
+            "schema_version": None,
+            "origin": None,
+            "captured_at": None,
+            "prompt_template": None,
+        }
+    return {"available": True, "invalid": False, **context}
+
+
 def _production_job_payload(job: ProductionJobModel, pending_items: int | None = None) -> dict[str, Any]:
     return {
         "job_id": str(job.id),
@@ -214,6 +239,7 @@ def _production_job_payload(job: ProductionJobModel, pending_items: int | None =
                 and job.editorial_prompt_body
             ),
         },
+        "resolved_context": _resolved_context_payload(job),
         "next_action": (
             "RETRY_FAILED_ITEMS" if job.status == "FAILED" and job.failed_items
             else "INSPECT_FAILURE" if job.status == "FAILED"
