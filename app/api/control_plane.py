@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.control_plane import PromptTemplateService
@@ -191,6 +191,107 @@ async def publish_recipe_version(key: str, version: int, session: AsyncSession =
 async def archive_recipe_version(key: str, version: int, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     try:
         return await ProductionRecipeControlPlaneService(session).archive(key, version)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+class IdentityDefinitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    purpose: str = Field(min_length=1, max_length=10000)
+    audience: str = Field(min_length=1, max_length=5000)
+    voice: str = Field(min_length=1, max_length=5000)
+    tone: str = Field(min_length=1, max_length=5000)
+    principles: list[str] = Field(max_length=100)
+    objectives: list[str] = Field(max_length=100)
+    constraints: list[str] = Field(max_length=100)
+
+
+class IdentityCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
+    name: str = Field(min_length=1, max_length=300)
+    purpose: str = Field(min_length=1, max_length=2000)
+    definition: IdentityDefinitionRequest
+
+
+class IdentityVersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    definition: IdentityDefinitionRequest
+
+
+def _identity_definition(payload: IdentityDefinitionRequest) -> dict[str, Any]:
+    return payload.model_dump()
+
+
+@router.get("/identities")
+async def list_identities(session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
+    from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+    return await EditorialIdentityControlPlaneService(session).list_identities()
+
+
+@router.get("/identities/{key}")
+async def get_identity(key: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+    try:
+        return await EditorialIdentityControlPlaneService(session).get_identity(key)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/identities", status_code=201)
+async def create_identity(payload: IdentityCreateRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+    try:
+        return await EditorialIdentityControlPlaneService(session).create_identity(
+            payload.key, payload.name, payload.purpose, _identity_definition(payload.definition)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/identities/{key}/versions", status_code=201)
+async def create_identity_version(key: str, payload: IdentityVersionRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+    try:
+        return await EditorialIdentityControlPlaneService(session).create_draft(key, _identity_definition(payload.definition))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch("/identities/{key}/versions/{version}")
+async def update_identity_version(key: str, version: int, payload: IdentityVersionRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+    try:
+        return await EditorialIdentityControlPlaneService(session).update_draft(key, version, _identity_definition(payload.definition))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/identities/{key}/versions/{version}/publish")
+async def publish_identity_version(key: str, version: int, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+    try:
+        return await EditorialIdentityControlPlaneService(session).publish(key, version)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/identities/{key}/versions/{version}/archive")
+async def archive_identity_version(key: str, version: int, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+    try:
+        return await EditorialIdentityControlPlaneService(session).archive(key, version)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
