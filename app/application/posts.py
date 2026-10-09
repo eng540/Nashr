@@ -59,8 +59,9 @@ class ProducePost:
                     unit.discovery_page_end,
                     window_size=10,
                 )
-            except Exception:
-                # Preserve the existing text fallback for missing or malformed source PDFs.
+            except FileNotFoundError:
+                # A missing local copy can still use the persisted textual material.
+                # PDF parsing errors must propagate rather than masquerade as success.
                 pdf_slice = None
 
         system_prompt = (await self.resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)).body
