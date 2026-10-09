@@ -429,6 +429,7 @@ class ProductionJobRunner:
                 if job is None:
                     return
                 resolved_context = None
+                pinned_recipe = BOOK_TO_TELEGRAM_POST
                 if job.resolved_context is not None:
                     try:
                         resolved_context = ResolvedProductionContext.from_dict(job.resolved_context)
@@ -451,10 +452,9 @@ class ProductionJobRunner:
                             "Production job has no pinned editorial prompt; "
                             "historical prompt provenance cannot be established."
                         )
-                    # Schema-v1 and pre-snapshot jobs predate recipe pinning. Their only
-                    # existing path was BOOK_TO_TELEGRAM_POST, so retain that compatibility route.
-                    pinned_recipe = BOOK_TO_TELEGRAM_POST
 
+                # Schema-v1 and pre-snapshot jobs predate recipe pinning; their only
+                # existing path was BOOK_TO_TELEGRAM_POST, retained as the compatibility route.
                 if resolved_context is not None and resolved_context.recipe is not None:
                     pinned_recipe = resolved_context.recipe
                 registered_recipe = self.engine.recipes.resolve(pinned_recipe.key, pinned_recipe.version)
