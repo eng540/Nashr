@@ -1,5 +1,8 @@
 """Declarative, versioned recipe contracts independent of providers and output storage."""
 from dataclasses import dataclass
+from uuid import UUID
+
+SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1)})
 
 
 @dataclass(frozen=True)
@@ -11,7 +14,7 @@ class RecipeStage:
     def __post_init__(self) -> None:
         if not self.key.strip() or not self.capability_key.strip():
             raise ValueError("Recipe stage and capability keys are required.")
-        if self.capability_version < 1:
+        if isinstance(self.capability_version, bool) or self.capability_version < 1:
             raise ValueError("Recipe capability version must be positive.")
 
     def to_dict(self) -> dict[str, object]:
@@ -43,22 +46,36 @@ class ProductionRecipe:
     key: str
     version: int
     stages: tuple[RecipeStage, ...]
+    recipe_id: str | None = None
+    version_id: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.key.strip() or self.version < 1:
+        if not self.key.strip() or isinstance(self.version, bool) or self.version < 1:
             raise ValueError("Recipe key and positive version are required.")
         if not self.stages:
             raise ValueError("A production recipe must contain at least one stage.")
         keys = [stage.key for stage in self.stages]
         if len(keys) != len(set(keys)):
             raise ValueError("Recipe stage keys must be unique.")
+        if (self.recipe_id is None) != (self.version_id is None):
+            raise ValueError("Recipe and recipe-version IDs must be supplied together.")
+        if self.recipe_id is not None and self.version_id is not None:
+            try:
+                UUID(self.recipe_id)
+                UUID(self.version_id)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Recipe requires valid recipe and version IDs.") from exc
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "key": self.key,
             "version": self.version,
             "stages": [stage.to_dict() for stage in self.stages],
         }
+        if self.recipe_id is not None and self.version_id is not None:
+            value["recipe_id"] = self.recipe_id
+            value["version_id"] = self.version_id
+        return value
 
     @classmethod
     def from_dict(cls, value: object) -> "ProductionRecipe":
@@ -74,7 +91,18 @@ class ProductionRecipe:
             raise ValueError("Recipe version must be an integer.")
         if not isinstance(stages, list):
             raise ValueError("Recipe stages must be a list.")
-        return cls(key, version, tuple(RecipeStage.from_dict(stage) for stage in stages))
+        recipe_id, version_id = value.get("recipe_id"), value.get("version_id")
+        if recipe_id is not None and not isinstance(recipe_id, str):
+            raise ValueError("Recipe ID must be a string or null.")
+        if version_id is not None and not isinstance(version_id, str):
+            raise ValueError("Recipe version ID must be a string or null.")
+        return cls(
+            key,
+            version,
+            tuple(RecipeStage.from_dict(stage) for stage in stages),
+            recipe_id=recipe_id,
+            version_id=version_id,
+        )
 
 
 BOOK_TO_TELEGRAM_POST = ProductionRecipe(
