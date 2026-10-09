@@ -1,3 +1,5 @@
+from sqlalchemy.exc import IntegrityError
+
 from app.domain.recipes import ProductionRecipe, RecipeStage, SUPPORTED_RECIPE_CAPABILITIES
 from app.infrastructure.database.recipes import ProductionRecipeRepository
 
@@ -68,10 +70,18 @@ class ProductionRecipeControlPlaneService:
         self, key: str, name: str, purpose: str, stages: list[dict[str, object]]
     ) -> dict[str, object]:
         stages = _validate_stages(key, 1, stages)
+        if not name.strip() or not purpose.strip():
+            raise ValueError("Production recipe name and purpose are required.")
         if await self.repository.get_recipe(key):
             raise ValueError("Production recipe key already exists.")
-        recipe, version = await self.repository.create_recipe(key, name.strip(), purpose.strip(), stages)
-        await self.session.commit()
+        try:
+            recipe, version = await self.repository.create_recipe(
+                key, name.strip(), purpose.strip(), stages
+            )
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise ValueError("Production recipe key already exists.") from exc
         await self.session.refresh(recipe)
         await self.session.refresh(version)
         return {**_recipe_payload(recipe), "created_version": _version_payload(version)}
