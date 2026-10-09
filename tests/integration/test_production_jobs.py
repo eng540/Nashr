@@ -266,18 +266,17 @@ async def test_invalid_source_pdf_fails_job_instead_of_using_text_fallback(tmp_p
 async def test_production_job_pins_prompt_across_publish_retry_and_new_job():
     source_id, _, unit_ids = await _fixture(materials=4, topics=1)
     async with SessionFactory() as session:
-        template = PromptTemplateModel(
-            id=uuid4(), key="editorial.drafter", name="Editorial Drafter",
-            purpose="Draft posts",
-        )
-        session.add(template)
-        await session.flush()
-        session.add(PromptTemplateVersionModel(
-            id=uuid4(), prompt_template_id=template.id, version=1,
-            body="prompt-v1", status="DRAFT",
-        ))
-        await session.flush()
-        await PromptTemplateRepository(session).publish("editorial.drafter", 1)
+        template = (await session.execute(
+            select(PromptTemplateModel).where(PromptTemplateModel.key == "editorial.drafter")
+        )).scalar_one()
+        version_one = (await session.execute(
+            select(PromptTemplateVersionModel).where(
+                PromptTemplateVersionModel.prompt_template_id == template.id,
+                PromptTemplateVersionModel.version == 1,
+            )
+        )).scalar_one()
+        # Migration 0015 seeds the canonical template and its published v1.
+        version_one.body = "prompt-v1"
         await session.commit()
 
         old_job = await create_production_job(
@@ -334,6 +333,17 @@ async def test_production_job_pins_prompt_across_publish_retry_and_new_job():
 async def test_missing_published_editorial_prompt_blocks_job_creation():
     source_id, _, _ = await _fixture(materials=1, topics=1)
     async with SessionFactory() as session:
+        template = (await session.execute(
+            select(PromptTemplateModel).where(PromptTemplateModel.key == "editorial.drafter")
+        )).scalar_one()
+        published = (await session.execute(
+            select(PromptTemplateVersionModel).where(
+                PromptTemplateVersionModel.prompt_template_id == template.id,
+                PromptTemplateVersionModel.status == "PUBLISHED",
+            )
+        )).scalar_one()
+        published.status = "ARCHIVED"
+        await session.commit()
         with pytest.raises(LookupError, match="No unique active published prompt"):
             await create_production_job(session, source_id, ProductionScope.SOURCE)
 
@@ -341,18 +351,16 @@ async def test_missing_published_editorial_prompt_blocks_job_creation():
 async def test_legacy_job_without_prompt_provenance_fails_without_active_fallback():
     source_id, _, _ = await _fixture(materials=1, topics=1)
     async with SessionFactory() as session:
-        template = PromptTemplateModel(
-            id=uuid4(), key="editorial.drafter", name="Editorial Drafter",
-            purpose="Draft posts",
-        )
-        session.add(template)
-        await session.flush()
-        session.add(PromptTemplateVersionModel(
-            id=uuid4(), prompt_template_id=template.id, version=1,
-            body="currently-published", status="DRAFT",
-        ))
-        await session.flush()
-        await PromptTemplateRepository(session).publish("editorial.drafter", 1)
+        template = (await session.execute(
+            select(PromptTemplateModel).where(PromptTemplateModel.key == "editorial.drafter")
+        )).scalar_one()
+        published = (await session.execute(
+            select(PromptTemplateVersionModel).where(
+                PromptTemplateVersionModel.prompt_template_id == template.id,
+                PromptTemplateVersionModel.status == "PUBLISHED",
+            )
+        )).scalar_one()
+        published.body = "currently-published"
         await session.commit()
         job = await create_production_job(session, source_id, ProductionScope.SOURCE)
         job.editorial_prompt_key = None
