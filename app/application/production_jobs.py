@@ -15,6 +15,7 @@ from app.domain.production_jobs import (
     ProductionScope,
 )
 from app.domain.production_context import ResolvedProductionContext
+from app.domain.artifacts import Artifact, ArtifactKind
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST
 from app.application.recipe_engine import (
     ProductionExecutionContext,
@@ -316,7 +317,7 @@ async def _update_progress(job_id: UUID, current_item_id: UUID | None = None) ->
         return completed, failed, pending, running
 
 
-async def _complete_item(job_id: UUID, item_id: UUID, post_id: UUID) -> None:
+async def _complete_item(job_id: UUID, item_id: UUID, artifact: Artifact) -> None:
     async with SessionFactory() as session:
         await session.execute(
             update(ProductionJobItemModel)
@@ -327,7 +328,8 @@ async def _complete_item(job_id: UUID, item_id: UUID, post_id: UUID) -> None:
             )
             .values(
                 status=ProductionJobItemStatus.COMPLETED.value,
-                post_id=post_id,
+                artifact_id=artifact.id,
+                post_id=artifact.post_id if artifact.kind == ArtifactKind.POST else None,
                 error_code=None,
                 error_message=None,
                 completed_at=datetime.now(timezone.utc),
@@ -429,6 +431,9 @@ class ProductionJobRunner:
                 if job is None:
                     return
                 resolved_context = None
+                pinned_context_payload = job.resolved_context
+                pinned_prompt_key = job.editorial_prompt_key
+                pinned_prompt_version = job.editorial_prompt_version
                 pinned_recipe = BOOK_TO_TELEGRAM_POST
                 if job.resolved_context is not None:
                     try:
@@ -498,14 +503,17 @@ class ProductionJobRunner:
                                 inputs={"knowledge_unit_id": knowledge_unit_id},
                                 configuration={
                                     "editorial_prompt": {
-                                        "key": job.editorial_prompt_key,
-                                        "version": job.editorial_prompt_version,
+                                        "key": pinned_prompt_key,
+                                        "version": pinned_prompt_version,
                                         "body": pinned_prompt,
                                     }
                                 },
+                                run_id=job_id,
+                                run_item_id=item_id,
+                                resolved_context=pinned_context_payload,
                             ),
                         )
-                    await _complete_item(job_id, item_id, artifact.id)
+                    await _complete_item(job_id, item_id, artifact)
                     await _update_progress(job_id, None)
                 except Exception as exc:
                     logger.exception(
