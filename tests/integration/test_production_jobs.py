@@ -112,6 +112,7 @@ async def test_job_pins_recipe_version_when_a_new_version_is_published():
     stages_v2 = [{"key": "produce-post-v2", "capability_key": "produce_post", "capability_version": 1}]
 
     async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "recipe-pinned-prompt")
         recipes = ProductionRecipeControlPlaneService(session)
         await recipes.create_recipe(
             "TEST_JOB_RECIPE", "Test job recipe", "Verify run-level recipe pinning.", stages_v1
@@ -134,7 +135,7 @@ async def test_job_pins_recipe_version_when_a_new_version_is_published():
 
     drafter = RecordingDrafter()
     await ProductionJobRunner(drafter).run(job.id)
-    assert drafter.prompts == ["editorial prompt"]
+    assert drafter.prompts == ["recipe-pinned-prompt"]
 
 
 async def test_published_prompt_change_does_not_mutate_existing_job_context():
