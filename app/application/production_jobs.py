@@ -365,7 +365,11 @@ async def _complete_item(job_id: UUID, item_id: UUID, artifact: Artifact) -> Non
 
 
 async def _fail_item(job_id: UUID, item_id: UUID, exc: Exception) -> None:
-    code = getattr(exc, "code", None) or "PRODUCTION_ERROR"
+    # Provider SDKs may expose numeric HTTP codes (e.g. 429/404), while
+    # production_job_items.error_code is a VARCHAR. Normalize at the boundary so
+    # recording a provider failure cannot itself fail with a database type error.
+    raw_code = getattr(exc, "code", None)
+    code = str(raw_code) if raw_code is not None else "PRODUCTION_ERROR"
     async with SessionFactory() as session:
         await session.execute(
             update(ProductionJobItemModel)
