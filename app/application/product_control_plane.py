@@ -2,6 +2,9 @@ from sqlalchemy.exc import IntegrityError
 
 from app.domain.products import ProductionProductDefinition
 from app.infrastructure.database.products import ProductionProductRepository
+from app.infrastructure.database.recipes import ProductionRecipeRepository
+from app.infrastructure.database.output_contracts import OutputContractRepository
+from app.infrastructure.database.policies import ProductionPolicyRepository
 
 
 def _version_payload(row) -> dict[str, object]:
@@ -67,6 +70,16 @@ class ProductionProductControlPlaneService:
         return _version_payload(row)
 
     async def publish(self, key: str, version: int) -> dict[str, object]:
+        versions = await self.repository.get_versions(key)
+        target = next((item for item in versions if item.version == version), None)
+        if target is None:
+            raise LookupError("Production product version not found.")
+        if target.status != "DRAFT":
+            raise ValueError("Only DRAFT product versions can be published.")
+        definition = ProductionProductDefinition.from_dict(target.definition)
+        await ProductionRecipeRepository(self.session).resolve_active(definition.recipe_key)
+        await OutputContractRepository(self.session).resolve_active(definition.output_contract_key)
+        await ProductionPolicyRepository(self.session).resolve_active(definition.policy_key)
         row = await self.repository.publish(key, version)
         await self.session.commit()
         await self.session.refresh(row)
