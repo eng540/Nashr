@@ -17,6 +17,8 @@ from app.domain.production_jobs import (
 )
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.products import ProductionProductDefinition
+from app.domain.image_generation import IImageGenerator
+from app.domain.storage import ObjectStorage
 from app.domain.artifacts import Artifact, ArtifactKind
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST
 from app.application.recipe_engine import (
