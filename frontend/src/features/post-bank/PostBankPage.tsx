@@ -31,6 +31,7 @@ export function PostBankPage() {
   const [reviewNote, setReviewNote] = useState("");
   const [productionSourceId, setProductionSourceId] = useState("");
   const [identityKey, setIdentityKey] = useState("");
+  const [recipeKey, setRecipeKey] = useState("BOOK_TO_TELEGRAM_POST");
   const [productionMode, setProductionMode] = useState<"ALL" | "NEEDS" | "DONE">("NEEDS");
   const [productionKind, setProductionKind] = useState("");
   const [scope, setScope] = useState<ProductionScope>("SOURCE");
@@ -41,6 +42,7 @@ export function PostBankPage() {
 
   const sources = useQuery({ queryKey: ["production", "sources"], queryFn: productionJobsApi.sources });
   const identities = useQuery({ queryKey: ["control-plane", "identities"], queryFn: productionJobsApi.identities });
+  const recipes = useQuery({ queryKey: ["control-plane", "recipes"], queryFn: productionJobsApi.recipes });
   const filterOptions = useQuery({
     queryKey: ["post-bank", "filter-options", filterSourceId],
     queryFn: () => postsApi.filterOptions(filterSourceId === ALL_SOURCES ? undefined : filterSourceId),
@@ -91,7 +93,7 @@ export function PostBankPage() {
       if (!productionSourceId) throw new Error("اختر كتابًا أولًا.");
       if (scope === "TOPIC" && !productionTopicId) throw new Error("اختر محورًا.");
       if (scope === "SELECTION" && !materialIds.length) throw new Error("اختر مادة واحدة على الأقل.");
-      return productionJobsApi.create({ source_id: productionSourceId, scope, ...(scope === "TOPIC" ? { topic_id: productionTopicId } : {}), ...(scope === "SELECTION" ? { knowledge_unit_ids: materialIds } : {}), ...(identityKey ? { identity_key: identityKey } : {}) });
+      return productionJobsApi.create({ source_id: productionSourceId, scope, recipe_key: recipeKey, ...(scope === "TOPIC" ? { topic_id: productionTopicId } : {}), ...(scope === "SELECTION" ? { knowledge_unit_ids: materialIds } : {}), ...(identityKey ? { identity_key: identityKey } : {}) });
     },
     onSuccess: (data) => { setJobId(data.job_id); setJobItemsPage(0); setMessage("بدأ إنتاج المنشورات."); void client.invalidateQueries({ queryKey: ["post-bank"] }); },
     onError: (error) => setMessage(error instanceof Error ? error.message : "تعذر بدء الإنتاج."),
@@ -106,6 +108,7 @@ export function PostBankPage() {
   const approvedSelected = useMemo(() => items.filter((p) => selected.includes(p.post_id) && p.status === "APPROVED"), [items, selected]);
   const topics = bookMap.data?.topics ?? [];
   const availableIdentities = (identities.data ?? []).filter((identity) => identity.active_version !== null);
+  const availableRecipes = (recipes.data ?? []).filter((recipe) => recipe.active_version !== null);
   const productionSources = (sources.data ?? []).filter((source) => productionMode === "ALL" || productionMode === "NEEDS" && source.pending_count > 0 || productionMode === "DONE" && source.pending_count === 0 && source.material_count > 0);
   const visibleTopics = topics.filter((topic) => productionMode === "ALL" || productionMode === "NEEDS" && topic.materials.some((material) => !material.has_post) || productionMode === "DONE" && topic.materials.length > 0 && topic.materials.every((material) => material.has_post));
   const allProductionMaterials = scope === "TOPIC" ? visibleTopics.find((t) => t.id === productionTopicId)?.materials ?? [] : visibleTopics.flatMap((t) => t.materials);
@@ -147,10 +150,11 @@ export function PostBankPage() {
         <label className="text-sm font-semibold">الكتاب للإنتاج<select aria-label="الكتاب للإنتاج" value={productionSourceId} onChange={(e) => { setProductionSourceId(e.target.value); setProductionTopicId(""); setMaterialIds([]); setProductionKind(""); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">اختر كتابًا...</option>{productionSources.map((s) => <option key={s.id} value={s.id}>{s.book_title || s.filename} — {s.pending_count} متبقٍ</option>)}</select></label>
         <label className="text-sm font-semibold">نطاق الإنتاج<select aria-label="نطاق الإنتاج" value={scope} onChange={(e) => setScope(e.target.value as ProductionScope)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="SOURCE">الكتاب كاملًا</option><option value="TOPIC">محور محدد</option><option value="SELECTION">مواد أحددها بنفسي</option></select></label>
         {scope === "TOPIC" && <label className="text-sm font-semibold">المحور للإنتاج<select aria-label="المحور للإنتاج" value={productionTopicId} onChange={(e) => { setProductionTopicId(e.target.value); setMaterialIds([]); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">اختر محورًا...</option>{visibleTopics.map((t) => <option key={t.id} value={t.id}>{t.position}. {t.title} — {t.materials.filter((m) => !m.has_post).length} متبقٍ</option>)}</select></label>}
+        <label className="text-sm font-semibold">وصفة الإنتاج<select aria-label="وصفة الإنتاج" value={recipeKey} onChange={(e) => setRecipeKey(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">اختر وصفة...</option>{availableRecipes.map((recipe) => <option key={recipe.key} value={recipe.key}>{recipe.name} · v{recipe.active_version}</option>)}</select></label>
         <label className="text-sm font-semibold">الهوية التحريرية<select aria-label="الهوية التحريرية للإنتاج" value={identityKey} onChange={(e) => setIdentityKey(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">استخدم إعدادات القالب الحالية</option>{availableIdentities.map((identity) => <option key={identity.key} value={identity.key}>{identity.name} · v{identity.active_version}</option>)}</select></label>
       </div>
       {scope === "SELECTION" && <div className="mt-4"><label className="text-sm font-semibold">نوع المادة<select aria-label="نوع المادة للإنتاج" value={productionKind} onChange={(e) => setProductionKind(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الأنواع المتاحة</option>{productionKinds.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><div className="mt-3 max-h-64 overflow-auto rounded-xl border">{materials.map((m) => <label key={m.id} className="flex gap-3 border-b p-3"><input type="checkbox" checked={materialIds.includes(m.id)} onChange={(e) => setMaterialIds(toggleSelection(materialIds, m.id, e.target.checked))}/><span><strong>{m.title}</strong><span className="block text-xs text-slate-500">{m.kind || "بدون نوع"}</span></span></label>)}</div></div>}
-      <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="start-production" type="button" onClick={() => createProduction.mutate()} disabled={createProduction.isPending || !productionSourceId} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">تشغيل إنتاج المنشورات</button><span className="text-sm text-slate-500">{scope === "SELECTION" ? `${materialIds.length} مادة محددة` : scope === "TOPIC" ? "إنتاج مواد المحور" : "إنتاج مواد الكتاب كاملة"}</span></div>
+      <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="start-production" type="button" onClick={() => createProduction.mutate()} disabled={createProduction.isPending || !productionSourceId || !recipeKey} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">تشغيل إنتاج المنشورات</button><span className="text-sm text-slate-500">{scope === "SELECTION" ? `${materialIds.length} مادة محددة` : scope === "TOPIC" ? "إنتاج مواد المحور" : "إنتاج مواد الكتاب كاملة"}</span></div>
       {(job.data || jobId) && <div className="mt-4 space-y-4 rounded-xl border bg-slate-50 p-4" data-testid="production-job-details">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><strong>{job.data?.status ?? "QUEUED"}</strong><p className="mt-1 break-all text-xs text-slate-500">معرّف العملية: {job.data?.job_id ?? jobId}</p></div>

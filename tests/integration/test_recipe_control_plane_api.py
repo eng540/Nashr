@@ -124,3 +124,35 @@ async def test_recipe_control_plane_rejects_non_integer_capability_versions():
                 },
             )
             assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_recipe_stage_configuration_is_persisted_and_restricted_to_capability_contract():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        create = await client.post("/api/control/recipes", json={
+            "key": "TEST_RECIPE_CONFIGURED",
+            "name": "Configured Recipe",
+            "purpose": "Verify declarative capability configuration.",
+            "stages": [{
+                "key": "produce-post",
+                "capability_key": "produce_post",
+                "capability_version": 1,
+                "configuration": {"style_instructions": "Keep it concise."},
+            }],
+        })
+        assert create.status_code == 201, create.text
+        assert create.json()["created_version"]["stages"][0]["configuration"]["style_instructions"] == "Keep it concise."
+
+        invalid = await client.post("/api/control/recipes", json={
+            "key": "TEST_RECIPE_CONFIG_INVALID",
+            "name": "Invalid Config",
+            "purpose": "Unknown capability configuration must be rejected.",
+            "stages": [{
+                "key": "produce-post",
+                "capability_key": "produce_post",
+                "capability_version": 1,
+                "configuration": {"python": "import os"},
+            }],
+        })
+        assert invalid.status_code == 409

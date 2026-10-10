@@ -95,3 +95,35 @@ def test_recipe_stage_rejects_invalid_capability_versions(version):
 def test_recipe_rejects_invalid_versions(version):
     with pytest.raises(ValueError, match="positive version"):
         ProductionRecipe(key="INVALID", version=version, stages=(RecipeStage("stage", "capability", 1),))
+
+
+@pytest.mark.asyncio
+async def test_recipe_engine_passes_stage_configuration_to_registered_capability():
+    class ConfiguredCapability:
+        key = "configured"
+        version = 1
+
+        def __init__(self):
+            self.configurations = []
+
+        async def execute(self, context, previous_output):
+            self.configurations.append(dict(context.stage_configuration))
+            return Artifact(
+                id=uuid4(), source_knowledge_unit_id=uuid4(), kind=ArtifactKind.POST,
+                content="draft", status="AVAILABLE",
+                created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+            )
+
+    capability = ConfiguredCapability()
+    registry = CapabilityRegistry()
+    registry.register(capability)
+    recipe = ProductionRecipe(
+        key="CONFIGURED_RECIPE", version=1,
+        stages=(RecipeStage("configured-stage", "configured", 1, {"style_instructions": "Be concise"}),),
+    )
+    result = await ProductionRecipeEngine(registry).execute(
+        recipe,
+        ProductionExecutionContext(session=None, inputs={}, configuration={}),
+    )
+    assert result.content == "draft"
+    assert capability.configurations == [{"style_instructions": "Be concise"}]

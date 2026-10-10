@@ -1,6 +1,6 @@
 """Bounded recipe execution over explicitly registered capabilities."""
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field, replace
 from typing import Protocol
 from uuid import UUID
 
@@ -10,7 +10,7 @@ from app.application.artifacts import ensure_post_artifact
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import ProducePost
 from app.domain.artifacts import Artifact
-from app.domain.recipes import ProductionRecipe
+from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class ProductionExecutionContext:
     configuration: Mapping[str, object]
     run_id: UUID | None = None
     resolved_context: Mapping[str, object] | None = None
+    stage_configuration: Mapping[str, object] = dataclass_field(default_factory=dict)
 
 
 class RecipeCapability(Protocol):
@@ -68,10 +69,16 @@ class ProducePostCapability:
             raise ValueError("produce_post capability requires a knowledge_unit_id input.")
         if not isinstance(editorial_prompt, Mapping) or not isinstance(editorial_prompt.get("body"), str):
             raise ValueError("produce_post capability requires a resolved editorial_prompt body.")
+        system_prompt = editorial_prompt["body"]
+        style_instructions = context.stage_configuration.get("style_instructions")
+        if style_instructions is not None:
+            if not isinstance(style_instructions, str) or not style_instructions.strip():
+                raise ValueError("produce_post style_instructions must be a non-empty string.")
+            system_prompt = f"{system_prompt}\n\nRecipe-specific instructions:\n{style_instructions.strip()}"
         post = await self.producer.execute(
             context.session,
             knowledge_unit_id,
-            system_prompt=editorial_prompt["body"],
+            system_prompt=system_prompt,
         )
         return await ensure_post_artifact(
             context.session,
@@ -94,6 +101,7 @@ class ProductionRecipeEngine:
         # Only registered capability implementations may execute its declarative stages.
         for stage in pinned_recipe.stages:
             self.capabilities.resolve(stage.capability_key, stage.capability_version)
+            validate_recipe_stage_configuration(stage)
 
     async def execute(
         self,
@@ -106,7 +114,8 @@ class ProductionRecipeEngine:
             capability = self.capabilities.resolve(
                 stage.capability_key, stage.capability_version
             )
-            output = await capability.execute(context, output)
+            stage_context = replace(context, stage_configuration=stage.configuration)
+            output = await capability.execute(stage_context, output)
 
         if not isinstance(output, Artifact):
             raise TypeError("The final recipe stage must return a validated Artifact.")

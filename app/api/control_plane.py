@@ -25,9 +25,11 @@ class PromptVersionRequest(BaseModel):
 
 
 class RecipeStageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     key: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9._-]+$")
     capability_key: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9._-]+$")
     capability_version: int = Field(ge=1, strict=True)
+    configuration: dict[str, Any] = Field(default_factory=dict)
 
 
 class RecipeCreateRequest(BaseModel):
