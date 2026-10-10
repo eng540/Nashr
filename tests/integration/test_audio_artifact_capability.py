@@ -113,4 +113,5 @@ async def test_audio_capability_persists_private_audio_artifact():
     assert artifact.metadata["transcript"] == "نص عربي قصير مناسب للإلقاء الصوتي."
     assert row.review_status == "DRAFT"
     assert generator.calls == [("نص عربي قصير مناسب للإلقاء الصوتي.", "Kore", "warm and measured")]
+    assert storage.ensure_available_calls == 1
     assert len(storage.put_calls) == 1
