@@ -59,7 +59,9 @@ async def test_create_and_read_production_job_api(monkeypatch: pytest.MonkeyPatc
         assert status_payload["resolved_prompt"]["key"]
         assert status_payload["resolved_prompt"]["version"] >= 1
         assert status_payload["resolved_context"]["available"] is True
-        assert status_payload["resolved_context"]["schema_version"] == 2
+        assert status_payload["resolved_context"]["schema_version"] == 4
+        assert status_payload["resolved_context"]["output_contract"]["key"] == "TELEGRAM_POST"
+        assert status_payload["resolved_context"]["output_contract"]["version"] == 1
         assert status_payload["resolved_context"]["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST"
         assert status_payload["resolved_context"]["recipe"]["version"] == 1
         assert status_payload["resolved_context"]["recipe"]["recipe_id"]
@@ -162,7 +164,8 @@ async def test_create_production_job_api_pins_selected_editorial_identity(monkey
         )
         assert response.status_code == 202, response.text
         payload = response.json()
-        assert payload["resolved_context"]["schema_version"] == 3
+        assert payload["resolved_context"]["schema_version"] == 4
+        assert payload["resolved_context"]["output_contract"]["key"] == "TELEGRAM_POST"
         assert payload["resolved_context"]["identity"]["key"] == "API_TEST_EDITORIAL_IDENTITY"
         assert payload["resolved_context"]["identity"]["version"] == 1
         assert payload["resolved_context"]["identity"]["definition"]["voice"] == "Precise and respectful"
