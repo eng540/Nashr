@@ -207,6 +207,90 @@ async def persist_generic_artifact(
     return loaded
 
 
+async def persist_generic_artifact(session: AsyncSession, artifact: Artifact, *, resolved_context: dict) -> Artifact:
+    """Persist a non-Post Artifact after enforcing its pinned output contract."""
+    if artifact.kind == ArtifactKind.POST:
+        raise ValueError("POST artifacts must use ensure_post_artifact.")
+    kind = ArtifactKind(artifact.kind)
+    status = ArtifactStatus(artifact.status)
+    from app.domain.production_context import PinnedOutputContract
+    if not isinstance(resolved_context, dict) or "output_contract" not in resolved_context:
+        raise ValueError("Generic Artifact persistence requires a pinned output contract.")
+    pinned = PinnedOutputContract.from_dict(resolved_context["output_contract"])
+    definition = OutputContractDefinition.from_dict(pinned.definition)
+    if definition.artifact_kind != kind.value:
+        raise ValueError("Generated Artifact kind does not match the pinned output contract.")
+    if artifact.mime_type is not None and artifact.mime_type != definition.mime_type:
+        raise ValueError("Generated Artifact MIME type does not match the pinned output contract.")
+    metadata = dict(artifact.metadata or {})
+    missing = [field for field in definition.required_metadata_fields if field not in metadata]
+    if missing:
+        raise ValueError("Generated Artifact is missing required metadata fields: " + ", ".join(missing))
+    if definition.content_mode == "INLINE":
+        if not isinstance(artifact.content, str) or not artifact.content.strip() or artifact.storage_uri is not None:
+            raise ValueError("Inline Artifact requires non-empty content and no storage URI.")
+        if definition.max_content_chars is not None and len(artifact.content) > definition.max_content_chars:
+            raise ValueError("Generated Artifact exceeds the pinned output contract content limit.")
+    else:
+        if artifact.content is not None or not isinstance(artifact.storage_uri, str) or not artifact.storage_uri.strip():
+            raise ValueError("Storage-backed Artifact requires a storage URI and no inline content.")
+        if len(artifact.storage_uri) > 2000:
+            raise ValueError("Artifact storage URI exceeds the supported length.")
+    if "policy" in resolved_context and artifact.content is not None:
+        from app.domain.production_context import PinnedPolicy
+        policy = ProductionPolicyDefinition.from_dict(PinnedPolicy.from_dict(resolved_context["policy"]).definition)
+        errors = policy.validate_content(artifact.content)
+        if errors:
+            raise ValueError("Generated Artifact violates pinned production policy: " + " ".join(errors))
+
+    if artifact.production_job_id is not None:
+        row = (await session.execute(select(ArtifactModel).where(
+            ArtifactModel.production_job_id == artifact.production_job_id,
+            ArtifactModel.source_knowledge_unit_id == artifact.source_knowledge_unit_id,
+            ArtifactModel.kind == kind.value,
+        ))).scalar_one_or_none()
+        if row is not None:
+            existing = await load_artifact(session, row.id)
+            if existing is not None:
+                return existing
+
+    await session.execute(
+        insert(ArtifactModel).values(
+            id=artifact.id,
+            source_knowledge_unit_id=artifact.source_knowledge_unit_id,
+            kind=kind.value,
+            status=status.value,
+            post_id=None,
+            production_job_id=artifact.production_job_id,
+            resolved_context=resolved_context,
+            output_contract_key=pinned.key,
+            output_contract_version=pinned.version,
+            mime_type=definition.mime_type,
+            content=artifact.content,
+            storage_uri=artifact.storage_uri,
+            artifact_metadata=metadata,
+            created_at=artifact.created_at,
+            updated_at=artifact.updated_at,
+        ).on_conflict_do_nothing(
+            index_elements=[ArtifactModel.production_job_id, ArtifactModel.source_knowledge_unit_id, ArtifactModel.kind],
+            index_where=ArtifactModel.production_job_id.is_not(None),
+        )
+    )
+    await session.commit()
+    existing = await load_artifact(session, artifact.id)
+    if existing is None and artifact.production_job_id is not None:
+        row = (await session.execute(select(ArtifactModel).where(
+            ArtifactModel.production_job_id == artifact.production_job_id,
+            ArtifactModel.source_knowledge_unit_id == artifact.source_knowledge_unit_id,
+            ArtifactModel.kind == kind.value,
+        ))).scalar_one_or_none()
+        if row is not None:
+            existing = await load_artifact(session, row.id)
+    if existing is None:
+        raise RuntimeError("Generic Artifact persistence did not produce a readable record.")
+    return existing
+
+
 async def load_artifact(session: AsyncSession, artifact_id: UUID) -> Artifact | None:
     result = await session.execute(
         select(ArtifactModel).where(ArtifactModel.id == artifact_id)
