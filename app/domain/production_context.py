@@ -346,34 +346,43 @@ class ResolvedProductionContext:
         if schema_version not in SUPPORTED_CONTEXT_SCHEMA_VERSIONS:
             raise ValueError(f"Unsupported resolved production context schema version: {schema_version}.")
         if schema_version == 1:
-            if any(field in value for field in ("recipe", "identity", "output_contract", "policy")):
+            if any(field in value for field in ("recipe", "identity", "output_contract", "policy", "product")):
                 raise ValueError("Resolved context schema version 1 cannot contain recipe, identity, output contract, or policy.")
             recipe = identity = output_contract = policy = None
         elif schema_version == 2:
-            if "recipe" not in value or any(field in value for field in ("identity", "output_contract", "policy")):
+            if "recipe" not in value or any(field in value for field in ("identity", "output_contract", "policy", "product")):
                 raise ValueError("Resolved context schema version 2 requires recipe and forbids identity, output contract, and policy.")
             recipe = ProductionRecipe.from_dict(value["recipe"])
             identity = output_contract = policy = None
         elif schema_version == 3:
-            if "recipe" not in value or "identity" not in value or "output_contract" in value or "policy" in value:
+            if "recipe" not in value or "identity" not in value or "output_contract" in value or "policy" in value or "product" in value:
                 raise ValueError("Resolved context schema version 3 requires recipe and identity and forbids output contract and policy.")
             recipe = ProductionRecipe.from_dict(value["recipe"])
             identity = PinnedIdentity.from_dict(value["identity"])
             output_contract = policy = None
         elif schema_version == 4:
-            if "recipe" not in value or "output_contract" not in value or "policy" in value:
+            if "recipe" not in value or "output_contract" not in value or "policy" in value or "product" in value:
                 raise ValueError("Resolved context schema version 4 requires recipe and output_contract and forbids policy.")
             recipe = ProductionRecipe.from_dict(value["recipe"])
             identity = PinnedIdentity.from_dict(value["identity"]) if "identity" in value else None
             output_contract = PinnedOutputContract.from_dict(value["output_contract"])
             policy = None
-        else:
-            if any(field not in value for field in ("recipe", "output_contract", "policy")):
-                raise ValueError("Resolved context schema version 5 requires recipe, output_contract, and policy.")
+        elif schema_version == 5:
+            if any(field not in value for field in ("recipe", "output_contract", "policy")) or "product" in value:
+                raise ValueError("Resolved context schema version 5 requires recipe, output_contract, and policy and forbids product.")
             recipe = ProductionRecipe.from_dict(value["recipe"])
             identity = PinnedIdentity.from_dict(value["identity"]) if "identity" in value else None
             output_contract = PinnedOutputContract.from_dict(value["output_contract"])
             policy = PinnedPolicy.from_dict(value["policy"])
+            product = None
+        else:
+            if any(field not in value for field in ("recipe", "output_contract", "policy", "product")):
+                raise ValueError("Resolved context schema version 6 requires recipe, output_contract, policy, and product.")
+            recipe = ProductionRecipe.from_dict(value["recipe"])
+            identity = PinnedIdentity.from_dict(value["identity"]) if "identity" in value else None
+            output_contract = PinnedOutputContract.from_dict(value["output_contract"])
+            policy = PinnedPolicy.from_dict(value["policy"])
+            product = PinnedProduct.from_dict(value["product"])
         return cls(
             schema_version=schema_version,
             origin=origin,
@@ -383,4 +392,5 @@ class ResolvedProductionContext:
             identity=identity,
             output_contract=output_contract,
             policy=policy,
+            product=product,
         )
