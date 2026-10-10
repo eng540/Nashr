@@ -94,3 +94,10 @@ The Content Factory now applies Post-specific pending/done filters only to the P
 ## Private media storage boundary — implementation change
 
 Generic media Artifacts now have an S3-compatible storage adapter that keeps objects private, stores stable s3:// references, validates object keys and bucket ownership, and issues short-lived signed read URLs. The generic review API exposes signed URLs only for storage-backed IMAGE/VIDEO/AUDIO Artifacts, and the review panel renders the appropriate media preview instead of treating the storage URI as user-facing content. This adapter is provider-neutral across S3-compatible services; production media generation must remain disabled until the service environment has the ARTIFACT_STORAGE_ENDPOINT_URL, ARTIFACT_STORAGE_BUCKET, ARTIFACT_STORAGE_ACCESS_KEY_ID, and ARTIFACT_STORAGE_SECRET_ACCESS_KEY variables configured.
+
+
+## First IMAGE capability — implementation in progress
+
+A Gemini-native image-generation adapter and the registered `produce_image_artifact v1` capability are being added against the generic Artifact and Recipe contracts. The recipe uses a bounded source excerpt and pinned Product audience/experience to create a private storage-backed IMAGE Artifact, records source/product/recipe/output-contract provenance, and starts it in the generic review state DRAFT. Existing output lookup occurs before model invocation so retries reuse a previously persisted image instead of paying for another generation.
+
+The `ARABIC_LITERATURE_IMAGE` Product is deliberately seeded as DRAFT, not selectable by the Content Factory. Publishing any storage-backed media Product now verifies that the S3-compatible bucket is configured and reachable. This prevents production jobs from being activated while durable storage is absent. Configure the ARTIFACT_STORAGE_* variables for the target Railway service before publishing this product; no bucket or credentials are provisioned by this code change.

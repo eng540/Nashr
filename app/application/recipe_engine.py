@@ -5,15 +5,20 @@ from datetime import datetime, timezone
 from typing import Protocol
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.application.artifacts import ensure_post_artifact, persist_generic_artifact
+from app.application.artifacts import ensure_post_artifact, find_existing_generic_artifact, persist_generic_artifact
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
+from app.adapters.image_generation.gemini import GeminiImageGenerator
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.output_contracts import OutputContractDefinition
 from app.domain.production_context import PinnedOutputContract
 from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
+from app.infrastructure.artifact_storage import ArtifactStorageError, S3ArtifactStorage
+from app.infrastructure.database.models import KnowledgeUnitModel
 
 
 @dataclass(frozen=True)
@@ -143,6 +148,132 @@ class ProduceTextArtifactCapability:
         )
 
 
+class ProduceImageArtifactCapability:
+    """Generate and persist one private, reviewable IMAGE Artifact."""
+
+    key = "produce_image_artifact"
+    version = 1
+
+    def __init__(self, generator=None, storage_factory=None) -> None:
+        self.generator = generator or GeminiImageGenerator()
+        self.storage_factory = storage_factory or S3ArtifactStorage.from_environment
+
+    async def execute(
+        self,
+        context: ProductionExecutionContext,
+        previous_output: object | None = None,
+    ) -> Artifact:
+        knowledge_unit_id = context.inputs.get("knowledge_unit_id")
+        if not isinstance(knowledge_unit_id, UUID):
+            raise ValueError("produce_image_artifact capability requires a knowledge_unit_id input.")
+        if context.resolved_context is None or "output_contract" not in context.resolved_context:
+            raise ValueError("produce_image_artifact capability requires a pinned output contract.")
+        product = context.resolved_context.get("product")
+        if not isinstance(product, Mapping) or not isinstance(product.get("definition"), Mapping):
+            raise ValueError("produce_image_artifact capability requires a pinned product definition.")
+
+        existing = await find_existing_generic_artifact(
+            context.session,
+            production_job_id=context.run_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.IMAGE,
+        )
+        if existing is not None:
+            return existing
+
+        pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
+        contract = OutputContractDefinition.from_dict(pinned_contract.definition)
+        if contract.artifact_kind != ArtifactKind.IMAGE.value or contract.content_mode != "STORAGE_URI":
+            raise ValueError("produce_image_artifact requires an IMAGE storage-backed output contract.")
+
+        # Fail before spending on generation if durable storage is not configured.
+        storage = self.storage_factory()
+        result = await context.session.execute(
+            select(KnowledgeUnitModel)
+            .options(selectinload(KnowledgeUnitModel.source))
+            .where(KnowledgeUnitModel.id == knowledge_unit_id)
+        )
+        unit = result.scalar_one_or_none()
+        if unit is None:
+            raise ValueError("Knowledge unit not found.")
+        source = unit.source
+        source_name = (source.book_title or source.filename) if source is not None else "المصدر"
+        product_definition = product["definition"]
+        audience = str(product_definition.get("audience", "Readers of Arabic literature and culture"))
+        experience = str(product_definition.get("experience", "A source-grounded editorial illustration"))
+        style_instructions = context.stage_configuration.get("style_instructions")
+        if style_instructions is not None and (
+            not isinstance(style_instructions, str) or not style_instructions.strip()
+        ):
+            raise ValueError("produce_image_artifact style_instructions must be a non-empty string.")
+
+        aspect_ratio = context.stage_configuration.get("aspect_ratio", "1:1")
+        image_size = context.stage_configuration.get("image_size", "1K")
+        prompt = (
+            "Create one original, high-quality editorial illustration inspired by the source material below. "
+            "Do not include readable text, captions, logos, or watermarks unless the recipe instructions explicitly require them. "
+            "Respect the source's cultural context; do not invent named people or historical facts.\n\n"
+            f"Audience: {audience}\nIntended experience: {experience}\n"
+            f"Source title: {unit.title}\nSource name: {source_name}\n"
+            f"Source material (bounded excerpt):\n{unit.content[:6000]}"
+        )
+        if style_instructions:
+            prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
+
+        generated = await self.generator.generate(
+            prompt,
+            aspect_ratio=aspect_ratio,
+            image_size=image_size,
+        )
+        if generated.mime_type != contract.mime_type:
+            raise ValueError(
+                f"Generated image MIME type {generated.mime_type!r} does not match the pinned contract {contract.mime_type!r}."
+            )
+        extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[generated.mime_type]
+        artifact_id = uuid4()
+        storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.{extension}"
+        storage_uri = await storage.put(
+            key=storage_key,
+            content=generated.content,
+            content_type=generated.mime_type,
+        )
+        now = datetime.now(timezone.utc)
+        artifact = Artifact(
+            id=artifact_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.IMAGE,
+            content=None,
+            status=ArtifactStatus.AVAILABLE.value,
+            created_at=now,
+            updated_at=now,
+            storage_uri=storage_uri,
+            mime_type=generated.mime_type,
+            production_job_id=context.run_id,
+            output_contract_key=pinned_contract.key,
+            output_contract_version=pinned_contract.version,
+            resolved_context=dict(context.resolved_context),
+            metadata={
+                "title": unit.title,
+                "source_name": source_name,
+                "model": generated.model,
+                "aspect_ratio": aspect_ratio,
+                "image_size": image_size,
+            },
+        )
+        try:
+            return await persist_generic_artifact(
+                context.session,
+                artifact,
+                resolved_context=dict(context.resolved_context),
+            )
+        except Exception:
+            try:
+                await storage.delete(storage_uri)
+            except (AttributeError, ArtifactStorageError, ValueError):
+                pass
+            raise
+
+
 class ProductionRecipeEngine:
     def __init__(self, capabilities: CapabilityRegistry) -> None:
         self.capabilities = capabilities
@@ -180,4 +311,5 @@ def build_production_recipe_engine(
     capabilities = CapabilityRegistry()
     capabilities.register(ProducePostCapability(drafter, resolver))
     capabilities.register(ProduceTextArtifactCapability(drafter, resolver))
+    capabilities.register(ProduceImageArtifactCapability())
     return ProductionRecipeEngine(capabilities=capabilities)

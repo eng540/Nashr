@@ -75,6 +75,14 @@ class S3ArtifactStorage:
         )
         return cls(client=client, bucket=required["ARTIFACT_STORAGE_BUCKET"])
 
+
+    async def ensure_available(self) -> None:
+        """Verify the configured bucket and credentials before activating media products."""
+        try:
+            await asyncio.to_thread(self.client.head_bucket, Bucket=self.bucket)
+        except Exception as exc:
+            raise ArtifactStorageError("Configured Artifact media storage is not reachable.") from exc
+
     async def put(self, *, key: str, content: bytes, content_type: str) -> str:
         safe_key = _validate_key(key)
         if not isinstance(content, bytes) or not content:
@@ -108,6 +116,20 @@ class S3ArtifactStorage:
             )
         except Exception as exc:
             raise ArtifactStorageError("Unable to create an Artifact media URL.") from exc
+
+
+    async def delete(self, storage_uri: str) -> None:
+        bucket, key = self._parse_uri(storage_uri)
+        if bucket != self.bucket:
+            raise ValueError("Artifact storage URI points to an unexpected bucket.")
+        try:
+            await asyncio.to_thread(
+                self.client.delete_object,
+                Bucket=self.bucket,
+                Key=key,
+            )
+        except Exception as exc:
+            raise ArtifactStorageError("Unable to delete an Artifact media object.") from exc
 
     @staticmethod
     def _parse_uri(storage_uri: str) -> tuple[str, str]:
