@@ -111,7 +111,8 @@ export function PostBankPage() {
   const availableIdentities = (identities.data ?? []).filter((identity) => identity.active_version !== null);
   const availableProducts = (products.data ?? []).filter((product) => product.active_version !== null);
   const selectedProduct = availableProducts.find((product) => product.key === productKey);
-  const isPostProduct = selectedProduct ? selectedProduct.definition.output_contract_key === "TELEGRAM_POST" : true;
+  const activeProductVersion = selectedProduct?.versions.find((version) => version.version === selectedProduct.active_version);
+  const isPostProduct = activeProductVersion ? activeProductVersion.definition.output_contract_key === "TELEGRAM_POST" : true;
   const productionSources = (sources.data ?? []).filter((source) => !isPostProduct
     ? source.material_count > 0
     : productionMode === "ALL" || productionMode === "NEEDS" && source.pending_count > 0 || productionMode === "DONE" && source.pending_count === 0 && source.material_count > 0);
