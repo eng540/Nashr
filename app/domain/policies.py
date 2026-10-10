@@ -1,5 +1,6 @@
 """Declarative production policy rules; configuration is data, never executable code."""
 from dataclasses import dataclass
+import re
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,23 @@ class ProductionPolicyDefinition:
         forbidden = {term.casefold().strip() for term in self.forbidden_terms}
         if required & forbidden:
             raise ValueError("A policy term cannot be both required and forbidden.")
+
+    def validate_content(self, content: str) -> list[str]:
+        errors: list[str] = []
+        if len(content) < self.min_content_chars:
+            errors.append(f"Content is shorter than the policy minimum of {self.min_content_chars} characters.")
+        if len(content) > self.max_content_chars:
+            errors.append(f"Content exceeds the policy maximum of {self.max_content_chars} characters.")
+        folded = content.casefold()
+        for term in self.required_terms:
+            if term.casefold().strip() not in folded:
+                errors.append(f"Content is missing required policy term: {term.strip()}.")
+        for term in self.forbidden_terms:
+            if term.casefold().strip() in folded:
+                errors.append(f"Content contains forbidden policy term: {term.strip()}.")
+        if not self.allow_urls and re.search(r"(?:https?://|www\.)", content, re.IGNORECASE):
+            errors.append("Content contains a URL disallowed by the production policy.")
+        return errors
 
     def to_dict(self) -> dict[str, object]:
         return {

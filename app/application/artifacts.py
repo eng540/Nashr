@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.posts import Post
 from app.domain.output_contracts import OutputContractDefinition
+from app.domain.policies import ProductionPolicyDefinition
 from app.infrastructure.database.models import ArtifactModel, PostModel
 
 
@@ -60,6 +61,13 @@ async def ensure_post_artifact(
         contract_key = pinned.key
         contract_version = pinned.version
         contract_mime_type = definition.mime_type
+    if resolved_context is not None and "policy" in resolved_context:
+        from app.domain.production_context import PinnedPolicy
+        pinned_policy = PinnedPolicy.from_dict(resolved_context["policy"])
+        policy = ProductionPolicyDefinition.from_dict(pinned_policy.definition)
+        policy_errors = policy.validate_content(post.content)
+        if policy_errors:
+            raise ValueError("Generated Post violates pinned production policy: " + " ".join(policy_errors))
     existing = (
         await session.execute(select(ArtifactModel).where(ArtifactModel.id == post.id))
     ).scalar_one_or_none()

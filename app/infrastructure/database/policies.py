@@ -101,6 +101,28 @@ class ProductionPolicyRepository:
         await self.session.flush()
         return row
 
+    async def resolve_active(self, key: str) -> tuple[ProductionPolicyModel, ProductionPolicyVersionModel]:
+        result = await self.session.execute(
+            select(ProductionPolicyModel, ProductionPolicyVersionModel)
+            .join(ProductionPolicyVersionModel, ProductionPolicyVersionModel.policy_id == ProductionPolicyModel.id)
+            .where(ProductionPolicyModel.key == key, ProductionPolicyVersionModel.status == "PUBLISHED")
+        )
+        row = result.one_or_none()
+        if row is None:
+            raise LookupError(f"No active published production policy exists for key '{key}'.")
+        return row
+
+    async def resolve_active(self, key: str) -> tuple[ProductionPolicyModel, ProductionPolicyVersionModel]:
+        result = await self.session.execute(
+            select(ProductionPolicyModel, ProductionPolicyVersionModel)
+            .join(ProductionPolicyVersionModel, ProductionPolicyVersionModel.policy_id == ProductionPolicyModel.id)
+            .where(ProductionPolicyModel.key == key, ProductionPolicyVersionModel.status == "PUBLISHED")
+        )
+        row = result.one_or_none()
+        if row is None:
+            raise LookupError(f"No active published production policy exists for key '{key}'.")
+        return row
+
     async def _get_version_row(self, key: str, version: int) -> ProductionPolicyVersionModel | None:
         result = await self.session.execute(
             select(ProductionPolicyVersionModel).join(ProductionPolicyModel)
