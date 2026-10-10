@@ -5,9 +5,10 @@ from uuid import UUID
 
 from app.domain.recipes import ProductionRecipe
 from app.domain.identities import EditorialIdentityDefinition
+from app.domain.output_contracts import OutputContractDefinition
 
-CONTEXT_SCHEMA_VERSION = 3
-SUPPORTED_CONTEXT_SCHEMA_VERSIONS = (1, 2, 3)
+CONTEXT_SCHEMA_VERSION = 4
+SUPPORTED_CONTEXT_SCHEMA_VERSIONS = (1, 2, 3, 4)
 RUNTIME_RESOLUTION = "RUNTIME_RESOLUTION"
 LEGACY_PIN_BACKFILL = "LEGACY_PIN_BACKFILL"
 
@@ -106,6 +107,54 @@ class PinnedIdentity:
 
 
 @dataclass(frozen=True)
+class PinnedOutputContract:
+    contract_id: str
+    version_id: str
+    key: str
+    version: int
+    definition: dict[str, object]
+
+    def __post_init__(self) -> None:
+        try:
+            UUID(self.contract_id)
+            UUID(self.version_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Pinned output contract requires valid contract and version IDs.") from exc
+        if not self.key.strip() or isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
+            raise ValueError("Pinned output contract key and positive version are required.")
+        OutputContractDefinition.from_dict(self.definition)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "contract_id": self.contract_id,
+            "version_id": self.version_id,
+            "key": self.key,
+            "version": self.version,
+            "definition": OutputContractDefinition.from_dict(self.definition).to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PinnedOutputContract":
+        if not isinstance(value, dict):
+            raise ValueError("Resolved context output_contract must be an object.")
+        try:
+            contract_id = value["contract_id"]
+            version_id = value["version_id"]
+            key = value["key"]
+            version = value["version"]
+            definition = value["definition"]
+        except KeyError as exc:
+            raise ValueError(f"Resolved context output_contract is missing {exc.args[0]}.") from exc
+        if not all(isinstance(item, str) for item in (contract_id, version_id, key)):
+            raise ValueError("Resolved context output contract IDs and key must be strings.")
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise ValueError("Resolved context output contract version must be an integer.")
+        if not isinstance(definition, dict):
+            raise ValueError("Resolved context output contract definition must be an object.")
+        return cls(contract_id, version_id, key, version, definition)
+
+
+@dataclass(frozen=True)
 class ResolvedProductionContext:
     schema_version: int
     origin: str
@@ -113,6 +162,7 @@ class ResolvedProductionContext:
     prompt_template: PinnedPrompt
     recipe: ProductionRecipe | None = None
     identity: PinnedIdentity | None = None
+    output_contract: PinnedOutputContract | None = None
 
     @classmethod
     def capture(
@@ -121,13 +171,14 @@ class ResolvedProductionContext:
         *,
         recipe: ProductionRecipe | None = None,
         identity: PinnedIdentity | None = None,
+        output_contract: PinnedOutputContract | None = None,
         captured_at: datetime | None = None,
     ) -> "ResolvedProductionContext":
         if prompt.template_id is None or prompt.version_id is None:
             raise ValueError("Resolved prompt must include template and version IDs.")
         timestamp = captured_at or datetime.now(timezone.utc)
         return cls(
-            schema_version=3 if identity is not None else 2 if recipe is not None else 1,
+            schema_version=4 if output_contract is not None else 3 if identity is not None else 2 if recipe is not None else 1,
             origin=RUNTIME_RESOLUTION,
             captured_at=timestamp.astimezone(timezone.utc).isoformat(),
             prompt_template=PinnedPrompt(
@@ -139,6 +190,7 @@ class ResolvedProductionContext:
             ),
             recipe=recipe,
             identity=identity,
+            output_contract=output_contract,
         )
 
     def __post_init__(self) -> None:
@@ -151,12 +203,14 @@ class ResolvedProductionContext:
                 datetime.fromisoformat(self.captured_at)
             except ValueError as exc:
                 raise ValueError("Resolved context captured_at must be an ISO-8601 timestamp or null.") from exc
-        if self.schema_version == 1 and (self.recipe is not None or self.identity is not None):
-            raise ValueError("Resolved context schema version 1 cannot contain recipe or identity.")
-        if self.schema_version == 2 and (self.recipe is None or self.identity is not None):
-            raise ValueError("Resolved context schema version 2 requires a recipe and cannot contain identity.")
-        if self.schema_version == 3 and (self.recipe is None or self.identity is None):
-            raise ValueError("Resolved context schema version 3 requires pinned recipe and identity.")
+        if self.schema_version == 1 and (self.recipe is not None or self.identity is not None or self.output_contract is not None):
+            raise ValueError("Resolved context schema version 1 cannot contain recipe, identity, or output contract.")
+        if self.schema_version == 2 and (self.recipe is None or self.identity is not None or self.output_contract is not None):
+            raise ValueError("Resolved context schema version 2 requires a recipe and cannot contain identity or output contract.")
+        if self.schema_version == 3 and (self.recipe is None or self.identity is None or self.output_contract is not None):
+            raise ValueError("Resolved context schema version 3 requires pinned recipe and identity and cannot contain output contract.")
+        if self.schema_version == 4 and (self.recipe is None or self.output_contract is None):
+            raise ValueError("Resolved context schema version 4 requires pinned recipe and output contract.")
 
     def to_dict(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -169,6 +223,8 @@ class ResolvedProductionContext:
             value["recipe"] = self.recipe.to_dict()
         if self.schema_version >= 3 and self.identity is not None:
             value["identity"] = self.identity.to_dict()
+        if self.schema_version >= 4 and self.output_contract is not None:
+            value["output_contract"] = self.output_contract.to_dict()
         return value
 
     @classmethod
@@ -191,22 +247,31 @@ class ResolvedProductionContext:
         if schema_version not in SUPPORTED_CONTEXT_SCHEMA_VERSIONS:
             raise ValueError(f"Unsupported resolved production context schema version: {schema_version}.")
         if schema_version == 1:
-            if "recipe" in value or "identity" in value:
-                raise ValueError("Resolved context schema version 1 cannot contain recipe or identity.")
+            if "recipe" in value or "identity" in value or "output_contract" in value:
+                raise ValueError("Resolved context schema version 1 cannot contain recipe, identity, or output contract.")
             recipe = None
             identity = None
+            output_contract = None
         elif schema_version == 2:
             if "recipe" not in value:
                 raise ValueError("Resolved context schema version 2 is missing recipe.")
-            if "identity" in value:
-                raise ValueError("Resolved context schema version 2 cannot contain identity.")
+            if "identity" in value or "output_contract" in value:
+                raise ValueError("Resolved context schema version 2 cannot contain identity or output contract.")
             recipe = ProductionRecipe.from_dict(value["recipe"])
             identity = None
-        else:
-            if "recipe" not in value or "identity" not in value:
-                raise ValueError("Resolved context schema version 3 requires recipe and identity.")
+            output_contract = None
+        elif schema_version == 3:
+            if "recipe" not in value or "identity" not in value or "output_contract" in value:
+                raise ValueError("Resolved context schema version 3 requires recipe and identity and cannot contain output contract.")
             recipe = ProductionRecipe.from_dict(value["recipe"])
             identity = PinnedIdentity.from_dict(value["identity"])
+            output_contract = None
+        else:
+            if "recipe" not in value or "output_contract" not in value:
+                raise ValueError("Resolved context schema version 4 requires recipe and output_contract.")
+            recipe = ProductionRecipe.from_dict(value["recipe"])
+            identity = PinnedIdentity.from_dict(value["identity"]) if "identity" in value else None
+            output_contract = PinnedOutputContract.from_dict(value["output_contract"])
         return cls(
             schema_version=schema_version,
             origin=origin,
@@ -214,4 +279,5 @@ class ResolvedProductionContext:
             prompt_template=PinnedPrompt.from_dict(prompt_value),
             recipe=recipe,
             identity=identity,
+            output_contract=output_contract,
         )
