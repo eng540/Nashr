@@ -491,8 +491,8 @@ class ProductionJobRunner:
                     if resolved_context.product is not None:
                         product_definition = ProductionProductDefinition.from_dict(resolved_context.product.definition)
                         pinned_prompt = (
-                            f"{pinned_prompt}\\n\\nProduct audience: {product_definition.audience}"
-                            f"\\nProduct experience: {product_definition.experience}"
+                            f"{pinned_prompt}\n\nProduct audience: {product_definition.audience}"
+                            f"\nProduct experience: {product_definition.experience}"
                         )
 
             while True:
