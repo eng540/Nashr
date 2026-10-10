@@ -245,6 +245,7 @@ class ResolvedProductionContext:
     identity: PinnedIdentity | None = None
     output_contract: PinnedOutputContract | None = None
     policy: PinnedPolicy | None = None
+    product: PinnedProduct | None = None
 
     @classmethod
     def capture(
@@ -255,13 +256,14 @@ class ResolvedProductionContext:
         identity: PinnedIdentity | None = None,
         output_contract: PinnedOutputContract | None = None,
         policy: PinnedPolicy | None = None,
+        product: PinnedProduct | None = None,
         captured_at: datetime | None = None,
     ) -> "ResolvedProductionContext":
         if prompt.template_id is None or prompt.version_id is None:
             raise ValueError("Resolved prompt must include template and version IDs.")
         timestamp = captured_at or datetime.now(timezone.utc)
         return cls(
-            schema_version=5 if policy is not None else 4 if output_contract is not None else 3 if identity is not None else 2 if recipe is not None else 1,
+            schema_version=6 if product is not None else 5 if policy is not None else 4 if output_contract is not None else 3 if identity is not None else 2 if recipe is not None else 1,
             origin=RUNTIME_RESOLUTION,
             captured_at=timestamp.astimezone(timezone.utc).isoformat(),
             prompt_template=PinnedPrompt(
@@ -275,6 +277,7 @@ class ResolvedProductionContext:
             identity=identity,
             output_contract=output_contract,
             policy=policy,
+            product=product,
         )
 
     def __post_init__(self) -> None:
@@ -287,16 +290,22 @@ class ResolvedProductionContext:
                 datetime.fromisoformat(self.captured_at)
             except ValueError as exc:
                 raise ValueError("Resolved context captured_at must be an ISO-8601 timestamp or null.") from exc
-        if self.schema_version == 1 and (self.recipe is not None or self.identity is not None or self.output_contract is not None or self.policy is not None):
+        if self.schema_version == 1 and (self.recipe is not None or self.identity is not None or self.output_contract is not None or self.policy is not None or self.product is not None):
             raise ValueError("Resolved context schema version 1 cannot contain recipe, identity, output contract, or policy.")
-        if self.schema_version == 2 and (self.recipe is None or self.identity is not None or self.output_contract is not None or self.policy is not None):
+        if self.schema_version == 2 and (self.recipe is None or self.identity is not None or self.output_contract is not None or self.policy is not None or self.product is not None):
             raise ValueError("Resolved context schema version 2 requires a recipe and cannot contain identity, output contract, or policy.")
-        if self.schema_version == 3 and (self.recipe is None or self.identity is None or self.output_contract is not None or self.policy is not None):
+        if self.schema_version == 3 and (self.recipe is None or self.identity is None or self.output_contract is not None or self.policy is not None or self.product is not None):
             raise ValueError("Resolved context schema version 3 requires pinned recipe and identity and cannot contain output contract or policy.")
-        if self.schema_version == 4 and (self.recipe is None or self.output_contract is None or self.policy is not None):
+        if self.schema_version == 4 and (self.recipe is None or self.output_contract is None or self.policy is not None or self.product is not None):
             raise ValueError("Resolved context schema version 4 requires pinned recipe and output contract and cannot contain policy.")
-        if self.schema_version == 5 and (self.recipe is None or self.output_contract is None or self.policy is None):
-            raise ValueError("Resolved context schema version 5 requires pinned recipe, output contract, and policy.")
+        if self.schema_version == 5 and (self.recipe is None or self.output_contract is None or self.policy is None or self.product is not None):
+            raise ValueError("Resolved context schema version 5 requires pinned recipe, output contract, and policy and cannot contain product.")
+        if self.schema_version == 6:
+            if self.recipe is None or self.output_contract is None or self.policy is None or self.product is None:
+                raise ValueError("Resolved context schema version 6 requires pinned product, recipe, output contract, and policy.")
+            product_definition = ProductionProductDefinition.from_dict(self.product.definition)
+            if (product_definition.recipe_key != self.recipe.key or product_definition.output_contract_key != self.output_contract.key or product_definition.policy_key != self.policy.key):
+                raise ValueError("Pinned product definition does not match the recipe, output contract, and policy snapshots.")
 
     def to_dict(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -313,6 +322,8 @@ class ResolvedProductionContext:
             value["output_contract"] = self.output_contract.to_dict()
         if self.schema_version >= 5 and self.policy is not None:
             value["policy"] = self.policy.to_dict()
+        if self.schema_version >= 6 and self.product is not None:
+            value["product"] = self.product.to_dict()
         return value
 
     @classmethod
