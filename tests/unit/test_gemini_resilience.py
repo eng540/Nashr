@@ -271,3 +271,20 @@ async def test_handler_forwards_the_retry_after_header() -> None:
     response = await gemini_exception_handler(request, _StatusError(503, headers={"retry-after": "9"}))
 
     assert response.headers["retry-after"] == "9"
+
+def test_permanent_404_does_not_retry_or_fail_over():
+    exc = _StatusError(404)
+    client = _FakeClient([exc, "unused"])
+    sleeps: list[float] = []
+    policy = RetryPolicy(max_attempts=3, total_timeout_seconds=0)
+    with pytest.raises(_StatusError):
+        generate_content(
+            client,
+            contents=["prompt"],
+            models="missing-model,backup-model",
+            retry_policy=policy,
+            sleep=sleeps.append,
+        )
+    assert len(client.models.calls) == 1
+    assert client.models.calls[0]["model"] == "missing-model"
+    assert sleeps == []
