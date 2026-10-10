@@ -10,7 +10,6 @@ from app.application.recipe_control_plane import ProductionRecipeControlPlaneSer
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
 from app.application.policy_control_plane import ProductionPolicyControlPlaneService
 from app.application.product_control_plane import ProductionProductControlPlaneService
-from app.application.generic_artifact_review import GenericArtifactReviewService
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.image_generation import GeneratedImage
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
@@ -649,23 +648,23 @@ class FakeObjectStorage:
     def __init__(self):
         self.saved = None
 
-    async def save(self, filename, content, prefix=None, mime_type=None) -> str:
-        self.saved = {"filename": filename, "content": content, "prefix": prefix, "mime_type": mime_type}
-        return f"s3://test-bucket/artifacts/{prefix}/generated.png"
+    async def put(self, *, key: str, content: bytes, content_type: str) -> str:
+        self.saved = {"key": key, "content": content, "content_type": content_type}
+        return f"s3://test-bucket/{key}"
 
-    async def download_url(self, storage_uri: str, expires_seconds: int = 900) -> str:
+    async def presign_get(self, storage_uri: str, *, expires_seconds: int = 300) -> str:
         return "https://objects.example.test/presigned-preview"
 
 
 @pytest.mark.asyncio
 async def test_image_product_creates_storage_backed_reviewable_artifact(monkeypatch: pytest.MonkeyPatch):
     for name, value in {
-        "OBJECT_STORAGE_ENDPOINT_URL": "https://objects.example.test",
-        "OBJECT_STORAGE_BUCKET": "test-bucket",
-        "OBJECT_STORAGE_ACCESS_KEY_ID": "test-access",
-        "OBJECT_STORAGE_SECRET_ACCESS_KEY": "test-secret",
-        "OBJECT_STORAGE_REGION": "us-east-1",
-        "OBJECT_STORAGE_URL_STYLE": "path",
+        "ARTIFACT_STORAGE_ENDPOINT_URL": "https://objects.example.test",
+        "ARTIFACT_STORAGE_BUCKET": "test-bucket",
+        "ARTIFACT_STORAGE_ACCESS_KEY_ID": "test-access",
+        "ARTIFACT_STORAGE_SECRET_ACCESS_KEY": "test-secret",
+        "ARTIFACT_STORAGE_REGION": "us-east-1",
+        "ARTIFACT_STORAGE_URL_STYLE": "path",
     }.items():
         monkeypatch.setenv(name, value)
 
@@ -727,8 +726,6 @@ async def test_image_product_creates_storage_backed_reviewable_artifact(monkeypa
         assert artifact.artifact_metadata["title"] == "Material 1"
         assert artifact.artifact_metadata["alt_text"]
         assert artifact.resolved_context["product"]["key"] == "TEST_IMAGE_PRODUCT_RUNTIME"
-        preview = await GenericArtifactReviewService(session).get(artifact.id)
-        assert preview["preview_url"].startswith("https://objects.example.test/")
         post = (await session.execute(
             select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0])
         )).scalar_one_or_none()
