@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import json
 from uuid import UUID
 
-SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("produce_image_artifact", 1)})
+SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("produce_image_artifact", 1), ("produce_video_artifact", 1)})
 
 
 @dataclass(frozen=True)
@@ -163,3 +163,23 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
         image_size = stage.configuration.get("image_size", "1K")
         if image_size not in {"1K", "2K", "4K"}:
             raise ValueError("produce_image_artifact image_size must be 1K, 2K, or 4K.")
+
+
+    if stage.capability_key == "produce_video_artifact" and stage.capability_version == 1:
+        unknown = set(stage.configuration) - {"style_instructions", "aspect_ratio", "resolution", "duration_seconds"}
+        if unknown:
+            raise ValueError("produce_video_artifact configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
+        instructions = stage.configuration.get("style_instructions")
+        if instructions is not None and (
+            not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
+        ):
+            raise ValueError("produce_video_artifact style_instructions must be a non-empty string up to 2000 characters.")
+        aspect_ratio = stage.configuration.get("aspect_ratio", "9:16")
+        if aspect_ratio not in {"16:9", "9:16"}:
+            raise ValueError("produce_video_artifact aspect_ratio must be 16:9 or 9:16.")
+        resolution = stage.configuration.get("resolution", "720p")
+        if resolution not in {"720p", "1080p"}:
+            raise ValueError("produce_video_artifact resolution must be 720p or 1080p.")
+        duration_seconds = stage.configuration.get("duration_seconds", 5)
+        if isinstance(duration_seconds, bool) or duration_seconds not in {5, 6, 8}:
+            raise ValueError("produce_video_artifact duration_seconds must be 5, 6, or 8.")
