@@ -86,6 +86,15 @@ Non-Post Artifacts now have a separate `DRAFT → APPROVED / REJECTED` review li
 A published `TEXT_ARTIFACT` Output Contract, `BOOK_TO_TEXT_ARTIFACT` Recipe, and `ARABIC_LITERATURE_TEXT` Product now exercise the generic path end to end. The shared drafting service is separated from Post persistence; the new registered capability creates a TEXT Artifact, applies the pinned contract and policy, and leaves it in generic review state DRAFT. Integration coverage asserts that no Post row is created, keeping editorial Post and generic Artifact lifecycles distinct.
 
 
+## Product-aware production selection — follow-up correction
+
+The Content Factory now applies Post-specific pending/done filters only to the Post product family. Generic Artifact products can select any source material even when a Post already exists for that Knowledge Unit; their available-material counts and panel copy no longer imply the Post review lifecycle. This keeps artifact production independent from the Post-specific has_post and pending_count projections.
+
+
+## Private media storage boundary — implementation change
+
+Generic media Artifacts now have an S3-compatible storage adapter that keeps objects private, stores stable s3:// references, validates object keys and bucket ownership, and issues short-lived signed read URLs. The generic review API exposes signed URLs only for storage-backed IMAGE/VIDEO/AUDIO Artifacts, and the review panel renders the appropriate media preview instead of treating the storage URI as user-facing content. This adapter is provider-neutral across S3-compatible services; production media generation must remain disabled until the service environment has the ARTIFACT_STORAGE_ENDPOINT_URL, ARTIFACT_STORAGE_BUCKET, ARTIFACT_STORAGE_ACCESS_KEY_ID, and ARTIFACT_STORAGE_SECRET_ACCESS_KEY variables configured.
+
 ## IMAGE Artifact Capability and Storage Gate
 
 The Recipe Engine now has a Gemini image-generation adapter using the shared Gemini retry policy, a provider-neutral object-storage port, and an S3-compatible SigV4 adapter for durable bytes plus short-lived preview URLs. The published `IMAGE_ARTIFACT` contract and `BOOK_TO_IMAGE_ARTIFACT` recipe are available; `ARABIC_LITERATURE_IMAGE` is seeded as DRAFT until durable storage credentials are configured. Publishing any STORAGE_URI-backed Product is blocked without `ARTIFACT_STORAGE_ENDPOINT_URL`, `ARTIFACT_STORAGE_BUCKET`, `ARTIFACT_STORAGE_ACCESS_KEY_ID`, `ARTIFACT_STORAGE_SECRET_ACCESS_KEY`, and `ARTIFACT_STORAGE_REGION`. Integration tests exercise the image path with fake provider/storage adapters and prove no Post row is created.
