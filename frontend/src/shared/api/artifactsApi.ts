@@ -9,6 +9,7 @@ export interface GenericReviewableArtifact {
   status: string;
   content: string | null;
   storage_uri: string | null;
+  preview_url: string | null;
   mime_type: string | null;
   output_contract_key: string | null;
   output_contract_version: number | null;
