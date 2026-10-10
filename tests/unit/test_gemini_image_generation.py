@@ -62,5 +62,5 @@ async def test_gemini_image_generator_rejects_invalid_generation_options():
     generator = GeminiImageGenerator(client=FakeClient(SimpleNamespace(output_image=None, steps=[])))
     with pytest.raises(ValueError, match="aspect ratio"):
         await generator.generate("Create an image", aspect_ratio="7:2")
-    with pytest.raises(ValueError, match="image size"):
+    with pytest.raises(ValueError, match="Image size"):
         await generator.generate("Create an image", image_size="16K")
