@@ -79,6 +79,11 @@ def configure_logging() -> None:
         logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     root.setLevel(level)
     logging.getLogger("app").setLevel(level)
+    # httpx INFO request logs include full URLs. Telegram Bot API URLs embed
+    # the bot token in the path, so never emit those request lines.
+    logging.getLogger("httpx").setLevel(max(level, logging.WARNING))
+    # httpcore DEBUG logs request target paths, which also include Telegram's token.
+    logging.getLogger("httpcore").setLevel(max(level, logging.WARNING))
 
 
 def log_gemini_startup_config() -> None:

@@ -2,7 +2,9 @@
 import asyncio
 import base64
 import binascii
+import io
 import os
+import wave
 from dataclasses import dataclass
 
 from app.adapters.gemini_policy import create_gemini_client
@@ -78,4 +80,16 @@ class GeminiAudioGenerator:
         normalized_mime = mime_type or "audio/wav"
         if normalized_mime != "audio/wav":
             raise GeminiAudioGenerationError("Gemini returned an unsupported audio MIME type.")
+        try:
+            with wave.open(io.BytesIO(content), "rb") as wav_file:
+                if (
+                    wav_file.getnchannels() < 1
+                    or wav_file.getframerate() < 1
+                    or wav_file.getsampwidth() < 1
+                    or wav_file.getnframes() < 1
+                    or not wav_file.readframes(1)
+                ):
+                    raise GeminiAudioGenerationError("Gemini returned an empty or invalid WAV stream.")
+        except (wave.Error, EOFError, OSError) as exc:
+            raise GeminiAudioGenerationError("Gemini returned an invalid WAV container.") from exc
         return GeneratedAudio(content=content, mime_type=normalized_mime, model=self.model)

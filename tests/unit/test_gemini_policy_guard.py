@@ -19,6 +19,7 @@ from app.adapters.gemini_policy import (
     DEFAULT_GEMINI_MODELS,
     GEMINI_AUTH_ERROR,
     GEMINI_INVALID_ARGUMENT,
+    GEMINI_FILE_NOT_FOUND,
     GEMINI_NETWORK_ERROR,
     GEMINI_QUOTA_EXCEEDED,
     GEMINI_RATE_LIMITED,
@@ -119,6 +120,7 @@ class _TransientError(RuntimeError):
     ("status", "code"),
     [
         (429, GEMINI_RATE_LIMITED),
+        (404, GEMINI_FILE_NOT_FOUND),
         (401, GEMINI_AUTH_ERROR),
         (403, GEMINI_AUTH_ERROR),
         (400, GEMINI_INVALID_ARGUMENT),
@@ -134,6 +136,7 @@ def test_transient_codes_are_retryable_and_permanent_are_not() -> None:
     assert classify_gemini_error(_StatusError(503))[1] is True
     assert classify_gemini_error(_StatusError(429))[1] is True
     assert classify_gemini_error(_StatusError(400))[1] is False
+    assert classify_gemini_error(_StatusError(404))[1] is False
     assert classify_gemini_error(_StatusError(401))[1] is False
 
 
@@ -273,3 +276,12 @@ def test_permanent_error_event_is_emitted(caplog: pytest.LogCaptureFixture) -> N
         with pytest.raises(_StatusError):
             generate_content(client, contents=["prompt"], models="m1", retry_policy=_policy(2), sleep=lambda _: None)
     assert any("event=GEMINI_PERMANENT_ERROR" in record.getMessage() for record in caplog.records)
+
+
+def test_structured_429_with_zero_quota_is_permanent():
+    error = _StatusError(429)
+    error.details = {
+        "status": "RESOURCE_EXHAUSTED",
+        "message": "Free tier quota limit: 0 for generate requests per model",
+    }
+    assert classify_gemini_error(error) == (GEMINI_QUOTA_EXCEEDED, False)

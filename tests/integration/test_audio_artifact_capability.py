@@ -1,3 +1,5 @@
+import io
+import wave
 from uuid import uuid4
 
 import pytest
@@ -7,6 +9,16 @@ from app.adapters.audio_generation.gemini_tts import GeneratedAudio
 from app.application.recipe_engine import ProduceAudioArtifactCapability, ProductionExecutionContext
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
+
+
+def _valid_wav_bytes():
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(24000)
+        wav_file.writeframes(bytes([0, 0]) * 240)
+    return output.getvalue()
 
 
 class FakeDrafter:
@@ -21,13 +33,17 @@ class FakeAudioGenerator:
 
     async def generate(self, text, *, voice, style):
         self.calls.append((text, voice, style))
-        return GeneratedAudio(content=b"fake-wav-bytes", mime_type="audio/wav", model="fake-tts")
+        return GeneratedAudio(content=_valid_wav_bytes(), mime_type="audio/wav", model="fake-tts")
 
 
 class FakeAudioStorage:
     def __init__(self):
+        self.ensure_available_calls = 0
         self.put_calls = []
         self.deleted = []
+
+    async def ensure_available(self):
+        self.ensure_available_calls += 1
 
     async def put(self, *, key, content, content_type):
         self.put_calls.append((key, content, content_type))
@@ -97,4 +113,5 @@ async def test_audio_capability_persists_private_audio_artifact():
     assert artifact.metadata["transcript"] == "نص عربي قصير مناسب للإلقاء الصوتي."
     assert row.review_status == "DRAFT"
     assert generator.calls == [("نص عربي قصير مناسب للإلقاء الصوتي.", "Kore", "warm and measured")]
+    assert storage.ensure_available_calls == 1
     assert len(storage.put_calls) == 1

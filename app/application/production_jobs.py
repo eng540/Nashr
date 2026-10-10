@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -364,24 +365,89 @@ async def _complete_item(job_id: UUID, item_id: UUID, artifact: Artifact) -> Non
         await session.commit()
 
 
+_MAX_ERROR_CODE_LENGTH = 80
+_MAX_ERROR_MESSAGE_LENGTH = 1000
+
+
+def _redact_error_text(value: object) -> str:
+    """Bound provider diagnostics and remove common credential formats."""
+    message = str(value)
+    message = re.sub(
+        r"(?i)(https?://api\.telegram\.org/bot)[^/\s]+",
+        r"\1[REDACTED]",
+        message,
+    )
+    message = re.sub(r"(?i)AIza[0-9A-Za-z_-]{20,}", "[REDACTED_API_KEY]", message)
+    message = re.sub(
+        r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+",
+        r"\1[REDACTED]",
+        message,
+    )
+    message = re.sub(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer [REDACTED]", message)
+    message = re.sub(
+        r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|bot[_-]?token|secret)\b(\s*[:=]\s*)[^\s,;]+",
+        r"\1\2[REDACTED]",
+        message,
+    )
+    return message[:_MAX_ERROR_MESSAGE_LENGTH]
+
+
+def _normalized_error_code(exc: Exception) -> str:
+    """Preserve the provider's code as a bounded string for VARCHAR persistence."""
+    raw_code = getattr(exc, "code", None)
+    if raw_code is None:
+        raw_code = getattr(exc, "status_code", None)
+    if raw_code is None:
+        return "PRODUCTION_ERROR"
+    normalized = _redact_error_text(raw_code).strip()
+    return normalized[:_MAX_ERROR_CODE_LENGTH] or "PRODUCTION_ERROR"
+
+
 async def _fail_item(job_id: UUID, item_id: UUID, exc: Exception) -> None:
-    code = getattr(exc, "code", None) or "PRODUCTION_ERROR"
-    async with SessionFactory() as session:
-        await session.execute(
-            update(ProductionJobItemModel)
-            .where(
-                ProductionJobItemModel.id == item_id,
-                ProductionJobItemModel.job_id == job_id,
-                ProductionJobItemModel.status == ProductionJobItemStatus.RUNNING.value,
+    code = _normalized_error_code(exc)
+    message = _redact_error_text(exc)
+    try:
+        async with SessionFactory() as session:
+            await session.execute(
+                update(ProductionJobItemModel)
+                .where(
+                    ProductionJobItemModel.id == item_id,
+                    ProductionJobItemModel.job_id == job_id,
+                    ProductionJobItemModel.status == ProductionJobItemStatus.RUNNING.value,
+                )
+                .values(
+                    status=ProductionJobItemStatus.FAILED.value,
+                    error_code=code,
+                    error_message=message,
+                    updated_at=datetime.now(timezone.utc),
+                )
             )
-            .values(
-                status=ProductionJobItemStatus.FAILED.value,
-                error_code=code,
-                error_message=str(exc),
-                updated_at=datetime.now(timezone.utc),
-            )
+            await session.commit()
+    except Exception as persistence_error:
+        # A diagnostic write must not prevent a second, minimal state transition.
+        # Do not log exception text: provider errors can contain credentials.
+        logger.error(
+            "event=PRODUCTION_FAILURE_DIAGNOSTICS_WRITE_FAILED job_id=%s item_id=%s error_type=%s",
+            job_id,
+            item_id,
+            type(persistence_error).__name__,
         )
-        await session.commit()
+        async with SessionFactory() as session:
+            await session.execute(
+                update(ProductionJobItemModel)
+                .where(
+                    ProductionJobItemModel.id == item_id,
+                    ProductionJobItemModel.job_id == job_id,
+                    ProductionJobItemModel.status == ProductionJobItemStatus.RUNNING.value,
+                )
+                .values(
+                    status=ProductionJobItemStatus.FAILED.value,
+                    error_code="PRODUCTION_FAILURE_DIAGNOSTICS_UNAVAILABLE",
+                    error_message="Provider operation failed; detailed diagnostics could not be persisted.",
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
 
 
 async def _finalize(job_id: UUID) -> None:
@@ -549,10 +615,11 @@ class ProductionJobRunner:
                     await _complete_item(job_id, item_id, artifact)
                     await _update_progress(job_id, None)
                 except Exception as exc:
-                    logger.exception(
-                        "event=PRODUCTION_ITEM_FAILED job_id=%s item_id=%s",
+                    logger.error(
+                        "event=PRODUCTION_ITEM_FAILED job_id=%s item_id=%s error_type=%s",
                         job_id,
                         item_id,
+                        type(exc).__name__,
                     )
                     await _fail_item(job_id, item_id, exc)
                     await _update_progress(job_id, None)
@@ -560,7 +627,11 @@ class ProductionJobRunner:
 
             await _finalize(job_id)
         except Exception as exc:
-            logger.exception("event=PRODUCTION_JOB_FAILED job_id=%s", job_id)
+            logger.error(
+                "event=PRODUCTION_JOB_FAILED job_id=%s error_type=%s",
+                job_id,
+                type(exc).__name__,
+            )
             async with SessionFactory() as session:
                 await session.execute(
                     update(ProductionJobModel)
@@ -578,7 +649,7 @@ class ProductionJobRunner:
                             if isinstance(exc, LookupError) and "pinned editorial prompt" in str(exc)
                             else "PRODUCTION_RUNNER_ERROR"
                         ),
-                        error_message=str(exc),
+                        error_message=_redact_error_text(exc),
                         current_item_id=None,
                         updated_at=datetime.now(timezone.utc),
                     )

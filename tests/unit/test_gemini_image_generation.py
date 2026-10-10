@@ -1,3 +1,5 @@
+import struct
+import zlib
 from types import SimpleNamespace
 
 import pytest
@@ -20,7 +22,23 @@ class FakeClient:
         self.models = FakeModels(response)
 
 
-def _response(data=b"png-bytes", mime_type="image/png"):
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    body = kind + data
+    return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+
+def _valid_png_bytes() -> bytes:
+    return (
+        bytes([137, 80, 78, 71, 13, 10, 26, 10])
+        + _png_chunk(b"IHDR", struct.pack(">2I5B", 1, 1, 8, 2, 0, 0, 0))
+        + _png_chunk(b"IDAT", zlib.compress(bytes([0, 255, 0, 0])))
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def _response(data=None, mime_type="image/png"):
+    if data is None:
+        data = _valid_png_bytes()
     return SimpleNamespace(
         model_version="test-image-model",
         parts=[SimpleNamespace(
@@ -37,7 +55,7 @@ async def test_gemini_image_generator_uses_supported_endpoint_and_validates_imag
 
     result = await generator.generate("Make an editorial illustration", aspect_ratio="4:5", image_size="1K")
 
-    assert result.content == b"png-bytes"
+    assert result.content == _valid_png_bytes()
     assert result.mime_type == "image/png"
     assert result.model == "test-image-model"
     call = client.models.calls[0]
@@ -55,7 +73,7 @@ async def test_gemini_image_generator_rejects_missing_or_unsupported_output(monk
     with pytest.raises(GeminiImageGenerationError, match="no image content"):
         await no_image.generate("Create an image")
 
-    unsupported = GeminiImageGenerator(client=FakeClient(_response(b"gif-data", "image/gif")), model="test-image-model")
+    unsupported = GeminiImageGenerator(client=FakeClient(_response(b"GIF89a-data", "image/gif")), model="test-image-model")
     with pytest.raises(GeminiImageGenerationError, match="unsupported image MIME"):
         await unsupported.generate("Create an image")
 
@@ -67,3 +85,25 @@ async def test_gemini_image_generator_rejects_invalid_generation_options():
         await generator.generate("Create an image", aspect_ratio="7:2")
     with pytest.raises(ValueError, match="Image size"):
         await generator.generate("Create an image", image_size="16K")
+
+
+@pytest.mark.asyncio
+async def test_gemini_image_generator_rejects_bytes_that_do_not_match_declared_mime():
+    generator = GeminiImageGenerator(
+        client=FakeClient(_response(b"not-a-png", "image/png")),
+        model="test-image-model",
+    )
+    with pytest.raises(GeminiImageGenerationError, match="do not match"):
+        await generator.generate("Create an image")
+
+
+@pytest.mark.asyncio
+async def test_gemini_image_generator_rejects_png_with_corrupt_chunk_crc():
+    png = bytearray(_valid_png_bytes())
+    png[29] ^= 0x01
+    generator = GeminiImageGenerator(
+        client=FakeClient(_response(bytes(png), "image/png")),
+        model="test-image-model",
+    )
+    with pytest.raises(GeminiImageGenerationError, match="do not match"):
+        await generator.generate("Create an image")

@@ -9,7 +9,7 @@ from app.infrastructure.database.session import SessionFactory
 
 
 class FakeVeoGenerator:
-    provider_name = "google-veo"
+    provider_name = "google-gemini-omni"
 
     def __init__(self):
         self.start_calls = []
@@ -28,15 +28,19 @@ class FakeVeoGenerator:
             })()
         return type("Done", (), {
             "operation_name": operation_name, "done": True, "status": "SUCCEEDED",
-            "content": b"fake-mp4-bytes", "mime_type": "video/mp4", "model": "fake-veo",
+            "content": bytes([0, 0, 0, 16]) + b"ftypisom" + bytes([0, 0, 0, 0]), "mime_type": "video/mp4", "model": "fake-veo",
             "error_message": None,
         })()
 
 
 class FakeVideoStorage:
     def __init__(self):
+        self.ensure_available_calls = 0
         self.put_calls = []
         self.deleted = []
+
+    async def ensure_available(self):
+        self.ensure_available_calls += 1
 
     async def put(self, *, key, content, content_type):
         self.put_calls.append((key, content, content_type))
@@ -119,10 +123,11 @@ async def test_video_capability_persists_operation_and_reuses_it_until_artifact_
     assert artifact.storage_uri.startswith("s3://nashr-media/artifacts/")
     assert artifact.kind == "VIDEO"
     assert artifact.mime_type == "video/mp4"
-    assert artifact.metadata["duration_seconds"] == 5
+    assert artifact.metadata["requested_duration_seconds"] == 5
     assert row.review_status == "DRAFT"
     assert item.provider_operation_name == "operations/test-video-1"
     assert item.provider_operation_status == "SUCCEEDED"
     assert len(generator.start_calls) == 1
     assert len(generator.poll_calls) == 2
+    assert storage.ensure_available_calls == 1
     assert len(storage.put_calls) == 1
