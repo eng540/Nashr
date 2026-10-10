@@ -54,10 +54,11 @@ class S3ArtifactStorage:
                 "Artifact media storage is not configured; missing: " + ", ".join(missing)
             )
         region = os.getenv("ARTIFACT_STORAGE_REGION", "us-east-1").strip()
-        url_style = os.getenv("ARTIFACT_STORAGE_URL_STYLE", "path").strip()
-        if url_style not in {"path", "virtual"}:
+        configured_url_style = os.getenv("ARTIFACT_STORAGE_URL_STYLE", "path").strip()
+        url_style = {"path": "path", "virtual": "virtual", "virtual-host": "virtual"}.get(configured_url_style)
+        if url_style is None:
             raise ArtifactStorageConfigurationError(
-                "ARTIFACT_STORAGE_URL_STYLE must be 'path' or 'virtual'."
+                "ARTIFACT_STORAGE_URL_STYLE must be 'path' or 'virtual-host'."
             )
         client = boto3.client(
             "s3",
