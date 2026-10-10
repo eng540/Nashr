@@ -184,6 +184,14 @@ class ArtifactModel(Base):
     __tablename__ = "artifacts"
     __table_args__ = (
         UniqueConstraint("post_id", name="uq_artifacts_post_id"),
+        Index(
+            "uq_artifacts_job_source_kind",
+            "production_job_id",
+            "source_knowledge_unit_id",
+            "kind",
+            unique=True,
+            postgresql_where=text("production_job_id IS NOT NULL"),
+        ),
         CheckConstraint(
             "kind IN ('POST', 'TEXT', 'IMAGE', 'VIDEO', 'AUDIO')",
             name="ck_artifacts_kind",
