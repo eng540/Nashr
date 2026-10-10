@@ -204,6 +204,10 @@ class ArtifactModel(Base):
             "kind <> 'POST' OR post_id IS NOT NULL",
             name="ck_artifacts_post_reference",
         ),
+        CheckConstraint(
+            "review_status IS NULL OR review_status IN ('DRAFT', 'APPROVED', 'REJECTED')",
+            name="ck_artifacts_review_status",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -233,6 +237,9 @@ class ArtifactModel(Base):
     )
     resolved_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     artifact_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
+    review_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
