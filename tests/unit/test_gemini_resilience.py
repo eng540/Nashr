@@ -192,13 +192,44 @@ def test_retry_after_extends_the_backoff_delay() -> None:
     assert sleeps == [5.0]
 
 
-def test_backoff_is_clamped_to_the_policy_maximum() -> None:
+def test_retry_after_is_not_shortened_to_the_policy_backoff_maximum() -> None:
     exc = _StatusError(503, headers={"retry-after": "120"})
     client = _FakeClient([exc, "ok"])
     sleeps: list[float] = []
     policy = RetryPolicy(max_attempts=2, backoff_min_seconds=2.0, backoff_max_seconds=10.0, total_timeout_seconds=0)
     generate_content(client, contents=["prompt"], models="m1", retry_policy=policy, sleep=sleeps.append)
-    assert sleeps == [10.0]
+    assert sleeps == [120.0]
+
+
+def test_retry_after_beyond_task_budget_does_not_retry_early() -> None:
+    exc = _StatusError(503, headers={"retry-after": "120"})
+    client = _FakeClient([exc, "unused"])
+    sleeps: list[float] = []
+    policy = RetryPolicy(max_attempts=2, backoff_min_seconds=2.0, backoff_max_seconds=10.0, total_timeout_seconds=120)
+    with pytest.raises(_StatusError):
+        generate_content(
+            client,
+            contents=["prompt"],
+            models="m1",
+            retry_policy=policy,
+            sleep=sleeps.append,
+            clock=_Clock([0.0, 1.0, 1.0], fallback=1.0),
+        )
+    assert len(client.models.calls) == 1
+    assert sleeps == []
+
+
+def test_provider_error_logging_redacts_common_credentials(caplog: pytest.LogCaptureFixture) -> None:
+    exc = _StatusError(503)
+    exc.args = ("request failed with Authorization: Bearer secret-value and AIza0123456789abcdefghijk",)
+    client = _FakeClient([exc])
+    policy = RetryPolicy(max_attempts=1, total_timeout_seconds=0)
+    with caplog.at_level(logging.WARNING, logger="app.adapters.gemini_policy"):
+        with pytest.raises(_StatusError):
+            generate_content(client, contents=["prompt"], models="m1", retry_policy=policy, sleep=lambda _: None)
+    logs = " ".join(record.getMessage() for record in caplog.records)
+    assert "secret-value" not in logs
+    assert "AIza0123456789abcdefghijk" not in logs
 
 
 # ---------------------------------------------------------------------------
