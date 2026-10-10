@@ -3,7 +3,7 @@ import logging
 from app.main import configure_logging
 
 
-def test_httpx_info_logs_are_disabled_to_protect_telegram_bot_token_paths(monkeypatch):
+def test_httpx_info_logs_do_not_emit_telegram_bot_token_paths(monkeypatch, caplog):
     root = logging.getLogger()
     httpx_logger = logging.getLogger("httpx")
     original_root_level = root.level
@@ -13,6 +13,12 @@ def test_httpx_info_logs_are_disabled_to_protect_telegram_bot_token_paths(monkey
     try:
         configure_logging()
         assert httpx_logger.level >= logging.WARNING
+        with caplog.at_level(logging.DEBUG):
+            httpx_logger.info(
+                "HTTP Request: POST https://api.telegram.org/botTEST_TOKEN_MUST_NOT_LEAK/sendMessage"
+            )
+        assert "TEST_TOKEN_MUST_NOT_LEAK" not in caplog.text
+        assert "HTTP Request: POST" not in caplog.text
     finally:
         root.setLevel(original_root_level)
         httpx_logger.setLevel(original_httpx_level)
