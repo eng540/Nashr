@@ -118,5 +118,6 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
     assert row.output_contract_key == "IMAGE_ARTIFACT"
     assert row.output_contract_version == 1
     assert len(generator.calls) == 1
+    assert storage.ensure_available_calls == 1
     assert len(storage.put_calls) == 1
     assert posts == []
