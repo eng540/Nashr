@@ -34,7 +34,7 @@ async def test_gemini_image_generator_uses_shared_client_policy_and_returns_imag
     assert result.mime_type == "image/png"
     assert client.models.kwargs["model"] == "test-image-model"
     config = client.models.kwargs["config"]
-    assert config.response_modalities == ["IMAGE"]
+    assert config.response_modalities == ["TEXT", "IMAGE"]
     assert config.image_config.aspect_ratio == "16:9"
     assert config.image_config.image_size == "1K"
 
