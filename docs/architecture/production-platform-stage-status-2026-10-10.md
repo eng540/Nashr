@@ -84,3 +84,8 @@ Non-Post Artifacts now have a separate `DRAFT → APPROVED / REJECTED` review li
 ## First Generic TEXT Product — end-to-end
 
 A published `TEXT_ARTIFACT` Output Contract, `BOOK_TO_TEXT_ARTIFACT` Recipe, and `ARABIC_LITERATURE_TEXT` Product now exercise the generic path end to end. The shared drafting service is separated from Post persistence; the new registered capability creates a TEXT Artifact, applies the pinned contract and policy, and leaves it in generic review state DRAFT. Integration coverage asserts that no Post row is created, keeping editorial Post and generic Artifact lifecycles distinct.
+
+
+## Product-aware production selection — follow-up correction
+
+The Content Factory now applies Post-specific pending/done filters only to the Post product family. Generic Artifact products can select any source material even when a Post already exists for that Knowledge Unit; their available-material counts and panel copy no longer imply the Post review lifecycle. This keeps artifact production independent from the Post-specific has_post and pending_count projections.
