@@ -585,7 +585,7 @@ def generate_content(
                     model_index=model_index,
                     attempt=attempt,
                     code=code,
-                    error=str(exc),
+                    error=_safe_provider_error(exc),
                     **context_fields,
                 )
                 if attempt < policy.max_attempts:
