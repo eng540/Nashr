@@ -493,6 +493,14 @@ async def test_job_retry_uses_original_identity_version_after_replacement_is_pub
     assert len(drafter.prompts) == 1
     assert "Identity version: 1" in drafter.prompts[0]
     assert "Rooted, dignified, and clear" in drafter.prompts[0]
+    async with SessionFactory() as session:
+        persisted_artifacts = (await session.execute(
+            select(ArtifactModel).where(ArtifactModel.production_job_id == job.id)
+        )).scalars().all()
+        assert persisted_artifacts
+        assert all(item.output_contract_key == "TELEGRAM_POST" for item in persisted_artifacts)
+        assert all(item.output_contract_version == 1 for item in persisted_artifacts)
+        assert all(item.mime_type == "text/plain" for item in persisted_artifacts)
 
     async with SessionFactory() as session:
         identities = EditorialIdentityControlPlaneService(session)
