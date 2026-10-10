@@ -140,9 +140,9 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
     if (stage.capability_key, stage.capability_version) in {("produce_post", 1), ("produce_text_artifact", 1)}:
         unknown = set(stage.configuration) - {"style_instructions"}
         if unknown:
-            raise ValueError("produce_post configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
+            raise ValueError(f"{stage.capability_key} configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
         instructions = stage.configuration.get("style_instructions")
         if instructions is not None and (
             not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
         ):
-            raise ValueError("produce_post style_instructions must be a non-empty string up to 2000 characters.")
+            raise ValueError(f"{stage.capability_key} style_instructions must be a non-empty string up to 2000 characters.")
