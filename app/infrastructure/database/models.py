@@ -160,6 +160,12 @@ class ProductionJobItemModel(Base):
     __table_args__ = (
         UniqueConstraint("job_id", "knowledge_unit_id", name="uq_production_job_items_job_knowledge_unit"),
         UniqueConstraint("job_id", "position", name="uq_production_job_items_job_position"),
+        CheckConstraint(
+            "(provider_name IS NULL AND provider_operation_name IS NULL AND provider_operation_status IS NULL) "
+            "OR (provider_name IS NOT NULL AND provider_operation_name IS NOT NULL "
+            "AND provider_operation_status IN ('SUBMITTED', 'RUNNING', 'SUCCEEDED', 'FAILED'))",
+            name="ck_production_job_items_provider_operation_state",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -168,6 +174,10 @@ class ProductionJobItemModel(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_operation_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    provider_operation_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    provider_operation_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="RESTRICT"), nullable=True)
