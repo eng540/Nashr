@@ -43,6 +43,16 @@ def _parts(response: Any) -> Sequence[Any]:
     return getattr(content, "parts", ()) if content is not None else ()
 
 
+def _image_bytes_match_mime(data: bytes, mime_type: str) -> bool:
+    if mime_type == "image/png":
+        return data.startswith(b"\\x89PNG\\r\\n\\x1a\\n") and len(data) >= 33 and data[12:16] == b"IHDR"
+    if mime_type == "image/jpeg":
+        return len(data) >= 4 and data.startswith(b"\\xff\\xd8\\xff") and data.endswith(b"\\xff\\xd9")
+    if mime_type == "image/webp":
+        return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    return False
+
+
 def _image_from_response(response: Any) -> tuple[bytes, str]:
     for part in _parts(response):
         if getattr(part, "thought", False):
@@ -63,6 +73,8 @@ def _image_from_response(response: Any) -> tuple[bytes, str]:
             raise GeminiImageGenerationError("Gemini returned an unsupported image MIME type.")
         if len(data) > 20 * 1024 * 1024:
             raise GeminiImageGenerationError("Gemini image payload exceeds the 20 MiB limit.")
+        if not _image_bytes_match_mime(data, str(mime_type)):
+            raise GeminiImageGenerationError("Gemini image bytes do not match the declared image MIME type.")
         return data, str(mime_type)
     raise GeminiImageGenerationError("Gemini returned no image content.")
 
