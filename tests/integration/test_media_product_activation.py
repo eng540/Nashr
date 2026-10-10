@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 
 from app.application.product_control_plane import ProductionProductControlPlaneService
@@ -35,8 +37,9 @@ async def test_image_product_stays_inactive_until_durable_storage_is_configured(
 async def test_product_publication_rejects_recipe_output_contract_mismatch():
     async with SessionFactory() as session:
         service = ProductionProductControlPlaneService(session)
+        product_key = f"TEST_INCOMPATIBLE_IMAGE_PRODUCT_{uuid4().hex.upper()}"
         await service.create_product(
-            "TEST_INCOMPATIBLE_IMAGE_PRODUCT",
+            product_key,
             "Incompatible image test",
             "Must not publish a mismatched output contract",
             {
@@ -48,4 +51,4 @@ async def test_product_publication_rejects_recipe_output_contract_mismatch():
             },
         )
         with pytest.raises(ValueError, match="incompatible with output contract"):
-            await service.publish("TEST_INCOMPATIBLE_IMAGE_PRODUCT", 1)
+            await service.publish(product_key, 1)
