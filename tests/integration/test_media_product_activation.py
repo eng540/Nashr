@@ -21,3 +21,7 @@ async def test_image_product_stays_inactive_until_durable_storage_is_configured(
         assert image_product["active_version"] is None
         with pytest.raises(ValueError, match="durable ARTIFACT_STORAGE"):
             await service.publish("ARABIC_LITERATURE_IMAGE", 1)
+        video_product = next(item for item in products if item["key"] == "ARABIC_LITERATURE_VIDEO")
+        assert video_product["active_version"] is None
+        with pytest.raises(ValueError, match="durable ARTIFACT_STORAGE"):
+            await service.publish("ARABIC_LITERATURE_VIDEO", 1)

@@ -106,3 +106,8 @@ The `ARABIC_LITERATURE_IMAGE` Product is deliberately seeded as DRAFT, not selec
 ## Durable provider-operation state — implementation change
 
 Production job items now have a constrained provider-operation record (provider name, operation handle, state, and update timestamp). Application helpers persist operation submission and enforce legal transitions; failed operations may be replaced on retry, while successful/failed terminal states cannot be silently reversed. The runner passes the item ID and any persisted provider-operation state into the Recipe Engine. This is the recovery boundary needed for long-running video providers such as Veo; it does not yet claim video generation is implemented.
+
+
+## First VIDEO capability — implementation in progress
+
+A Veo-backed `produce_video_artifact v1` capability is being added on top of durable provider-operation state. It persists the provider operation handle before polling, resumes an existing operation after retry/recovery, validates the completed MP4, stores it privately, and persists a generic VIDEO Artifact for human review. The `ARABIC_LITERATURE_VIDEO` Product is seeded as DRAFT and cannot be published until durable object storage is configured and reachable. The implementation does not start a live video-generation request during tests or migration.
