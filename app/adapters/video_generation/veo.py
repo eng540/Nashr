@@ -143,6 +143,21 @@ class VeoVideoGenerator:
                 model=self.model,
                 error_message="Veo video payload is empty or exceeds the 100 MiB limit.",
             )
+        # Do not mark arbitrary downloaded bytes as an available video Artifact.
+        # MP4 files carry an ftyp box at the start; validate the box bounds too.
+        if (
+            len(content) < 12
+            or content[4:8] != b"ftyp"
+            or int.from_bytes(content[:4], "big") < 8
+            or int.from_bytes(content[:4], "big") > len(content)
+        ):
+            return VideoOperationResult(
+                operation_name=operation_name,
+                done=True,
+                status="FAILED",
+                model=self.model,
+                error_message="Veo returned a payload that is not a valid MP4 container.",
+            )
         return VideoOperationResult(
             operation_name=operation_name,
             done=True,
