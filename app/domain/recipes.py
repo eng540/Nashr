@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import json
 from uuid import UUID
 
-SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1)})
+SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text", 1)})
 
 
 @dataclass(frozen=True)
@@ -146,3 +146,13 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
             not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
         ):
             raise ValueError("produce_post style_instructions must be a non-empty string up to 2000 characters.")
+
+    if stage.capability_key == "produce_text" and stage.capability_version == 1:
+        unknown = set(stage.configuration) - {"style_instructions"}
+        if unknown:
+            raise ValueError("produce_text configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
+        instructions = stage.configuration.get("style_instructions")
+        if instructions is not None and (
+            not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
+        ):
+            raise ValueError("produce_text style_instructions must be a non-empty string up to 2000 characters.")
