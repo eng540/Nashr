@@ -190,8 +190,9 @@ class ProduceImageArtifactCapability:
         if contract.artifact_kind != ArtifactKind.IMAGE.value or contract.content_mode != "STORAGE_URI":
             raise ValueError("produce_image_artifact requires an IMAGE storage-backed output contract.")
 
-        # Fail before spending on generation if durable storage is not configured.
+        # Fail before spending on generation if durable storage is not configured or reachable.
         storage = self.storage_factory()
+        await storage.ensure_available()
         result = await context.session.execute(
             select(KnowledgeUnitModel)
             .options(selectinload(KnowledgeUnitModel.source))
@@ -323,6 +324,7 @@ class ProduceVideoArtifactCapability:
 
         # Validate storage before submitting a paid, long-running provider operation.
         storage = self.storage_factory()
+        await storage.ensure_available()
         result = await context.session.execute(
             select(KnowledgeUnitModel)
             .options(selectinload(KnowledgeUnitModel.source))
@@ -494,6 +496,7 @@ class ProduceAudioArtifactCapability:
             raise ValueError("produce_audio_artifact requires an AUDIO storage-backed output contract.")
 
         storage = self.storage_factory()
+        await storage.ensure_available()
         drafted = await DraftKnowledgeUnitText(self.drafter, self.resolver).execute(
             context.session,
             knowledge_unit_id,
