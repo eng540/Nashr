@@ -111,3 +111,8 @@ Production job items now have a constrained provider-operation record (provider 
 ## First VIDEO capability — implementation in progress
 
 A Veo-backed `produce_video_artifact v1` capability is being added on top of durable provider-operation state. It persists the provider operation handle before polling, resumes an existing operation after retry/recovery, validates the completed MP4, stores it privately, and persists a generic VIDEO Artifact for human review. The `ARABIC_LITERATURE_VIDEO` Product is seeded as DRAFT and cannot be published until durable object storage is configured and reachable. The implementation does not start a live video-generation request during tests or migration.
+
+
+## First AUDIO capability — implementation in progress
+
+A Gemini TTS adapter and `produce_audio_artifact v1` capability now compose the shared source-grounded narration draft with speech synthesis, store a private WAV, and persist an AUDIO Artifact with transcript/model/voice provenance for generic human review. The `ARABIC_LITERATURE_AUDIO` Product is seeded as DRAFT and remains unavailable until durable storage is configured and reachable, consistent with IMAGE and VIDEO products.
