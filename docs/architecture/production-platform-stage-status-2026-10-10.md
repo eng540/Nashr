@@ -51,3 +51,8 @@ New production jobs resolve and pin the published `EDITORIAL_DEFAULT` policy in 
 ## Policy Runtime Acceptance Gate
 
 The follow-up acceptance tests now verify both sides of the runtime boundary: Artifact persistence rejects content that violates the pinned policy, and publishing a new policy version changes only newly created jobs. The original job retains its prior policy snapshot through publication of a replacement version.
+
+
+## Recipe Engine Stage Configuration and Second Recipe
+
+The Recipe Engine now passes each declarative stage's bounded configuration to its registered capability. The first supported configuration is `produce_post.style_instructions`, validated as plain text and never executable code. A second published recipe, `BOOK_TO_TELEGRAM_POST_BRIEF`, exercises this shared capability with concise-writing instructions. The Content Factory exposes the active recipe selector; both recipes still produce the existing Post artifact and retain the same review/publication path.
