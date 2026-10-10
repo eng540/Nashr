@@ -40,7 +40,7 @@ def test_resolved_production_context_round_trips_explicit_prompt_identity():
 
 def test_resolved_production_context_rejects_unknown_schema_and_missing_ids():
     value = {
-        "schema_version": 4,
+        "schema_version": 5,
         "origin": RUNTIME_RESOLUTION,
         "captured_at": None,
         "prompt_template": {
