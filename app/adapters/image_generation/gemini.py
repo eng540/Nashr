@@ -1,15 +1,28 @@
-"""Gemini-native image generation adapter using the Interactions API."""
+"""Gemini image generation through the centralized generate_content policy."""
 import asyncio
 import base64
 import binascii
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
-from app.adapters.gemini_policy import create_gemini_client
+from google.genai import types
+
+from app.adapters.gemini_policy import (
+    GEMINI_EMPTY_RESPONSE,
+    GeminiOperationError,
+    create_gemini_client,
+    generate_content as generate_gemini_content,
+    parse_model_chain,
+)
 
 
-class GeminiImageGenerationError(RuntimeError):
-    """Image generation failed or returned an invalid image payload."""
+class GeminiImageGenerationError(GeminiOperationError):
+    """Image generation returned an invalid or missing image payload."""
+
+    def __init__(self, message: str, cause: Exception | None = None) -> None:
+        super().__init__(GEMINI_EMPTY_RESPONSE, message, True, cause)
 
 
 @dataclass(frozen=True)
@@ -19,12 +32,52 @@ class GeneratedImage:
     model: str
 
 
+def _parts(response: Any) -> Sequence[Any]:
+    direct = getattr(response, "parts", None)
+    if direct is not None:
+        return direct
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return ()
+    content = getattr(candidates[0], "content", None)
+    return getattr(content, "parts", ()) if content is not None else ()
+
+
+def _image_from_response(response: Any) -> tuple[bytes, str]:
+    for part in _parts(response):
+        if getattr(part, "thought", False):
+            continue
+        blob = getattr(part, "inline_data", None) or getattr(part, "inlineData", None)
+        data = getattr(blob, "data", None) if blob is not None else None
+        if not data:
+            continue
+        if isinstance(data, str):
+            try:
+                data = base64.b64decode(data, validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise GeminiImageGenerationError("Gemini returned invalid encoded image bytes.", exc) from exc
+        mime_type = getattr(blob, "mime_type", None) or getattr(blob, "mimeType", None) or "image/png"
+        if not isinstance(data, bytes) or not data:
+            raise GeminiImageGenerationError("Gemini returned an invalid image part.")
+        if mime_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise GeminiImageGenerationError("Gemini returned an unsupported image MIME type.")
+        if len(data) > 20 * 1024 * 1024:
+            raise GeminiImageGenerationError("Gemini image payload exceeds the 20 MiB limit.")
+        return data, str(mime_type)
+    raise GeminiImageGenerationError("Gemini returned no image content.")
+
+
+def _require_image_response(response: Any) -> None:
+    _image_from_response(response)
+
+
 class GeminiImageGenerator:
-    """Generate an image with Gemini and return validated bytes, not a storage concern."""
+    """Generate a validated image using the central retry and model-failover policy."""
 
     def __init__(self, client=None, model: str | None = None) -> None:
         self._client = client
-        self.model = model or os.getenv("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image")
+        self.models = parse_model_chain(model or os.getenv("GEMINI_IMAGE_MODEL", "gemini-nano-banana-2.1"))
+        self.model = self.models[0]
 
     @property
     def client(self):
@@ -49,42 +102,22 @@ class GeminiImageGenerator:
         if image_size not in {"1K", "2K", "4K"}:
             raise ValueError("Image size must be 1K, 2K, or 4K.")
 
-        try:
-            interaction = self.client.interactions.create(
-                model=self.model,
-                input=prompt,
-                response_format={
-                    "type": "image",
-                    "aspect_ratio": aspect_ratio,
-                    "image_size": image_size,
-                },
-            )
-        except Exception as exc:
-            raise GeminiImageGenerationError("Gemini image generation request failed.") from exc
-
-        image = getattr(interaction, "output_image", None)
-        if image is None:
-            for step in getattr(interaction, "steps", ()) or ():
-                if getattr(step, "type", None) != "model_output":
-                    continue
-                for block in getattr(step, "content", ()) or ():
-                    if getattr(block, "type", None) == "image":
-                        image = block
-        encoded = getattr(image, "data", None) if image is not None else None
-        mime_type = getattr(image, "mime_type", None) if image is not None else None
-        if isinstance(encoded, bytes):
-            try:
-                encoded = encoded.decode("ascii")
-            except UnicodeDecodeError as exc:
-                raise GeminiImageGenerationError("Gemini returned malformed image data.") from exc
-        if not isinstance(encoded, str) or not encoded:
-            raise GeminiImageGenerationError("Gemini returned no image data.")
-        try:
-            content = base64.b64decode(encoded, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise GeminiImageGenerationError("Gemini returned malformed image data.") from exc
-        if not content or len(content) > 20 * 1024 * 1024:
-            raise GeminiImageGenerationError("Gemini image payload is empty or exceeds the 20 MiB limit.")
-        if mime_type not in {"image/png", "image/jpeg", "image/webp"}:
-            raise GeminiImageGenerationError("Gemini returned an unsupported image MIME type.")
-        return GeneratedImage(content=content, mime_type=mime_type, model=self.model)
+        config = types.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"],
+            response_format={"image": {"aspect_ratio": aspect_ratio, "image_size": image_size}},
+        )
+        response = generate_gemini_content(
+            self.client,
+            contents=prompt,
+            config=config,
+            models=self.models,
+            operation="image_generation",
+            context={"aspect_ratio": aspect_ratio, "image_size": image_size},
+            validator=_require_image_response,
+        )
+        content, mime_type = _image_from_response(response)
+        return GeneratedImage(
+            content=content,
+            mime_type=mime_type,
+            model=str(getattr(response, "model_version", None) or self.model),
+        )
