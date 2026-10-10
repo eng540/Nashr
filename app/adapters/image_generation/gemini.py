@@ -76,7 +76,8 @@ class GeminiImageGenerator:
 
     def __init__(self, client=None, model: str | None = None) -> None:
         self._client = client
-        self.models = parse_model_chain(model or os.getenv("GEMINI_IMAGE_MODEL", "gemini-nano-banana-2.1"))
+        configured_models = model if model is not None else (os.getenv("GEMINI_IMAGE_MODEL") or "gemini-nano-banana-2.1")
+        self.models = parse_model_chain(configured_models)
         self.model = self.models[0]
 
     @property
