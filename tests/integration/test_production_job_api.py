@@ -169,3 +169,28 @@ async def test_create_production_job_api_pins_selected_editorial_identity(monkey
         assert payload["resolved_context"]["identity"]["key"] == "API_TEST_EDITORIAL_IDENTITY"
         assert payload["resolved_context"]["identity"]["version"] == 1
         assert payload["resolved_context"]["identity"]["definition"]["voice"] == "Precise and respectful"
+
+
+@pytest.mark.asyncio
+async def test_create_production_job_api_pins_selected_product(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "product_key": "ARABIC_LITERATURE_BRIEF_TELEGRAM_POST",
+        })
+        assert response.status_code == 202, response.text
+        context = response.json()["resolved_context"]
+        assert context["schema_version"] == 6
+        assert context["product"]["key"] == "ARABIC_LITERATURE_BRIEF_TELEGRAM_POST"
+        assert context["product"]["version"] == 1
+        assert context["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
+        assert context["output_contract"]["key"] == "TELEGRAM_POST"
+        assert context["policy"]["key"] == "EDITORIAL_DEFAULT"

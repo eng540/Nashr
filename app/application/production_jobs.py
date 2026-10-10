@@ -16,6 +16,7 @@ from app.domain.production_jobs import (
     ProductionScope,
 )
 from app.domain.production_context import ResolvedProductionContext
+from app.domain.products import ProductionProductDefinition
 from app.domain.artifacts import Artifact, ArtifactKind
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST
 from app.application.recipe_engine import (
@@ -113,20 +114,30 @@ async def create_production_job(
     knowledge_unit_ids: list[UUID] | None = None,
     recipe_key: str = BOOK_TO_TELEGRAM_POST.key,
     identity_key: str | None = None,
+    product_key: str | None = None,
 ) -> ProductionJobModel:
     # Resolve once before persisting the job. The resolver reads one committed version.
     resolver = ControlPlaneResolver()
     resolved_prompt = await resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)
     if not resolved_prompt.body.strip():
         raise LookupError(f"Published editorial prompt '{EDITORIAL_PROMPT_KEY}' is empty.")
+    resolved_product = await resolver.resolve_product(session, product_key) if product_key is not None else None
+    if resolved_product is not None:
+        product_definition = ProductionProductDefinition.from_dict(resolved_product.definition)
+        recipe_key = product_definition.recipe_key
+        output_contract_key = product_definition.output_contract_key
+        policy_key = product_definition.policy_key
+    else:
+        output_contract_key = "TELEGRAM_POST"
+        policy_key = "EDITORIAL_DEFAULT"
     resolved_recipe = await resolver.resolve_recipe(session, recipe_key)
     resolved_identity = (
         await resolver.resolve_identity(session, identity_key)
         if identity_key is not None
         else None
     )
-    resolved_output_contract = await resolver.resolve_output_contract(session, "TELEGRAM_POST")
-    resolved_policy = await resolver.resolve_policy(session, "EDITORIAL_DEFAULT")
+    resolved_output_contract = await resolver.resolve_output_contract(session, output_contract_key)
+    resolved_policy = await resolver.resolve_policy(session, policy_key)
 
     units = await _resolve_units(
         session,
@@ -147,6 +158,7 @@ async def create_production_job(
         resolved_context=ResolvedProductionContext.capture(
             resolved_prompt, recipe=resolved_recipe, identity=resolved_identity,
             output_contract=resolved_output_contract, policy=resolved_policy,
+            product=resolved_product,
         ).to_dict(),
     )
     session.add(job)
@@ -476,6 +488,12 @@ class ProductionJobRunner:
                 self.engine.validate_recipe(pinned_recipe)
                 if resolved_context is not None:
                     pinned_prompt = compose_editorial_prompt(pinned_prompt, resolved_context.identity)
+                    if resolved_context.product is not None:
+                        product_definition = ProductionProductDefinition.from_dict(resolved_context.product.definition)
+                        pinned_prompt = (
+                            f"{pinned_prompt}\n\nProduct audience: {product_definition.audience}"
+                            f"\nProduct experience: {product_definition.experience}"
+                        )
 
             while True:
                 item_id = await _claim_next_item(job_id)

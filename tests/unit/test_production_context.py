@@ -40,7 +40,7 @@ def test_resolved_production_context_round_trips_explicit_prompt_identity():
 
 def test_resolved_production_context_rejects_unknown_schema_and_missing_ids():
     value = {
-        "schema_version": 6,
+        "schema_version": 7,
         "origin": RUNTIME_RESOLUTION,
         "captured_at": None,
         "prompt_template": {
@@ -254,3 +254,55 @@ def test_schema_v5_pins_policy_and_round_trips():
     assert restored.schema_version == 5
     assert restored.policy == policy
 
+
+
+def test_schema_v6_pins_product_and_referenced_control_plane_versions():
+    from app.domain.production_context import PinnedOutputContract, PinnedPolicy, PinnedProduct
+    from app.domain.recipes import BOOK_TO_TELEGRAM_POST
+
+    prompt = ResolvedPrompt(key="editorial.drafter", version=1, body="prompt",
+        template_id=UUID("00000000-0000-0000-0000-000000000101"),
+        version_id=UUID("00000000-0000-0000-0000-000000000102"))
+    contract = PinnedOutputContract(contract_id="00000000-0000-0000-0000-000000000103",
+        version_id="00000000-0000-0000-0000-000000000104", key="TELEGRAM_POST", version=1,
+        definition={"artifact_kind":"POST","mime_type":"text/plain","content_mode":"INLINE",
+                    "required_metadata_fields":[],"max_content_chars":100000})
+    policy = PinnedPolicy(policy_id="00000000-0000-0000-0000-000000000105",
+        version_id="00000000-0000-0000-0000-000000000106", key="EDITORIAL_DEFAULT", version=1,
+        definition={"min_content_chars":1,"max_content_chars":100000,"required_terms":[],
+                    "forbidden_terms":[],"allow_urls":True})
+    product = PinnedProduct(product_id="00000000-0000-0000-0000-000000000107",
+        version_id="00000000-0000-0000-0000-000000000108", key="ARABIC_LITERATURE_TELEGRAM_POST", version=1,
+        definition={"recipe_key":"BOOK_TO_TELEGRAM_POST","output_contract_key":"TELEGRAM_POST",
+                    "policy_key":"EDITORIAL_DEFAULT","audience":"Arabic literature readers",
+                    "experience":"Source-grounded literary post"})
+    context = ResolvedProductionContext.capture(prompt, recipe=BOOK_TO_TELEGRAM_POST,
+        output_contract=contract, policy=policy, product=product)
+    restored = ResolvedProductionContext.from_dict(context.to_dict())
+    assert restored == context
+    assert restored.schema_version == 6
+    assert restored.product == product
+
+
+def test_schema_v6_rejects_product_mapping_that_conflicts_with_pinned_components():
+    from app.domain.production_context import PinnedOutputContract, PinnedPolicy, PinnedProduct
+    from app.domain.recipes import BOOK_TO_TELEGRAM_POST
+
+    prompt = ResolvedPrompt(key="editorial.drafter", version=1, body="prompt",
+        template_id=UUID("00000000-0000-0000-0000-000000000201"),
+        version_id=UUID("00000000-0000-0000-0000-000000000202"))
+    contract = PinnedOutputContract(contract_id="00000000-0000-0000-0000-000000000203",
+        version_id="00000000-0000-0000-0000-000000000204", key="TELEGRAM_POST", version=1,
+        definition={"artifact_kind":"POST","mime_type":"text/plain","content_mode":"INLINE",
+                    "required_metadata_fields":[],"max_content_chars":100000})
+    policy = PinnedPolicy(policy_id="00000000-0000-0000-0000-000000000205",
+        version_id="00000000-0000-0000-0000-000000000206", key="EDITORIAL_DEFAULT", version=1,
+        definition={"min_content_chars":1,"max_content_chars":100000,"required_terms":[],
+                    "forbidden_terms":[],"allow_urls":True})
+    product = PinnedProduct(product_id="00000000-0000-0000-0000-000000000207",
+        version_id="00000000-0000-0000-0000-000000000208", key="BROKEN_PRODUCT", version=1,
+        definition={"recipe_key":"BOOK_TO_TELEGRAM_POST_BRIEF","output_contract_key":"TELEGRAM_POST",
+                    "policy_key":"EDITORIAL_DEFAULT","audience":"Readers","experience":"Post"})
+    with pytest.raises(ValueError, match="does not match"):
+        ResolvedProductionContext.capture(prompt, recipe=BOOK_TO_TELEGRAM_POST,
+            output_contract=contract, policy=policy, product=product)
