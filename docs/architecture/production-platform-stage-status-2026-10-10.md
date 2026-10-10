@@ -84,3 +84,8 @@ Non-Post Artifacts now have a separate `DRAFT → APPROVED / REJECTED` review li
 ## First Generic TEXT Product — end-to-end
 
 A published `TEXT_ARTIFACT` Output Contract, `BOOK_TO_TEXT_ARTIFACT` Recipe, and `ARABIC_LITERATURE_TEXT` Product now exercise the generic path end to end. The shared drafting service is separated from Post persistence; the new registered capability creates a TEXT Artifact, applies the pinned contract and policy, and leaves it in generic review state DRAFT. Integration coverage asserts that no Post row is created, keeping editorial Post and generic Artifact lifecycles distinct.
+
+
+## IMAGE Artifact Capability and Storage Gate
+
+The Recipe Engine now has a Gemini image-generation adapter using the shared Gemini retry policy, a provider-neutral object-storage port, and an S3-compatible SigV4 adapter for durable bytes plus short-lived preview URLs. The published `IMAGE_ARTIFACT` contract and `BOOK_TO_IMAGE_ARTIFACT` recipe are available; `ARABIC_LITERATURE_IMAGE` is seeded as DRAFT until durable storage credentials are configured. Publishing any STORAGE_URI-backed Product is blocked without `OBJECT_STORAGE_ENDPOINT_URL`, `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY`, and `OBJECT_STORAGE_REGION`. Integration tests exercise the image path with fake provider/storage adapters and prove no Post row is created.
