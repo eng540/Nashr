@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.adapters.image_generation.gemini import GeneratedImage
 from app.application.recipe_engine import ProduceImageArtifactCapability, ProductionExecutionContext
 from app.domain.artifacts import ArtifactKind
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -51,8 +51,11 @@ async def _create_source_material():
 
 @pytest.mark.asyncio
 async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
-    _, unit_id = await _create_source_material()
+    source_id, unit_id = await _create_source_material()
     job_id = uuid4()
+    async with SessionFactory() as session:
+        session.add(ProductionJobModel(id=job_id, source_id=source_id, scope="SOURCE", status="RUNNING", total_items=1))
+        await session.commit()
     contract = {
         "contract_id": str(uuid4()),
         "version_id": str(uuid4()),
