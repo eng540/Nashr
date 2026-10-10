@@ -94,7 +94,7 @@ class GeminiImageGenerator(IImageGenerator):
             contents=[prompt],
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
-                response_format={"image": {"aspect_ratio": aspect_ratio, "image_size": image_size}},
+                image_config=types.ImageConfig(aspect_ratio=aspect_ratio, image_size=image_size),
             ),
             validator=_require_image_response,
         )
