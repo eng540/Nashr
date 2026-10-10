@@ -10,7 +10,7 @@ from app.application.artifacts import ensure_post_artifact
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import ProducePost
 from app.domain.artifacts import Artifact
-from app.domain.recipes import ProductionRecipe, RecipeStage, validate_recipe_stage_configuration
+from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
 
 
 @dataclass(frozen=True)
