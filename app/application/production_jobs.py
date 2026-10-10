@@ -373,20 +373,20 @@ def _redact_error_text(value: object) -> str:
     """Bound provider diagnostics and remove common credential formats."""
     message = str(value)
     message = re.sub(
-        r"(?i)(https?://api\\.telegram\\.org/bot)[^/\\s]+",
-        r"\\1[REDACTED]",
+        r"(?i)(https?://api\.telegram\.org/bot)[^/\s]+",
+        r"\1[REDACTED]",
         message,
     )
     message = re.sub(r"(?i)AIza[0-9A-Za-z_-]{20,}", "[REDACTED_API_KEY]", message)
     message = re.sub(
-        r"(?i)(authorization\\s*[:=]\\s*bearer\\s+)[^\\s,;]+",
-        r"\\1[REDACTED]",
+        r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+",
+        r"\1[REDACTED]",
         message,
     )
-    message = re.sub(r"(?i)\\bbearer\\s+[A-Za-z0-9._~+/-]+=*", "Bearer [REDACTED]", message)
+    message = re.sub(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer [REDACTED]", message)
     message = re.sub(
-        r"(?i)\\b(api[_-]?key|access[_-]?token|refresh[_-]?token|bot[_-]?token|secret)\\b(\\s*[:=]\\s*)[^\\s,;]+",
-        r"\\1\\2[REDACTED]",
+        r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|bot[_-]?token|secret)\b(\s*[:=]\s*)[^\s,;]+",
+        r"\1\2[REDACTED]",
         message,
     )
     return message[:_MAX_ERROR_MESSAGE_LENGTH]
