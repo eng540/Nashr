@@ -230,3 +230,27 @@ def test_schema_v4_requires_output_contract():
             schema_version=4, origin=RUNTIME_RESOLUTION, captured_at=None,
             prompt_template=prompt, recipe=None, output_contract=None,
         )
+
+
+def test_schema_v5_pins_policy_and_round_trips():
+    from app.domain.production_context import PinnedOutputContract, PinnedPolicy
+    from app.domain.recipes import BOOK_TO_TELEGRAM_POST
+
+    prompt = ResolvedPrompt(key="editorial.drafter", version=1, body="prompt",
+        template_id=UUID("00000000-0000-0000-0000-000000000001"),
+        version_id=UUID("00000000-0000-0000-0000-000000000002"))
+    contract = PinnedOutputContract(contract_id="00000000-0000-0000-0000-000000000003",
+        version_id="00000000-0000-0000-0000-000000000004", key="TELEGRAM_POST", version=1,
+        definition={"artifact_kind":"POST","mime_type":"text/plain","content_mode":"INLINE",
+                    "required_metadata_fields":[],"max_content_chars":100000})
+    policy = PinnedPolicy(policy_id="00000000-0000-0000-0000-000000000005",
+        version_id="00000000-0000-0000-0000-000000000006", key="EDITORIAL_DEFAULT", version=1,
+        definition={"min_content_chars":1,"max_content_chars":100000,"required_terms":[],
+                    "forbidden_terms":[],"allow_urls":True})
+    context = ResolvedProductionContext.capture(prompt, recipe=BOOK_TO_TELEGRAM_POST,
+        output_contract=contract, policy=policy)
+    restored = ResolvedProductionContext.from_dict(context.to_dict())
+    assert restored == context
+    assert restored.schema_version == 5
+    assert restored.policy == policy
+
