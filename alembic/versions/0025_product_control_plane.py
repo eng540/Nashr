@@ -1,5 +1,6 @@
 """Persist versioned production product definitions."""
 from typing import Sequence, Union
+import json
 
 from alembic import op
 import sqlalchemy as sa
@@ -77,7 +78,7 @@ def upgrade() -> None:
         },
     ]
     for product in products:
-        op.execute(sa.text("""
+        op.get_bind().execute(sa.text("""
             INSERT INTO production_products (id, key, name, purpose)
             VALUES (:id, :key, :name, :purpose)
         """), {k: product[k] for k in ("id", "key", "name", "purpose")})
@@ -87,7 +88,7 @@ def upgrade() -> None:
         """), {
             "version_id": product["version_id"],
             "id": product["id"],
-            "definition": __import__("json").dumps(product["definition"], ensure_ascii=False),
+            "definition": json.dumps(product["definition"], ensure_ascii=False),
         })
 
 
