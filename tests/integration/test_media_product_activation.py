@@ -29,3 +29,23 @@ async def test_image_product_stays_inactive_until_durable_storage_is_configured(
         assert audio_product["active_version"] is None
         with pytest.raises(ValueError, match="durable ARTIFACT_STORAGE"):
             await service.publish("ARABIC_LITERATURE_AUDIO", 1)
+
+
+@pytest.mark.asyncio
+async def test_product_publication_rejects_recipe_output_contract_mismatch():
+    async with SessionFactory() as session:
+        service = ProductionProductControlPlaneService(session)
+        await service.create_product(
+            "TEST_INCOMPATIBLE_IMAGE_PRODUCT",
+            "Incompatible image test",
+            "Must not publish a mismatched output contract",
+            {
+                "recipe_key": "BOOK_TO_IMAGE_ARTIFACT",
+                "output_contract_key": "TEXT_ARTIFACT",
+                "policy_key": "EDITORIAL_DEFAULT",
+                "audience": "Test audience",
+                "experience": "Test experience",
+            },
+        )
+        with pytest.raises(ValueError, match="incompatible with output contract"):
+            await service.publish("TEST_INCOMPATIBLE_IMAGE_PRODUCT", 1)
