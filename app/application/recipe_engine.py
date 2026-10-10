@@ -440,7 +440,7 @@ class ProduceVideoArtifactCapability:
                 "model": generated_model,
                 "aspect_ratio": aspect_ratio,
                 "resolution": resolution,
-                "duration_seconds": duration_seconds,
+                "requested_duration_seconds": duration_seconds,
             },
         )
         try:
