@@ -11,14 +11,15 @@ from app.domain.production_context import PinnedOutputContract, PinnedPolicy
 from app.infrastructure.database.models import ArtifactModel
 
 
-def _payload(row: ArtifactModel) -> dict[str, Any]:
-    return {
+async def _payload(row: ArtifactModel) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "id": str(row.id),
         "source_knowledge_unit_id": str(row.source_knowledge_unit_id),
         "kind": row.kind,
         "status": row.status,
         "content": row.content,
         "storage_uri": row.storage_uri,
+        "preview_url": None,
         "mime_type": row.mime_type,
         "output_contract_key": row.output_contract_key,
         "output_contract_version": row.output_contract_version,
@@ -29,6 +30,13 @@ def _payload(row: ArtifactModel) -> dict[str, Any]:
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
+    if row.storage_uri and row.kind in {"IMAGE", "VIDEO", "AUDIO"}:
+        try:
+            from app.infrastructure.storage import S3CompatibleObjectStorage
+            payload["preview_url"] = await S3CompatibleObjectStorage.from_env().download_url(row.storage_uri)
+        except ValueError:
+            payload["preview_url"] = None
+    return payload
 
 
 def _validate_review_candidate(row: ArtifactModel, content: str | None, metadata: dict[str, Any]) -> None:
@@ -74,11 +82,11 @@ class GenericArtifactReviewService:
             .order_by(ArtifactModel.created_at.desc(), ArtifactModel.id.desc())
             .limit(limit)
         )).scalars().all()
-        return [_payload(row) for row in rows]
+        return [await _payload(row) for row in rows]
 
     async def get(self, artifact_id: UUID) -> dict[str, Any]:
         row = await self._get_row(artifact_id)
-        return _payload(row)
+        return await _payload(row)
 
     async def update(self, artifact_id: UUID, content: str | None, metadata: dict[str, Any] | None) -> dict[str, Any]:
         row = await self._get_row(artifact_id, for_update=True)
