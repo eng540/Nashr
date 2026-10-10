@@ -176,6 +176,7 @@ async def persist_generic_artifact(
             content=artifact.content,
             storage_uri=artifact.storage_uri,
             artifact_metadata=metadata,
+            review_status="DRAFT",
             created_at=artifact.created_at,
             updated_at=artifact.updated_at,
         )
@@ -269,6 +270,7 @@ async def persist_generic_artifact(session: AsyncSession, artifact: Artifact, *,
             content=artifact.content,
             storage_uri=artifact.storage_uri,
             artifact_metadata=metadata,
+            review_status="DRAFT",
             created_at=artifact.created_at,
             updated_at=artifact.updated_at,
         ).on_conflict_do_nothing(
