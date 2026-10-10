@@ -89,3 +89,8 @@ A published `TEXT_ARTIFACT` Output Contract, `BOOK_TO_TEXT_ARTIFACT` Recipe, and
 ## Product-aware production selection — follow-up correction
 
 The Content Factory now applies Post-specific pending/done filters only to the Post product family. Generic Artifact products can select any source material even when a Post already exists for that Knowledge Unit; their available-material counts and panel copy no longer imply the Post review lifecycle. This keeps artifact production independent from the Post-specific has_post and pending_count projections.
+
+
+## Private media storage boundary — implementation change
+
+Generic media Artifacts now have an S3-compatible storage adapter that keeps objects private, stores stable s3:// references, validates object keys and bucket ownership, and issues short-lived signed read URLs. The generic review API exposes signed URLs only for storage-backed IMAGE/VIDEO/AUDIO Artifacts, and the review panel renders the appropriate media preview instead of treating the storage URI as user-facing content. This adapter is provider-neutral across S3-compatible services; production media generation must remain disabled until the service environment has the ARTIFACT_STORAGE_ENDPOINT_URL, ARTIFACT_STORAGE_BUCKET, ARTIFACT_STORAGE_ACCESS_KEY_ID, and ARTIFACT_STORAGE_SECRET_ACCESS_KEY variables configured.

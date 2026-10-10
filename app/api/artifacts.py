@@ -6,6 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.generic_artifact_review import GenericArtifactReviewService
+from app.infrastructure.artifact_storage import (
+    ArtifactStorageConfigurationError,
+    ArtifactStorageError,
+    S3ArtifactStorage,
+)
 from app.infrastructure.database.session import get_session
 
 
@@ -52,6 +57,28 @@ async def get_generic_artifact(artifact_id: UUID, session: AsyncSession = Depend
         return await GenericArtifactReviewService(session).get(artifact_id)
     except (LookupError, ValueError) as exc:
         raise _handle_error(exc) from exc
+
+
+@router.get("/{artifact_id}/media-url")
+async def get_generic_artifact_media_url(
+    artifact_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        artifact = await GenericArtifactReviewService(session).get(artifact_id)
+        if artifact["kind"] not in {"IMAGE", "VIDEO", "AUDIO"} or not artifact["storage_uri"]:
+            raise ValueError("Artifact does not contain storage-backed media.")
+        storage = S3ArtifactStorage.from_environment()
+        url = await storage.presign_get(artifact["storage_uri"], expires_seconds=300)
+        return {"url": url, "expires_in": 300}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ArtifactStorageConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ArtifactStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.patch("/{artifact_id}")
