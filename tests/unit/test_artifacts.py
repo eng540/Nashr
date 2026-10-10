@@ -2,7 +2,10 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
-from app.application.artifacts import post_model_to_artifact, post_to_artifact
+import pytest
+
+from app.application.artifacts import ensure_post_artifact, post_model_to_artifact, post_to_artifact
+from app.domain.production_context import PinnedPolicy
 from app.domain.artifacts import ArtifactKind, ArtifactStatus
 from app.domain.posts import Post, PostStatus
 
@@ -75,3 +78,26 @@ def test_artifact_contract_represents_image_and_video_storage_without_post_field
         assert artifact.storage_uri == uri
         assert artifact.post_id is None
         assert artifact.editorial_status is None
+
+
+@pytest.mark.asyncio
+async def test_artifact_persistence_rejects_content_violating_pinned_policy():
+    now = datetime.now(timezone.utc)
+    post = Post(
+        id=uuid4(), knowledge_unit_id=uuid4(), content="This includes a blocked term",
+        status=PostStatus.DRAFT, created_at=now, updated_at=now,
+        reviewed_at=None, review_note=None,
+    )
+    policy = PinnedPolicy(
+        policy_id="00000000-0000-0000-0000-000000000021",
+        version_id="00000000-0000-0000-0000-000000000022",
+        key="TEST_POLICY", version=1,
+        definition={
+            "min_content_chars": 1, "max_content_chars": 1000,
+            "required_terms": [], "forbidden_terms": ["blocked"], "allow_urls": True,
+        },
+    )
+    with pytest.raises(ValueError, match="violates pinned production policy"):
+        await ensure_post_artifact(
+            None, post, production_job_id=None, resolved_context={"policy": policy.to_dict()}
+        )

@@ -46,3 +46,8 @@ A separate, versioned Production Policy Control Plane is implemented independent
 ## Policy Runtime Integration — implementation change
 
 New production jobs resolve and pin the published `EDITORIAL_DEFAULT` policy in resolved-context schema v5. A compatibility-default policy is seeded by migration to preserve the current behavior while making policy enforcement explicit. Artifact persistence validates generated Post content against that immutable snapshot (length bounds, required/forbidden terms, and URL allowance). Historical context schemas v1–v4 remain readable and are not assigned a policy retroactively.
+
+
+## Policy Runtime Acceptance Gate
+
+The follow-up acceptance tests now verify both sides of the runtime boundary: Artifact persistence rejects content that violates the pinned policy, and publishing a new policy version changes only newly created jobs. The original job retains its prior policy snapshot through publication of a replacement version.
