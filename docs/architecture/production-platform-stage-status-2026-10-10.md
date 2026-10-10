@@ -116,3 +116,8 @@ A Veo-backed `produce_video_artifact v1` capability is being added on top of dur
 ## First AUDIO capability — implementation in progress
 
 A Gemini TTS adapter and `produce_audio_artifact v1` capability now compose the shared source-grounded narration draft with speech synthesis, store a private WAV, and persist an AUDIO Artifact with transcript/model/voice provenance for generic human review. The `ARABIC_LITERATURE_AUDIO` Product is seeded as DRAFT and remains unavailable until durable storage is configured and reachable, consistent with IMAGE and VIDEO products.
+
+
+## Image provider compatibility correction
+
+The image adapter now uses the documented Gemini image-generation `models.generate_content` endpoint through Nashr's central retry/failover policy, rather than the Interactions API. Its default model is the current GA `gemini-nano-banana-2.1`; the deprecated `gemini-3.1-flash-image` is no longer the default. The dedicated image-model cascade and media-storage settings are documented in `.env.example`.
