@@ -74,3 +74,8 @@ The product lifecycle API validates references to active Recipe, Output Contract
 ## Generic Artifact Persistence — acceptance
 
 Generic non-Post persistence now validates artifact kind, MIME type, content mode, content/storage exclusivity, required metadata, optional pinned Policy, and output-contract limits before writing provenance. TEXT can be persisted inline; IMAGE/VIDEO/AUDIO can be persisted as storage references. Retry idempotency is scoped to a production job, source Knowledge Unit, and artifact kind. This establishes the persistence boundary; generation capabilities and generic human review are separate acceptance gates.
+
+
+## Generic Artifact Review Boundary
+
+Non-Post Artifacts now have a separate `DRAFT → APPROVED / REJECTED` review lifecycle. Editing and approval revalidate the Artifact against its immutable Output Contract and optional Policy snapshot. POST artifacts are explicitly excluded and continue to use the canonical Post review state. The Content Factory exposes a dedicated generic-artifact review panel; no generic artifact is sent to Telegram by this workflow.
