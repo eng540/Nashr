@@ -167,6 +167,8 @@ class ProduceImageArtifactCapability:
             raise ValueError("produce_image_artifact capability requires a pinned output contract.")
         pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
         contract = OutputContractDefinition.from_dict(pinned_contract.definition)
+        if contract.artifact_kind != "IMAGE" or contract.content_mode != "STORAGE_URI":
+            raise ValueError("produce_image_artifact requires a storage-backed IMAGE output contract.")
         product_snapshot = context.resolved_context.get("product")
         if not isinstance(product_snapshot, Mapping) or not isinstance(product_snapshot.get("definition"), Mapping):
             raise ValueError("produce_image_artifact capability requires a pinned Product definition.")
@@ -184,6 +186,8 @@ class ProduceImageArtifactCapability:
             f"Editorial content:\n{drafted.content}"
         )
         image = await self.image_generator.generate(prompt, aspect_ratio="1:1", image_size="1K")
+        if image.mime_type != contract.mime_type:
+            raise ValueError("Image generator MIME type does not match the pinned IMAGE output contract.")
         storage = self.object_storage or S3CompatibleObjectStorage.from_env()
         storage_uri = await storage.save(
             filename=f"{drafted.title}.png", content=image.data,
