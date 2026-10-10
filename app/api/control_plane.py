@@ -296,3 +296,102 @@ async def archive_identity_version(key: str, version: int, session: AsyncSession
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+class OutputContractDefinitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_kind: str = Field(min_length=1, max_length=30)
+    mime_type: str = Field(min_length=3, max_length=200)
+    content_mode: str = Field(min_length=1, max_length=30)
+    required_metadata_fields: list[str] = Field(max_length=100)
+    max_content_chars: int | None = Field(default=None, ge=1, strict=True)
+
+
+class OutputContractCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
+    name: str = Field(min_length=1, max_length=300)
+    purpose: str = Field(min_length=1, max_length=2000)
+    definition: OutputContractDefinitionRequest
+
+
+class OutputContractVersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    definition: OutputContractDefinitionRequest
+
+
+def _output_contract_definition(payload: OutputContractDefinitionRequest) -> dict[str, Any]:
+    return payload.model_dump()
+
+
+@router.get("/output-contracts")
+async def list_output_contracts(session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
+    from app.application.output_contract_control_plane import OutputContractControlPlaneService
+    return await OutputContractControlPlaneService(session).list_contracts()
+
+
+@router.get("/output-contracts/{key}")
+async def get_output_contract(key: str, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.output_contract_control_plane import OutputContractControlPlaneService
+    try:
+        return await OutputContractControlPlaneService(session).get_contract(key)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/output-contracts", status_code=201)
+async def create_output_contract(payload: OutputContractCreateRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.output_contract_control_plane import OutputContractControlPlaneService
+    try:
+        return await OutputContractControlPlaneService(session).create_contract(
+            payload.key, payload.name, payload.purpose, _output_contract_definition(payload.definition)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/output-contracts/{key}/versions", status_code=201)
+async def create_output_contract_version(key: str, payload: OutputContractVersionRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.output_contract_control_plane import OutputContractControlPlaneService
+    try:
+        return await OutputContractControlPlaneService(session).create_draft(key, _output_contract_definition(payload.definition))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch("/output-contracts/{key}/versions/{version}")
+async def update_output_contract_version(key: str, version: int, payload: OutputContractVersionRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.output_contract_control_plane import OutputContractControlPlaneService
+    try:
+        return await OutputContractControlPlaneService(session).update_draft(key, version, _output_contract_definition(payload.definition))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/output-contracts/{key}/versions/{version}/publish")
+async def publish_output_contract_version(key: str, version: int, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.output_contract_control_plane import OutputContractControlPlaneService
+    try:
+        return await OutputContractControlPlaneService(session).publish(key, version)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/output-contracts/{key}/versions/{version}/archive")
+async def archive_output_contract_version(key: str, version: int, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.application.output_contract_control_plane import OutputContractControlPlaneService
+    try:
+        return await OutputContractControlPlaneService(session).archive(key, version)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
