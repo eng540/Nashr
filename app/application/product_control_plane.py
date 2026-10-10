@@ -6,7 +6,7 @@ from app.infrastructure.database.recipes import ProductionRecipeRepository
 from app.infrastructure.database.output_contracts import OutputContractRepository
 from app.infrastructure.database.policies import ProductionPolicyRepository
 from app.domain.output_contracts import OutputContractDefinition
-from app.infrastructure.storage import object_storage_is_configured
+from app.infrastructure.artifact_storage import ArtifactStorageConfigurationError, S3ArtifactStorage
 
 
 def _version_payload(row) -> dict[str, object]:
@@ -82,8 +82,11 @@ class ProductionProductControlPlaneService:
         await ProductionRecipeRepository(self.session).resolve_active(definition.recipe_key)
         _, contract_version = await OutputContractRepository(self.session).resolve_active(definition.output_contract_key)
         contract = OutputContractDefinition.from_dict(contract_version.definition)
-        if contract.content_mode == "STORAGE_URI" and not object_storage_is_configured():
-            raise ValueError("Durable object storage must be configured before publishing a storage-backed Product.")
+        if contract.content_mode == "STORAGE_URI":
+            try:
+                S3ArtifactStorage.from_environment()
+            except ArtifactStorageConfigurationError as exc:
+                raise ValueError("Durable media storage must be configured before publishing a storage-backed Product.") from exc
         await ProductionPolicyRepository(self.session).resolve_active(definition.policy_key)
         row = await self.repository.publish(key, version)
         await self.session.commit()
