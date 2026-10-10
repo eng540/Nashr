@@ -627,4 +627,5 @@ async def test_generic_text_product_executes_without_creating_editorial_post():
     assert artifacts[0].output_contract_key == "LITERARY_TEXT"
     assert artifacts[0].output_contract_version == 1
     assert artifacts[0].resolved_context["product"]["key"] == "ARABIC_LITERATURE_TEXT"
+    assert artifacts[0].review_status == "DRAFT"
     assert posts == []
