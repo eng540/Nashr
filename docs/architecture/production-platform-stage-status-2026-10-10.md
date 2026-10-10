@@ -36,3 +36,8 @@ IMAGE and VIDEO contract definitions do not by themselves create image/video gen
 ## Output Contract Runtime Integration — implementation change
 
 New ProductionJobs resolve and pin the published `TELEGRAM_POST` contract in context schema v4. Post Artifact persistence validates the generated result against that immutable snapshot and persists contract key/version and MIME type as provenance. Existing context schemas v1–v3 remain compatible and are not backfilled with invented contract history. This integration applies to the existing Post capability only; it does not claim that IMAGE/VIDEO generation capabilities exist.
+
+
+## Policy Control Plane — implementation change
+
+A separate, versioned Production Policy Control Plane is implemented independently of Editorial Identity, Prompt Templates, Recipes, and Output Contracts. Policy definitions are declarative and restricted to validated fields; they cannot contain executable Python, SQL, provider configuration, or secrets. This slice establishes persistence, lifecycle APIs, and schema validation. Runtime pinning and enforcement remain a separate acceptance gate; this API alone does not claim that production output is policy-validated.
