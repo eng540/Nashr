@@ -74,7 +74,7 @@ class ProducePostCapability:
         if style_instructions is not None:
             if not isinstance(style_instructions, str) or not style_instructions.strip():
                 raise ValueError("produce_post style_instructions must be a non-empty string.")
-            system_prompt = f"{system_prompt}\\n\\nRecipe-specific instructions:\\n{style_instructions.strip()}"
+            system_prompt = f"{system_prompt}\n\nRecipe-specific instructions:\n{style_instructions.strip()}"
         post = await self.producer.execute(
             context.session,
             knowledge_unit_id,
