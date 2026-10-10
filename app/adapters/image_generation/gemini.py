@@ -104,7 +104,7 @@ class GeminiImageGenerator:
 
         config = types.GenerateContentConfig(
             response_modalities=["TEXT", "IMAGE"],
-            response_format={"image": {"aspect_ratio": aspect_ratio, "image_size": image_size}},
+            image_config=types.ImageConfig(aspect_ratio=aspect_ratio, image_size=image_size),
         )
         response = generate_gemini_content(
             self.client,
