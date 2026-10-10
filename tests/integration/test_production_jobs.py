@@ -8,6 +8,7 @@ from app.application.production_jobs import ProductionJobRunner, create_producti
 from app.application.control_plane import PromptTemplateService
 from app.application.recipe_control_plane import ProductionRecipeControlPlaneService
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+from app.application.policy_control_plane import ProductionPolicyControlPlaneService
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
@@ -520,3 +521,41 @@ async def test_job_retry_uses_original_identity_version_after_replacement_is_pub
         assert "Identity version: 1" in prompt
         assert "Rooted, dignified, and clear" in prompt
         assert "Modern and conversational" not in prompt
+
+
+async def test_job_pins_policy_version_when_a_new_version_is_published():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    permissive = {
+        "min_content_chars": 1, "max_content_chars": 100000,
+        "required_terms": [], "forbidden_terms": [], "allow_urls": True,
+    }
+    restrictive = {**permissive, "forbidden_terms": ["POLICY_BLOCK"]}
+
+    async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "policy-pinned-prompt")
+        policies = ProductionPolicyControlPlaneService(session)
+        active = await policies.get_policy("EDITORIAL_DEFAULT")
+        assert active["active_version"] == 1
+        original_job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        original_context = original_job.resolved_context.copy()
+
+        draft = await policies.create_draft("EDITORIAL_DEFAULT", restrictive)
+        assert draft["version"] == 2
+        await policies.publish("EDITORIAL_DEFAULT", 2)
+
+        await session.refresh(original_job)
+        restored = ResolvedProductionContext.from_dict(original_job.resolved_context)
+        assert original_job.resolved_context == original_context
+        assert restored.policy is not None
+        assert restored.policy.version == 1
+        assert restored.policy.definition["forbidden_terms"] == []
+
+        new_job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        new_context = ResolvedProductionContext.from_dict(new_job.resolved_context)
+        assert new_context.policy is not None
+        assert new_context.policy.version == 2
+        assert new_context.policy.definition["forbidden_terms"] == ["POLICY_BLOCK"]
+
+        restore = await policies.create_draft("EDITORIAL_DEFAULT", permissive)
+        assert restore["version"] == 3
+        await policies.publish("EDITORIAL_DEFAULT", 3)
