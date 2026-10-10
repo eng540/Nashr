@@ -129,4 +129,5 @@ async def test_video_capability_persists_operation_and_reuses_it_until_artifact_
     assert item.provider_operation_status == "SUCCEEDED"
     assert len(generator.start_calls) == 1
     assert len(generator.poll_calls) == 2
+    assert storage.ensure_available_calls == 1
     assert len(storage.put_calls) == 1
