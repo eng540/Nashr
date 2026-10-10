@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.artifacts import ensure_post_artifact, persist_generic_artifact
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
+from app.adapters.generation.gemini_image import GeminiImageGenerator
+from app.domain.image_generation import IImageGenerator
+from app.domain.products import ProductionProductDefinition
+from app.domain.storage import ObjectStorage
+from app.infrastructure.storage import S3CompatibleObjectStorage
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.output_contracts import OutputContractDefinition
 from app.domain.production_context import PinnedOutputContract
@@ -143,6 +148,59 @@ class ProduceTextArtifactCapability:
         )
 
 
+class ProduceImageArtifactCapability:
+    key = "produce_image_artifact"
+    version = 1
+
+    def __init__(self, drafter, resolver: ControlPlaneResolver | None = None,
+                 image_generator: IImageGenerator | None = None,
+                 object_storage: ObjectStorage | None = None) -> None:
+        self.generator = DraftKnowledgeUnitText(drafter, resolver or ControlPlaneResolver())
+        self.image_generator = image_generator or GeminiImageGenerator()
+        self.object_storage = object_storage
+
+    async def execute(self, context: ProductionExecutionContext, previous_output: object | None = None) -> Artifact:
+        knowledge_unit_id = context.inputs.get("knowledge_unit_id")
+        if not isinstance(knowledge_unit_id, UUID):
+            raise ValueError("produce_image_artifact capability requires a knowledge_unit_id input.")
+        if context.resolved_context is None or "output_contract" not in context.resolved_context:
+            raise ValueError("produce_image_artifact capability requires a pinned output contract.")
+        pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
+        contract = OutputContractDefinition.from_dict(pinned_contract.definition)
+        product_snapshot = context.resolved_context.get("product")
+        if not isinstance(product_snapshot, Mapping) or not isinstance(product_snapshot.get("definition"), Mapping):
+            raise ValueError("produce_image_artifact capability requires a pinned Product definition.")
+        product_definition = ProductionProductDefinition.from_dict(product_snapshot["definition"])
+        drafted = await self.generator.execute(
+            context.session, knowledge_unit_id, system_prompt=_stage_system_prompt(context, self.key)
+        )
+        prompt = (
+            "Create one original editorial image to accompany the following source-grounded Arabic literary content. "
+            "Use a refined, culturally respectful visual composition. Do not invent factual details, add logos, "
+            "or render text inside the image.\n\n"
+            f"Audience: {product_definition.audience}\n"
+            f"Desired experience: {product_definition.experience}\n"
+            f"Source title: {drafted.title}\n"
+            f"Editorial content:\n{drafted.content}"
+        )
+        image = await self.image_generator.generate(prompt, aspect_ratio="1:1", image_size="1K")
+        storage = self.object_storage or S3CompatibleObjectStorage.from_env()
+        storage_uri = await storage.save(
+            filename=f"{drafted.title}.png", content=image.data,
+            prefix=str(context.run_id or uuid4()), mime_type=image.mime_type,
+        )
+        now = datetime.now(timezone.utc)
+        artifact = Artifact(
+            id=uuid4(), source_knowledge_unit_id=knowledge_unit_id, kind=ArtifactKind.IMAGE,
+            content=None, status=ArtifactStatus.AVAILABLE.value, created_at=now, updated_at=now,
+            storage_uri=storage_uri, mime_type=image.mime_type, production_job_id=context.run_id,
+            output_contract_key=pinned_contract.key, output_contract_version=pinned_contract.version,
+            resolved_context=dict(context.resolved_context),
+            metadata={"title": drafted.title, "alt_text": f"صورة تحريرية مرتبطة بمادة: {drafted.title}"},
+        )
+        return await persist_generic_artifact(context.session, artifact, resolved_context=dict(context.resolved_context))
+
+
 class ProductionRecipeEngine:
     def __init__(self, capabilities: CapabilityRegistry) -> None:
         self.capabilities = capabilities
@@ -176,8 +234,12 @@ class ProductionRecipeEngine:
 def build_production_recipe_engine(
     drafter,
     resolver: ControlPlaneResolver | None = None,
+    *,
+    image_generator: IImageGenerator | None = None,
+    object_storage: ObjectStorage | None = None,
 ) -> ProductionRecipeEngine:
     capabilities = CapabilityRegistry()
     capabilities.register(ProducePostCapability(drafter, resolver))
     capabilities.register(ProduceTextArtifactCapability(drafter, resolver))
+    capabilities.register(ProduceImageArtifactCapability(drafter, resolver, image_generator, object_storage))
     return ProductionRecipeEngine(capabilities=capabilities)
