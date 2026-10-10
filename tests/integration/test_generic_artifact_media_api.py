@@ -82,7 +82,7 @@ async def test_media_url_endpoint_returns_short_lived_signed_url(monkeypatch: py
 
 
 @pytest.mark.asyncio
-async def test_media_url_endpoint_rejects_inline_text_artifacts():
+async def test_media_url_endpoint_returns_not_found_for_unknown_artifacts():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/artifacts/00000000-0000-0000-0000-000000000001/media-url")
