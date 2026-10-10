@@ -586,3 +586,46 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
     assert "Recipe-specific instructions:" in drafter.prompts[0]
     assert "اكتب منشورًا موجزًا ومكثفًا" in drafter.prompts[0]
     assert "Product audience: Readers who prefer concise Arabic literary content" in drafter.prompts[0]
+
+
+async def test_text_product_generates_reviewable_artifact_without_creating_post():
+    source_id, _, unit_ids = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "text-artifact-base-prompt")
+        job = await create_production_job(
+            session, source_id, ProductionScope.SOURCE,
+            product_key="ARABIC_LITERATURE_TEXT",
+        )
+        context = ResolvedProductionContext.from_dict(job.resolved_context)
+        assert context.schema_version == 6
+        assert context.product is not None
+        assert context.product.key == "ARABIC_LITERATURE_TEXT"
+        assert context.recipe is not None
+        assert context.recipe.key == "BOOK_TO_TEXT_ARTIFACT"
+        assert context.output_contract is not None
+        assert context.output_contract.key == "TEXT_ARTIFACT"
+
+    drafter = RecordingDrafter()
+    await ProductionJobRunner(drafter).run(job.id)
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(
+                ProductionJobItemModel.job_id == job.id,
+                ProductionJobItemModel.knowledge_unit_id == unit_ids[0],
+            )
+        )).scalar_one()
+        assert item.status == ProductionJobItemStatus.COMPLETED.value
+        assert item.artifact_id is not None
+        assert item.post_id is None
+        artifact = (await session.execute(
+            select(ArtifactModel).where(ArtifactModel.id == item.artifact_id)
+        )).scalar_one()
+        assert artifact.kind == "TEXT"
+        assert artifact.review_status == "DRAFT"
+        assert artifact.output_contract_key == "TEXT_ARTIFACT"
+        assert artifact.output_contract_version == 1
+        assert artifact.content == "POST::Material 1"
+        post = (await session.execute(
+            select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0])
+        )).scalar_one_or_none()
+        assert post is None
