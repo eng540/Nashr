@@ -75,6 +75,14 @@ class S3ArtifactStorage:
         )
         return cls(client=client, bucket=required["ARTIFACT_STORAGE_BUCKET"])
 
+
+    async def ensure_available(self) -> None:
+        """Verify the configured bucket and credentials before activating media products."""
+        try:
+            await asyncio.to_thread(self.client.head_bucket, Bucket=self.bucket)
+        except Exception as exc:
+            raise ArtifactStorageError("Configured Artifact media storage is not reachable.") from exc
+
     async def put(self, *, key: str, content: bytes, content_type: str) -> str:
         safe_key = _validate_key(key)
         if not isinstance(content, bytes) or not content:
