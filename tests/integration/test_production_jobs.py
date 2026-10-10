@@ -10,6 +10,7 @@ from app.application.recipe_control_plane import ProductionRecipeControlPlaneSer
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
 from app.application.policy_control_plane import ProductionPolicyControlPlaneService
 from app.application.product_control_plane import ProductionProductControlPlaneService
+from app.application.generic_artifact_review import GenericArtifactReviewService
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.image_generation import GeneratedImage
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
@@ -726,6 +727,8 @@ async def test_image_product_creates_storage_backed_reviewable_artifact(monkeypa
         assert artifact.artifact_metadata["title"] == "Material 1"
         assert artifact.artifact_metadata["alt_text"]
         assert artifact.resolved_context["product"]["key"] == "TEST_IMAGE_PRODUCT_RUNTIME"
+        preview = await GenericArtifactReviewService(session).get(artifact.id)
+        assert preview["preview_url"].startswith("https://objects.example.test/")
         post = (await session.execute(
             select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0])
         )).scalar_one_or_none()
