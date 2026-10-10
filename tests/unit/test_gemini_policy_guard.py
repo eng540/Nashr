@@ -19,6 +19,7 @@ from app.adapters.gemini_policy import (
     DEFAULT_GEMINI_MODELS,
     GEMINI_AUTH_ERROR,
     GEMINI_INVALID_ARGUMENT,
+    GEMINI_FILE_NOT_FOUND,
     GEMINI_NETWORK_ERROR,
     GEMINI_QUOTA_EXCEEDED,
     GEMINI_RATE_LIMITED,
@@ -119,6 +120,7 @@ class _TransientError(RuntimeError):
     ("status", "code"),
     [
         (429, GEMINI_RATE_LIMITED),
+        (404, GEMINI_FILE_NOT_FOUND),
         (401, GEMINI_AUTH_ERROR),
         (403, GEMINI_AUTH_ERROR),
         (400, GEMINI_INVALID_ARGUMENT),
@@ -134,6 +136,7 @@ def test_transient_codes_are_retryable_and_permanent_are_not() -> None:
     assert classify_gemini_error(_StatusError(503))[1] is True
     assert classify_gemini_error(_StatusError(429))[1] is True
     assert classify_gemini_error(_StatusError(400))[1] is False
+    assert classify_gemini_error(_StatusError(404))[1] is False
     assert classify_gemini_error(_StatusError(401))[1] is False
 
 
