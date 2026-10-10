@@ -146,7 +146,3 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
             not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
         ):
             raise ValueError("produce_post style_instructions must be a non-empty string up to 2000 characters.")
-    elif stage.configuration:
-        raise ValueError(
-            f"Configuration is not defined for capability '{stage.capability_key}' v{stage.capability_version}."
-        )
