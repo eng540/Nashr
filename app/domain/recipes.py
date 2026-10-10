@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import json
 from uuid import UUID
 
-SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1)})
+SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("produce_image_artifact", 1)})
 
 
 @dataclass(frozen=True)
@@ -146,3 +146,20 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
             not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
         ):
             raise ValueError(f"{stage.capability_key} style_instructions must be a non-empty string up to 2000 characters.")
+
+
+    if stage.capability_key == "produce_image_artifact" and stage.capability_version == 1:
+        unknown = set(stage.configuration) - {"style_instructions", "aspect_ratio", "image_size"}
+        if unknown:
+            raise ValueError("produce_image_artifact configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
+        instructions = stage.configuration.get("style_instructions")
+        if instructions is not None and (
+            not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
+        ):
+            raise ValueError("produce_image_artifact style_instructions must be a non-empty string up to 2000 characters.")
+        aspect_ratio = stage.configuration.get("aspect_ratio", "1:1")
+        if aspect_ratio not in {"1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"}:
+            raise ValueError("produce_image_artifact aspect_ratio is unsupported.")
+        image_size = stage.configuration.get("image_size", "1K")
+        if image_size not in {"1K", "2K", "4K"}:
+            raise ValueError("produce_image_artifact image_size must be 1K, 2K, or 4K.")
