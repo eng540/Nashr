@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.posts import Post
+from app.domain.output_contracts import OutputContractDefinition
 from app.infrastructure.database.models import ArtifactModel, PostModel
 
 
@@ -38,7 +39,27 @@ async def ensure_post_artifact(
     production_job_id: UUID | None,
     resolved_context: dict | None,
 ) -> Artifact:
-    """Persist the durable Artifact reference for a Post, without rewriting prior provenance."""
+    """Validate against the pinned contract before persisting durable Artifact provenance."""
+    contract_key = None
+    contract_version = None
+    contract_mime_type = None
+    if resolved_context is not None and "output_contract" in resolved_context:
+        from app.domain.production_context import PinnedOutputContract
+        pinned = PinnedOutputContract.from_dict(resolved_context["output_contract"])
+        definition = OutputContractDefinition.from_dict(pinned.definition)
+        if definition.artifact_kind != ArtifactKind.POST.value:
+            raise ValueError("Generated Artifact kind does not match the pinned output contract.")
+        if definition.content_mode != "INLINE" or not post.content:
+            raise ValueError("Generated Post content does not satisfy the pinned inline output contract.")
+        if definition.max_content_chars is not None and len(post.content) > definition.max_content_chars:
+            raise ValueError("Generated Post exceeds the pinned output contract content limit.")
+        metadata = {}
+        missing = [field for field in definition.required_metadata_fields if field not in metadata]
+        if missing:
+            raise ValueError("Generated Artifact is missing required metadata fields: " + ", ".join(missing))
+        contract_key = pinned.key
+        contract_version = pinned.version
+        contract_mime_type = definition.mime_type
     existing = (
         await session.execute(select(ArtifactModel).where(ArtifactModel.id == post.id))
     ).scalar_one_or_none()
@@ -53,6 +74,10 @@ async def ensure_post_artifact(
                 post_id=post.id,
                 production_job_id=production_job_id,
                 resolved_context=resolved_context,
+                output_contract_key=contract_key,
+                output_contract_version=contract_version,
+                mime_type=contract_mime_type,
+                content=post.content,
                 created_at=post.created_at,
                 updated_at=post.updated_at,
                 artifact_metadata={},
