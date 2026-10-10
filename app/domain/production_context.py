@@ -7,9 +7,10 @@ from app.domain.recipes import ProductionRecipe
 from app.domain.identities import EditorialIdentityDefinition
 from app.domain.output_contracts import OutputContractDefinition
 from app.domain.policies import ProductionPolicyDefinition
+from app.domain.products import ProductionProductDefinition
 
-CONTEXT_SCHEMA_VERSION = 5
-SUPPORTED_CONTEXT_SCHEMA_VERSIONS = (1, 2, 3, 4, 5)
+CONTEXT_SCHEMA_VERSION = 6
+SUPPORTED_CONTEXT_SCHEMA_VERSIONS = (1, 2, 3, 4, 5, 6)
 RUNTIME_RESOLUTION = "RUNTIME_RESOLUTION"
 LEGACY_PIN_BACKFILL = "LEGACY_PIN_BACKFILL"
 
@@ -194,6 +195,44 @@ class PinnedPolicy:
         if not isinstance(definition, dict):
             raise ValueError("Resolved context policy definition must be an object.")
         return cls(policy_id, version_id, key, version, definition)
+
+
+@dataclass(frozen=True)
+class PinnedProduct:
+    product_id: str
+    version_id: str
+    key: str
+    version: int
+    definition: dict[str, object]
+
+    def __post_init__(self) -> None:
+        UUID(self.product_id)
+        UUID(self.version_id)
+        if not self.key.strip() or isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
+            raise ValueError("Pinned product key and positive version are required.")
+        ProductionProductDefinition.from_dict(self.definition)
+
+    def to_dict(self) -> dict[str, object]:
+        return {"product_id": self.product_id, "version_id": self.version_id, "key": self.key,
+                "version": self.version, "definition": ProductionProductDefinition.from_dict(self.definition).to_dict()}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PinnedProduct":
+        if not isinstance(value, dict):
+            raise ValueError("Resolved context product must be an object.")
+        try:
+            product_id, version_id, key, version, definition = (
+                value["product_id"], value["version_id"], value["key"], value["version"], value["definition"]
+            )
+        except KeyError as exc:
+            raise ValueError(f"Resolved context product is missing {exc.args[0]}.") from exc
+        if not all(isinstance(item, str) for item in (product_id, version_id, key)):
+            raise ValueError("Resolved context product IDs and key must be strings.")
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise ValueError("Resolved context product version must be an integer.")
+        if not isinstance(definition, dict):
+            raise ValueError("Resolved context product definition must be an object.")
+        return cls(product_id, version_id, key, version, definition)
 
 
 @dataclass(frozen=True)
