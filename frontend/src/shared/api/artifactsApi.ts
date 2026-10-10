@@ -24,6 +24,9 @@ export const genericArtifactsApi = {
   list(status: GenericArtifactReviewStatus = "DRAFT"): Promise<GenericReviewableArtifact[]> {
     return get<GenericReviewableArtifact[]>(`/api/artifacts?review_status=${status}`);
   },
+  mediaUrl(id: string): Promise<{ url: string; expires_in: number }> {
+    return get<{ url: string; expires_in: number }>(`/api/artifacts/${id}/media-url`);
+  },
   update(id: string, input: { content?: string; metadata?: Record<string, unknown> }): Promise<GenericReviewableArtifact> {
     return patch<GenericReviewableArtifact>(`/api/artifacts/${id}`, input);
   },
