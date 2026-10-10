@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.application.artifacts import ensure_post_artifact, persist_generic_artifact
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import ProducePost
-from app.domain.artifacts import Artifact
+from app.domain.artifacts import Artifact, ArtifactKind
 from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
 from app.infrastructure.database.models import KnowledgeUnitModel
 
@@ -133,7 +133,7 @@ class ProduceTextCapability:
         if style_instructions is not None:
             if not isinstance(style_instructions, str) or not style_instructions.strip():
                 raise ValueError("produce_text style_instructions must be a non-empty string.")
-            system_prompt = f"{system_prompt}\\n\\nRecipe-specific instructions:\\n{style_instructions.strip()}"
+            system_prompt = f"{system_prompt}\n\nRecipe-specific instructions:\n{style_instructions.strip()}"
 
         content = (await self.drafter.draft(
             title=unit.title,
