@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import json
 from uuid import UUID
 
-SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("produce_image_artifact", 1), ("produce_video_artifact", 1)})
+SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("produce_image_artifact", 1), ("produce_video_artifact", 1), ("produce_audio_artifact", 1)})
 
 
 @dataclass(frozen=True)
@@ -183,3 +183,20 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
         duration_seconds = stage.configuration.get("duration_seconds", 5)
         if isinstance(duration_seconds, bool) or duration_seconds not in {5, 6, 8}:
             raise ValueError("produce_video_artifact duration_seconds must be 5, 6, or 8.")
+
+
+    if stage.capability_key == "produce_audio_artifact" and stage.capability_version == 1:
+        unknown = set(stage.configuration) - {"style_instructions", "voice", "speech_style"}
+        if unknown:
+            raise ValueError("produce_audio_artifact configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
+        instructions = stage.configuration.get("style_instructions")
+        if instructions is not None and (
+            not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
+        ):
+            raise ValueError("produce_audio_artifact style_instructions must be a non-empty string up to 2000 characters.")
+        voice = stage.configuration.get("voice", "Kore")
+        if not isinstance(voice, str) or not voice.strip() or len(voice) > 50 or not voice.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("produce_audio_artifact voice must be a bounded voice identifier.")
+        speech_style = stage.configuration.get("speech_style", "clear, warm literary narration")
+        if not isinstance(speech_style, str) or not speech_style.strip() or len(speech_style) > 500:
+            raise ValueError("produce_audio_artifact speech_style must be a non-empty string up to 500 characters.")

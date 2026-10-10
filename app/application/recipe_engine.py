@@ -14,6 +14,7 @@ from app.application.artifacts import ensure_post_artifact, find_existing_generi
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
 from app.adapters.image_generation.gemini import GeminiImageGenerator
+from app.adapters.audio_generation.gemini_tts import GeminiAudioGenerator
 from app.adapters.video_generation.veo import VeoVideoGenerator
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.output_contracts import OutputContractDefinition
@@ -452,6 +453,105 @@ class ProduceVideoArtifactCapability:
             raise
 
 
+class ProduceAudioArtifactCapability:
+    """Create spoken narration as a private AUDIO Artifact for generic review."""
+
+    key = "produce_audio_artifact"
+    version = 1
+
+    def __init__(self, drafter, resolver: ControlPlaneResolver | None = None, audio_generator=None, storage_factory=None) -> None:
+        self.drafter = drafter
+        self.resolver = resolver or ControlPlaneResolver()
+        self.audio_generator = audio_generator or GeminiAudioGenerator()
+        self.storage_factory = storage_factory or S3ArtifactStorage.from_environment
+
+    async def execute(
+        self,
+        context: ProductionExecutionContext,
+        previous_output: object | None = None,
+    ) -> Artifact:
+        knowledge_unit_id = context.inputs.get("knowledge_unit_id")
+        if not isinstance(knowledge_unit_id, UUID):
+            raise ValueError("produce_audio_artifact capability requires a knowledge_unit_id input.")
+        if context.resolved_context is None or "output_contract" not in context.resolved_context:
+            raise ValueError("produce_audio_artifact capability requires a pinned output contract.")
+        product = context.resolved_context.get("product")
+        if not isinstance(product, Mapping) or not isinstance(product.get("definition"), Mapping):
+            raise ValueError("produce_audio_artifact capability requires a pinned product definition.")
+
+        existing = await find_existing_generic_artifact(
+            context.session,
+            production_job_id=context.run_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.AUDIO,
+        )
+        if existing is not None:
+            return existing
+
+        pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
+        contract = OutputContractDefinition.from_dict(pinned_contract.definition)
+        if contract.artifact_kind != ArtifactKind.AUDIO.value or contract.content_mode != "STORAGE_URI":
+            raise ValueError("produce_audio_artifact requires an AUDIO storage-backed output contract.")
+
+        storage = self.storage_factory()
+        drafted = await DraftKnowledgeUnitText(self.drafter, self.resolver).execute(
+            context.session,
+            knowledge_unit_id,
+            system_prompt=_stage_system_prompt(context, self.key),
+        )
+        voice = context.stage_configuration.get("voice", "Kore")
+        speech_style = context.stage_configuration.get("speech_style", "clear, warm literary narration")
+        generated = await self.audio_generator.generate(
+            drafted.content,
+            voice=voice,
+            style=speech_style,
+        )
+        if generated.mime_type != contract.mime_type:
+            raise ValueError(
+                f"Generated audio MIME type {generated.mime_type!r} does not match the pinned contract {contract.mime_type!r}."
+            )
+        artifact_id = uuid4()
+        storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.wav"
+        storage_uri = await storage.put(
+            key=storage_key,
+            content=generated.content,
+            content_type=generated.mime_type,
+        )
+        now = datetime.now(timezone.utc)
+        artifact = Artifact(
+            id=artifact_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.AUDIO,
+            content=None,
+            status=ArtifactStatus.AVAILABLE.value,
+            created_at=now,
+            updated_at=now,
+            storage_uri=storage_uri,
+            mime_type=generated.mime_type,
+            production_job_id=context.run_id,
+            output_contract_key=pinned_contract.key,
+            output_contract_version=pinned_contract.version,
+            resolved_context=dict(context.resolved_context),
+            metadata={
+                "title": drafted.title,
+                "transcript": drafted.content[:20000],
+                "model": generated.model,
+                "voice": voice,
+                "speech_style": speech_style,
+            },
+        )
+        try:
+            return await persist_generic_artifact(
+                context.session, artifact, resolved_context=dict(context.resolved_context)
+            )
+        except Exception:
+            try:
+                await storage.delete(storage_uri)
+            except (AttributeError, ArtifactStorageError, ValueError):
+                pass
+            raise
+
+
 class ProductionRecipeEngine:
     def __init__(self, capabilities: CapabilityRegistry) -> None:
         self.capabilities = capabilities
@@ -491,4 +591,5 @@ def build_production_recipe_engine(
     capabilities.register(ProduceTextArtifactCapability(drafter, resolver))
     capabilities.register(ProduceImageArtifactCapability())
     capabilities.register(ProduceVideoArtifactCapability())
+    capabilities.register(ProduceAudioArtifactCapability(drafter, resolver))
     return ProductionRecipeEngine(capabilities=capabilities)
