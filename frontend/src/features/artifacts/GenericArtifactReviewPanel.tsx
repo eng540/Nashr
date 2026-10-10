@@ -1,7 +1,37 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { genericArtifactsApi, type GenericArtifactReviewStatus } from "../../shared/api/artifactsApi";
+import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
+
+function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
+  const media = useQuery({
+    queryKey: ["generic-artifact-media-url", artifact.id],
+    queryFn: () => genericArtifactsApi.mediaUrl(artifact.id),
+    enabled: Boolean(artifact.storage_uri) && ["IMAGE", "VIDEO", "AUDIO"].includes(artifact.kind),
+    staleTime: 4 * 60 * 1000,
+  });
+  if (!artifact.storage_uri) {
+    return <p className="rounded-lg bg-amber-50 p-3 text-sm">مرجع الوسيط غير متوفر.</p>;
+  }
+  if (media.isLoading) {
+    return <p role="status" className="rounded-lg bg-slate-50 p-3 text-sm">تحميل معاينة الوسيط...</p>;
+  }
+  if (media.isError || !media.data?.url) {
+    return <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm">تعذر تحميل معاينة الوسيط: {media.error?.message ?? "رابط المعاينة غير متاح."}</p>;
+  }
+  const title = typeof artifact.metadata.title === "string" ? artifact.metadata.title : `معاينة ${artifact.kind}`;
+  if (artifact.kind === "IMAGE") {
+    return <img src={media.data.url} alt={title} className="max-h-[32rem] max-w-full rounded-xl border object-contain" />;
+  }
+  if (artifact.kind === "VIDEO") {
+    return <video src={media.data.url} controls preload="metadata" className="max-h-[32rem] w-full rounded-xl border" />;
+  }
+  if (artifact.kind === "AUDIO") {
+    return <audio src={media.data.url} controls preload="metadata" className="w-full" />;
+  }
+  return <p className="break-all rounded-lg bg-slate-50 p-3 text-sm">مخرج محفوظ في تخزين الوسائط.</p>;
+}
+
 
 export function GenericArtifactReviewPanel() {
   const queryClient = useQueryClient();
@@ -51,7 +81,7 @@ export function GenericArtifactReviewPanel() {
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
-        {artifact.content !== null ? <textarea aria-label={`محتوى المخرج ${artifact.id}`} value={drafts[artifact.id]?.content ?? artifact.content} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], content: event.target.value } }))} disabled={status !== "DRAFT"} className="min-h-32 w-full rounded-xl border p-3 text-sm leading-7"/> : <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm">{artifact.preview_url && artifact.kind === "IMAGE" ? <img src={artifact.preview_url} alt={String(artifact.metadata.alt_text ?? artifact.metadata.title ?? "مخرج بصري")} className="max-h-96 max-w-full rounded-lg object-contain"/> : null}{artifact.preview_url && artifact.kind === "VIDEO" ? <video controls src={artifact.preview_url} className="max-h-96 max-w-full rounded-lg"/> : null}{artifact.preview_url && artifact.kind === "AUDIO" ? <audio controls src={artifact.preview_url} className="w-full"/> : null}<p className="break-all">مرجع التخزين: {artifact.storage_uri}</p></div>}
+        {artifact.content !== null ? <textarea aria-label={`محتوى المخرج ${artifact.id}`} value={drafts[artifact.id]?.content ?? artifact.content} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], content: event.target.value } }))} disabled={status !== "DRAFT"} className="min-h-32 w-full rounded-xl border p-3 text-sm leading-7"/> : <GenericArtifactMediaPreview artifact={artifact} />}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {Object.keys(artifact.metadata).length > 0 ? <pre className="overflow-x-auto rounded-lg bg-slate-50 p-3 text-xs">{JSON.stringify(artifact.metadata, null, 2)}</pre> : null}
         <input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>
