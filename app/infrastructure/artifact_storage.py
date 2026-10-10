@@ -109,6 +109,20 @@ class S3ArtifactStorage:
         except Exception as exc:
             raise ArtifactStorageError("Unable to create an Artifact media URL.") from exc
 
+
+    async def delete(self, storage_uri: str) -> None:
+        bucket, key = self._parse_uri(storage_uri)
+        if bucket != self.bucket:
+            raise ValueError("Artifact storage URI points to an unexpected bucket.")
+        try:
+            await asyncio.to_thread(
+                self.client.delete_object,
+                Bucket=self.bucket,
+                Key=key,
+            )
+        except Exception as exc:
+            raise ArtifactStorageError("Unable to delete an Artifact media object.") from exc
+
     @staticmethod
     def _parse_uri(storage_uri: str) -> tuple[str, str]:
         if not isinstance(storage_uri, str):
