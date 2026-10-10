@@ -44,7 +44,8 @@ async def test_gemini_image_generator_uses_supported_endpoint_and_validates_imag
     assert call["model"] == "test-image-model"
     assert call["contents"] == "Make an editorial illustration"
     assert call["config"].response_modalities == ["TEXT", "IMAGE"]
-    assert call["config"].response_format == {"image": {"aspect_ratio": "4:5", "image_size": "1K"}}
+    assert call["config"].image_config.aspect_ratio == "4:5"
+    assert call["config"].image_config.image_size == "1K"
 
 
 @pytest.mark.asyncio
@@ -64,5 +65,5 @@ async def test_gemini_image_generator_rejects_invalid_generation_options():
     generator = GeminiImageGenerator(client=FakeClient(_response()), model="test-image-model")
     with pytest.raises(ValueError, match="aspect ratio"):
         await generator.generate("Create an image", aspect_ratio="7:2")
-    with pytest.raises(ValueError, match="image size"):
+    with pytest.raises(ValueError, match="Image size"):
         await generator.generate("Create an image", image_size="16K")
