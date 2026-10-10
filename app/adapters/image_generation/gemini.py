@@ -45,9 +45,9 @@ def _parts(response: Any) -> Sequence[Any]:
 
 def _image_bytes_match_mime(data: bytes, mime_type: str) -> bool:
     if mime_type == "image/png":
-        return data.startswith(b"\\x89PNG\\r\\n\\x1a\\n") and len(data) >= 33 and data[12:16] == b"IHDR"
+        return data.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10])) and len(data) >= 33 and data[12:16] == b"IHDR"
     if mime_type == "image/jpeg":
-        return len(data) >= 4 and data.startswith(b"\\xff\\xd8\\xff") and data.endswith(b"\\xff\\xd9")
+        return len(data) >= 4 and data.startswith(bytes([255, 216, 255])) and data.endswith(bytes([255, 217]))
     if mime_type == "image/webp":
         return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
     return False
