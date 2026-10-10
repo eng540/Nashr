@@ -9,7 +9,9 @@ from app.application.control_plane import PromptTemplateService
 from app.application.recipe_control_plane import ProductionRecipeControlPlaneService
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
 from app.application.policy_control_plane import ProductionPolicyControlPlaneService
+from app.application.product_control_plane import ProductionProductControlPlaneService
 from app.domain.production_context import ResolvedProductionContext
+from app.domain.image_generation import GeneratedImage
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
 from app.infrastructure.database.control_plane import PromptTemplateRepository
@@ -625,6 +627,105 @@ async def test_text_product_generates_reviewable_artifact_without_creating_post(
         assert artifact.output_contract_key == "TEXT_ARTIFACT"
         assert artifact.output_contract_version == 1
         assert artifact.content == "POST::Material 1"
+        post = (await session.execute(
+            select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0])
+        )).scalar_one_or_none()
+        assert post is None
+
+
+class FakeImageGenerator:
+    def __init__(self):
+        self.prompt = None
+
+    async def generate(self, prompt: str, *, aspect_ratio: str = "1:1", image_size: str = "1K") -> GeneratedImage:
+        self.prompt = prompt
+        assert aspect_ratio == "1:1"
+        assert image_size == "1K"
+        return GeneratedImage(data=b"fake-png-bytes", mime_type="image/png")
+
+
+class FakeObjectStorage:
+    def __init__(self):
+        self.saved = None
+
+    async def save(self, filename, content, prefix=None, mime_type=None) -> str:
+        self.saved = {"filename": filename, "content": content, "prefix": prefix, "mime_type": mime_type}
+        return f"s3://test-bucket/artifacts/{prefix}/generated.png"
+
+    async def download_url(self, storage_uri: str, expires_seconds: int = 900) -> str:
+        return "https://objects.example.test/presigned-preview"
+
+
+@pytest.mark.asyncio
+async def test_image_product_creates_storage_backed_reviewable_artifact(monkeypatch: pytest.MonkeyPatch):
+    for name, value in {
+        "OBJECT_STORAGE_ENDPOINT_URL": "https://objects.example.test",
+        "OBJECT_STORAGE_BUCKET": "test-bucket",
+        "OBJECT_STORAGE_ACCESS_KEY_ID": "test-access",
+        "OBJECT_STORAGE_SECRET_ACCESS_KEY": "test-secret",
+        "OBJECT_STORAGE_REGION": "us-east-1",
+        "OBJECT_STORAGE_URL_STYLE": "path",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    source_id, _, unit_ids = await _fixture(materials=1, topics=1)
+    image_generator = FakeImageGenerator()
+    object_storage = FakeObjectStorage()
+    async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "image-artifact-base-prompt")
+        products = ProductionProductControlPlaneService(session)
+        await products.create_product(
+            "TEST_IMAGE_PRODUCT_RUNTIME",
+            "Test Image Product",
+            "Integration test for the image output path.",
+            {
+                "recipe_key": "BOOK_TO_IMAGE_ARTIFACT",
+                "output_contract_key": "IMAGE_ARTIFACT",
+                "policy_key": "EDITORIAL_DEFAULT",
+                "audience": "Readers of Arabic literature",
+                "experience": "A source-grounded visual for review",
+            },
+        )
+        await products.publish("TEST_IMAGE_PRODUCT_RUNTIME", 1)
+        job = await create_production_job(
+            session, source_id, ProductionScope.SOURCE,
+            product_key="TEST_IMAGE_PRODUCT_RUNTIME",
+        )
+        context = ResolvedProductionContext.from_dict(job.resolved_context)
+        assert context.product is not None
+        assert context.product.key == "TEST_IMAGE_PRODUCT_RUNTIME"
+        assert context.output_contract is not None
+        assert context.output_contract.key == "IMAGE_ARTIFACT"
+
+    await ProductionJobRunner(
+        RecordingDrafter(), image_generator=image_generator, object_storage=object_storage
+    ).run(job.id)
+
+    assert image_generator.prompt is not None
+    assert "Readers of Arabic literature" in image_generator.prompt
+    assert "POST::Material 1" in image_generator.prompt
+    assert object_storage.saved["content"] == b"fake-png-bytes"
+    async with SessionFactory() as session:
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(
+                ProductionJobItemModel.job_id == job.id,
+                ProductionJobItemModel.knowledge_unit_id == unit_ids[0],
+            )
+        )).scalar_one()
+        assert item.status == ProductionJobItemStatus.COMPLETED.value
+        assert item.artifact_id is not None
+        assert item.post_id is None
+        artifact = (await session.execute(
+            select(ArtifactModel).where(ArtifactModel.id == item.artifact_id)
+        )).scalar_one()
+        assert artifact.kind == "IMAGE"
+        assert artifact.status == "AVAILABLE"
+        assert artifact.review_status == "DRAFT"
+        assert artifact.output_contract_key == "IMAGE_ARTIFACT"
+        assert artifact.storage_uri.startswith("s3://test-bucket/artifacts/")
+        assert artifact.artifact_metadata["title"] == "Material 1"
+        assert artifact.artifact_metadata["alt_text"]
+        assert artifact.resolved_context["product"]["key"] == "TEST_IMAGE_PRODUCT_RUNTIME"
         post = (await session.execute(
             select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0])
         )).scalar_one_or_none()
