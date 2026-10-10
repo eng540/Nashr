@@ -567,15 +567,22 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
         await _reset_editorial_prompt(session, "shared-engine-base-prompt")
         job = await create_production_job(
             session, source_id, ProductionScope.SOURCE,
-            recipe_key="BOOK_TO_TELEGRAM_POST_BRIEF",
+            product_key="ARABIC_LITERATURE_BRIEF_TELEGRAM_POST",
         )
         context = ResolvedProductionContext.from_dict(job.resolved_context)
         assert context.recipe is not None
+        assert context.schema_version == 6
+        assert context.product is not None
+        assert context.product.key == "ARABIC_LITERATURE_BRIEF_TELEGRAM_POST"
         assert context.recipe.key == "BOOK_TO_TELEGRAM_POST_BRIEF"
         assert context.recipe.stages[0].configuration["style_instructions"]
+        assert context.product.definition["recipe_key"] == context.recipe.key
+        assert context.product.definition["output_contract_key"] == context.output_contract.key
+        assert context.product.definition["policy_key"] == context.policy.key
 
     drafter = RecordingDrafter()
     await ProductionJobRunner(drafter).run(job.id)
     assert len(drafter.prompts) == 1
     assert "Recipe-specific instructions:" in drafter.prompts[0]
     assert "اكتب منشورًا موجزًا ومكثفًا" in drafter.prompts[0]
+    assert "Product audience: Readers who prefer concise Arabic literary content" in drafter.prompts[0]
