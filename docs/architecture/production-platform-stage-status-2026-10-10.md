@@ -56,3 +56,6 @@ The follow-up acceptance tests now verify both sides of the runtime boundary: Ar
 ## Recipe Engine Stage Configuration and Second Recipe
 
 The Recipe Engine now passes each declarative stage's bounded configuration to its registered capability. The first supported configuration is `produce_post.style_instructions`, validated as plain text and never executable code. A second published recipe, `BOOK_TO_TELEGRAM_POST_BRIEF`, exercises this shared capability with concise-writing instructions. The Content Factory exposes the active recipe selector; both recipes still produce the existing Post artifact and retain the same review/publication path.
+
+
+Acceptance evidence for the second recipe is also covered by an integration test: a job pins the seeded brief recipe, executes through the same `ProductionRecipeEngine`, and passes the stage configuration to the existing registered capability. No parallel recipe-specific runner is introduced.
