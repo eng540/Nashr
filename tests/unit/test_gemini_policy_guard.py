@@ -273,3 +273,12 @@ def test_permanent_error_event_is_emitted(caplog: pytest.LogCaptureFixture) -> N
         with pytest.raises(_StatusError):
             generate_content(client, contents=["prompt"], models="m1", retry_policy=_policy(2), sleep=lambda _: None)
     assert any("event=GEMINI_PERMANENT_ERROR" in record.getMessage() for record in caplog.records)
+
+
+def test_structured_429_with_zero_quota_is_permanent():
+    error = _StatusError(429)
+    error.details = {
+        "status": "RESOURCE_EXHAUSTED",
+        "message": "Free tier quota limit: 0 for generate requests per model",
+    }
+    assert classify_gemini_error(error) == (GEMINI_QUOTA_EXCEEDED, False)
