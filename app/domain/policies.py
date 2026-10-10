@@ -45,7 +45,7 @@ class ProductionPolicyDefinition:
         for term in self.forbidden_terms:
             if term.casefold().strip() in folded:
                 errors.append(f"Content contains forbidden policy term: {term.strip()}.")
-                if not self.allow_urls and re.search(r"(?:https?://|www\.)", content, re.IGNORECASE):
+        if not self.allow_urls and re.search(r"(?:https?://|www\\.)", content, re.IGNORECASE):
             errors.append("Content contains a URL disallowed by the production policy.")
         return errors
 
