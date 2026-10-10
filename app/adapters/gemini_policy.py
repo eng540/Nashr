@@ -282,19 +282,31 @@ def _classify_message(exc: Exception) -> tuple[str, bool]:
 
 
 def classify_gemini_error(exc: Exception) -> tuple[str, bool]:
-    """Return ``(code, retryable)`` for any Gemini-facing exception.
-
-    The HTTP status of a structured provider error is authoritative; message
-    heuristics only apply to unstructured failures. A ``429`` raised by the
-    provider is therefore retried (and then failed over) even when its message
-    mentions quotas, while an unstructured quota message remains non-retryable.
-    """
+    """Classify provider failures, treating explicit exhausted quota as permanent."""
     if isinstance(exc, GeminiOperationError):
         return exc.code, exc.retryable
     if isinstance(exc, TimeoutError):
         return GEMINI_FILE_TIMEOUT, True
 
     status = _status_code(exc)
+    if status == 429:
+        diagnostic = " ".join(
+            str(value)
+            for value in (getattr(exc, "message", None), getattr(exc, "details", None), exc)
+            if value is not None
+        ).lower()
+        quota_exhausted = (
+            "billing" in diagnostic
+            or "quota exceeded" in diagnostic
+            or "quota has been exceeded" in diagnostic
+            or (
+                ("quota" in diagnostic or "resource_exhausted" in diagnostic)
+                and re.search(r"(?:limit|quota)[^\n]{0,100}(?:[:=]\s*)?(?:0|zero)\b", diagnostic)
+            )
+        )
+        if quota_exhausted and retry_after_seconds(exc) is None:
+            return GEMINI_QUOTA_EXCEEDED, False
+
     if status is not None:
         classified = _classify_status(status)
         if classified is not None:
@@ -456,6 +468,21 @@ def retry_after_seconds(exc: Exception) -> float | None:
 # ---------------------------------------------------------------------------
 
 
+def _safe_provider_error(exc: Exception) -> str:
+    """Return bounded provider diagnostics with common credential formats redacted."""
+    message = str(exc)
+    message = re.sub(r"(?i)(https?://api\.telegram\.org/bot)[^/\s]+", r"\1[REDACTED]", message)
+    message = re.sub(r"(?i)AIza[0-9A-Za-z_-]{20,}", "[REDACTED_API_KEY]", message)
+    message = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+", r"\1[REDACTED]", message)
+    message = re.sub(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer [REDACTED]", message)
+    message = re.sub(
+        r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|secret)\b(\s*[:=]\s*)[^\s,;]+",
+        r"\1\2[REDACTED]",
+        message,
+    )
+    return message[:500]
+
+
 def _log_event(level: int, event: str, **fields: Any) -> None:
     detail = " ".join(f"{name}={value}" for name, value in fields.items() if value is not None)
     logger.log(level, "event=%s%s", event, f" {detail}" if detail else "")
@@ -546,7 +573,7 @@ def generate_content(
                         model_index=model_index,
                         attempt=attempt,
                         code=code,
-                        error=str(exc),
+                        error=_safe_provider_error(exc),
                         **context_fields,
                     )
                     raise
@@ -565,10 +592,12 @@ def generate_content(
                     delay = policy.delay_for(attempt)
                     hint = retry_after_seconds(exc)
                     if hint is not None:
-                        delay = max(delay, min(hint, policy.backoff_max_seconds))
+                        # Never shorten a provider-mandated wait to the local backoff cap.
+                        delay = max(delay, hint)
                     if deadline is not None:
                         remaining = deadline - now()
-                        if remaining <= 0:
+                        if remaining <= 0 or (hint is not None and hint > remaining):
+                            # The task budget cannot accommodate Retry-After; do not retry early.
                             budget_exhausted = True
                             break
                         delay = min(delay, remaining)
