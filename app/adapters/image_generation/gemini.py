@@ -3,6 +3,7 @@ import asyncio
 import base64
 import binascii
 import os
+import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -45,11 +46,51 @@ def _parts(response: Any) -> Sequence[Any]:
 
 def _image_bytes_match_mime(data: bytes, mime_type: str) -> bool:
     if mime_type == "image/png":
-        return data.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10])) and len(data) >= 33 and data[12:16] == b"IHDR"
+        if not data.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10])):
+            return False
+        cursor = 8
+        seen_ihdr = False
+        seen_idat = False
+        seen_iend = False
+        while cursor + 12 <= len(data):
+            length = int.from_bytes(data[cursor:cursor + 4], "big")
+            kind = data[cursor + 4:cursor + 8]
+            data_start = cursor + 8
+            data_end = data_start + length
+            chunk_end = data_end + 4
+            if data_end < data_start or chunk_end > len(data):
+                return False
+            chunk_data = data[data_start:data_end]
+            expected_crc = int.from_bytes(data[data_end:chunk_end], "big")
+            if (zlib.crc32(kind + chunk_data) & 0xFFFFFFFF) != expected_crc:
+                return False
+            if not seen_ihdr:
+                if kind != b"IHDR" or length != 13:
+                    return False
+                if int.from_bytes(chunk_data[:4], "big") < 1 or int.from_bytes(chunk_data[4:8], "big") < 1:
+                    return False
+                seen_ihdr = True
+            elif kind == b"IHDR":
+                return False
+            if kind == b"IDAT":
+                seen_idat = True
+            if kind == b"IEND":
+                if length != 0:
+                    return False
+                seen_iend = True
+                cursor = chunk_end
+                break
+            cursor = chunk_end
+        return seen_ihdr and seen_idat and seen_iend and cursor == len(data)
     if mime_type == "image/jpeg":
         return len(data) >= 4 and data.startswith(bytes([255, 216, 255])) and data.endswith(bytes([255, 217]))
     if mime_type == "image/webp":
-        return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+        return (
+            len(data) >= 12
+            and data[:4] == b"RIFF"
+            and int.from_bytes(data[4:8], "little") == len(data) - 8
+            and data[8:12] == b"WEBP"
+        )
     return False
 
 
