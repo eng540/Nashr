@@ -1,9 +1,21 @@
 import base64
+import io
+import wave
 from types import SimpleNamespace
 
 import pytest
 
 from app.adapters.audio_generation.gemini_tts import GeminiAudioGenerationError, GeminiAudioGenerator
+
+
+def _valid_wav_bytes():
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(24000)
+        wav_file.writeframes(b"\\x00\\x00" * 240)
+    return output.getvalue()
 
 
 class FakeInteractions:
@@ -23,13 +35,14 @@ class FakeClient:
 
 @pytest.mark.asyncio
 async def test_gemini_tts_returns_validated_wav_bytes():
-    encoded = base64.b64encode(b"wav-data").decode("ascii")
+    wav_bytes = _valid_wav_bytes()
+    encoded = base64.b64encode(wav_bytes).decode("ascii")
     client = FakeClient(SimpleNamespace(output_audio=SimpleNamespace(data=encoded, mime_type="audio/wav")))
     generator = GeminiAudioGenerator(client=client, model="test-tts")
 
     result = await generator.generate("نص أدبي للإلقاء", voice="Kore", style="warm narration")
 
-    assert result.content == b"wav-data"
+    assert result.content == wav_bytes
     assert result.mime_type == "audio/wav"
     assert result.model == "test-tts"
     call = client.interactions.calls[0]
@@ -58,4 +71,15 @@ async def test_gemini_tts_rejects_unsupported_audio_mime_type():
         SimpleNamespace(output_audio=SimpleNamespace(data=encoded, mime_type="audio/l16"))
     ))
     with pytest.raises(GeminiAudioGenerationError, match="unsupported audio MIME"):
+        await generator.generate("Valid transcript")
+
+
+
+@pytest.mark.asyncio
+async def test_gemini_tts_rejects_non_wav_bytes_even_when_mime_claims_wav():
+    encoded = base64.b64encode(b"wav-data").decode("ascii")
+    generator = GeminiAudioGenerator(
+        client=FakeClient(SimpleNamespace(output_audio=SimpleNamespace(data=encoded, mime_type="audio/wav")))
+    )
+    with pytest.raises(GeminiAudioGenerationError, match="invalid WAV"):
         await generator.generate("Valid transcript")
