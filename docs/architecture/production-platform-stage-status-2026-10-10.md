@@ -79,3 +79,8 @@ Generic non-Post persistence now validates artifact kind, MIME type, content mod
 ## Generic Artifact Review Boundary
 
 Non-Post Artifacts now have a separate `DRAFT → APPROVED / REJECTED` review lifecycle. Editing and approval revalidate the Artifact against its immutable Output Contract and optional Policy snapshot. POST artifacts are explicitly excluded and continue to use the canonical Post review state. The Content Factory exposes a dedicated generic-artifact review panel; no generic artifact is sent to Telegram by this workflow.
+
+
+## First Generic TEXT Product — end-to-end
+
+A published `TEXT_ARTIFACT` Output Contract, `BOOK_TO_TEXT_ARTIFACT` Recipe, and `ARABIC_LITERATURE_TEXT` Product now exercise the generic path end to end. The shared drafting service is separated from Post persistence; the new registered capability creates a TEXT Artifact, applies the pinned contract and policy, and leaves it in generic review state DRAFT. Integration coverage asserts that no Post row is created, keeping editorial Post and generic Artifact lifecycles distinct.
