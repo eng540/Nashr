@@ -29,7 +29,7 @@ def _png_chunk(kind: bytes, data: bytes) -> bytes:
 
 def _valid_png_bytes() -> bytes:
     return (
-        b"\\x89PNG\\r\\n\\x1a\\n"
+        bytes([137, 80, 78, 71, 13, 10, 26, 10])
         + _png_chunk(b"IHDR", struct.pack(">2I5B", 1, 1, 8, 2, 0, 0, 0))
         + _png_chunk(b"IDAT", zlib.compress(bytes([0, 255, 0, 0])))
         + _png_chunk(b"IEND", b"")
