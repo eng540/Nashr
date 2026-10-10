@@ -1,6 +1,6 @@
 from sqlalchemy.exc import IntegrityError
 
-from app.domain.recipes import ProductionRecipe, RecipeStage, SUPPORTED_RECIPE_CAPABILITIES
+from app.domain.recipes import ProductionRecipe, RecipeStage, SUPPORTED_RECIPE_CAPABILITIES, validate_recipe_stage_configuration
 from app.infrastructure.database.recipes import ProductionRecipeRepository
 
 
@@ -11,10 +11,7 @@ def _validate_stages(key: str, version: int, stages: list[dict[str, object]]) ->
         stages=tuple(RecipeStage.from_dict(stage) for stage in stages),
     )
     for stage in recipe.stages:
-        if (stage.capability_key, stage.capability_version) not in SUPPORTED_RECIPE_CAPABILITIES:
-            raise ValueError(
-                f"Unsupported capability '{stage.capability_key}' v{stage.capability_version}."
-            )
+        validate_recipe_stage_configuration(stage)
     return [stage.to_dict() for stage in recipe.stages]
 
 
