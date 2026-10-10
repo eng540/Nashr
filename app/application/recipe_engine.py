@@ -63,7 +63,7 @@ def _stage_system_prompt(context: ProductionExecutionContext, capability_key: st
     if style_instructions is not None:
         if not isinstance(style_instructions, str) or not style_instructions.strip():
             raise ValueError(f"{capability_key} style_instructions must be a non-empty string.")
-        system_prompt = f"{system_prompt}\\n\\nRecipe-specific instructions:\\n{style_instructions.strip()}"
+        system_prompt = f"{system_prompt}\n\nRecipe-specific instructions:\n{style_instructions.strip()}"
     return system_prompt
 
 
