@@ -38,7 +38,7 @@ async def _create_text_artifact(content: str):
         source_id, unit_id = uuid4(), uuid4()
         session.add(SourceModel(
             id=source_id, filename=f"{uuid4()}.pdf", mime_type="application/pdf",
-            storage_path="./storage/test/review-artifact.pdf", size_bytes=1, status="STORED",
+            storage_path=f"./storage/test/{source_id}.pdf", size_bytes=1, status="STORED",
         ))
         session.add(KnowledgeUnitModel(
             id=unit_id, source_id=source_id, position=1, title="Review source",
@@ -83,7 +83,7 @@ async def test_generic_artifact_review_validates_edits_and_supports_approve_reje
 
 
 @pytest.mark.asyncio
-async def test_generic_artifact_review_never_treats_post_as_generic_artifact():
+async def test_generic_artifact_review_returns_not_found_for_unknown_ids():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/artifacts/00000000-0000-0000-0000-000000000001")
