@@ -59,3 +59,8 @@ The Recipe Engine now passes each declarative stage's bounded configuration to i
 
 
 Acceptance evidence for the second recipe is also covered by an integration test: a job pins the seeded brief recipe, executes through the same `ProductionRecipeEngine`, and passes the stage configuration to the existing registered capability. No parallel recipe-specific runner is introduced.
+
+
+## Product Layer — runtime integration
+
+A versioned Product Control Plane now composes existing Recipe, Output Contract, and Policy keys without absorbing their responsibilities. New product-driven jobs pin the product mapping plus the exact recipe/contract/policy snapshots in resolved-context schema v6; the context rejects mismatched references. The Content Factory selects a product, while the shared Recipe Engine remains responsible for execution. Two initial product definitions map to the normal and brief Post recipes; both retain the existing review and publication flow.
