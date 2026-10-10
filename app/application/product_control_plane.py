@@ -5,6 +5,8 @@ from app.infrastructure.database.products import ProductionProductRepository
 from app.infrastructure.database.recipes import ProductionRecipeRepository
 from app.infrastructure.database.output_contracts import OutputContractRepository
 from app.infrastructure.database.policies import ProductionPolicyRepository
+from app.domain.output_contracts import OutputContractDefinition
+from app.infrastructure.storage import object_storage_is_configured
 
 
 def _version_payload(row) -> dict[str, object]:
@@ -78,7 +80,10 @@ class ProductionProductControlPlaneService:
             raise ValueError("Only DRAFT product versions can be published.")
         definition = ProductionProductDefinition.from_dict(target.definition)
         await ProductionRecipeRepository(self.session).resolve_active(definition.recipe_key)
-        await OutputContractRepository(self.session).resolve_active(definition.output_contract_key)
+        _, contract_version = await OutputContractRepository(self.session).resolve_active(definition.output_contract_key)
+        contract = OutputContractDefinition.from_dict(contract_version.definition)
+        if contract.content_mode == "STORAGE_URI" and not object_storage_is_configured():
+            raise ValueError("Durable object storage must be configured before publishing a storage-backed Product.")
         await ProductionPolicyRepository(self.session).resolve_active(definition.policy_key)
         row = await self.repository.publish(key, version)
         await self.session.commit()
