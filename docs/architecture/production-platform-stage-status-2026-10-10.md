@@ -74,3 +74,10 @@ The product lifecycle API validates references to active Recipe, Output Contract
 ## Generic Artifact Persistence — acceptance
 
 Generic non-Post persistence now validates artifact kind, MIME type, content mode, content/storage exclusivity, required metadata, optional pinned Policy, and output-contract limits before writing provenance. TEXT can be persisted inline; IMAGE/VIDEO/AUDIO can be persisted as storage references. Retry idempotency is scoped to a production job, source Knowledge Unit, and artifact kind. This establishes the persistence boundary; generation capabilities and generic human review are separate acceptance gates.
+
+
+## First Generic TEXT Production Capability — implementation change
+
+The first non-Post production path is now wired through the shared Recipe Engine. The published `BOOK_TO_TEXT` recipe invokes the registered `produce_text v1` capability, uses the existing drafting adapter, validates the result against the pinned `LITERARY_TEXT` output contract and `EDITORIAL_DEFAULT` policy, and persists a generic `TEXT` Artifact with job/source provenance. It does not create a `Post` row or enter the Post review and Telegram publication workflow. The `ARABIC_LITERATURE_TEXT` product makes this path selectable through the existing Product selector.
+
+This is the first generic text execution path, not a claim that IMAGE/VIDEO/AUDIO generation is implemented. Media generation still requires a registered capability, provider adapter, controlled storage integration, output validation, provenance, retry behavior, and tests. Generic human review and distribution for non-Post artifacts remain separate stages.
