@@ -586,3 +586,45 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
     assert "Recipe-specific instructions:" in drafter.prompts[0]
     assert "اكتب منشورًا موجزًا ومكثفًا" in drafter.prompts[0]
     assert "Product audience: Readers who prefer concise Arabic literary content" in drafter.prompts[0]
+
+
+async def test_generic_text_product_executes_without_creating_editorial_post():
+    source_id, _, unit_ids = await _fixture(materials=1)
+    async with SessionFactory() as session:
+        job = await create_production_job(
+            session,
+            source_id,
+            ProductionScope.SOURCE,
+            product_key="ARABIC_LITERATURE_TEXT",
+        )
+        context = ResolvedProductionContext.from_dict(job.resolved_context)
+        assert context.product is not None
+        assert context.product.key == "ARABIC_LITERATURE_TEXT"
+        assert context.recipe is not None
+        assert context.recipe.key == "BOOK_TO_TEXT"
+        assert context.output_contract is not None
+        assert context.output_contract.key == "LITERARY_TEXT"
+
+    runner = ProductionJobRunner(RecordingDrafter())
+    await runner.run(job.id)
+
+    async with SessionFactory() as session:
+        artifacts = (await session.execute(
+            select(ArtifactModel).where(ArtifactModel.production_job_id == job.id)
+        )).scalars().all()
+        posts = (await session.execute(
+            select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0])
+        )).scalars().all()
+        completed_job = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+
+    assert completed_job.status == ProductionJobStatus.COMPLETED.value
+    assert len(artifacts) == 1
+    assert artifacts[0].kind == "TEXT"
+    assert artifacts[0].content == "POST::Material 1"
+    assert artifacts[0].post_id is None
+    assert artifacts[0].output_contract_key == "LITERARY_TEXT"
+    assert artifacts[0].output_contract_version == 1
+    assert artifacts[0].resolved_context["product"]["key"] == "ARABIC_LITERATURE_TEXT"
+    assert posts == []
