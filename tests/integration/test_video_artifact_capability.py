@@ -35,8 +35,12 @@ class FakeVeoGenerator:
 
 class FakeVideoStorage:
     def __init__(self):
+        self.ensure_available_calls = 0
         self.put_calls = []
         self.deleted = []
+
+    async def ensure_available(self):
+        self.ensure_available_calls += 1
 
     async def put(self, *, key, content, content_type):
         self.put_calls.append((key, content, content_type))
