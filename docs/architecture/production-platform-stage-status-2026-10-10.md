@@ -28,6 +28,11 @@ Policy and Output Contract are separate upcoming layers. They must not be folded
 
 This change adds versioned output-contract data for Artifact kind, MIME type, content mode, required metadata fields, and inline-content limits. It seeds `TELEGRAM_POST v1` as the data description of the existing Post output and validates contract definitions independently of providers.
 
-The lifecycle API and migration establish the control-plane foundation only. Runtime resolution/pinning, validation of generated Artifacts against the pinned contract, and persistence of the contract version are still required before output contracts can be considered operational.
+The runtime integration resolves `TELEGRAM_POST` at ProductionJob creation and pins the contract/version/definition in resolved-context schema v4. Artifact persistence validates kind, inline content, maximum length, and required metadata before saving, and records the contract key/version and MIME type on the Artifact. Schema-v1/v2/v3 contexts remain readable for historical jobs; they are not retroactively assigned a contract.
 
 IMAGE and VIDEO contract definitions do not by themselves create image/video generation capabilities.
+
+
+## Output Contract Runtime Integration — implementation change
+
+New ProductionJobs resolve and pin the published `TELEGRAM_POST` contract in context schema v4. Post Artifact persistence validates the generated result against that immutable snapshot and persists contract key/version and MIME type as provenance. Existing context schemas v1–v3 remain compatible and are not backfilled with invented contract history. This integration applies to the existing Post capability only; it does not claim that IMAGE/VIDEO generation capabilities exist.

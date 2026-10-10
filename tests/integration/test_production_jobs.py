@@ -480,7 +480,10 @@ async def test_job_retry_uses_original_identity_version_after_replacement_is_pub
         )
         original = job.resolved_context.copy()
         context = ResolvedProductionContext.from_dict(original)
-        assert context.schema_version == 3
+        assert context.schema_version == 4
+        assert context.output_contract is not None
+        assert context.output_contract.key == "TELEGRAM_POST"
+        assert context.output_contract.version == 1
         assert context.identity is not None
         assert context.identity.version == 1
         assert context.identity.definition["voice"] == "Rooted, dignified, and clear"
@@ -490,7 +493,6 @@ async def test_job_retry_uses_original_identity_version_after_replacement_is_pub
     assert len(drafter.prompts) == 1
     assert "Identity version: 1" in drafter.prompts[0]
     assert "Rooted, dignified, and clear" in drafter.prompts[0]
-
     async with SessionFactory() as session:
         identities = EditorialIdentityControlPlaneService(session)
         await identities.create_draft("TEST_RUN_IDENTITY", identity_definition_v2)
@@ -504,6 +506,15 @@ async def test_job_retry_uses_original_identity_version_after_replacement_is_pub
     drafter.fail_titles.clear()
     await ProductionJobRunner(drafter).run(job.id)
     assert len(drafter.prompts) == 2
+    async with SessionFactory() as session:
+        persisted_artifacts = (await session.execute(
+            select(ArtifactModel).where(ArtifactModel.production_job_id == job.id)
+        )).scalars().all()
+        assert persisted_artifacts
+        assert all(item.output_contract_key == "TELEGRAM_POST" for item in persisted_artifacts)
+        assert all(item.output_contract_version == 1 for item in persisted_artifacts)
+        assert all(item.mime_type == "text/plain" for item in persisted_artifacts)
+
     for prompt in drafter.prompts:
         assert "Identity key: TEST_RUN_IDENTITY" in prompt
         assert "Identity version: 1" in prompt

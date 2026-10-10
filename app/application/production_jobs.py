@@ -125,6 +125,7 @@ async def create_production_job(
         if identity_key is not None
         else None
     )
+    resolved_output_contract = await resolver.resolve_output_contract(session, "TELEGRAM_POST")
 
     units = await _resolve_units(
         session,
@@ -143,7 +144,8 @@ async def create_production_job(
         editorial_prompt_version=resolved_prompt.version,
         editorial_prompt_body=resolved_prompt.body,
         resolved_context=ResolvedProductionContext.capture(
-            resolved_prompt, recipe=resolved_recipe, identity=resolved_identity
+            resolved_prompt, recipe=resolved_recipe, identity=resolved_identity,
+            output_contract=resolved_output_contract,
         ).to_dict(),
     )
     session.add(job)

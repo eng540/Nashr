@@ -1,11 +1,13 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.control_plane import PromptTemplate
-from app.domain.production_context import PinnedIdentity
+from app.domain.production_context import PinnedIdentity, PinnedOutputContract
 from app.domain.identities import EditorialIdentityDefinition
 from app.infrastructure.database.identities import EditorialIdentityRepository
 from app.infrastructure.database.control_plane import PromptTemplateRepository
 from app.infrastructure.database.recipes import ProductionRecipeRepository
+from app.infrastructure.database.output_contracts import OutputContractRepository
+from app.domain.output_contracts import OutputContractDefinition
 
 
 EDITORIAL_PROMPT_KEY = "editorial.drafter"
@@ -17,6 +19,16 @@ class ControlPlaneResolver:
 
     async def resolve_recipe(self, session: AsyncSession, key: str):
         return await ProductionRecipeRepository(session).resolve_active(key)
+
+    async def resolve_output_contract(self, session: AsyncSession, key: str) -> PinnedOutputContract:
+        contract, version = await OutputContractRepository(session).resolve_active(key)
+        return PinnedOutputContract(
+            contract_id=str(contract.id),
+            version_id=str(version.id),
+            key=contract.key,
+            version=version.version,
+            definition=OutputContractDefinition.from_dict(version.definition).to_dict(),
+        )
 
     async def resolve_identity(self, session: AsyncSession, key: str) -> PinnedIdentity:
         identity, version = await EditorialIdentityRepository(session).resolve_active(key)

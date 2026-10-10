@@ -40,7 +40,7 @@ def test_resolved_production_context_round_trips_explicit_prompt_identity():
 
 def test_resolved_production_context_rejects_unknown_schema_and_missing_ids():
     value = {
-        "schema_version": 4,
+        "schema_version": 5,
         "origin": RUNTIME_RESOLUTION,
         "captured_at": None,
         "prompt_template": {
@@ -179,3 +179,54 @@ def test_schema_v3_requires_identity_and_recipe():
     }
     with pytest.raises(ValueError, match="requires recipe and identity"):
         ResolvedProductionContext.from_dict(value)
+
+
+
+def test_schema_v4_pins_output_contract_and_round_trips():
+    from app.domain.production_context import PinnedOutputContract
+    from app.domain.recipes import BOOK_TO_TELEGRAM_POST
+
+    prompt = ResolvedPrompt(
+        key="editorial.drafter",
+        version=1,
+        body="prompt",
+        template_id=UUID("00000000-0000-0000-0000-000000000001"),
+        version_id=UUID("00000000-0000-0000-0000-000000000002"),
+    )
+    contract = PinnedOutputContract(
+        contract_id="00000000-0000-0000-0000-000000000003",
+        version_id="00000000-0000-0000-0000-000000000004",
+        key="TELEGRAM_POST",
+        version=1,
+        definition={
+            "artifact_kind": "POST",
+            "mime_type": "text/plain",
+            "content_mode": "INLINE",
+            "required_metadata_fields": [],
+            "max_content_chars": 100000,
+        },
+    )
+    context = ResolvedProductionContext.capture(
+        prompt, recipe=BOOK_TO_TELEGRAM_POST, output_contract=contract
+    )
+    restored = ResolvedProductionContext.from_dict(context.to_dict())
+    assert restored.schema_version == 4
+    assert restored.output_contract == contract
+    assert restored.recipe == BOOK_TO_TELEGRAM_POST
+
+
+def test_schema_v4_requires_output_contract():
+    from app.domain.production_context import PinnedPrompt
+
+    prompt = PinnedPrompt(
+        template_id="00000000-0000-0000-0000-000000000001",
+        version_id="00000000-0000-0000-0000-000000000002",
+        key="editorial.drafter",
+        version=1,
+        body="prompt",
+    )
+    with pytest.raises(ValueError, match="requires pinned recipe and output contract"):
+        ResolvedProductionContext(
+            schema_version=4, origin=RUNTIME_RESOLUTION, captured_at=None,
+            prompt_template=prompt, recipe=None, output_contract=None,
+        )
