@@ -14,7 +14,7 @@ from app.adapters.generation.gemini_image import GeminiImageGenerator
 from app.domain.image_generation import IImageGenerator
 from app.domain.products import ProductionProductDefinition
 from app.domain.storage import ObjectStorage
-from app.infrastructure.storage import S3CompatibleObjectStorage
+from app.infrastructure.artifact_storage import S3ArtifactStorage
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.output_contracts import OutputContractDefinition
 from app.domain.production_context import PinnedOutputContract
@@ -188,11 +188,9 @@ class ProduceImageArtifactCapability:
         image = await self.image_generator.generate(prompt, aspect_ratio="1:1", image_size="1K")
         if image.mime_type != contract.mime_type:
             raise ValueError("Image generator MIME type does not match the pinned IMAGE output contract.")
-        storage = self.object_storage or S3CompatibleObjectStorage.from_env()
-        storage_uri = await storage.save(
-            filename=f"{drafted.title}.png", content=image.data,
-            prefix=str(context.run_id or uuid4()), mime_type=image.mime_type,
-        )
+        storage = self.object_storage or S3ArtifactStorage.from_environment()
+        object_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{uuid4()}.png"
+        storage_uri = await storage.put(key=object_key, content=image.data, content_type=image.mime_type)
         now = datetime.now(timezone.utc)
         artifact = Artifact(
             id=uuid4(), source_knowledge_unit_id=knowledge_unit_id, kind=ArtifactKind.IMAGE,
