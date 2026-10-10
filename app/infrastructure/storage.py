@@ -144,7 +144,7 @@ class S3CompatibleObjectStorage:
         }
         signed_headers = "content-type;host;x-amz-content-sha256;x-amz-date"
         canonical_headers = "".join(f"{name}:{headers[name].strip()}\n" for name in signed_headers.split(";"))
-        canonical_request = f"PUT\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+        canonical_request = f"PUT\n{canonical_uri}\n\n{canonical_headers}{signed_headers}\n{payload_hash}"
         signature, scope = self._signature(canonical_request, amz_date, date_stamp)
         headers["authorization"] = (
             f"AWS4-HMAC-SHA256 Credential={self.access_key_id}/{scope}, "
@@ -178,7 +178,7 @@ class S3CompatibleObjectStorage:
             ("X-Amz-SignedHeaders", "host"),
         ]
         canonical_query = urlencode(sorted(params), quote_via=quote, safe="-_.~")
-        canonical_request = f"GET\n{canonical_uri}\n{canonical_query}\nhost:{host}\n\nhost\nUNSIGNED-PAYLOAD"
+        canonical_request = f"GET\n{canonical_uri}\n{canonical_query}\nhost:{host}\nhost\nUNSIGNED-PAYLOAD"
         signature, _ = self._signature(canonical_request, amz_date, date_stamp)
         final_query = f"{canonical_query}&X-Amz-Signature={signature}"
         return urlunsplit((urlsplit(url).scheme, urlsplit(url).netloc, canonical_uri, final_query, ""))
