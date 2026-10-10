@@ -79,3 +79,10 @@ Generic non-Post persistence now validates artifact kind, MIME type, content mod
 ## Generic Artifact Review Boundary
 
 Non-Post Artifacts now have a separate `DRAFT → APPROVED / REJECTED` review lifecycle. Editing and approval revalidate the Artifact against its immutable Output Contract and optional Policy snapshot. POST artifacts are explicitly excluded and continue to use the canonical Post review state. The Content Factory exposes a dedicated generic-artifact review panel; no generic artifact is sent to Telegram by this workflow.
+
+
+## First Generic TEXT Production Capability — implementation change
+
+The first non-Post production path is wired through the shared Recipe Engine. The published `BOOK_TO_TEXT` recipe invokes the registered `produce_text v1` capability, uses the existing drafting adapter, validates the result against the pinned `LITERARY_TEXT` output contract and `EDITORIAL_DEFAULT` policy, and persists a generic `TEXT` Artifact with job/source provenance. It does not create a `Post` row or enter the Post review and Telegram publication workflow. The `ARABIC_LITERATURE_TEXT` product makes this path selectable through the existing Product selector.
+
+Generic TEXT artifacts enter the separate non-Post review workflow as `DRAFT`; approval remains a human action and does not automatically distribute the artifact. This is the first executable non-Post output path, not a claim that IMAGE/VIDEO/AUDIO generation is implemented. Media generation still requires a registered capability, provider adapter, controlled storage integration, output validation, provenance, retry behavior, and tests.
