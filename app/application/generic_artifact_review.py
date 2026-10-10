@@ -11,15 +11,14 @@ from app.domain.production_context import PinnedOutputContract, PinnedPolicy
 from app.infrastructure.database.models import ArtifactModel
 
 
-async def _payload(row: ArtifactModel) -> dict[str, Any]:
-    payload: dict[str, Any] = {
+def _payload(row: ArtifactModel) -> dict[str, Any]:
+    return {
         "id": str(row.id),
         "source_knowledge_unit_id": str(row.source_knowledge_unit_id),
         "kind": row.kind,
         "status": row.status,
         "content": row.content,
         "storage_uri": row.storage_uri,
-        "preview_url": None,
         "mime_type": row.mime_type,
         "output_contract_key": row.output_contract_key,
         "output_contract_version": row.output_contract_version,
@@ -30,13 +29,6 @@ async def _payload(row: ArtifactModel) -> dict[str, Any]:
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
-    if row.storage_uri and row.kind in {"IMAGE", "VIDEO", "AUDIO"}:
-        try:
-            from app.infrastructure.storage import S3CompatibleObjectStorage
-            payload["preview_url"] = await S3CompatibleObjectStorage.from_env().download_url(row.storage_uri)
-        except ValueError:
-            payload["preview_url"] = None
-    return payload
 
 
 def _validate_review_candidate(row: ArtifactModel, content: str | None, metadata: dict[str, Any]) -> None:
@@ -82,11 +74,11 @@ class GenericArtifactReviewService:
             .order_by(ArtifactModel.created_at.desc(), ArtifactModel.id.desc())
             .limit(limit)
         )).scalars().all()
-        return [await _payload(row) for row in rows]
+        return [_payload(row) for row in rows]
 
     async def get(self, artifact_id: UUID) -> dict[str, Any]:
         row = await self._get_row(artifact_id)
-        return await _payload(row)
+        return _payload(row)
 
     async def update(self, artifact_id: UUID, content: str | None, metadata: dict[str, Any] | None) -> dict[str, Any]:
         row = await self._get_row(artifact_id, for_update=True)
@@ -100,7 +92,7 @@ class GenericArtifactReviewService:
         row.updated_at = datetime.now(timezone.utc)
         await self.session.commit()
         await self.session.refresh(row)
-        return await _payload(row)
+        return _payload(row)
 
     async def approve(self, artifact_id: UUID, review_note: str | None = None) -> dict[str, Any]:
         row = await self._get_row(artifact_id, for_update=True)
@@ -113,7 +105,7 @@ class GenericArtifactReviewService:
         row.updated_at = row.reviewed_at
         await self.session.commit()
         await self.session.refresh(row)
-        return await _payload(row)
+        return _payload(row)
 
     async def reject(self, artifact_id: UUID, review_note: str) -> dict[str, Any]:
         row = await self._get_row(artifact_id, for_update=True)
@@ -127,7 +119,7 @@ class GenericArtifactReviewService:
         row.updated_at = row.reviewed_at
         await self.session.commit()
         await self.session.refresh(row)
-        return await _payload(row)
+        return _payload(row)
 
     async def _get_row(self, artifact_id: UUID, *, for_update: bool = False) -> ArtifactModel:
         statement = select(ArtifactModel).where(ArtifactModel.id == artifact_id)
