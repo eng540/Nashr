@@ -136,10 +136,8 @@ BOOK_TO_TELEGRAM_POST = ProductionRecipe(
 
 
 def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
-    """Validate configuration against the registered capability's public contract."""
-    if (stage.capability_key, stage.capability_version) not in SUPPORTED_RECIPE_CAPABILITIES:
-        raise ValueError(f"Unsupported capability '{stage.capability_key}' v{stage.capability_version}.")
-    if stage.capability_key == "produce_post":
+    """Validate only the public configuration contract of built-in capabilities."""
+    if stage.capability_key == "produce_post" and stage.capability_version == 1:
         unknown = set(stage.configuration) - {"style_instructions"}
         if unknown:
             raise ValueError("produce_post configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
@@ -148,3 +146,7 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
             not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
         ):
             raise ValueError("produce_post style_instructions must be a non-empty string up to 2000 characters.")
+    elif stage.configuration:
+        raise ValueError(
+            f"Configuration is not defined for capability '{stage.capability_key}' v{stage.capability_version}."
+        )
