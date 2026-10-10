@@ -95,3 +95,15 @@ async def test_gemini_image_generator_rejects_bytes_that_do_not_match_declared_m
     )
     with pytest.raises(GeminiImageGenerationError, match="do not match"):
         await generator.generate("Create an image")
+
+
+@pytest.mark.asyncio
+async def test_gemini_image_generator_rejects_png_with_corrupt_chunk_crc():
+    png = bytearray(_valid_png_bytes())
+    png[29] ^= 0x01
+    generator = GeminiImageGenerator(
+        client=FakeClient(_response(bytes(png), "image/png")),
+        model="test-image-model",
+    )
+    with pytest.raises(GeminiImageGenerationError, match="do not match"):
+        await generator.generate("Create an image")
