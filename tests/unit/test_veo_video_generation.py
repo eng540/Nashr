@@ -77,3 +77,20 @@ async def test_veo_poll_resumes_pending_operation_and_downloads_completed_video(
     assert result.mime_type == "video/mp4"
     assert result.model == "test-veo"
     assert complete_client.operations.calls == ["operations/veo-123"]
+
+
+
+@pytest.mark.asyncio
+async def test_veo_legacy_model_id_is_normalized_to_documented_gemini_api_id(monkeypatch):
+    monkeypatch.setenv("GEMINI_VIDEO_MODEL", "veo-3.1-fast-generate-001")
+    client = FakeClient()
+    generator = VeoVideoGenerator(client=client)
+
+    assert generator.model == "veo-3.1-fast-generate-preview"
+    await generator.start("A short video")
+    assert client.models.calls[0]["model"] == "veo-3.1-fast-generate-preview"
+
+
+def test_veo_explicit_legacy_model_id_is_normalized():
+    generator = VeoVideoGenerator(client=FakeClient(), model="veo-3.1-fast-generate-001")
+    assert generator.model == "veo-3.1-fast-generate-preview"
