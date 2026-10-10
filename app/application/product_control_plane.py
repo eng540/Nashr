@@ -1,10 +1,12 @@
 from sqlalchemy.exc import IntegrityError
 
 from app.domain.products import ProductionProductDefinition
+from app.domain.output_contracts import OutputContractDefinition
 from app.infrastructure.database.products import ProductionProductRepository
 from app.infrastructure.database.recipes import ProductionRecipeRepository
 from app.infrastructure.database.output_contracts import OutputContractRepository
 from app.infrastructure.database.policies import ProductionPolicyRepository
+from app.infrastructure.artifact_storage import ArtifactStorageConfigurationError, ArtifactStorageError, S3ArtifactStorage
 
 
 def _version_payload(row) -> dict[str, object]:
@@ -78,8 +80,17 @@ class ProductionProductControlPlaneService:
             raise ValueError("Only DRAFT product versions can be published.")
         definition = ProductionProductDefinition.from_dict(target.definition)
         await ProductionRecipeRepository(self.session).resolve_active(definition.recipe_key)
-        await OutputContractRepository(self.session).resolve_active(definition.output_contract_key)
+        _, output_contract_version = await OutputContractRepository(self.session).resolve_active(definition.output_contract_key)
+        output_contract = OutputContractDefinition.from_dict(output_contract_version.definition)
         await ProductionPolicyRepository(self.session).resolve_active(definition.policy_key)
+        if output_contract.content_mode == "STORAGE_URI":
+            try:
+                storage = S3ArtifactStorage.from_environment()
+                await storage.ensure_available()
+            except (ArtifactStorageConfigurationError, ArtifactStorageError) as exc:
+                raise ValueError(
+                    "Cannot publish a media product until durable ARTIFACT_STORAGE_* settings and bucket access are valid."
+                ) from exc
         row = await self.repository.publish(key, version)
         await self.session.commit()
         await self.session.refresh(row)
