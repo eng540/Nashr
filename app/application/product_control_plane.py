@@ -79,9 +79,23 @@ class ProductionProductControlPlaneService:
         if target.status != "DRAFT":
             raise ValueError("Only DRAFT product versions can be published.")
         definition = ProductionProductDefinition.from_dict(target.definition)
-        await ProductionRecipeRepository(self.session).resolve_active(definition.recipe_key)
+        recipe = await ProductionRecipeRepository(self.session).resolve_active(definition.recipe_key)
         _, output_contract_version = await OutputContractRepository(self.session).resolve_active(definition.output_contract_key)
         output_contract = OutputContractDefinition.from_dict(output_contract_version.definition)
+        final_capability = recipe.stages[-1].capability_key
+        capability_output_kind = {
+            "produce_post": "POST",
+            "produce_text_artifact": "TEXT",
+            "produce_image_artifact": "IMAGE",
+            "produce_video_artifact": "VIDEO",
+            "produce_audio_artifact": "AUDIO",
+        }.get(final_capability)
+        if capability_output_kind is None or output_contract.artifact_kind != capability_output_kind:
+            raise ValueError(
+                f"Product recipe '{definition.recipe_key}' ends with capability '{final_capability}', "
+                f"which is incompatible with output contract '{definition.output_contract_key}' "
+                f"({output_contract.artifact_kind})."
+            )
         await ProductionPolicyRepository(self.session).resolve_active(definition.policy_key)
         if output_contract.content_mode == "STORAGE_URI":
             try:
