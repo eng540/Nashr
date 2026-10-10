@@ -45,13 +45,13 @@ class OutputContractDefinition:
             raise ValueError("Output contract max_content_chars must be a positive integer or null.")
         if self.content_mode == "STORAGE_URI" and self.max_content_chars is not None:
             raise ValueError("STORAGE_URI contracts cannot define an inline content length.")
-        if len(self.required_metadata_fields) != len(set(self.required_metadata_fields)):
-            raise ValueError("Output contract required metadata fields must be unique.")
         if any(
             not isinstance(field, str) or re.fullmatch(r"[A-Za-z0-9._-]+", field) is None
             for field in self.required_metadata_fields
         ):
             raise ValueError("Output contract metadata field names must be non-empty identifiers.")
+        if len(self.required_metadata_fields) != len(set(self.required_metadata_fields)):
+            raise ValueError("Output contract required metadata fields must be unique.")
 
     def to_dict(self) -> dict[str, object]:
         return {
