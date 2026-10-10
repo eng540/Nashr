@@ -467,6 +467,36 @@ class ProductionPolicyVersionModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
 
+class ProductionProductModel(Base):
+    __tablename__ = "production_products"
+    __table_args__ = (UniqueConstraint("key", name="uq_production_products_key"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    key: Mapped[str] = mapped_column(String(200), nullable=False)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class ProductionProductVersionModel(Base):
+    __tablename__ = "production_product_versions"
+    __table_args__ = (
+        UniqueConstraint("product_id", "version", name="uq_production_product_versions_product_version"),
+        CheckConstraint("version > 0", name="ck_production_product_versions_positive_version"),
+        CheckConstraint("status IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')", name="ck_production_product_versions_status"),
+        Index("uq_production_product_versions_published", "product_id", unique=True, postgresql_where=text("status = 'PUBLISHED'")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    product_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("production_products.id", ondelete="CASCADE"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    definition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
 class OutputContractModel(Base):
     __tablename__ = "output_contracts"
     __table_args__ = (UniqueConstraint("key", name="uq_output_contracts_key"),)
