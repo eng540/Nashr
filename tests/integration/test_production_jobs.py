@@ -480,7 +480,7 @@ async def test_job_retry_uses_original_identity_version_after_replacement_is_pub
         )
         original = job.resolved_context.copy()
         context = ResolvedProductionContext.from_dict(original)
-        assert context.schema_version == 4
+        assert context.schema_version == 5
         assert context.output_contract is not None
         assert context.output_contract.key == "TELEGRAM_POST"
         assert context.output_contract.version == 1
