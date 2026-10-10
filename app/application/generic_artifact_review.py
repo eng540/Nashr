@@ -100,7 +100,7 @@ class GenericArtifactReviewService:
         row.updated_at = datetime.now(timezone.utc)
         await self.session.commit()
         await self.session.refresh(row)
-        return _payload(row)
+        return await _payload(row)
 
     async def approve(self, artifact_id: UUID, review_note: str | None = None) -> dict[str, Any]:
         row = await self._get_row(artifact_id, for_update=True)
@@ -113,7 +113,7 @@ class GenericArtifactReviewService:
         row.updated_at = row.reviewed_at
         await self.session.commit()
         await self.session.refresh(row)
-        return _payload(row)
+        return await _payload(row)
 
     async def reject(self, artifact_id: UUID, review_note: str) -> dict[str, Any]:
         row = await self._get_row(artifact_id, for_update=True)
@@ -127,7 +127,7 @@ class GenericArtifactReviewService:
         row.updated_at = row.reviewed_at
         await self.session.commit()
         await self.session.refresh(row)
-        return _payload(row)
+        return await _payload(row)
 
     async def _get_row(self, artifact_id: UUID, *, for_update: bool = False) -> ArtifactModel:
         statement = select(ArtifactModel).where(ArtifactModel.id == artifact_id)
