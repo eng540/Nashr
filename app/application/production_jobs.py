@@ -521,6 +521,12 @@ class ProductionJobRunner:
                     )
                     await session.commit()
                     knowledge_unit_id = item.knowledge_unit_id
+                    provider_operation_context = {
+                        "production_job_item_id": item.id,
+                        "provider_name": item.provider_name,
+                        "provider_operation_name": item.provider_operation_name,
+                        "provider_operation_status": item.provider_operation_status,
+                    }
 
                 try:
                     async with SessionFactory() as session:
@@ -528,7 +534,7 @@ class ProductionJobRunner:
                             pinned_recipe,
                             ProductionExecutionContext(
                                 session=session,
-                                inputs={"knowledge_unit_id": knowledge_unit_id},
+                                inputs={"knowledge_unit_id": knowledge_unit_id, **provider_operation_context},
                                 configuration={
                                     "editorial_prompt": {
                                         "key": pinned_prompt_key,
