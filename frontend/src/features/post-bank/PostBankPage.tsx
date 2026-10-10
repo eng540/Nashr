@@ -110,10 +110,16 @@ export function PostBankPage() {
   const topics = bookMap.data?.topics ?? [];
   const availableIdentities = (identities.data ?? []).filter((identity) => identity.active_version !== null);
   const availableProducts = (products.data ?? []).filter((product) => product.active_version !== null);
-  const productionSources = (sources.data ?? []).filter((source) => productionMode === "ALL" || productionMode === "NEEDS" && source.pending_count > 0 || productionMode === "DONE" && source.pending_count === 0 && source.material_count > 0);
-  const visibleTopics = topics.filter((topic) => productionMode === "ALL" || productionMode === "NEEDS" && topic.materials.some((material) => !material.has_post) || productionMode === "DONE" && topic.materials.length > 0 && topic.materials.every((material) => material.has_post));
+  const selectedProduct = availableProducts.find((product) => product.key === productKey);
+  const isPostProduct = selectedProduct ? selectedProduct.definition.output_contract_key === "TELEGRAM_POST" : true;
+  const productionSources = (sources.data ?? []).filter((source) => !isPostProduct
+    ? source.material_count > 0
+    : productionMode === "ALL" || productionMode === "NEEDS" && source.pending_count > 0 || productionMode === "DONE" && source.pending_count === 0 && source.material_count > 0);
+  const visibleTopics = topics.filter((topic) => !isPostProduct
+    ? topic.materials.length > 0
+    : productionMode === "ALL" || productionMode === "NEEDS" && topic.materials.some((material) => !material.has_post) || productionMode === "DONE" && topic.materials.length > 0 && topic.materials.every((material) => material.has_post));
   const allProductionMaterials = scope === "TOPIC" ? visibleTopics.find((t) => t.id === productionTopicId)?.materials ?? [] : visibleTopics.flatMap((t) => t.materials);
-  const materials = allProductionMaterials.filter((material) => (productionMode === "ALL" || productionMode === "NEEDS" && !material.has_post || productionMode === "DONE" && material.has_post) && (!productionKind || material.kind === productionKind));
+  const materials = allProductionMaterials.filter((material) => (!isPostProduct || productionMode === "ALL" || productionMode === "NEEDS" && !material.has_post || productionMode === "DONE" && material.has_post) && (!productionKind || material.kind === productionKind));
   const productionKinds = Array.from(new Set(allProductionMaterials.map((material) => material.kind).filter((kind): kind is string => Boolean(kind)))).sort();
   const filterTopics = filterOptions.data?.topics ?? [];
 
