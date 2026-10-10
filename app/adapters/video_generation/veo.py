@@ -32,7 +32,14 @@ class VeoVideoGenerator:
 
     def __init__(self, client=None, model: str | None = None) -> None:
         self._client = client
-        self.model = model or os.getenv("GEMINI_VIDEO_MODEL", "veo-3.1-fast-generate-001")
+        configured_model = model or os.getenv("GEMINI_VIDEO_MODEL", "veo-3.1-fast-generate-preview")
+        # Google documents the Gemini API preview identifier below. The old
+        # -generate-001 identifier is not a valid Veo 3.1 Gemini API model.
+        self.model = (
+            "veo-3.1-fast-generate-preview"
+            if configured_model == "veo-3.1-fast-generate-001"
+            else configured_model
+        )
 
     @property
     def client(self):
