@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import struct
+import zlib
 from uuid import uuid4
 
 import pytest
@@ -11,13 +13,27 @@ from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel
 from app.infrastructure.database.session import SessionFactory
 
 
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    body = kind + data
+    return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+
+def _valid_png_bytes() -> bytes:
+    return (
+        bytes([137, 80, 78, 71, 13, 10, 26, 10])
+        + _png_chunk(b"IHDR", struct.pack(">2I5B", 1, 1, 8, 2, 0, 0, 0))
+        + _png_chunk(b"IDAT", zlib.compress(bytes([0, 255, 0, 0])))
+        + _png_chunk(b"IEND", b"")
+    )
+
+
 class FakeImageGenerator:
     def __init__(self):
         self.calls = []
 
     async def generate(self, prompt, *, aspect_ratio="1:1", image_size="1K"):
         self.calls.append((prompt, aspect_ratio, image_size))
-        return GeneratedImage(content=b"fake-png-bytes", mime_type="image/png", model="fake-image-model")
+        return GeneratedImage(content=_valid_png_bytes(), mime_type="image/png", model="fake-image-model")
 
 
 class FakeArtifactStorage:
