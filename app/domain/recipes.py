@@ -1,5 +1,6 @@
 """Declarative, versioned recipe contracts independent of providers and output storage."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import json
 from uuid import UUID
 
 SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1)})
@@ -10,24 +11,37 @@ class RecipeStage:
     key: str
     capability_key: str
     capability_version: int
+    configuration: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.key.strip() or not self.capability_key.strip():
             raise ValueError("Recipe stage and capability keys are required.")
         if isinstance(self.capability_version, bool) or not isinstance(self.capability_version, int) or self.capability_version < 1:
             raise ValueError("Recipe capability version must be a positive integer.")
+        if not isinstance(self.configuration, dict) or any(not isinstance(key, str) for key in self.configuration):
+            raise ValueError("Recipe stage configuration must be a JSON object with string keys.")
+        try:
+            json.dumps(self.configuration, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Recipe stage configuration must contain JSON-compatible values only.") from exc
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "key": self.key,
             "capability_key": self.capability_key,
             "capability_version": self.capability_version,
         }
+        if self.configuration:
+            value["configuration"] = dict(self.configuration)
+        return value
 
     @classmethod
     def from_dict(cls, value: object) -> "RecipeStage":
         if not isinstance(value, dict):
             raise ValueError("Recipe stage must be an object.")
+        unknown = set(value) - {"key", "capability_key", "capability_version", "configuration"}
+        if unknown:
+            raise ValueError("Recipe stage contains unsupported fields: " + ", ".join(sorted(unknown)))
         try:
             key, capability_key, capability_version = (
                 value["key"], value["capability_key"], value["capability_version"]
@@ -38,7 +52,10 @@ class RecipeStage:
             raise ValueError("Recipe stage keys must be strings.")
         if isinstance(capability_version, bool) or not isinstance(capability_version, int):
             raise ValueError("Recipe capability version must be an integer.")
-        return cls(key, capability_key, capability_version)
+        configuration = value.get("configuration", {})
+        if not isinstance(configuration, dict):
+            raise ValueError("Recipe stage configuration must be an object.")
+        return cls(key, capability_key, capability_version, configuration)
 
 
 @dataclass(frozen=True)
@@ -116,3 +133,18 @@ BOOK_TO_TELEGRAM_POST = ProductionRecipe(
         ),
     ),
 )
+
+
+def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
+    """Validate configuration against the registered capability's public contract."""
+    if (stage.capability_key, stage.capability_version) not in SUPPORTED_RECIPE_CAPABILITIES:
+        raise ValueError(f"Unsupported capability '{stage.capability_key}' v{stage.capability_version}.")
+    if stage.capability_key == "produce_post":
+        unknown = set(stage.configuration) - {"style_instructions"}
+        if unknown:
+            raise ValueError("produce_post configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
+        instructions = stage.configuration.get("style_instructions")
+        if instructions is not None and (
+            not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
+        ):
+            raise ValueError("produce_post style_instructions must be a non-empty string up to 2000 characters.")
