@@ -18,7 +18,7 @@ from app.adapters.gemini_policy import (
 from app.domain.image_generation import GeneratedImage, IImageGenerator
 
 
-DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
+DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 
 
 def _parts(response: Any) -> Sequence[Any]:
@@ -93,7 +93,7 @@ class GeminiImageGenerator(IImageGenerator):
             context={"aspect_ratio": aspect_ratio, "image_size": image_size},
             contents=[prompt],
             config=types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
+                response_modalities=["TEXT", "IMAGE"],
                 image_config=types.ImageConfig(aspect_ratio=aspect_ratio, image_size=image_size),
             ),
             validator=_require_image_response,
