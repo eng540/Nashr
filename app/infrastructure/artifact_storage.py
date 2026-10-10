@@ -20,8 +20,13 @@ _MIME_TYPE = re.compile(r"^[A-Za-z0-9._+-]+/[A-Za-z0-9._+-]+$")
 
 
 def _validate_key(key: str) -> str:
-    if not isinstance(key, str) or not key.startswith("artifacts/") or len(key) > 900:
-        raise ValueError("Artifact object key must be a bounded key under artifacts/.")
+    if (
+        not isinstance(key, str)
+        or not key.startswith("artifacts/")
+        or len(key) > 900
+        or re.fullmatch(r"[A-Za-z0-9._/-]+", key) is None
+    ):
+        raise ValueError("Artifact object key must be a bounded ASCII key under artifacts/.")
     if key.startswith("/") or "\\" in key or any(part in {"", ".", ".."} for part in key.split("/")):
         raise ValueError("Artifact object key contains an unsafe path segment.")
     return key
