@@ -39,7 +39,9 @@ def object_storage_is_configured() -> bool:
         "OBJECT_STORAGE_SECRET_ACCESS_KEY",
         "OBJECT_STORAGE_REGION",
     )
-    return all(os.getenv(name, "").strip() for name in required)
+    if not all(os.getenv(name, "").strip() for name in required):
+        return False
+    return os.getenv("OBJECT_STORAGE_URL_STYLE", "path").strip() in {"path", "virtual-host"}
 
 
 class S3CompatibleObjectStorage:
