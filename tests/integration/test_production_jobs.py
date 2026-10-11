@@ -722,3 +722,41 @@ async def test_stale_item_with_persisted_provider_handle_returns_to_pending_for_
         assert recovered_item.provider_operation_name == "interaction-123"
         assert recovered_item.provider_operation_status == "RUNNING"
         assert recovered_item.error_code == "PRODUCTION_RECOVERED_PROVIDER_OPERATION"
+
+
+async def test_stale_item_reuses_persisted_artifact_instead_of_regenerating(monkeypatch):
+    monkeypatch.setenv("NASHR_PRODUCTION_STALE_SECONDS", "1")
+    source_id, _, unit_ids = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id)
+        )).scalar_one()
+        artifact_id = uuid4()
+        session.add(ArtifactModel(
+            id=artifact_id,
+            source_knowledge_unit_id=unit_ids[0],
+            kind="TEXT",
+            status="AVAILABLE",
+            content="Persisted result that must be reused",
+            mime_type="text/plain",
+            production_job_id=job.id,
+            review_status="DRAFT",
+        ))
+        stale_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+        job.status = ProductionJobStatus.RUNNING.value
+        job.updated_at = stale_at
+        item.status = ProductionJobItemStatus.RUNNING.value
+        item.updated_at = stale_at
+        await session.commit()
+
+    await _recover_stale(job.id)
+
+    async with SessionFactory() as session:
+        recovered_item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.id == item.id)
+        )).scalar_one()
+        assert recovered_item.status == ProductionJobItemStatus.COMPLETED.value
+        assert recovered_item.artifact_id == artifact_id
+        assert recovered_item.error_code is None
+        assert recovered_item.completed_at is not None
