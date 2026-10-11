@@ -52,7 +52,7 @@ def test_shared_artifact_contract_accepts_valid_result_for_each_kind(kind):
         ({"status": ArtifactStatus.FAILED.value}, "must be AVAILABLE"),
         ({"content": "  "}, "non-empty text"),
         ({"storage_uri": "s3://private/artifact"}, "must not use a storage URI"),
-        ({"mime_type": "text/plain"}, "MIME type does not match"),
+        ({"mime_type": "image/png"}, "MIME type must be text/plain"),
     ],
 )
 def test_shared_artifact_contract_rejects_invalid_result_envelope(overrides, message):
