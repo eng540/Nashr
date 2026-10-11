@@ -158,11 +158,11 @@ class GeminiImageGenerator:
         try:
             response = generate_gemini_content(
                 self.client,
-            contents=prompt,
-            config=config,
-            models=self.models,
-            operation="image_generation",
-            context={"aspect_ratio": aspect_ratio, "image_size": image_size},
+                contents=prompt,
+                config=config,
+                models=self.models,
+                operation="image_generation",
+                context={"aspect_ratio": aspect_ratio, "image_size": image_size},
                 validator=_require_image_response,
             )
         except Exception as exc:
