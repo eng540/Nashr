@@ -73,6 +73,11 @@ body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
     </div>
     <div class="mt-3 h-2 overflow-hidden rounded-full bg-indigo-100"><div id="job-bar" class="h-full bg-indigo-600 transition-all" style="width:0%"></div></div>
     <p id="job-error" class="mt-3 text-sm text-rose-700"></p>
+    <div id="job-reconciliation" class="mt-3 hidden rounded-xl border border-amber-300 bg-amber-50 p-3" role="region" aria-label="عناصر تحتاج مصالحة">
+      <p class="font-bold text-amber-900">عناصر تحتاج إلى تحقق قبل إعادة المحاولة</p>
+      <p class="mt-1 text-xs leading-6 text-amber-800">افحص حالة المزود وسجل المخرج لهذه العناصر. لا تعاود التوليد ما دامت نتيجة العملية السابقة غير محسومة.</p>
+      <div id="job-reconciliation-items" class="mt-3 grid gap-2"></div>
+    </div>
     <button id="retry-job" class="mt-3 hidden rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white">إعادة تشغيل العناصر الفاشلة</button>
   </div>
 </section>
@@ -115,7 +120,7 @@ body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const state={source:null,topics:[],units:[],jobId:null,selectedMaterials:new Set(),selectedPosts:new Set(),postMeta:{},posts:[],timer:null};
+const state={source:null,topics:[],units:[],jobId:null,reconciliationLoadedJobId:null,selectedMaterials:new Set(),selectedPosts:new Set(),postMeta:{},posts:[],timer:null};
 async function api(url,opt={}){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');return d;}
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function statusLabel(s){return({DRAFT:'DRAFT — يحتاج مراجعة',APPROVED:'APPROVED — جاهز للجدولة',REJECTED:'REJECTED — يحتاج تعديل'}[s]||s);}
@@ -126,7 +131,20 @@ function renderMaterials(){const topicId=$('topic').value;const list=topicId?sta
 function updateSelectionHelp(){ $('selection-help').textContent=state.selectedMaterials.size+' مادة محددة'; $('production-summary').textContent=$('scope').value==='SELECTION'?(state.selectedMaterials.size+' مادة ستدخل الإنتاج'):($('scope').value==='TOPIC'?'سيتم إنتاج مواد المحور المحدد':'سيتم إنتاج مواد الكتاب كاملة');}
 function renderScope(){const s=$('scope').value;$('topic-wrap').classList.toggle('hidden',s!=='TOPIC');$('selection-wrap').classList.toggle('hidden',s!=='SELECTION');updateSelectionHelp();}
 async function startProduction(){try{if(!state.source)throw Error('اختر كتابًا أولًا.');const scope=$('scope').value;const body={source_id:state.source,scope};if(scope==='TOPIC'){if(!$('topic').value)throw Error('اختر محورًا.');body.topic_id=$('topic').value;}if(scope==='SELECTION'){if(!state.selectedMaterials.size)throw Error('اختر مادة واحدة على الأقل.');body.knowledge_unit_ids=[...state.selectedMaterials];} $('start-production').disabled=true;const d=await api('/production-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});state.jobId=d.job_id;$('job-panel').classList.remove('hidden');pollJob();}catch(e){alert(e.message);}finally{$('start-production').disabled=false;}}
-async function pollJob(){if(!state.jobId)return;try{const d=await api('/production-jobs/'+state.jobId);const total=d.total_items||0,done=d.completed_items||0,failed=d.failed_items||0,pending=d.pending_items||0,running=d.running_items||0,reconcile=d.reconciliation_required_items||0;const pct=Number(d.progress_percent||0);$('job-status').textContent=d.status==='COMPLETED'?'اكتمل الإنتاج':d.status==='FAILED'?'فشل الإنتاج':d.status==='RUNNING'?'جاري إنتاج المنشورات':'في الانتظار';$('job-counts').textContent=done+' مكتمل · '+running+' جارٍ · '+pending+' منتظر · '+failed+' فشل من '+total;$('job-bar').style.width=pct+'%';const warning=reconcile?'\nهناك '+reconcile+' عنصر بنتيجة غير محسومة. أوقفنا إعادة المحاولة تلقائيًا لمنع توليد مدفوع مكرر؛ يجب التحقق من المزود/المخرج قبل إعادة المحاولة.':'';$('job-error').textContent=(d.error_message||'')+warning;$('job-error').classList.toggle('whitespace-pre-line',Boolean(warning));$('retry-job').classList.toggle('hidden',failed===0||d.status==='RUNNING'||reconcile>0);if(d.status==='COMPLETED'||d.status==='FAILED'){await loadPosts();return;}state.timer=setTimeout(pollJob,1500);}catch(e){$('job-error').textContent=e.message;}}
+async function pollJob(){if(!state.jobId)return;try{const d=await api('/production-jobs/'+state.jobId);const total=d.total_items||0,done=d.completed_items||0,failed=d.failed_items||0,pending=d.pending_items||0,running=d.running_items||0,reconcile=d.reconciliation_required_items||0;const pct=Number(d.progress_percent||0);$('job-status').textContent=d.status==='COMPLETED'?'اكتمل الإنتاج':d.status==='FAILED'?'فشل الإنتاج':d.status==='RUNNING'?'جاري إنتاج المنشورات':'في الانتظار';$('job-counts').textContent=done+' مكتمل · '+running+' جارٍ · '+pending+' منتظر · '+failed+' فشل من '+total;$('job-bar').style.width=pct+'%';const warning=reconcile?'\nهناك '+reconcile+' عنصر بنتيجة غير محسومة. أوقفنا إعادة المحاولة تلقائيًا لمنع توليد مدفوع مكرر؛ يجب التحقق من المزود/المخرج قبل إعادة المحاولة.':'';$('job-error').textContent=(d.error_message||'')+warning;$('job-error').classList.toggle('whitespace-pre-line',Boolean(warning));$('job-reconciliation').classList.toggle('hidden',reconcile===0);if(reconcile>0&&state.reconciliationLoadedJobId!==state.jobId){await loadReconciliationItems(state.jobId);}if(reconcile===0){state.reconciliationLoadedJobId=null;$('job-reconciliation-items').innerHTML='';}$('retry-job').classList.toggle('hidden',failed===0||d.status==='RUNNING'||reconcile>0);if(d.status==='COMPLETED'||d.status==='FAILED'){await loadPosts();return;}state.timer=setTimeout(pollJob,1500);}catch(e){$('job-error').textContent=e.message;}}
+async function loadReconciliationItems(jobId){
+  state.reconciliationLoadedJobId=jobId;
+  const held=[];let offset=0,total=0;
+  do{
+    const page=await api('/production-jobs/'+jobId+'/items?limit=100&offset='+offset);
+    total=Number(page.total||0);
+    held.push(...(page.items||[]).filter(item=>['PROVIDER_OUTCOME_UNKNOWN','PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED'].includes(item.error_code)));
+    offset+=(page.items||[]).length;
+    if(!(page.items||[]).length)break;
+  }while(offset<total);
+  $('job-reconciliation-items').innerHTML=held.map(item=>'<article class="rounded-lg border border-amber-200 bg-white p-3"><p class="font-semibold text-slate-900">'+esc(item.title)+' <span class="text-xs text-slate-500">#'+esc(item.position)+'</span></p><p class="mt-1 text-xs text-slate-600">رمز الحالة: '+esc(item.error_code)+' · المحاولات: '+esc(item.attempts)+'</p><p class="mt-1 text-xs text-slate-600">المزود: '+esc(item.provider_name||'غير مسجل')+' · حالة العملية: '+esc(item.provider_operation_status||'لا يوجد معرّف عملية محفوظ')+'</p>'+(item.provider_operation_name?'<p class="mt-1 break-all text-xs text-slate-600">معرّف العملية: '+esc(item.provider_operation_name)+'</p>':'')+'<p class="mt-2 whitespace-pre-line text-sm leading-6 text-amber-900">'+esc(item.error_message||'يلزم التحقق يدويًا قبل إعادة المحاولة.')+'</p><p class="mt-1 text-xs text-slate-400">آخر تحديث: '+esc(item.updated_at||'—')+'</p></article>').join('')||'<p class="text-sm text-amber-900">تعذر العثور على تفاصيل العناصر؛ حدّث المهمة وحاول مرة أخرى.</p>';
+}
+
 function postParams(){
   const p=new URLSearchParams();
   const source=$('post-source').value,status=$('status').value,q=$('search').value.trim(),publicationState=$('publication-state').value;
