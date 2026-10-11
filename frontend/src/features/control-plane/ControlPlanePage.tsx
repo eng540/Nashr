@@ -168,6 +168,7 @@ function definitionFor(section: SectionKey, form: FormState, stages: StageForm[]
 function versionDefinition(section: SectionKey, payload: Record<string, unknown>): Record<string, unknown> {
   if (section === "recipes") return { stages: payload.stages };
   if (section === "prompts") return { body: payload.body };
+  if (section === "products") return { definition: payload };
   return { definition: payload.definition };
 }
 
@@ -318,6 +319,23 @@ export function ControlPlanePage() {
     } finally { setBusy(false); }
   }
 
+  async function createDraftFromVersion(source: Version) {
+    if (!selected) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const copiedForm = initialForm(activeSection, selected, source);
+      const copiedStages = stagesFromVersion(source);
+      const raw = definitionFor(activeSection, copiedForm, copiedStages.length ? copiedStages : stages);
+      const payload = versionDefinition(activeSection, raw);
+      const path = section.endpoint + "/" + encodeURIComponent(selected.key) + "/versions";
+      const created = await request<Version>(path, "POST", payload);
+      await reload(activeSection, selected.key, created.version);
+      setMessage("تم إنشاء مسودة إصدار جديدة من الإصدار المحدد.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "تعذر إنشاء المسودة.");
+    } finally { setBusy(false); }
+  }
+
   async function versionAction(action: "publish" | "archive", version: Version) {
     if (!selected) return;
     setBusy(true); setError(""); setMessage("");
@@ -401,12 +419,7 @@ export function ControlPlanePage() {
           <span className="text-xs text-slate-500">{selected.versions.length} إصدار</span>
           {!draft && <button type="button" disabled={busy} onClick={() => {
             const source = selectedVersion ?? activeVersion ?? latestVersion(selected);
-            if (!source) return;
-            const copied = initialForm(activeSection, selected, source);
-            setForm(copied);
-            setStages(stagesFromVersion(source).length ? stagesFromVersion(source) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "" }]);
-            setSelectedVersionNumber(source.version);
-            void saveDraft();
+            if (source) void createDraftFromVersion(source);
           }} className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold disabled:opacity-50">إنشاء مسودة من هذا الإصدار</button>}
         </div> : null}
 
