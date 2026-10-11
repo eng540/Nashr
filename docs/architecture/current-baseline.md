@@ -1,7 +1,9 @@
 # Nashr Current Architecture Baseline
 
-Baseline commit: f25764e91bc8f704dd080d5270d894cfc4011607
+Historical snapshot commit: f25764e91bc8f704dd080d5270d894cfc4011607
 Branch: main
+
+> **تنبيه تحديث:** هذا الملف يسجل لقطة تاريخية بعد PR #55، وليس وصفًا كاملًا للحالة التشغيلية الحالية. راجع قسم Shared Production Engine Reliability أدناه ووثيقة العقد المشترك.
 
 الغرض: تسجيل الحالة الفعلية بعد PR #55، الذي أنهى مرحلة Harden Publication Artifact Boundary دون تغيير persistence أو API/browser contracts.
 
@@ -147,3 +149,28 @@ PR #55 أغلق الفجوة المحددة في Gate بعد PR #53:
 6. Existing backend/E2E regression coverage remains green.
 7. Architecture documentation points to main HEAD f25764e9.
 8. Next implementation is selected from operational/product evidence, not speculative model migration.
+
+## Shared Production Engine Reliability — status update (2026-10-11)
+
+Current reviewed main after PR #115: `e930f7f57e970936c141af82ce57e48c12feb789`.
+
+The production platform now includes registered POST/TEXT/IMAGE/VIDEO/AUDIO capabilities, a generic Artifact persistence/review path, pinned production context, private media storage, and durable provider-operation fields. The shared reliability work is progressing through small PRs rather than replacing the engine or adding a new queue.
+
+Merged reliability changes:
+- PR #108: lifecycle audit and confirmed-gap inventory.
+- PR #109: completion transition checks the conditional update row count; backend/frontend/E2E CI passed on the PR head.
+- PR #110: shared engine/capability/result/error/recovery contract; CI passed on the PR head.
+- PR #111: provider-neutral Artifact envelope validation before item completion; CI passed on the PR head.
+- PR #112: stale recovery reconciles an existing Artifact or persisted provider operation; unknown outcomes are held instead of blindly regenerated; retry of unresolved outcomes is blocked. CI passed on the PR head.
+- PR #113: video start timeouts/ambiguous errors use `PROVIDER_OUTCOME_UNKNOWN`; CI passed on the PR head.
+- PR #114: common ambiguous-provider error classification integrated with text, Gemini image, fal image, and Gemini TTS call boundaries; CI passed on the PR head.
+- PR #115: regression test proves a persisted Artifact is reused after a simulated crash before item completion; CI passed on the PR head.
+
+Remaining before calling the engine fully accepted:
+1. Add an operator-visible reconciliation workflow for held unknown outcomes; currently the safe behavior blocks retry and requires reconciliation rather than providing a complete UI action.
+2. Expand fault-injection coverage for object upload / DB persistence split, provider success with lost output, and concurrent resume across all capabilities.
+3. Verify UI progress and review visibility for every modality after page reload.
+4. Add/verify production observability and runbook metrics for stale items and unknown provider outcomes.
+5. Verify the exact post-merge main CI and Railway deployment state separately; PR CI is not production evidence.
+
+Telegram remains outside this program's tests. No live provider generation was used for these PRs.
