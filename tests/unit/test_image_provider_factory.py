@@ -7,7 +7,7 @@ from app.adapters.image_generation.gemini import GeminiImageGenerator
 
 def test_factory_uses_environment_default_and_can_select_fal(monkeypatch):
     monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "fal")
-    monkeypatch.setenv("IMAGE_GENERATION_MODEL", "fal-ai/nano-banana-2")
+    monkeypatch.setenv("IMAGE_GENERATION_MODEL", "fal-ai/flux/schnell")
     generator = create_image_generator()
     assert isinstance(generator, FalImageGenerator)
     assert generator.provider_name == "fal"
