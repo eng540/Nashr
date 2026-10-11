@@ -71,5 +71,6 @@ test("a product can be created in Control Plane and selected in the factory", as
 
   await page.goto("/posts/workspace");
   await expect(page.getByLabel("المنتج")).toContainText("E2E UI Product · v1");
-  await expect(page.getByLabel("المنتج").locator("option", { hasText: "E2E UI Product · v1" })).toHaveValue("E2E_UI_PRODUCT");
+  await page.getByLabel("المنتج").selectOption("E2E_UI_PRODUCT");
+  await expect(page.getByLabel("المنتج")).toHaveValue("E2E_UI_PRODUCT");
 });
