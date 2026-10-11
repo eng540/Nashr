@@ -93,7 +93,7 @@ class FalImageGenerator:
                 image_size=dimensions[aspect_ratio],
                 num_images=1,
                 num_inference_steps=4,
-                output_format="jpeg",
+                output_format="png",
             )
         elif "nano-banana" in self.model:
             arguments.update(

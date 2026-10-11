@@ -1,5 +1,9 @@
+import sys
+from types import SimpleNamespace
+
 import pytest
 
+from app.adapters.image_generation import fal as fal_adapter
 from app.adapters.image_generation.fal import FalImageGenerator, _mime_matches, _provider_image_url
 from app.adapters.image_generation.factory import create_image_generator
 from app.adapters.image_generation.gemini import GeminiImageGenerator
@@ -50,3 +54,57 @@ def test_fal_image_url_must_use_approved_https_host():
 def test_fal_image_mime_validation_rejects_mismatched_bytes():
     assert _mime_matches(bytes([137, 80, 78, 71, 13, 10, 26, 10]), "image/png")
     assert not _mime_matches(b"not-an-image", "image/png")
+
+
+
+def test_flux_schnell_requests_png_to_match_image_artifact_contract(monkeypatch):
+    png_bytes = bytes([137, 80, 78, 71, 13, 10, 26, 10])
+    captured = {}
+
+    def subscribe(model, *, arguments):
+        captured["model"] = model
+        captured["arguments"] = arguments
+        return {"images": [{
+            "url": "https://v3.fal.media/files/example.png",
+            "content_type": "image/png",
+        }]}
+
+    class FakeResponse:
+        headers = {"content-type": "image/png", "content-length": str(len(png_bytes))}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def raise_for_status(self):
+            pass
+
+        def iter_bytes(self):
+            yield png_bytes
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def stream(self, method, url):
+            return FakeResponse()
+
+    monkeypatch.setenv("FAL_KEY", "test-key")
+    monkeypatch.setitem(sys.modules, "fal_client", SimpleNamespace(subscribe=subscribe))
+    monkeypatch.setattr(fal_adapter.httpx, "Client", FakeClient)
+
+    generated = FalImageGenerator("fal-ai/flux/schnell")._generate_sync(
+        "A literary scene", "1:1", "1K"
+    )
+
+    assert captured["arguments"]["output_format"] == "png"
+    assert generated.mime_type == "image/png"
+    assert generated.content == png_bytes
