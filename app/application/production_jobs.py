@@ -18,7 +18,7 @@ from app.domain.production_jobs import (
 )
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.products import ProductionProductDefinition
-from app.domain.artifacts import Artifact, ArtifactKind
+from app.domain.artifacts import Artifact, ArtifactKind, validate_production_artifact
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST
 from app.application.recipe_engine import (
     ProductionExecutionContext,
@@ -617,6 +617,11 @@ class ProductionJobRunner:
                                 resolved_context=pinned_context_payload,
                             ),
                         )
+                    validate_production_artifact(
+                        artifact,
+                        expected_job_id=job_id,
+                        expected_source_knowledge_unit_id=knowledge_unit_id,
+                    )
                     await _complete_item(job_id, item_id, artifact)
                     await _update_progress(job_id, None)
                 except Exception as exc:
