@@ -15,8 +15,10 @@ The audit above intentionally describes the code at `733aa369c73124658ee551cda36
 - PR #113: video start ambiguity classified as `PROVIDER_OUTCOME_UNKNOWN`.
 - PR #114: shared ambiguous-outcome classification applied at text/image/audio provider call boundaries.
 - PR #115: regression test covers reuse of a persisted Artifact after the item-completion crash window.
+- PR #117: API counts now come from persisted item rows, include RUNNING/reconciliation counts, and the Content Factory shows those states and suppresses unsafe retry.
+- PR #118: provider-boundary fake tests cover ambiguous Gemini text/image/audio outcomes; the shared error classifier is used by Gemini text/image/audio and fal image calls.
 
-The recovery behavior deliberately prefers safety over automatic liveness when provider acceptance is unknown. The operational reconciliation UI/runbook and full fault-injection coverage remain open work. PR-head CI passed for the listed merged changes; this does not establish Railway deployment or production verification.
+The recovery behavior deliberately prefers safety over automatic liveness when provider acceptance is unknown. The UI now exposes held outcomes and suppresses unsafe retry, but it does not yet resolve them; an operator reconciliation procedure/action and full fault-injection coverage remain open work. PR-head CI passed for the listed merged changes; this does not establish Railway deployment or production verification.
 
 ## Executive finding
 
