@@ -16,6 +16,6 @@ test("control plane keeps prompt management available beside product controls", 
 
   await page.getByRole("button", { name: "التعليمات" }).click();
   await page.getByRole("button", { name: /E2E Control Prompt/ }).click();
-  await expect(page.getByDisplayValue("E2E prompt body")).toBeVisible();
+  await expect(page.locator("textarea")).toHaveValue("E2E prompt body");
   await expect(page.getByText(/الإصدار المنشور:.*v1/)).toBeVisible();
 });
