@@ -161,16 +161,16 @@ class GeminiEditorialDrafter(IEditorialDrafter):
         try:
             response = generate_gemini_content(
                 self.client,
-            models=self.models,
-            operation="EDITORIAL_DRAFT",
-            context={
-                "source_name": source_name,
-            },
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=GeminiTelegramDraft,
-            ),
+                models=self.models,
+                operation="EDITORIAL_DRAFT",
+                context={
+                    "source_name": source_name,
+                },
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=GeminiTelegramDraft,
+                ),
                 validator=_require_editorial_draft,
             )
         except Exception as exc:
