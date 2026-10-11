@@ -62,13 +62,19 @@ def validate_production_artifact(
         raise ValueError("Production Artifact must have a valid identifier.")
     if artifact.source_knowledge_unit_id != expected_source_knowledge_unit_id:
         raise ValueError("Production Artifact belongs to a different source material.")
-    if artifact.production_job_id is not None and artifact.production_job_id != expected_job_id:
-        raise ValueError("Production Artifact belongs to a different production job.")
     try:
         kind = ArtifactKind(artifact.kind)
         status = ArtifactStatus(artifact.status)
     except ValueError as exc:
         raise ValueError("Production Artifact kind or status is unsupported.") from exc
+    # POST artifacts may intentionally reuse a canonical Post created by an earlier job.
+    # Other output kinds are scoped to the current job for idempotent recovery.
+    if (
+        kind != ArtifactKind.POST
+        and artifact.production_job_id is not None
+        and artifact.production_job_id != expected_job_id
+    ):
+        raise ValueError("Production Artifact belongs to a different production job.")
     if status != ArtifactStatus.AVAILABLE:
         raise ValueError("Production Artifact must be AVAILABLE before item completion.")
 
