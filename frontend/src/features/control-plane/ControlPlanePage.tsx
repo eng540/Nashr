@@ -389,7 +389,7 @@ export function ControlPlanePage() {
     </header>
 
     <nav className="flex flex-wrap gap-2" aria-label="مكونات التحكم">
-      {sections.map((entry) => <button key={entry.key} type="button" onClick={() => selectSection(entry.key)} aria-pressed={activeSection === entry.key}
+      {sections.map((entry) => <button key={entry.key} type="button" onClick={() => selectSection(entry.key)} disabled={loading || busy} aria-pressed={activeSection === entry.key}
         className={"rounded-xl px-4 py-2 text-sm font-semibold " + (activeSection === entry.key ? "bg-indigo-600 text-white" : "border bg-white")}>{entry.label}</button>)}
     </nav>
 
@@ -397,8 +397,8 @@ export function ControlPlanePage() {
       <aside className="rounded-2xl border bg-white p-4">
         <div className="flex items-center justify-between gap-2">
           <div><h3 className="font-bold">{section.label}</h3><p className="mt-1 text-xs text-slate-500">{items.length} عنصر</p></div>
-          <button type="button" onClick={() => { setSelectedKey(null); setSelectedVersionNumber(null); setForm(initialForm(activeSection)); setStages([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "" }]); setMessage(""); setError(""); }}
-            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">جديد</button>
+          <button type="button" disabled={loading || busy} onClick={() => { setSelectedKey(null); setSelectedVersionNumber(null); setForm(initialForm(activeSection)); setStages([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "" }]); setMessage(""); setError(""); }}
+            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">جديد</button>
         </div>
         <p className="my-3 text-xs leading-6 text-slate-500">{section.description}</p>
         {loading ? <p role="status" className="py-8 text-center text-sm text-slate-500">تحميل العناصر...</p> : items.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">لا توجد عناصر بعد. أنشئ أول عنصر من هنا.</p> :
