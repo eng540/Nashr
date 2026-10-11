@@ -4,6 +4,20 @@
 **Audited ref:** `main` at `733aa369c73124658ee551cda3649a726b526bad` (after PR #107)  
 **Scope:** Production job/item lifecycle, registered recipe capabilities, provider-operation persistence, artifact storage/persistence, API/runtime recovery, review visibility. Telegram publishing is explicitly excluded from tests and actions in this program.
 
+## Follow-up implementation status (after the audited ref)
+
+The audit above intentionally describes the code at `733aa369c73124658ee551cda3649a726b526bad`. Subsequent implementation has addressed parts of the findings; do not read the original findings table as a statement that every defect remains unchanged.
+
+- PR #109: guarded item completion with rowcount validation.
+- PR #110: documented the shared production engine contract.
+- PR #111: shared Artifact result envelope validation before item completion.
+- PR #112: stale recovery now checks for an existing Artifact and preserves a persisted provider-operation handle. If neither exists, it records `PROVIDER_OUTCOME_UNKNOWN` and blocks automatic retry rather than risking duplicate paid work.
+- PR #113: video start ambiguity classified as `PROVIDER_OUTCOME_UNKNOWN`.
+- PR #114: shared ambiguous-outcome classification applied at text/image/audio provider call boundaries.
+- PR #115: regression test covers reuse of a persisted Artifact after the item-completion crash window.
+
+The recovery behavior deliberately prefers safety over automatic liveness when provider acceptance is unknown. The operational reconciliation UI/runbook and full fault-injection coverage remain open work. PR-head CI passed for the listed merged changes; this does not establish Railway deployment or production verification.
+
 ## Executive finding
 
 Nashr already has a durable database-backed production job model, a registered Recipe Engine, pinned recipe/control-plane context, generic Artifact persistence/review, private media storage, and a durable provider-operation record intended for long-running media providers. These are valuable foundations; a rewrite or new queue is not justified by this audit alone.
