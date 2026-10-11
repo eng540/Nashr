@@ -256,7 +256,7 @@ async def test_production_job_items_api_exposes_provider_reconciliation_fields()
             )).scalars().first()
             item.status = "FAILED"
             item.error_code = "PROVIDER_OUTCOME_UNKNOWN"
-            item.provider_name = "google-gemini-omni"
+            item.provider_name = None
             item.provider_operation_status = None
             item.provider_operation_name = None
             await session.commit()
@@ -264,7 +264,7 @@ async def test_production_job_items_api_exposes_provider_reconciliation_fields()
         assert response.status_code == 200
         item_payload = response.json()["items"][0]
         assert item_payload["error_code"] == "PROVIDER_OUTCOME_UNKNOWN"
-        assert item_payload["provider_name"] == "google-gemini-omni"
+        assert item_payload["provider_name"] is None
         assert item_payload["provider_operation_name"] is None
         assert "provider_operation_status" in item_payload
     monkeypatch.undo()
