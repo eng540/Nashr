@@ -48,11 +48,10 @@ class FalImageGenerator:
 
     provider_name = "fal"
 
-    def __init__(self, model: str | None = None, *, model_options: dict[str, object] | None = None) -> None:
+    def __init__(self, model: str | None = None) -> None:
         self.model = (model or os.getenv("IMAGE_GENERATION_MODEL") or "fal-ai/nano-banana-2").strip()
         if not self.model or len(self.model) > 200 or self.model.startswith("/") or ".." in self.model.split("/"):
             raise ValueError("A valid fal.ai model endpoint ID is required.")
-        self.model_options = dict(model_options or {})
 
     async def generate(
         self,
@@ -74,9 +73,9 @@ class FalImageGenerator:
             raise FalImageGenerationError("FAL_KEY is required when the fal image provider is selected.")
 
         arguments: dict[str, object] = {"prompt": prompt.strip()}
-        # Nano Banana endpoints share this documented option set. Other model
-        # schemas are intentionally configured through model_options rather than
-        # leaking their provider-specific parameters into the application layer.
+        # Keep endpoint-specific request schemas in this adapter. Nano Banana
+        # endpoints share these documented fields; unknown endpoint schemas use
+        # their provider defaults until an explicit mapping is added here.
         if "nano-banana" in self.model:
             arguments.update(
                 aspect_ratio=aspect_ratio,
@@ -84,7 +83,6 @@ class FalImageGenerator:
                 output_format="png",
                 num_images=1,
             )
-        arguments.update(self.model_options)
 
         try:
             import fal_client
