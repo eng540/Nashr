@@ -18,6 +18,7 @@ from app.adapters.gemini_policy import (
     parse_model_chain,
 )
 from app.domain.editorial import IEditorialDrafter
+from app.application.provider_errors import raise_if_provider_outcome_unknown
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +158,9 @@ class GeminiEditorialDrafter(IEditorialDrafter):
                 "مع الالتزام الصارم بقواعد أمانة المصدر."
             )
 
-        response = generate_gemini_content(
-            self.client,
+        try:
+            response = generate_gemini_content(
+                self.client,
             models=self.models,
             operation="EDITORIAL_DRAFT",
             context={
@@ -169,8 +171,11 @@ class GeminiEditorialDrafter(IEditorialDrafter):
                 response_mime_type="application/json",
                 response_schema=GeminiTelegramDraft,
             ),
-            validator=_require_editorial_draft,
-        )
+                validator=_require_editorial_draft,
+            )
+        except Exception as exc:
+            raise_if_provider_outcome_unknown(exc, provider="Gemini text drafting")
+            raise
 
         parsed = response.parsed
 
