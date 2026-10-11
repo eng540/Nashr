@@ -345,7 +345,7 @@ async def _update_progress(job_id: UUID, current_item_id: UUID | None = None) ->
 
 async def _complete_item(job_id: UUID, item_id: UUID, artifact: Artifact) -> None:
     async with SessionFactory() as session:
-        await session.execute(
+        result = await session.execute(
             update(ProductionJobItemModel)
             .where(
                 ProductionJobItemModel.id == item_id,
@@ -362,6 +362,11 @@ async def _complete_item(job_id: UUID, item_id: UUID, artifact: Artifact) -> Non
                 updated_at=datetime.now(timezone.utc),
             )
         )
+        if result.rowcount != 1:
+            await session.rollback()
+            raise RuntimeError(
+                "Production item completion was not persisted because the item is no longer RUNNING."
+            )
         await session.commit()
 
 
