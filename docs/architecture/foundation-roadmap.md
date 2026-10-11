@@ -195,3 +195,26 @@ Capabilities وRecipes وIdentities وArtifacts وProducts وChannels تنمو،
 
 هذا هو معنى:
 > الوصول ثم التوسع = البناء فوق نفس الأساس، وليس إعادة بناء الأساس.
+
+
+## Shared Production Engine Reliability Program — implementation status (2026-10-11)
+
+The Recipe / Production Engine phase is implemented for multiple output kinds, but the **reliability acceptance gate remains in progress**. Do not mark the whole phase complete until lifecycle recovery, capability conformance, fault-injection, UI visibility, and production evidence are complete.
+
+Merged PRs on `main`:
+- #108 — lifecycle audit.
+- #109 — guarded item completion transition.
+- #110 — shared production engine and capability contract.
+- #111 — common Artifact result validation.
+- #112 — stale recovery reconciles Artifact/provider-operation state and holds unknown outcomes.
+- #113 — ambiguous video start outcome classification.
+- #114 — shared ambiguous provider outcome classification for text/image/audio and fal image calls.
+- #115 — regression test for persisted Artifact recovery.
+
+Next work, in dependency order:
+1. Operator-visible reconciliation workflow for `PROVIDER_OUTCOME_UNKNOWN` and `PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED` items.
+2. Fault injection for object-store/DB crash windows and concurrent resume/claim behavior.
+3. Shared contract integration tests for POST/TEXT/IMAGE/VIDEO/AUDIO and review visibility after reload.
+4. Operational runbook, stale-item metrics, provider operation age, output-storage verification, and exact Railway deployment evidence.
+
+No new queue or microservice is approved by this status update. Telegram publication is excluded from reliability tests.
