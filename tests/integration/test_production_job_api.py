@@ -235,3 +235,36 @@ async def test_production_job_api_exposes_running_and_reconciliation_counts(monk
         assert payload["reconciliation_required_items"] == 1
         assert payload["progress_percent"] == 50
         assert payload["next_action"] == "INSPECT_FAILURE"
+
+
+@pytest.mark.asyncio
+async def test_production_job_items_api_exposes_provider_reconciliation_fields():
+    source_id, _ = await _api_fixture()
+    async def noop(job_id):
+        return None
+    # Create a durable job through the API so the response uses the production serializer.
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await client.post("/production-jobs", json={"source_id": str(source_id), "scope": "SOURCE"})
+        assert created.status_code == 202
+        job_id = UUID(created.json()["job_id"])
+        async with SessionFactory() as session:
+            item = (await session.execute(
+                select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job_id).order_by(ProductionJobItemModel.position)
+            )).scalars().first()
+            item.status = "FAILED"
+            item.error_code = "PROVIDER_OUTCOME_UNKNOWN"
+            item.provider_name = "google-gemini-omni"
+            item.provider_operation_status = None
+            item.provider_operation_name = None
+            await session.commit()
+        response = await client.get(f"/production-jobs/{job_id}/items")
+        assert response.status_code == 200
+        item_payload = response.json()["items"][0]
+        assert item_payload["error_code"] == "PROVIDER_OUTCOME_UNKNOWN"
+        assert item_payload["provider_name"] == "google-gemini-omni"
+        assert item_payload["provider_operation_name"] is None
+        assert "provider_operation_status" in item_payload
+    monkeypatch.undo()
