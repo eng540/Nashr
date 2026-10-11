@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.main import app
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, ProductionJobItemModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -194,3 +194,44 @@ async def test_create_production_job_api_pins_selected_product(monkeypatch: pyte
         assert context["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
         assert context["output_contract"]["key"] == "TELEGRAM_POST"
         assert context["policy"]["key"] == "EDITORIAL_DEFAULT"
+
+
+@pytest.mark.asyncio
+async def test_production_job_api_exposes_running_and_reconciliation_counts(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await client.post("/production-jobs", json={"source_id": str(source_id), "scope": "SOURCE"})
+        assert created.status_code == 202
+        job_id = UUID(created.json()["job_id"])
+
+        async with SessionFactory() as session:
+            job = (await session.execute(
+                select(ProductionJobModel).where(ProductionJobModel.id == job_id)
+            )).scalar_one()
+            items = (await session.execute(
+                select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id).order_by(ProductionJobItemModel.position)
+            )).scalars().all()
+            job.status = "FAILED"
+            # Deliberately leave cached counters stale; API counts must reflect item rows.
+            items[0].status = "RUNNING"
+            items[1].status = "FAILED"
+            items[1].error_code = "PROVIDER_OUTCOME_UNKNOWN"
+            items[1].error_message = "Reconcile before retrying."
+            await session.commit()
+
+        response = await client.get(f"/production-jobs/{job_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["completed_items"] == 0
+        assert payload["failed_items"] == 1
+        assert payload["pending_items"] == 0
+        assert payload["running_items"] == 1
+        assert payload["reconciliation_required_items"] == 1
+        assert payload["progress_percent"] == 50
+        assert payload["next_action"] == "INSPECT_FAILURE"
