@@ -28,6 +28,7 @@ export interface ProductionJobItem {
   knowledge_unit_id: string; title: string; source_id: string; source_title: string;
   source_reference: string | null; page_start: number | null; page_end: number | null;
   post_id: string | null; artifact_id: string | null; error_code: string | null; error_message: string | null;
+  provider_name?: string | null; provider_operation_name?: string | null; provider_operation_status?: string | null; provider_operation_updated_at?: string | null;
   created_at: string; updated_at: string; completed_at: string | null;
 }
 export interface ProductionJobItemsPage { job_id: string; total: number; limit: number; offset: number; items: ProductionJobItem[]; }
