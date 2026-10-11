@@ -10,6 +10,12 @@ class VeoVideoGenerationError(RuntimeError):
     """Video generation failed or returned an invalid payload."""
 
 
+class VeoProviderOutcomeUnknownError(RuntimeError):
+    """The provider may have accepted a request but no durable handle was captured."""
+
+    code = "PROVIDER_OUTCOME_UNKNOWN"
+
+
 @dataclass(frozen=True)
 class VideoOperationResult:
     operation_name: str
@@ -73,18 +79,36 @@ class VeoVideoGenerator:
             f"{prompt.strip()}\n\nRequested target duration: approximately {duration_seconds} seconds. "
             "Prioritize a coherent single shot."
         )
-        interaction = self.client.interactions.create(
-            model=self.model,
-            input=requested_prompt,
-            response_format={
-                "type": "video",
-                "aspect_ratio": aspect_ratio,
-                "resolution": resolution,
-            },
-            background=True,
-            store=True,
-            timeout=120,
-        )
+        try:
+            interaction = self.client.interactions.create(
+                model=self.model,
+                input=requested_prompt,
+                response_format={
+                    "type": "video",
+                    "aspect_ratio": aspect_ratio,
+                    "resolution": resolution,
+                },
+                background=True,
+                store=True,
+                timeout=120,
+            )
+        except Exception as exc:
+            status_code = getattr(exc, "status_code", None)
+            if status_code is None:
+                status_code = getattr(exc, "http_status", None)
+            try:
+                status_code = int(status_code)
+            except (TypeError, ValueError):
+                status_code = None
+            # Clear client/request rejections mean no operation was accepted. Timeouts,
+            # connection errors, rate limits, conflicts, and server errors remain unknown.
+            if status_code is not None and 400 <= status_code < 500 and status_code not in {408, 409, 425, 429}:
+                raise VeoVideoGenerationError(
+                    "Gemini Omni rejected the video request before returning an operation ID."
+                ) from exc
+            raise VeoProviderOutcomeUnknownError(
+                "Gemini Omni may have accepted the video request, but no durable operation ID was captured. Reconcile before retrying."
+            ) from exc
         interaction_id = getattr(interaction, "id", None)
         if not isinstance(interaction_id, str) or not interaction_id.strip():
             raise VeoVideoGenerationError("Gemini Omni did not return a durable interaction ID.")

@@ -3,7 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.adapters.video_generation.veo import VeoVideoGenerator
+from app.adapters.video_generation.veo import (
+    VeoProviderOutcomeUnknownError,
+    VeoVideoGenerationError,
+    VeoVideoGenerator,
+)
 
 
 def _valid_mp4() -> bytes:
@@ -119,3 +123,33 @@ async def test_gemini_omni_rejects_invalid_generation_options():
         await generator.start("Create video", aspect_ratio="7:2")
     with pytest.raises(ValueError, match="resolution"):
         await generator.start("Create video", resolution="8k")
+
+
+@pytest.mark.asyncio
+async def test_gemini_omni_start_timeout_is_classified_as_unknown_outcome():
+    class TimeoutInteractions(FakeInteractions):
+        def create(self, **kwargs):
+            self.create_calls.append(kwargs)
+            raise TimeoutError("response timed out after request send")
+
+    client = FakeClient()
+    client.interactions = TimeoutInteractions()
+    with pytest.raises(VeoProviderOutcomeUnknownError) as caught:
+        await VeoVideoGenerator(client=client).start("Create a short literary video")
+    assert caught.value.code == "PROVIDER_OUTCOME_UNKNOWN"
+    assert "no durable operation ID" in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_gemini_omni_start_clear_client_rejection_is_not_unknown():
+    class RejectedInteractions(FakeInteractions):
+        def create(self, **kwargs):
+            self.create_calls.append(kwargs)
+            error = RuntimeError("bad request")
+            error.status_code = 400
+            raise error
+
+    client = FakeClient()
+    client.interactions = RejectedInteractions()
+    with pytest.raises(VeoVideoGenerationError, match="rejected the video request"):
+        await VeoVideoGenerator(client=client).start("Create a short literary video")
