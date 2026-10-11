@@ -20,6 +20,8 @@ export interface ProductionJob {
     prompt_template: { template_id: string; version_id: string; key: string; version: number; body: string } | null;
     recipe?: { key: string; version: number; recipe_id?: string; version_id?: string; stages: Array<{ key: string; capability_key: string; capability_version: number; configuration?: Record<string, unknown> }> } | null;
     identity?: { identity_id: string; version_id: string; key: string; version: number; definition: { purpose: string; audience: string; voice: string; tone: string; principles: string[]; objectives: string[]; constraints: string[] } } | null;
+    output_contract?: { contract_id: string; version_id: string; key: string; version: number; definition: { artifact_kind: string; mime_type: string; content_mode: string; required_metadata_fields: string[]; max_content_chars: number | null } } | null;
+    policy?: { policy_id: string; version_id: string; key: string; version: number; definition: { min_content_chars: number; max_content_chars: number; required_terms: string[]; forbidden_terms: string[]; allow_urls: boolean } } | null;
     product?: { product_id: string; version_id: string; key: string; version: number; definition: { recipe_key: string; output_contract_key: string; policy_key: string; audience: string; experience: string } } | null;
   };
 }
