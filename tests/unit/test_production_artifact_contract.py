@@ -92,3 +92,13 @@ def test_shared_artifact_contract_requires_post_reference_and_media_storage():
         validate_production_artifact(
             image_without_storage, expected_job_id=job_id, expected_source_knowledge_unit_id=source_id
         )
+
+
+def test_shared_artifact_contract_allows_canonical_post_reuse_across_jobs():
+    expected_job_id, original_job_id, source_id = uuid4(), uuid4(), uuid4()
+    artifact = _artifact(ArtifactKind.POST, original_job_id, source_id)
+    validate_production_artifact(
+        artifact,
+        expected_job_id=expected_job_id,
+        expected_source_knowledge_unit_id=source_id,
+    )
