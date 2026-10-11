@@ -352,9 +352,9 @@ export function ControlPlanePage() {
   const productCompatibility = useMemo(() => {
     if (activeSection !== "products") return null;
     const recipe = publishedRecipes.find((item) => item.key === form.recipe_key);
-    const recipeVersion = recipe?.versions?.find((version) => version.version === recipe.active_version);
+    const recipeVersion = recipe?.versions?.find((version) => version.version === recipe?.active_version);
     const contract = publishedContracts.find((item) => item.key === form.output_contract_key);
-    const contractVersion = contract?.versions?.find((version) => version.version === contract.active_version);
+    const contractVersion = contract?.versions?.find((version) => version.version === contract?.active_version);
     const definition = contractVersion?.definition ?? {};
     const artifactKind = String(definition.artifact_kind ?? "");
     const finalStage = recipeVersion?.stages?.[recipeVersion.stages.length - 1];
@@ -425,8 +425,8 @@ export function ControlPlanePage() {
 
         {activeSection !== "prompts" && <div className="grid gap-3 md:grid-cols-2">
           <Field label="المفتاح" value={form.key} onChange={(value) => updateField("key", value)} disabled={!isNew || busy} placeholder="معرّف ثابت بحروف لاتينية وأرقام وشرطة" />
-          <Field label="الاسم" value={form.name} onChange={(value) => updateField("name", value)} disabled={formDisabled} />
-          <div className="md:col-span-2"><Field label="الغرض" value={form.purpose} onChange={(value) => updateField("purpose", value)} disabled={formDisabled} multiline /></div>
+          <Field label="الاسم" value={form.name} onChange={(value) => updateField("name", value)} disabled={!isNew || busy} />
+          <div className="md:col-span-2"><Field label="الغرض" value={form.purpose} onChange={(value) => updateField("purpose", value)} disabled={!isNew || busy} multiline /></div>
         </div>}
         {activeSection === "prompts" && <div className="grid gap-3 md:grid-cols-2">
           <Field label="المفتاح" value={form.key} onChange={(value) => updateField("key", value)} disabled={!isNew || busy} placeholder="مثل editorial.drafter" />
