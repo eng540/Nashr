@@ -121,3 +121,12 @@ A Gemini TTS adapter and `produce_audio_artifact v1` capability now compose the 
 ## Image provider compatibility correction
 
 The image adapter now uses the documented Gemini image-generation `models.generate_content` endpoint through Nashr's central retry/failover policy, rather than the Interactions API. Its default model is the current GA `gemini-nano-banana-2.1`; the deprecated `gemini-3.1-flash-image` is no longer the default. The dedicated image-model cascade and media-storage settings are documented in `.env.example`.
+
+
+## Shared Production Engine Reliability — follow-up (2026-10-11)
+
+The shared production engine program now has an audit and contract, plus merged code/test increments: PR #108 audit; #109 guarded completion; #110 shared contract; #111 common Artifact result validation; #112 stale recovery reconciliation; #113 ambiguous video-start classification; #114 shared provider-outcome classification for text/image/audio and fal; #115 persisted-Artifact recovery regression test.
+
+CI passed on the PR heads for these merged increments. This statement is not a claim that the latest post-merge `main` run or Railway runtime has been verified. No production provider calls or Telegram publishing were used by these changes.
+
+Remaining acceptance work: operator-visible reconciliation for unknown outcomes, fault-injection around storage/database boundaries, concurrency tests, modality-wide API/UI review visibility, operational metrics/runbook, and separate Railway deployment/runtime verification.
