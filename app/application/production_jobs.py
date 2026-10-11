@@ -25,6 +25,7 @@ from app.application.recipe_engine import (
     build_production_recipe_engine,
 )
 from app.infrastructure.database.models import (
+    ArtifactModel,
     KnowledgeUnitModel,
     PostModel,
     ProductionJobItemModel,
@@ -248,39 +249,128 @@ async def _claim_next_item(job_id: UUID) -> UUID | None:
         return item.id
 
 
+async def _reconcile_stale_item(session: AsyncSession, job_id: UUID, item: ProductionJobItemModel) -> str:
+    """Reconcile durable output/provider state before deciding whether a stale item can rerun."""
+    artifact_row = None
+    if item.artifact_id is not None:
+        artifact_row = (
+            await session.execute(
+                select(ArtifactModel).where(ArtifactModel.id == item.artifact_id)
+            )
+        ).scalar_one_or_none()
+    if artifact_row is None:
+        artifact_row = (
+            await session.execute(
+                select(ArtifactModel)
+                .where(
+                    ArtifactModel.production_job_id == job_id,
+                    ArtifactModel.source_knowledge_unit_id == item.knowledge_unit_id,
+                    ArtifactModel.status == ArtifactStatus.AVAILABLE.value,
+                )
+                .order_by(ArtifactModel.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+    now = datetime.now(timezone.utc)
+    if artifact_row is not None:
+        kind = str(artifact_row.kind)
+        if kind in {ArtifactKind.POST.value, ArtifactKind.TEXT.value}:
+            valid_output = isinstance(artifact_row.content, str) and bool(artifact_row.content.strip())
+        else:
+            mime_prefix = {
+                ArtifactKind.IMAGE.value: "image/",
+                ArtifactKind.VIDEO.value: "video/",
+                ArtifactKind.AUDIO.value: "audio/",
+            }.get(kind)
+            valid_output = (
+                mime_prefix is not None
+                and isinstance(artifact_row.storage_uri, str)
+                and bool(artifact_row.storage_uri.strip())
+                and isinstance(artifact_row.mime_type, str)
+                and artifact_row.mime_type.startswith(mime_prefix)
+            )
+        if artifact_row.status == ArtifactStatus.AVAILABLE.value and valid_output:
+            item.status = ProductionJobItemStatus.COMPLETED.value
+            item.artifact_id = artifact_row.id
+            item.post_id = artifact_row.post_id if kind == ArtifactKind.POST.value else None
+            item.error_code = None
+            item.error_message = None
+            item.completed_at = now
+            item.updated_at = now
+            return "COMPLETED"
+        item.status = ProductionJobItemStatus.FAILED.value
+        item.error_code = "PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED"
+        item.error_message = "A persisted output exists but failed the recovery validity checks; inspect it before retrying."
+        item.updated_at = now
+        return "FAILED"
+
+    if item.provider_operation_name:
+        # Keep the provider handle. The capability must resume/poll this operation;
+        # a terminal FAILED provider operation is the only basis for a new attempt.
+        item.status = ProductionJobItemStatus.PENDING.value
+        item.error_code = "PRODUCTION_RECOVERED_PROVIDER_OPERATION"
+        item.error_message = "Recovered with a persisted provider operation handle; resume that operation before creating another."
+        item.updated_at = now
+        return "PENDING"
+
+    # No durable result and no provider handle: we cannot prove that a paid call did not
+    # start before the process stopped. Hold the item instead of automatically regenerating.
+    item.status = ProductionJobItemStatus.FAILED.value
+    item.error_code = "PROVIDER_OUTCOME_UNKNOWN"
+    item.error_message = "The worker stopped without a persisted result or provider operation handle. Reconcile the provider outcome before retrying to avoid duplicate generation."
+    item.updated_at = now
+    return "FAILED"
+
+
 async def _recover_stale(job_id: UUID) -> None:
     threshold = datetime.now(timezone.utc) - timedelta(seconds=_stale_seconds())
     async with SessionFactory() as session:
-        await session.execute(
-            update(ProductionJobItemModel)
-            .where(
-                ProductionJobItemModel.job_id == job_id,
-                ProductionJobItemModel.status == ProductionJobItemStatus.RUNNING.value,
-                ProductionJobItemModel.updated_at < threshold,
+        job = (
+            await session.execute(
+                select(ProductionJobModel).where(ProductionJobModel.id == job_id).with_for_update()
             )
-            .values(
-                status=ProductionJobItemStatus.PENDING.value,
-                error_code="PRODUCTION_RECOVERED_AFTER_PROCESS_STALE",
-                error_message="Recovered after the previous process stopped before completion.",
-                updated_at=datetime.now(timezone.utc),
+        ).scalar_one_or_none()
+        if job is None or job.status != ProductionJobStatus.RUNNING.value or job.updated_at >= threshold:
+            return
+        stale_items = (
+            await session.execute(
+                select(ProductionJobItemModel)
+                .where(
+                    ProductionJobItemModel.job_id == job_id,
+                    ProductionJobItemModel.status == ProductionJobItemStatus.RUNNING.value,
+                    ProductionJobItemModel.updated_at < threshold,
+                )
+                .with_for_update()
             )
+        ).scalars().all()
+        outcomes = [await _reconcile_stale_item(session, job_id, item) for item in stale_items]
+        has_unknown = any(
+            item.error_code == "PROVIDER_OUTCOME_UNKNOWN"
+            for item in stale_items
         )
-        await session.execute(
-            update(ProductionJobModel)
-            .where(
-                ProductionJobModel.id == job_id,
-                ProductionJobModel.status == ProductionJobStatus.RUNNING.value,
-                ProductionJobModel.updated_at < threshold,
-            )
-            .values(
-                status=ProductionJobStatus.QUEUED.value,
-                current_item_id=None,
-                error_code="PRODUCTION_RECOVERED_AFTER_PROCESS_STALE",
-                error_message="Recovered after the previous process stopped before completion.",
-                updated_at=datetime.now(timezone.utc),
-            )
+        job.status = ProductionJobStatus.QUEUED.value
+        job.current_item_id = None
+        job.error_code = (
+            "PRODUCTION_RECONCILIATION_REQUIRED"
+            if has_unknown
+            else "PRODUCTION_RECOVERED_AFTER_PROCESS_STALE"
         )
+        job.error_message = (
+            "One or more stale items have unknown provider outcomes and were held to prevent duplicate generation."
+            if has_unknown
+            else "Recovered stale items after reconciling persisted outputs and provider operations."
+        )
+        job.updated_at = datetime.now(timezone.utc)
         await session.commit()
+        logger.warning(
+            "event=PRODUCTION_STALE_RECOVERY job_id=%s stale_items=%s completed=%s pending=%s failed=%s",
+            job_id,
+            len(stale_items),
+            outcomes.count("COMPLETED"),
+            outcomes.count("PENDING"),
+            outcomes.count("FAILED"),
+        )
 
 
 async def _update_progress(job_id: UUID, current_item_id: UUID | None = None) -> tuple[int, int, int, int]:
@@ -727,46 +817,23 @@ async def recover_stale_production_jobs() -> list[UUID]:
     threshold = datetime.now(timezone.utc) - timedelta(seconds=_stale_seconds())
     recovered: list[UUID] = []
     async with SessionFactory() as session:
-        stale = (
-            await session.execute(
-                select(ProductionJobModel).where(
-                    ProductionJobModel.status == ProductionJobStatus.RUNNING.value,
-                    ProductionJobModel.updated_at < threshold,
-                )
+        stale_ids = list((await session.execute(
+            select(ProductionJobModel.id).where(
+                ProductionJobModel.status == ProductionJobStatus.RUNNING.value,
+                ProductionJobModel.updated_at < threshold,
             )
-        ).scalars().all()
-        for job in stale:
-            await session.execute(
-                update(ProductionJobItemModel)
-                .where(
-                    ProductionJobItemModel.job_id == job.id,
-                    ProductionJobItemModel.status == ProductionJobItemStatus.RUNNING.value,
-                )
-                .values(
-                    status=ProductionJobItemStatus.PENDING.value,
-                    error_code="PRODUCTION_RECOVERED_AFTER_PROCESS_STALE",
-                    error_message="Recovered after the previous process stopped before completion.",
-                    updated_at=datetime.now(timezone.utc),
-                )
+        )).scalars().all())
+        queued_ids = list((await session.execute(
+            select(ProductionJobModel.id).where(
+                ProductionJobModel.status == ProductionJobStatus.QUEUED.value
             )
-            job.status = ProductionJobStatus.QUEUED.value
-            job.current_item_id = None
-            job.error_code = "PRODUCTION_RECOVERED_AFTER_PROCESS_STALE"
-            job.error_message = "Recovered after the previous process stopped before completion."
-            job.updated_at = datetime.now(timezone.utc)
-            recovered.append(job.id)
-
-        queued = (
-            await session.execute(
-                select(ProductionJobModel).where(
-                    ProductionJobModel.status == ProductionJobStatus.QUEUED.value
-                )
-            )
-        ).scalars().all()
-        for job in queued:
-            if job.id not in recovered:
-                recovered.append(job.id)
-        await session.commit()
+        )).scalars().all())
+    for job_id in stale_ids:
+        await _recover_stale(job_id)
+        recovered.append(job_id)
+    for job_id in queued_ids:
+        if job_id not in recovered:
+            recovered.append(job_id)
     return recovered
 
 
