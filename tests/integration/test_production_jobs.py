@@ -1,14 +1,16 @@
 import asyncio
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 
-from app.application.production_jobs import ProductionJobRunner, create_production_job, resume_production_job
+from app.application.production_jobs import ProductionJobRunner, _complete_item, create_production_job, resume_production_job
 from app.application.control_plane import PromptTemplateService
 from app.application.recipe_control_plane import ProductionRecipeControlPlaneService
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
 from app.application.policy_control_plane import ProductionPolicyControlPlaneService
+from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
@@ -629,3 +631,30 @@ async def test_text_product_generates_reviewable_artifact_without_creating_post(
             select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0])
         )).scalar_one_or_none()
         assert post is None
+
+
+async def test_completion_guard_rejects_item_that_is_no_longer_running():
+    source_id, _, unit_ids = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id)
+        )).scalar_one()
+        item.status = ProductionJobItemStatus.FAILED.value
+        await session.commit()
+
+    now = datetime.now(timezone.utc)
+    artifact = Artifact(
+        id=uuid4(), source_knowledge_unit_id=unit_ids[0], kind=ArtifactKind.TEXT,
+        content="already generated", status=ArtifactStatus.AVAILABLE.value,
+        created_at=now, updated_at=now, production_job_id=job.id,
+    )
+    with pytest.raises(RuntimeError, match="no longer RUNNING"):
+        await _complete_item(job.id, item.id, artifact)
+
+    async with SessionFactory() as session:
+        persisted = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.id == item.id)
+        )).scalar_one()
+        assert persisted.status == ProductionJobItemStatus.FAILED.value
+        assert persisted.artifact_id is None
