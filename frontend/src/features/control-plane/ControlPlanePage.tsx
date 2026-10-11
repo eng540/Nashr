@@ -449,10 +449,10 @@ export function ControlPlanePage() {
           {productCompatibility && <p className={"rounded-xl p-3 text-sm " + (productCompatibility.compatible ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800")}>{productCompatibility.text}</p>}
           {selected && <div className="rounded-xl border p-4"><h4 className="font-bold">مكونات الإصدار</h4><div className="mt-3 grid gap-3 sm:grid-cols-3">
             {[
-              ["الوصفة", form.recipe_key, publishedRecipes.find((item) => item.key === form.recipe_key)],
-              ["السياسة", form.policy_key, publishedPolicies.find((item) => item.key === form.policy_key)],
-              ["عقد المخرج", form.output_contract_key, publishedContracts.find((item) => item.key === form.output_contract_key)],
-            ].map(([label, key, item]) => <div key={String(label)} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="text-xs text-slate-500">{String(label)}</p><strong>{String(item ? item.name : key || "غير محدد")}</strong><p className="mt-1 text-xs">{item ? "الإصدار المنشور v" + item.active_version : "لا يوجد إصدار منشور"}</p></div>)}
+              { label: "الوصفة", key: form.recipe_key, item: publishedRecipes.find((item) => item.key === form.recipe_key) },
+              { label: "السياسة", key: form.policy_key, item: publishedPolicies.find((item) => item.key === form.policy_key) },
+              { label: "عقد المخرج", key: form.output_contract_key, item: publishedContracts.find((item) => item.key === form.output_contract_key) },
+            ].map(({ label, key, item }) => <div key={label} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="text-xs text-slate-500">{label}</p><strong>{item ? item.name : key || "غير محدد"}</strong><p className="mt-1 text-xs">{item ? "الإصدار المنشور v" + item.active_version : "لا يوجد إصدار منشور"}</p></div>)}
           </div><p className="mt-3 text-xs text-slate-500">الهوية التحريرية والتعليمات تُحل عند إنشاء مهمة الإنتاج ولا تُربطان إلزاميًا بالمنتج.</p></div>}
         </div>}
 
