@@ -345,20 +345,23 @@ async def _recover_stale(job_id: UUID) -> None:
             )
         ).scalars().all()
         outcomes = [await _reconcile_stale_item(session, job_id, item) for item in stale_items]
-        has_unknown = any(
-            item.error_code == "PROVIDER_OUTCOME_UNKNOWN"
+        requires_reconciliation = any(
+            item.error_code in {
+                "PROVIDER_OUTCOME_UNKNOWN",
+                "PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED",
+            }
             for item in stale_items
         )
         job.status = ProductionJobStatus.QUEUED.value
         job.current_item_id = None
         job.error_code = (
             "PRODUCTION_RECONCILIATION_REQUIRED"
-            if has_unknown
+            if requires_reconciliation
             else "PRODUCTION_RECOVERED_AFTER_PROCESS_STALE"
         )
         job.error_message = (
             "One or more stale items have unknown provider outcomes and were held to prevent duplicate generation."
-            if has_unknown
+            if requires_reconciliation
             else "Recovered stale items after reconciling persisted outputs and provider operations."
         )
         job.updated_at = datetime.now(timezone.utc)
