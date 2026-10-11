@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.application.artifacts import ensure_post_artifact, find_existing_generic_artifact, persist_generic_artifact
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
-from app.adapters.image_generation.gemini import GeminiImageGenerator
+from app.adapters.image_generation.factory import create_image_generator
 from app.adapters.audio_generation.gemini_tts import GeminiAudioGenerator
 from app.adapters.video_generation.veo import VeoVideoGenerator
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
@@ -159,7 +159,7 @@ class ProduceImageArtifactCapability:
     version = 1
 
     def __init__(self, generator=None, storage_factory=None) -> None:
-        self.generator = generator or GeminiImageGenerator()
+        self.generator = generator
         self.storage_factory = storage_factory or S3ArtifactStorage.from_environment
 
     async def execute(
@@ -225,7 +225,10 @@ class ProduceImageArtifactCapability:
         if style_instructions:
             prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
 
-        generated = await self.generator.generate(
+        # Resolve from the pinned recipe stage configuration (or deployment default).
+        # The provider adapter owns all model-specific API details.
+        generator = self.generator or create_image_generator(context.stage_configuration)
+        generated = await generator.generate(
             prompt,
             aspect_ratio=aspect_ratio,
             image_size=image_size,
@@ -260,6 +263,7 @@ class ProduceImageArtifactCapability:
             metadata={
                 "title": unit.title,
                 "source_name": source_name,
+                "provider": generated.provider,
                 "model": generated.model,
                 "aspect_ratio": aspect_ratio,
                 "image_size": image_size,
