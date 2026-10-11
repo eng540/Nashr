@@ -9,7 +9,7 @@ export interface BookTopic { id: string; position: number; title: string; descri
 export interface BookMap { source_id: string; book: { title: string; description: string }; topics: BookTopic[]; count: number; }
 export interface ProductionJob {
   job_id: string; source_id: string; status: string; scope: ProductionScope;
-  total_items: number; completed_items: number; failed_items: number; pending_items: number;
+  total_items: number; completed_items: number; failed_items: number; pending_items: number; running_items: number; reconciliation_required_items: number;
   current_item_id: string | null; error_code: string | null; error_message: string | null;
   attempts: number; created_at: string; updated_at: string; started_at: string | null; completed_at: string | null;
   progress_percent: number; next_action: "RETRY_FAILED_ITEMS" | "INSPECT_FAILURE" | "WAIT" | "REVIEW_DRAFTS" | "NONE";
