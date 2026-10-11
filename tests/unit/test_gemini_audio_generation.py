@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.adapters.audio_generation.gemini_tts import GeminiAudioGenerationError, GeminiAudioGenerator
+from app.application.provider_errors import ProviderOutcomeUnknownError
 
 
 def _valid_wav_bytes():
@@ -83,3 +84,18 @@ async def test_gemini_tts_rejects_non_wav_bytes_even_when_mime_claims_wav():
     )
     with pytest.raises(GeminiAudioGenerationError, match="invalid WAV"):
         await generator.generate("Valid transcript")
+
+
+@pytest.mark.asyncio
+async def test_gemini_tts_timeout_uses_shared_unknown_outcome_contract():
+    class TimeoutInteractions(FakeInteractions):
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            raise TimeoutError("request timed out after send")
+
+    client = FakeClient(None)
+    client.interactions = TimeoutInteractions(None)
+    generator = GeminiAudioGenerator(client=client, model="test-tts")
+    with pytest.raises(ProviderOutcomeUnknownError) as caught:
+        await generator.generate("نص أدبي للإلقاء")
+    assert caught.value.code == "PROVIDER_OUTCOME_UNKNOWN"
