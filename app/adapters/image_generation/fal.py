@@ -49,7 +49,7 @@ class FalImageGenerator:
     provider_name = "fal"
 
     def __init__(self, model: str | None = None) -> None:
-        self.model = (model or os.getenv("IMAGE_GENERATION_MODEL") or "fal-ai/nano-banana-2").strip()
+        self.model = (model or os.getenv("IMAGE_GENERATION_MODEL") or "fal-ai/flux/schnell").strip()
         if not self.model or len(self.model) > 200 or self.model.startswith("/") or ".." in self.model.split("/"):
             raise ValueError("A valid fal.ai model endpoint ID is required.")
 
@@ -73,10 +73,29 @@ class FalImageGenerator:
             raise FalImageGenerationError("FAL_KEY is required when the fal image provider is selected.")
 
         arguments: dict[str, object] = {"prompt": prompt.strip()}
-        # Keep endpoint-specific request schemas in this adapter. Nano Banana
-        # endpoints share these documented fields; unknown endpoint schemas use
-        # their provider defaults until an explicit mapping is added here.
-        if "nano-banana" in self.model:
+        # Keep endpoint-specific schemas inside this adapter. For the proof-of-production
+        # phase, FLUX.1 Schnell is deliberately capped at roughly 1 megapixel:
+        # fal bills this endpoint per megapixel rounded up to the next MP.
+        if "flux/schnell" in self.model or "flux-1/schnell" in self.model:
+            dimensions = {
+                "1:1": {"width": 768, "height": 768},
+                "3:2": {"width": 960, "height": 640},
+                "2:3": {"width": 640, "height": 960},
+                "4:3": {"width": 896, "height": 672},
+                "3:4": {"width": 672, "height": 896},
+                "5:4": {"width": 896, "height": 720},
+                "4:5": {"width": 720, "height": 896},
+                "16:9": {"width": 1024, "height": 576},
+                "9:16": {"width": 576, "height": 1024},
+                "21:9": {"width": 1024, "height": 440},
+            }
+            arguments.update(
+                image_size=dimensions[aspect_ratio],
+                num_images=1,
+                num_inference_steps=4,
+                output_format="jpeg",
+            )
+        elif "nano-banana" in self.model:
             arguments.update(
                 aspect_ratio=aspect_ratio,
                 resolution=image_size,
