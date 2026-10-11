@@ -141,3 +141,25 @@ Reports must distinguish:
 6. known limitations.
 
 Current limitation: a crash between an external provider accepting a request and Nashr durably recording the operation handle cannot be made exactly-once by local database logic alone. The adapter must support idempotency or lookup, or Nashr must enter an explicit unknown-outcome path instead of blindly retrying. This is a known reliability target, not a solved property claimed by this document.
+
+
+## Implementation status after PR #118 (2026-10-11)
+
+Implemented on `main` through `fdc6c19da6c283491bd1d0f6ad0bb29ff11821a3`:
+- shared Artifact envelope validation before item completion (PR #111);
+- stale recovery reconciles an existing Artifact or preserved provider-operation handle, and holds unknown outcomes (PR #112);
+- ambiguous video start and shared text/image/audio/fal provider errors use `PROVIDER_OUTCOME_UNKNOWN` (PRs #113–#114);
+- persisted Artifact recovery regression test (PR #115);
+- API/UI expose running and reconciliation-held counts and suppress unsafe retry (PR #117);
+- fake-provider timeout regression tests for Gemini text/image/audio (PR #118).
+
+PR CI passed for these increments, and Railway production deployment for commit `fdc6c19da6c283491bd1d0f6ad0bb29ff11821a3` reached `SUCCESS`; service status was `online` with no reported warnings/criticals. This verifies deployment/health only, not live paid production for every modality.
+
+Still not complete:
+1. An explicit operator reconciliation procedure/action that can resolve held unknown outcomes safely.
+2. Fault-injection tests for provider acceptance before operation-handle persistence, storage PUT before Artifact commit, and concurrent resume/claim.
+3. Full review-visibility integration coverage for POST/TEXT/IMAGE/VIDEO/AUDIO.
+4. Verification that private media objects remain readable during/after recovery; current stale reconciliation validates persisted Artifact metadata, not object-store existence.
+5. A complete acceptance matrix and operational runbook/metrics for stale-item age, provider-operation age, unknown outcomes, and orphan storage objects.
+
+No Telegram sends or live provider generation were performed by this reliability work.

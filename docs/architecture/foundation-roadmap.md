@@ -210,9 +210,11 @@ Merged PRs on `main`:
 - #113 — ambiguous video start outcome classification.
 - #114 — shared ambiguous provider outcome classification for text/image/audio and fal image calls.
 - #115 — regression test for persisted Artifact recovery.
+- #117 — API/UI expose RUNNING and unresolved-outcome counts; suppress unsafe retry.
+- #118 — adapter-boundary fake tests for ambiguous text/image/audio provider outcomes.
 
 Next work, in dependency order:
-1. Operator-visible reconciliation workflow for `PROVIDER_OUTCOME_UNKNOWN` and `PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED` items.
+1. Operator reconciliation procedure/action for `PROVIDER_OUTCOME_UNKNOWN` and `PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED` items; UI visibility is implemented, but resolution is not.
 2. Fault injection for object-store/DB crash windows and concurrent resume/claim behavior.
 3. Shared contract integration tests for POST/TEXT/IMAGE/VIDEO/AUDIO and review visibility after reload.
 4. Operational runbook, stale-item metrics, provider operation age, output-storage verification, and exact Railway deployment evidence.
