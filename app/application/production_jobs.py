@@ -18,7 +18,7 @@ from app.domain.production_jobs import (
 )
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.products import ProductionProductDefinition
-from app.domain.artifacts import Artifact, ArtifactKind, validate_production_artifact
+from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus, validate_production_artifact
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST
 from app.application.recipe_engine import (
     ProductionExecutionContext,
@@ -773,6 +773,25 @@ async def resume_production_job(
         raise ValueError("Production job is already running.")
     if job.status == ProductionJobStatus.COMPLETED.value:
         return job
+
+    if retry_failed:
+        unresolved = (
+            await session.execute(
+                select(ProductionJobItemModel.id)
+                .where(
+                    ProductionJobItemModel.job_id == job_id,
+                    ProductionJobItemModel.status == ProductionJobItemStatus.FAILED.value,
+                    ProductionJobItemModel.error_code.in_(
+                        ["PROVIDER_OUTCOME_UNKNOWN", "PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED"]
+                    ),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if unresolved is not None:
+            raise ValueError(
+                "A failed item has an unresolved provider/output outcome; reconcile it before retrying failed items."
+            )
 
     await session.execute(
         update(ProductionJobItemModel)
