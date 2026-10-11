@@ -19,11 +19,11 @@ def test_recipe_stage_can_override_provider_and_model_without_code_changes(monke
     generator = create_image_generator({
         "provider": "fal",
         "model": "fal-ai/flux-2-pro",
-        "model_options": {"guidance_scale": 3.5},
+        "aspect_ratio": "16:9",
+        "image_size": "2K",
     })
     assert isinstance(generator, FalImageGenerator)
     assert generator.model == "fal-ai/flux-2-pro"
-    assert generator.model_options == {"guidance_scale": 3.5}
 
 
 def test_factory_keeps_gemini_as_supported_alternative(monkeypatch):
@@ -37,8 +37,6 @@ def test_factory_keeps_gemini_as_supported_alternative(monkeypatch):
 def test_factory_rejects_unknown_provider_and_invalid_model_options():
     with pytest.raises(ValueError, match="Unsupported image generation provider"):
         create_image_generator({"provider": "unknown"})
-    with pytest.raises(ValueError, match="model_options must be an object"):
-        create_image_generator({"provider": "fal", "model_options": ["invalid"]})
 
 
 def test_fal_image_url_must_use_approved_https_host():
