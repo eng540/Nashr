@@ -1,5 +1,6 @@
 """Composition boundary for selecting an image provider and model."""
 import os
+from collections.abc import Mapping
 
 from app.adapters.image_generation.fal import FalImageGenerator
 from app.adapters.image_generation.gemini import GeminiImageGenerator
