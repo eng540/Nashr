@@ -34,5 +34,4 @@ def test_provider_errors_with_ambiguous_outcome_are_not_safe_to_retry(error):
 )
 def test_known_provider_rejections_are_not_reclassified_as_unknown(error):
     assert not is_ambiguous_provider_error(error)
-    with pytest.raises(RuntimeError):
-        raise_if_provider_outcome_unknown(error, provider="test provider")
+    raise_if_provider_outcome_unknown(error, provider="test provider")
