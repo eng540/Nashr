@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -208,7 +208,7 @@ async def test_production_job_api_exposes_running_and_reconciliation_counts(monk
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         created = await client.post("/production-jobs", json={"source_id": str(source_id), "scope": "SOURCE"})
         assert created.status_code == 202
-        job_id = created.json()["job_id"]
+        job_id = UUID(created.json()["job_id"])
 
         async with SessionFactory() as session:
             job = (await session.execute(
