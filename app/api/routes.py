@@ -213,16 +213,27 @@ def _resolved_context_payload(job: ProductionJobModel) -> dict[str, Any]:
     return {"available": True, "invalid": False, **context}
 
 
-def _production_job_payload(job: ProductionJobModel, pending_items: int | None = None) -> dict[str, Any]:
+def _production_job_payload(
+    job: ProductionJobModel,
+    pending_items: int | None = None,
+    running_items: int = 0,
+    completed_items: int | None = None,
+    failed_items: int | None = None,
+    reconciliation_required_items: int = 0,
+) -> dict[str, Any]:
+    completed = job.completed_items if completed_items is None else completed_items
+    failed = job.failed_items if failed_items is None else failed_items
     return {
         "job_id": str(job.id),
         "source_id": str(job.source_id),
         "status": job.status,
         "scope": job.scope,
         "total_items": job.total_items,
-        "completed_items": job.completed_items,
-        "failed_items": job.failed_items,
-        "pending_items": pending_items if pending_items is not None else max(job.total_items - job.completed_items - job.failed_items, 0),
+        "completed_items": completed,
+        "failed_items": failed,
+        "pending_items": pending_items if pending_items is not None else max(job.total_items - completed - failed - running_items, 0),
+        "running_items": running_items,
+        "reconciliation_required_items": reconciliation_required_items,
         "current_item_id": str(job.current_item_id) if job.current_item_id else None,
         "attempts": job.attempts,
         "error_code": job.error_code,
@@ -232,7 +243,7 @@ def _production_job_payload(job: ProductionJobModel, pending_items: int | None =
         "started_at": job.started_at,
         "completed_at": job.completed_at,
         "progress_percent": (
-            round((job.completed_items + job.failed_items) * 100 / job.total_items)
+            round((completed + failed) * 100 / job.total_items)
             if job.total_items else 100 if job.status in ("COMPLETED", "FAILED") else 0
         ),
         "resolved_prompt": {
@@ -247,7 +258,8 @@ def _production_job_payload(job: ProductionJobModel, pending_items: int | None =
         },
         "resolved_context": _resolved_context_payload(job),
         "next_action": (
-            "RETRY_FAILED_ITEMS" if job.status == "FAILED" and job.failed_items
+            "INSPECT_FAILURE" if reconciliation_required_items
+            else "RETRY_FAILED_ITEMS" if job.status == "FAILED" and failed
             else "INSPECT_FAILURE" if job.status == "FAILED"
             else "WAIT" if job.status in ("QUEUED", "RUNNING")
             else "REVIEW_DRAFTS" if job.status == "COMPLETED"
@@ -257,15 +269,29 @@ def _production_job_payload(job: ProductionJobModel, pending_items: int | None =
 
 
 async def _load_production_job_payload(session: AsyncSession, job: ProductionJobModel) -> dict[str, Any]:
-    pending = int(
-        (await session.execute(
-            select(func.count(ProductionJobItemModel.id)).where(
-                ProductionJobItemModel.job_id == job.id,
-                ProductionJobItemModel.status == "PENDING",
-            )
-        )).scalar_one() or 0
+    rows = (await session.execute(
+        select(ProductionJobItemModel.status, func.count(ProductionJobItemModel.id))
+        .where(ProductionJobItemModel.job_id == job.id)
+        .group_by(ProductionJobItemModel.status)
+    )).all()
+    counts = {str(status): int(count or 0) for status, count in rows}
+    reconciliation_required = int((await session.execute(
+        select(func.count(ProductionJobItemModel.id)).where(
+            ProductionJobItemModel.job_id == job.id,
+            ProductionJobItemModel.status == "FAILED",
+            ProductionJobItemModel.error_code.in_(
+                ["PROVIDER_OUTCOME_UNKNOWN", "PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED"]
+            ),
+        )
+    )).scalar_one() or 0)
+    return _production_job_payload(
+        job,
+        pending_items=counts.get("PENDING", 0),
+        running_items=counts.get("RUNNING", 0),
+        completed_items=counts.get("COMPLETED", 0),
+        failed_items=counts.get("FAILED", 0),
+        reconciliation_required_items=reconciliation_required,
     )
-    return _production_job_payload(job, pending_items=pending)
 
 
 def _book_map_checkpoint_payload(sections: list[BookMapSectionModel]) -> dict[str, Any]:
