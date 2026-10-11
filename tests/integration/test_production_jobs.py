@@ -1,11 +1,11 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 
-from app.application.production_jobs import ProductionJobRunner, _complete_item, create_production_job, resume_production_job
+from app.application.production_jobs import ProductionJobRunner, _complete_item, _recover_stale, create_production_job, resume_production_job
 from app.application.control_plane import PromptTemplateService
 from app.application.recipe_control_plane import ProductionRecipeControlPlaneService
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
@@ -658,3 +658,67 @@ async def test_completion_guard_rejects_item_that_is_no_longer_running():
         )).scalar_one()
         assert persisted.status == ProductionJobItemStatus.FAILED.value
         assert persisted.artifact_id is None
+
+
+async def test_stale_item_without_artifact_or_provider_handle_is_held_for_reconciliation(monkeypatch):
+    monkeypatch.setenv("NASHR_PRODUCTION_STALE_SECONDS", "1")
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id)
+        )).scalar_one()
+        stale_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+        job.status = ProductionJobStatus.RUNNING.value
+        job.updated_at = stale_at
+        item.status = ProductionJobItemStatus.RUNNING.value
+        item.updated_at = stale_at
+        await session.commit()
+
+    await _recover_stale(job.id)
+
+    async with SessionFactory() as session:
+        recovered_job = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+        recovered_item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.id == item.id)
+        )).scalar_one()
+        assert recovered_job.status == ProductionJobStatus.QUEUED.value
+        assert recovered_job.error_code == "PRODUCTION_RECONCILIATION_REQUIRED"
+        assert recovered_item.status == ProductionJobItemStatus.FAILED.value
+        assert recovered_item.error_code == "PROVIDER_OUTCOME_UNKNOWN"
+        assert "before retrying" in recovered_item.error_message
+        with pytest.raises(ValueError, match="unresolved provider/output outcome"):
+            await resume_production_job(session, job.id, retry_failed=True)
+
+
+async def test_stale_item_with_persisted_provider_handle_returns_to_pending_for_resume(monkeypatch):
+    monkeypatch.setenv("NASHR_PRODUCTION_STALE_SECONDS", "1")
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        job = await create_production_job(session, source_id, ProductionScope.SOURCE)
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id)
+        )).scalar_one()
+        stale_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+        job.status = ProductionJobStatus.RUNNING.value
+        job.updated_at = stale_at
+        item.status = ProductionJobItemStatus.RUNNING.value
+        item.provider_name = "google-gemini-omni"
+        item.provider_operation_name = "interaction-123"
+        item.provider_operation_status = "RUNNING"
+        item.provider_operation_updated_at = stale_at
+        item.updated_at = stale_at
+        await session.commit()
+
+    await _recover_stale(job.id)
+
+    async with SessionFactory() as session:
+        recovered_item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.id == item.id)
+        )).scalar_one()
+        assert recovered_item.status == ProductionJobItemStatus.PENDING.value
+        assert recovered_item.provider_operation_name == "interaction-123"
+        assert recovered_item.provider_operation_status == "RUNNING"
+        assert recovered_item.error_code == "PRODUCTION_RECOVERED_PROVIDER_OPERATION"
