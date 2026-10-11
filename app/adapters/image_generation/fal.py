@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.application.image_generation import GeneratedImage
+from app.application.provider_errors import raise_if_provider_outcome_unknown
 
 
 class FalImageGenerationError(RuntimeError):
@@ -108,6 +109,7 @@ class FalImageGenerator:
 
             result = fal_client.subscribe(self.model, arguments=arguments)
         except Exception as exc:
+            raise_if_provider_outcome_unknown(exc, provider="fal.ai image generation")
             raise FalImageGenerationError("fal.ai image generation request failed.") from exc
 
         images = result.get("images") if isinstance(result, dict) else None
@@ -139,6 +141,7 @@ class FalImageGenerator:
         except FalImageGenerationError:
             raise
         except Exception as exc:
+            raise_if_provider_outcome_unknown(exc, provider="fal.ai image retrieval")
             raise FalImageGenerationError("Unable to retrieve the generated fal.ai image.") from exc
 
         content = b"".join(chunks)

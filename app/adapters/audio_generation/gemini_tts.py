@@ -8,6 +8,7 @@ import wave
 from dataclasses import dataclass
 
 from app.adapters.gemini_policy import create_gemini_client
+from app.application.provider_errors import raise_if_provider_outcome_unknown
 
 
 class GeminiAudioGenerationError(RuntimeError):
@@ -59,6 +60,7 @@ class GeminiAudioGenerator:
                 generation_config={"speech_config": [{"voice": voice}]},
             )
         except Exception as exc:
+            raise_if_provider_outcome_unknown(exc, provider="Gemini TTS")
             raise GeminiAudioGenerationError("Gemini TTS request failed.") from exc
 
         audio = getattr(interaction, "output_audio", None)

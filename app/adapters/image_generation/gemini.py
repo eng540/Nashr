@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from app.application.image_generation import GeneratedImage
+from app.application.provider_errors import raise_if_provider_outcome_unknown
 
 from google.genai import types
 
@@ -154,15 +155,19 @@ class GeminiImageGenerator:
             response_modalities=["TEXT", "IMAGE"],
             image_config=types.ImageConfig(aspect_ratio=aspect_ratio, image_size=image_size),
         )
-        response = generate_gemini_content(
-            self.client,
-            contents=prompt,
-            config=config,
-            models=self.models,
-            operation="image_generation",
-            context={"aspect_ratio": aspect_ratio, "image_size": image_size},
-            validator=_require_image_response,
-        )
+        try:
+            response = generate_gemini_content(
+                self.client,
+                contents=prompt,
+                config=config,
+                models=self.models,
+                operation="image_generation",
+                context={"aspect_ratio": aspect_ratio, "image_size": image_size},
+                validator=_require_image_response,
+            )
+        except Exception as exc:
+            raise_if_provider_outcome_unknown(exc, provider="Gemini image generation")
+            raise
         content, mime_type = _image_from_response(response)
         return GeneratedImage(
             content=content,

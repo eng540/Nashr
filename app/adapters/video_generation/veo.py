@@ -5,15 +5,15 @@ import binascii
 import os
 from dataclasses import dataclass
 
+from app.application.provider_errors import ProviderOutcomeUnknownError
+
 
 class VeoVideoGenerationError(RuntimeError):
     """Video generation failed or returned an invalid payload."""
 
 
-class VeoProviderOutcomeUnknownError(RuntimeError):
-    """The provider may have accepted a request but no durable handle was captured."""
-
-    code = "PROVIDER_OUTCOME_UNKNOWN"
+class VeoProviderOutcomeUnknownError(ProviderOutcomeUnknownError):
+    """Video-specific alias for the shared ambiguous provider outcome."""
 
 
 @dataclass(frozen=True)
