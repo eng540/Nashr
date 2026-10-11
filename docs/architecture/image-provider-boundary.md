@@ -32,13 +32,13 @@ Example recipe-stage configuration:
 ```json
 {
   "provider": "fal",
-  "model": "fal-ai/nano-banana-2",
+  "model": "fal-ai/flux/schnell",
   "aspect_ratio": "16:9",
   "image_size": "2K"
 }
 ```
 
-The fal adapter maps the shared options to endpoint-specific request fields inside the adapter. Recipe configuration does not contain provider SDK payloads or arbitrary endpoint-specific options. When a new endpoint needs a different request schema, the change is limited to the selected provider adapter and its tests.
+The default fal adapter uses FLUX.1 Schnell at no more than roughly 1 megapixel per image and maps aspect ratios to bounded dimensions inside the adapter. fal lists FLUX.1 Schnell at $0.003 per megapixel, rounded up to the next megapixel. Other models use their own endpoint-specific request fields inside the adapter. Recipe configuration does not contain provider SDK payloads or arbitrary endpoint-specific options. When a new endpoint needs a different request schema, the change is limited to the selected provider adapter and its tests.
 
 To select fal at deployment level, configure `IMAGE_GENERATION_PROVIDER=fal`, `IMAGE_GENERATION_MODEL=fal-ai/nano-banana-2`, and a secret `FAL_KEY`. The key must remain server-side and must never be exposed to the browser or logged.
 
