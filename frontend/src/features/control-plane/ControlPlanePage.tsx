@@ -66,7 +66,7 @@ function latestVersion(item: ControlItem): Version | undefined {
     ?? [...(item.versions ?? [])].sort((a, b) => b.version - a.version)[0];
 }
 
-function initialForm(section: SectionKey, item?: ControlItem, version?: Version): FormState {
+function initialForm(_section: SectionKey, item?: ControlItem, version?: Version): FormState {
   const definition = version?.definition ?? {};
   const asText = (value: unknown, fallback = ""): string => value == null ? fallback : String(value);
   const asLines = (value: unknown): string => Array.isArray(value) ? value.map(String).join("\n") : "";
