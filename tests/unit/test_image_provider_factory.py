@@ -11,7 +11,7 @@ def test_factory_uses_environment_default_and_can_select_fal(monkeypatch):
     generator = create_image_generator()
     assert isinstance(generator, FalImageGenerator)
     assert generator.provider_name == "fal"
-    assert generator.model == "fal-ai/nano-banana-2"
+    assert generator.model == "fal-ai/flux/schnell"
 
 
 def test_recipe_stage_can_override_provider_and_model_without_code_changes(monkeypatch):
