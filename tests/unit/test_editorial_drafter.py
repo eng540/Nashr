@@ -1,4 +1,5 @@
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
+from app.application.provider_errors import ProviderOutcomeUnknownError
 
 
 class FakeParsed:
@@ -46,3 +47,22 @@ def test_editorial_drafter_attaches_visual_pdf_slice() -> None:
     part = client.models.calls[0]["contents"][2]
     assert part.inline_data.mime_type == "application/pdf"
     assert part.inline_data.data == b"%PDF-visual-slice"
+
+
+def test_editorial_drafter_timeout_uses_shared_unknown_outcome_contract(monkeypatch):
+    monkeypatch.setenv("GEMINI_RETRY_MAX_ATTEMPTS", "1")
+
+    class TimeoutModels(FakeModels):
+        def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            raise TimeoutError("request timed out after send")
+
+    client = FakeClient()
+    client.models = TimeoutModels()
+    drafter = GeminiEditorialDrafter(client=client, model="test-editorial-model")
+    try:
+        drafter._draft_sync("فكرة", "مادة المصدر", "كتاب.pdf", system_prompt="resolved editorial instruction")
+    except ProviderOutcomeUnknownError as exc:
+        assert exc.code == "PROVIDER_OUTCOME_UNKNOWN"
+    else:
+        raise AssertionError("Expected an ambiguous provider outcome to be held")

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.adapters.image_generation.gemini import GeminiImageGenerationError, GeminiImageGenerator
+from app.application.provider_errors import ProviderOutcomeUnknownError
 
 
 class FakeModels:
@@ -107,3 +108,20 @@ async def test_gemini_image_generator_rejects_png_with_corrupt_chunk_crc():
     )
     with pytest.raises(GeminiImageGenerationError, match="do not match"):
         await generator.generate("Create an image")
+
+
+@pytest.mark.asyncio
+async def test_gemini_image_timeout_uses_shared_unknown_outcome_contract(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("GEMINI_RETRY_MAX_ATTEMPTS", "1")
+
+    class TimeoutModels(FakeModels):
+        def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            raise TimeoutError("request timed out after send")
+
+    client = FakeClient(_response())
+    client.models = TimeoutModels(None)
+    generator = GeminiImageGenerator(client=client, model="test-image-model")
+    with pytest.raises(ProviderOutcomeUnknownError) as caught:
+        await generator.generate("Create an image")
+    assert caught.value.code == "PROVIDER_OUTCOME_UNKNOWN"
