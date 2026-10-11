@@ -38,7 +38,7 @@ Example recipe-stage configuration:
 }
 ```
 
-The fal adapter maps the shared options to the Nano Banana endpoint schema. For other fal endpoints, `model_options` carries endpoint-specific options without spreading those fields into application or domain code.
+The fal adapter maps the shared options to endpoint-specific request fields inside the adapter. Recipe configuration does not contain provider SDK payloads or arbitrary endpoint-specific options. When a new endpoint needs a different request schema, the change is limited to the selected provider adapter and its tests.
 
 To select fal at deployment level, configure `IMAGE_GENERATION_PROVIDER=fal`, `IMAGE_GENERATION_MODEL=fal-ai/nano-banana-2`, and a secret `FAL_KEY`. The key must remain server-side and must never be exposed to the browser or logged.
 
