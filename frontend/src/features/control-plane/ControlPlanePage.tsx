@@ -223,6 +223,10 @@ export function ControlPlanePage() {
     try {
       const entries = await Promise.all(sections.map(async (entry) => [entry.key, await request<ControlItem[]>(entry.endpoint)] as const));
       const next = Object.fromEntries(entries) as Record<SectionKey, ControlItem[]>;
+      if (sectionToSelect === "prompts" && keyToSelect) {
+        const prompt = await request<ControlItem>(sections.find((entry) => entry.key === "prompts")!.endpoint + "/" + encodeURIComponent(keyToSelect));
+        next.prompts = next.prompts.map((item) => item.key === keyToSelect ? prompt : item);
+      }
       setItemsBySection(next);
       const found = keyToSelect ? next[sectionToSelect].find((item) => item.key === keyToSelect) : undefined;
       const version = found?.versions?.find((candidate) => candidate.version === versionToSelect) ?? (found ? latestVersion(found) : undefined);
@@ -250,11 +254,21 @@ export function ControlPlanePage() {
     setError("");
   }
 
-  function selectItem(item: ControlItem) {
-    const version = latestVersion(item);
-    setSelectedKey(item.key);
+  async function selectItem(item: ControlItem) {
+    let resolved = item;
+    if (activeSection === "prompts") {
+      try {
+        resolved = await request<ControlItem>(section.endpoint + "/" + encodeURIComponent(item.key));
+        setItemsBySection((current) => ({ ...current, prompts: current.prompts.map((entry) => entry.key === resolved.key ? resolved : entry) }));
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "تعذر تحميل القالب.");
+        return;
+      }
+    }
+    const version = latestVersion(resolved);
+    setSelectedKey(resolved.key);
     setSelectedVersionNumber(version?.version ?? null);
-    setForm(initialForm(activeSection, item, version));
+    setForm(initialForm(activeSection, resolved, version));
     setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "" }]);
     setMessage("");
     setError("");
