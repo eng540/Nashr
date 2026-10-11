@@ -452,11 +452,11 @@ export function ControlPlanePage() {
         {activeSection === "products" && <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
             <SelectField label="الوصفة المنشورة" value={form.recipe_key} onChange={(value) => updateField("recipe_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر وصفة..." }, ...publishedRecipes.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+              options={[{ value: "", label: "اختر وصفة..." }, ...(!publishedRecipes.some((item) => item.key === form.recipe_key) && form.recipe_key ? [{ value: form.recipe_key, label: form.recipe_key + " · لا يوجد إصدار منشور" }] : []), ...publishedRecipes.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
             <SelectField label="السياسة المنشورة" value={form.policy_key} onChange={(value) => updateField("policy_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر سياسة..." }, ...publishedPolicies.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+              options={[{ value: "", label: "اختر سياسة..." }, ...(!publishedPolicies.some((item) => item.key === form.policy_key) && form.policy_key ? [{ value: form.policy_key, label: form.policy_key + " · لا يوجد إصدار منشور" }] : []), ...publishedPolicies.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
             <SelectField label="عقد المخرج المنشور" value={form.output_contract_key} onChange={(value) => updateField("output_contract_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر عقد مخرج..." }, ...publishedContracts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+              options={[{ value: "", label: "اختر عقد مخرج..." }, ...(!publishedContracts.some((item) => item.key === form.output_contract_key) && form.output_contract_key ? [{ value: form.output_contract_key, label: form.output_contract_key + " · لا يوجد إصدار منشور" }] : []), ...publishedContracts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
             <Field label="الجمهور" value={form.audience} onChange={(value) => updateField("audience", value)} disabled={formDisabled} />
             <div className="md:col-span-2"><Field label="تجربة المنتج" value={form.experience} onChange={(value) => updateField("experience", value)} disabled={formDisabled} multiline /></div>
           </div>
