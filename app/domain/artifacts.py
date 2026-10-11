@@ -79,6 +79,10 @@ def validate_production_artifact(
             raise ValueError("Inline production Artifact must not use a storage URI.")
         if kind == ArtifactKind.POST and artifact.post_id is None:
             raise ValueError("POST Artifact must reference its canonical Post.")
+        if kind == ArtifactKind.TEXT and artifact.mime_type != "text/plain":
+            raise ValueError("TEXT Artifact MIME type must be text/plain.")
+        if kind == ArtifactKind.POST and artifact.mime_type not in {None, "text/plain"}:
+            raise ValueError("POST Artifact MIME type must be text/plain.")
         return
 
     expected_mime_prefix = {
