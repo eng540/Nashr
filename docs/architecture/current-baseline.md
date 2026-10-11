@@ -152,7 +152,7 @@ PR #55 أغلق الفجوة المحددة في Gate بعد PR #53:
 
 ## Shared Production Engine Reliability — status update (2026-10-11)
 
-Current reviewed main after PR #118: `fdc6c19da6c283491bd1d0f6ad0bb29ff11821a3`.
+Current reviewed main after PR #120: `f24e8b1a99351c4acd6c59db4e40ff77db937478`.
 
 The production platform now includes registered POST/TEXT/IMAGE/VIDEO/AUDIO capabilities, a generic Artifact persistence/review path, pinned production context, private media storage, and durable provider-operation fields. The shared reliability work is progressing through small PRs rather than replacing the engine or adding a new queue.
 
@@ -167,9 +167,10 @@ Merged reliability changes:
 - PR #115: regression test proves a persisted Artifact is reused after a simulated crash before item completion; CI passed on the PR head.
 - PR #117: API/UI expose RUNNING and reconciliation-held counts; the Content Factory warns and hides retry when outcome is unresolved; CI passed on the PR head.
 - PR #118: fake-provider timeout regressions for Gemini text/image/audio prove the shared unknown-outcome error contract; CI passed on the PR head.
+- PR #120: item API and Content Factory show which outputs are held for reconciliation, including provider/operation diagnostics where recorded; retry remains disabled. CI passed on the PR head.
 
 Remaining before calling the engine fully accepted:
-1. Add an operator-visible reconciliation workflow for held unknown outcomes; currently the safe behavior blocks retry and requires reconciliation rather than providing a complete UI action.
+1. Add a controlled operator resolution procedure/action for held unknown outcomes; the UI now identifies the exact items and available provider metadata, but intentionally has no unsafe retry override.
 2. Expand fault-injection coverage for object upload / DB persistence split, provider success with lost output, and concurrent resume across all capabilities.
 3. Verify review visibility for every modality after page reload; the job progress/counts and unsafe-retry warning are now implemented, but all modality review paths still need acceptance coverage.
 4. Add/verify production observability and runbook metrics for stale items and unknown provider outcomes.
