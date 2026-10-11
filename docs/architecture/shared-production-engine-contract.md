@@ -163,3 +163,12 @@ Still not complete:
 5. A complete acceptance matrix and operational runbook/metrics for stale-item age, provider-operation age, unknown outcomes, and orphan storage objects.
 
 No Telegram sends or live provider generation were performed by this reliability work.
+
+
+## Reconciliation diagnostics status after PR #120
+
+The item API now includes provider name, operation handle/status, and operation update time (where recorded). The Content Factory displays item-level diagnostics for `PROVIDER_OUTCOME_UNKNOWN` and `PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED` and hides the retry action while such items exist. This is a read-only diagnostic workflow; it does not clear the error or restart the item.
+
+Latest reviewed main: `f24e8b1a99351c4acd6c59db4e40ff77db937478`. PR #120 CI passed and Railway deployment reached `SUCCESS`; the Nashr service is `online` with no Railway warning/critical issues reported at the time of verification.
+
+The remaining control is deliberate: an action that clears an unknown-outcome hold must be authorized, require evidence/notes, re-check for an existing Artifact/provider operation, and leave an audit trail. Do not add a public unauthenticated retry override.

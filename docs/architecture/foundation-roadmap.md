@@ -214,7 +214,7 @@ Merged PRs on `main`:
 - #118 — adapter-boundary fake tests for ambiguous text/image/audio provider outcomes.
 
 Next work, in dependency order:
-1. Operator reconciliation procedure/action for `PROVIDER_OUTCOME_UNKNOWN` and `PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED` items; UI visibility is implemented, but resolution is not.
+1. Controlled operator reconciliation procedure/action for `PROVIDER_OUTCOME_UNKNOWN` and `PRODUCTION_OUTPUT_RECONCILIATION_REQUIRED` items; UI now exposes item-level details, but resolution is not implemented because it needs an authenticated/controlled mutation path.
 2. Fault injection for object-store/DB crash windows and concurrent resume/claim behavior.
 3. Shared contract integration tests for POST/TEXT/IMAGE/VIDEO/AUDIO and review visibility after reload.
 4. Operational runbook, stale-item metrics, provider operation age, output-storage verification, and exact Railway deployment evidence.
