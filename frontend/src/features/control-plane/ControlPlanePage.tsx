@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type SectionKey = "products" | "recipes" | "identities" | "policies" | "output-contracts" | "prompts";
 type Stage = { key: string; capability_key: string; capability_version: number; configuration?: Record<string, unknown> };
@@ -363,20 +363,7 @@ export function ControlPlanePage() {
     } finally { setBusy(false); }
   }
 
-  const productCompatibility = useMemo(() => {
-    if (activeSection !== "products") return null;
-    const recipe = publishedRecipes.find((item) => item.key === form.recipe_key);
-    const recipeVersion = recipe?.versions?.find((version) => version.version === recipe?.active_version);
-    const contract = publishedContracts.find((item) => item.key === form.output_contract_key);
-    const contractVersion = contract?.versions?.find((version) => version.version === contract?.active_version);
-    const definition = contractVersion?.definition ?? {};
-    const artifactKind = String(definition.artifact_kind ?? "");
-    const finalStage = recipeVersion?.stages?.[recipeVersion.stages.length - 1];
-    const expected: Record<string, string> = { produce_post: "POST", produce_text_artifact: "TEXT", produce_image_artifact: "IMAGE", produce_video_artifact: "VIDEO", produce_audio_artifact: "AUDIO" };
-    if (!recipe || !contract || !publishedPolicies.some((item) => item.key === form.policy_key)) return { compatible: false, text: "اختر وصفة وعقد مخرج وسياسة منشورة وصالحة." };
-    if (!finalStage || expected[finalStage.capability_key] !== artifactKind) return { compatible: false, text: "يبدو أن نوع المخرج لا يطابق قدرة المرحلة الأخيرة؛ سيحسم الخادم صلاحية النشر." };
-    return { compatible: true, text: "المكونات المنشورة متوافقة مبدئيًا. التحقق النهائي والنشر من اختصاص الخادم." };
-  }, [activeSection, form.recipe_key, form.output_contract_key, form.policy_key, publishedRecipes, publishedContracts, publishedPolicies]);
+
 
   const versionIsDraft = selectedVersion?.status === "DRAFT";
   const formDisabled = busy || Boolean(selected && selectedVersion && selectedVersion.status !== "DRAFT");
@@ -460,7 +447,7 @@ export function ControlPlanePage() {
             <Field label="الجمهور" value={form.audience} onChange={(value) => updateField("audience", value)} disabled={formDisabled} />
             <div className="md:col-span-2"><Field label="تجربة المنتج" value={form.experience} onChange={(value) => updateField("experience", value)} disabled={formDisabled} multiline /></div>
           </div>
-          {productCompatibility && <p className={"rounded-xl p-3 text-sm " + (productCompatibility.compatible ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800")}>{productCompatibility.text}</p>}
+          <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">يتحقق الخادم من توافق الوصفة والسياسة وعقد المخرج عند النشر، وتظهر هنا رسالة السبب إذا رفض التحقق.</p>
           {selected && <div className="rounded-xl border p-4"><h4 className="font-bold">مكونات الإصدار</h4><div className="mt-3 grid gap-3 sm:grid-cols-3">
             {[
               { label: "الوصفة", key: form.recipe_key, item: publishedRecipes.find((item) => item.key === form.recipe_key) },
