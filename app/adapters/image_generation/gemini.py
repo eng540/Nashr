@@ -5,8 +5,9 @@ import binascii
 import os
 import zlib
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
+
+from app.application.image_generation import GeneratedImage
 
 from google.genai import types
 
@@ -24,13 +25,6 @@ class GeminiImageGenerationError(GeminiOperationError):
 
     def __init__(self, message: str, cause: Exception | None = None) -> None:
         super().__init__(GEMINI_EMPTY_RESPONSE, message, True, cause)
-
-
-@dataclass(frozen=True)
-class GeneratedImage:
-    content: bytes
-    mime_type: str
-    model: str
 
 
 def _parts(response: Any) -> Sequence[Any]:
@@ -174,4 +168,5 @@ class GeminiImageGenerator:
             content=content,
             mime_type=mime_type,
             model=str(getattr(response, "model_version", None) or self.model),
+            provider="gemini",
         )
