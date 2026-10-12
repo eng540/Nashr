@@ -104,6 +104,12 @@ test("React factory reuses the same production claim key after an ambiguous netw
 test("manual production selection includes materials that have no topic assignment", async ({ page }) => {
   const sourceId = "41111111-1111-4111-8111-111111111111";
   const materialId = "42222222-2222-4222-8222-222222222222";
+  const materials = Array.from({ length: 25 }, (_, index) => ({
+    id: index === 0 ? materialId : `42222222-2222-4222-8222-${String(index + 1).padStart(12, "0")}`,
+    position: index + 1,
+    title: index === 0 ? "Unassigned Material" : `Unassigned Material ${index + 1}`,
+    kind: "TEXT", content: "Source text", has_post: false, topic_id: null,
+  }));
   const productKey = "E2E_POST_PRODUCT";
   await page.addInitScript(() => { window.localStorage.clear(); });
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
@@ -122,14 +128,13 @@ test("manual production selection includes materials that have no topic assignme
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/book-map")) {
       return route.fulfill({ json: {
-        source_id: sourceId, book: { title: "Legacy Book", description: "" }, count: 1,
-        topics: [],
-        materials: [{ id: materialId, position: 1, title: "Unassigned Material", kind: "TEXT", content: "Source text", has_post: false, topic_id: null }],
+        source_id: sourceId, book: { title: "Legacy Book", description: "" }, count: materials.length,
+        topics: [], materials,
       } });
     }
     return route.fulfill({ json: [{
       id: sourceId, filename: "legacy.pdf", book_title: "Legacy Book", status: "READY",
-      material_count: 1, produced_count: 0, pending_count: 1,
+      material_count: materials.length, produced_count: 0, pending_count: materials.length,
     }] });
   });
   await page.goto("/posts/workspace");
@@ -139,8 +144,14 @@ test("manual production selection includes materials that have no topic assignme
   await page.getByLabel("نطاق الإنتاج").selectOption("SELECTION");
   await page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" }).click();
   await expect(page.getByText("Unassigned Material")).toBeVisible();
-  await page.getByText("Unassigned Material").locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
+  await expect(page.getByLabel("بحث مواد الإنتاج")).toBeVisible();
+  await expect(page.getByText("صفحة 1 من 2")).toBeVisible();
+  await page.getByText("Unassigned Material", { exact: true }).locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
   await expect(page.getByText("1 مادة محددة")).toBeVisible();
+  await page.getByRole("button", { name: "التالي", exact: true }).click();
+  await expect(page.getByText("Unassigned Material 25", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 مادة محددة")).toBeVisible();
+  await page.getByRole("button", { name: "السابق", exact: true }).click();
   await expect(page.getByTestId("production-summary")).toContainText("1");
 
   await page.getByRole("button", { name: /بنك المحتوى والمراجعة/ }).click();
