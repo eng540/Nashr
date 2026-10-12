@@ -34,13 +34,24 @@ export interface ProductionJobItem {
   created_at: string; updated_at: string; completed_at: string | null;
 }
 export interface ProductionJobItemsPage { job_id: string; total: number; limit: number; offset: number; items: ProductionJobItem[]; }
+export interface ProductionLineFilter { product_key?: string; product_version?: number; identity_key?: string; identity_version?: number; recipe_key?: string; recipe_version?: number; }
+function lineQuery(filter?: ProductionLineFilter): string {
+  if (!filter) return "";
+  const params = new URLSearchParams();
+  for (const key of ["product_key", "product_version", "identity_key", "identity_version", "recipe_key", "recipe_version"] as const) {
+    const value = filter[key];
+    if (value !== undefined && value !== null && value !== "") params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
 export const productionJobsApi = {
-  sources(): Promise<SourceSummary[]> { return get<SourceSummary[]>("/sources"); },
+  sources(filter?: ProductionLineFilter): Promise<SourceSummary[]> { return get<SourceSummary[]>(`/sources${lineQuery(filter)}`); },
   identities(): Promise<EditorialIdentityOption[]> { return get<EditorialIdentityOption[]>("/api/control/identities"); },
   recipes(): Promise<ProductionRecipeOption[]> { return get<ProductionRecipeOption[]>("/api/control/recipes"); },
   products(): Promise<ProductionProductOption[]> { return get<ProductionProductOption[]>("/api/control/products"); },
-  bookMap(sourceId: string): Promise<BookMap> { return get<BookMap>(`/sources/${sourceId}/book-map`); },
-  create(input: { source_id: string; scope: ProductionScope; topic_id?: string; knowledge_unit_ids?: string[]; identity_key?: string; recipe_key?: string; product_key?: string }): Promise<ProductionJob> { return post<ProductionJob>("/production-jobs", input); },
+  bookMap(sourceId: string, filter?: ProductionLineFilter): Promise<BookMap> { return get<BookMap>(`/sources/${sourceId}/book-map${lineQuery(filter)}`); },
+  create(input: { source_id: string; scope: ProductionScope; topic_id?: string; knowledge_unit_ids?: string[]; identity_key?: string; recipe_key?: string; product_key?: string; idempotency_key?: string }): Promise<ProductionJob> { return post<ProductionJob>("/production-jobs", input); },
   get(jobId: string): Promise<ProductionJob> { return get<ProductionJob>(`/production-jobs/${jobId}`); },
   items(jobId: string, offset = 0, limit = 20): Promise<ProductionJobItemsPage> {
     return get<ProductionJobItemsPage>(`/production-jobs/${jobId}/items?offset=${offset}&limit=${limit}`);
