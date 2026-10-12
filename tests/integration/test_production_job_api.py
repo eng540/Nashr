@@ -454,7 +454,7 @@ async def test_source_production_state_ignores_legacy_and_other_product_posts():
 
 
 @pytest.mark.asyncio
-async def test_legacy_job_without_claim_remains_readable_without_fabricated_claim():
+async def test_legacy_job_without_claim_remains_readable_and_resumable(monkeypatch: pytest.MonkeyPatch):
     source_id, _ = await _api_fixture()
     legacy_job_id = uuid4()
     async with SessionFactory() as session:
@@ -462,7 +462,7 @@ async def test_legacy_job_without_claim_remains_readable_without_fabricated_clai
             id=legacy_job_id,
             source_id=source_id,
             scope="SOURCE",
-            status="COMPLETED",
+            status="FAILED",
             total_items=0,
         )
         session.add(legacy_job)
@@ -475,9 +475,21 @@ async def test_legacy_job_without_claim_remains_readable_without_fabricated_clai
             select(ProductionClaimModel).where(ProductionClaimModel.source_id == source_id)
         )).scalars().all() == []
 
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(f"/production-jobs/{legacy_job_id}")
+        resumed = await client.post(
+            f"/production-jobs/{legacy_job_id}/resume",
+            json={"retry_failed": False},
+        )
     assert response.status_code == 200
     assert response.json()["job_id"] == str(legacy_job_id)
     assert response.json()["claim_id"] is None
+    assert resumed.status_code == 202
+    assert resumed.json()["job_id"] == str(legacy_job_id)
+    assert resumed.json()["claim_id"] is None
+    assert resumed.json()["status"] == "QUEUED"
