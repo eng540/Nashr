@@ -110,3 +110,34 @@ async def test_generic_artifact_rejects_contract_mismatch_before_persistence():
     )
     with pytest.raises(ValueError, match="does not match"):
         await persist_generic_artifact(None, artifact, resolved_context=context)
+
+
+
+@pytest.mark.asyncio
+async def test_same_artifact_kind_is_independent_across_explicit_claims():
+    now = datetime.now(timezone.utc)
+    context = contract_context("TEXT", "text/plain", "INLINE", ["language"], 500)
+    async with SessionFactory() as session:
+        source_id, unit_id = await _source_unit(session)
+        first_job_id, second_job_id = uuid4(), uuid4()
+        session.add_all([
+            ProductionJobModel(id=first_job_id, source_id=source_id, scope="SOURCE", status="COMPLETED", total_items=1),
+            ProductionJobModel(id=second_job_id, source_id=source_id, scope="SOURCE", status="COMPLETED", total_items=1),
+        ])
+        await session.commit()
+        first = await persist_generic_artifact(session, Artifact(
+            id=uuid4(), source_knowledge_unit_id=unit_id, kind=ArtifactKind.TEXT,
+            content="First explicit claim", status=ArtifactStatus.AVAILABLE.value,
+            created_at=now, updated_at=now, mime_type="text/plain",
+            production_job_id=first_job_id, metadata={"language": "ar"},
+        ), resolved_context=context)
+        second = await persist_generic_artifact(session, Artifact(
+            id=uuid4(), source_knowledge_unit_id=unit_id, kind=ArtifactKind.TEXT,
+            content="Second explicit claim", status=ArtifactStatus.AVAILABLE.value,
+            created_at=now, updated_at=now, mime_type="text/plain",
+            production_job_id=second_job_id, metadata={"language": "ar"},
+        ), resolved_context=context)
+        assert first.id != second.id
+        assert first.content == "First explicit claim"
+        assert second.content == "Second explicit claim"
+        assert first.production_job_id != second.production_job_id
