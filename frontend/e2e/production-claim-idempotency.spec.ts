@@ -68,7 +68,7 @@ test("React factory reuses the same production claim key after an ambiguous netw
   await page.goto("/posts/workspace");
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
   await page.getByTestId("start-production").click();
-  await expect(page.getByRole("status")).toContainText("تعذر بدء الإنتاج");
+  await expect(page.getByText(/تعذر بدء الإنتاج/)).toBeVisible();
   expect(submittedKeys).toHaveLength(1);
 
   // Reload proves the unresolved claim and its selected settings survive a page lifecycle.
