@@ -635,10 +635,28 @@ async def get_book_map(
         .order_by(DiscoveryJobModel.created_at.desc())
     )
     job = job_result.scalars().first()
+    all_materials = [
+        {
+            "id": str(unit.id),
+            "position": unit.position,
+            "title": unit.title,
+            "kind": unit.kind,
+            "content": unit.content,
+            "has_post": unit.id in produced_ids,
+            "topic_id": str(unit.topic_id) if unit.topic_id else None,
+            "source_reference": unit.source_reference,
+            "discovery_page_start": unit.discovery_page_start,
+            "discovery_page_end": unit.discovery_page_end,
+        }
+        for unit in sorted(units, key=lambda item: item.position)
+    ]
     return {
         "source_id": str(source_id),
         "book": {"title": source.book_title or source.filename, "description": source.book_description or ""},
         "topics": [_topic_payload(topic, grouped[topic.id], produced_ids) for topic in topics],
+        # Keep a flat, source-authoritative material list as well as the topic grouping.
+        # Legacy/manual materials may have no topic_id and must remain selectable.
+        "materials": all_materials,
         "count": len(units),
         "job": _job_payload(job) if job else None,
     }
