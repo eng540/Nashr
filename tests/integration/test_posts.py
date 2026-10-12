@@ -201,6 +201,8 @@ async def test_independent_posts_keep_review_and_publication_references_separate
         second = await review.reject(session, second.id, "Rejected independently")
 
         schedule = ScheduleModel(id=uuid4(), name="Independent post schedule", status="DRAFT", timezone="UTC")
+        session.add(schedule)
+        await session.commit()
         schedule_item = ScheduleItemModel(
             id=uuid4(), schedule_id=schedule.id, post_id=first.id, position=1,
             scheduled_at=datetime.now(timezone.utc), status="PENDING",
@@ -209,7 +211,7 @@ async def test_independent_posts_keep_review_and_publication_references_separate
             id=uuid4(), knowledge_unit_id=unit_id, post_id=first.id, platform="telegram",
             destination="test-destination", content=first.content, status="DRAFT",
         )
-        session.add_all([schedule, schedule_item, publication])
+        session.add_all([schedule_item, publication])
         await session.commit()
 
         persisted_posts = {
