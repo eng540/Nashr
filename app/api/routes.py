@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -63,6 +65,7 @@ class ProductionJobRequest(BaseModel):
     recipe_key: str = Field(default="BOOK_TO_TELEGRAM_POST", min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     product_key: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     identity_key: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class ProductionJobResumeRequest(BaseModel):
@@ -575,6 +578,10 @@ async def create_production_job_route(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     try:
+        request_payload = payload.model_dump(mode="json", exclude={"idempotency_key"})
+        request_fingerprint = hashlib.sha256(
+            json.dumps(request_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
         job = await create_production_job(
             session,
             payload.source_id,
@@ -584,6 +591,8 @@ async def create_production_job_route(
             recipe_key=payload.recipe_key,
             identity_key=payload.identity_key,
             product_key=payload.product_key,
+            idempotency_key=payload.idempotency_key,
+            request_fingerprint=request_fingerprint if payload.idempotency_key is not None else None,
         )
         background_tasks.add_task(run_production_job, job.id)
         return await _load_production_job_payload(session, job)
