@@ -1,66 +1,66 @@
-# ADR 014 — Production Claim and Execution Identity
+# ADR 014 — Separate Production Claim and Execution Identity
 
-- Decision: retain the unified `ProductionJobModel` aggregate for this implementation; the merge gate remains open until the PR's latest CI is green and reviewed.
+- Decision: implement a first-class `ProductionClaimModel` and a distinct `ProductionJobModel` execution record.
+- Status: Implemented in PR #125; merge gate remains open until CI on the final commit succeeds and the changes are reviewed.
 - Date: 2026-10-12
-- Scope: PR #125
 
 ## Context
 
-A source material is reusable knowledge, not a one-time production slot. The same material may produce multiple outputs across products, identities, recipes, and intentional repeat runs. Replaying an HTTP request after a timeout must not create duplicate work, while a deliberate new claim must be able to create independent output even when every production setting matches a prior claim.
+A production request is durable user intent. Its HTTP delivery may be repeated after a timeout, and a deliberate new request may have exactly the same settings while still requiring independent output. The request identity must therefore not be the execution identity, nor a hash of production settings.
 
-Legacy posts and artifacts may not have trustworthy production-context provenance. Missing provenance remains unknown rather than being inferred from current Control Plane settings.
+Legacy jobs, posts, and artifacts may lack trustworthy claim or production-context provenance. Missing provenance remains unknown rather than being inferred.
 
-## Decision: one durable claim/execution aggregate, not a separate Claim table
+## Decision and responsibilities
 
-In the current lifecycle, a production request creates one durable `ProductionJobModel` row, and that row represents both (a) the user's production claim and (b) the long-lived execution aggregate that processes it. This is a deliberate unified model, not a claim that the two concepts are identical in every possible future architecture.
+### ProductionClaimModel — durable request/claim identity
 
-A separate `ProductionClaimModel` would currently be a wrapper around one job: the system has no independent claim lifecycle, no supported operation that creates a second job execution for one claim, and no separate execution-history records. Adding a claim table now would introduce a foreign key, backfill, consistency rules, and another object to resolve without enabling a current workflow that the job aggregate cannot express. The choice is therefore to avoid a shape-only layer and make the boundary/limitations explicit.
+Each explicit production request creates a row in `production_claims` with its own UUID. It stores source and scope, the optional HTTP `idempotency_key`, the canonical `request_fingerprint`, request payload when available, and creation time.
 
-The model's identifiers have these meanings:
+- `ProductionClaimModel.id` is the permanent claim identity.
+- `idempotency_key` and `request_fingerprint` live on the claim, not on the execution.
+- The unique key constraint ensures at most one claim owns an idempotency key.
+- Same key and same fingerprint resolve to the same claim and its linked job.
+- Same key and a different fingerprint are rejected.
+- A new explicit request uses a fresh key (or no key) and creates a new claim even when settings match.
 
-- **Claim and execution aggregate identity:** `ProductionJobModel.id`. It is durable and identifies the work aggregate created for one explicit claim. It is not a settings hash and is never reused for a later intentional claim.
-- **HTTP request replay identity:** `idempotency_key` identifies a delivery of a request. `request_fingerprint` binds that key to the canonical request payload. The same key and fingerprint return the same job; the same key with a different fingerprint is rejected. A new explicit claim uses a fresh key, even if the payload is otherwise identical.
-- **Per-material execution state:** `ProductionJobItemModel.id` identifies a durable work item within the aggregate. It tracks attempts, provider operation/reconciliation state, and references to completed outputs. Resume/retry updates this existing item/job; it does not create a new claim or discard completed output references.
-- **Output identity:** every Post and Artifact has its own primary key and lifecycle. Posts have independent review/approval/rejection and exact schedule/publication references; generic Artifacts are not forced through the Post lifecycle.
+### ProductionJobModel — execution identity and state
 
-## Explicit limits of the unified model
+Each newly created claim currently has one execution job. `ProductionJobModel.id` is an independent UUID and `ProductionJobModel.claim_id` is a unique nullable foreign key to the claim. The unique relationship expresses the current one-job-per-claim cardinality without claiming that job ID is the claim ID.
 
-This design does **not** currently support:
+The job owns execution status, attempts, timestamps, pinned prompt/context, and item collection. Resume/retry operates on this same job and its existing items. Completed item/output references and pinned context are preserved; existing reconciliation guards still block unsafe regeneration when a provider outcome is unknown.
 
-1. One claim owning multiple separately identified `ProductionJobModel` executions or an append-only history of execution generations.
-2. Independently restarting/fanning out one material into several same-kind output slots within the same claim.
-3. A separate business-claim lifecycle (cancel/expire/authorize a claim independently of its execution aggregate).
+A one-to-one relationship is sufficient for the current scope. Multiple execution generations per claim are not introduced. If that requirement appears, the relationship can deliberately become one-to-many with explicit generation semantics.
 
-Retry/resume is intentionally an operation on the original job and its existing items. A deliberate rerun—even with identical settings—is a new claim and a new job. If requirements later demand any of the three cases above, introduce a first-class claim entity with one-to-many execution records and migrate the replay key/fingerprint to the claim; do not simulate that separation by renaming fields or by deleting uniqueness constraints.
+## Database and historical compatibility
 
-## Database constraints
+Migration `0042_separate_production_claim.py` creates the claims table and adds nullable `production_jobs.claim_id`.
 
-Keep these constraints as intentional per-claim concurrency/retry guards:
+- Existing jobs are assigned a claim only when both an idempotency key and request fingerprint were already persisted; the migration creates a new claim UUID independent of the job UUID.
+- Legacy jobs without that evidence remain intact with `claim_id = NULL`. No historical claim, request payload, or provenance is fabricated for them.
+- Read/status and resume paths continue to address the original job ID and do not require a claim ID, so legacy jobs remain readable and recoverable.
+- The unique nullable `claim_id` constraint permits legacy nulls while preventing two execution jobs from being attached to one claim.
+- Post, schedule, publication, artifact, and production-item identities and foreign-key relationships remain intact.
 
-- `uq_production_jobs_idempotency_key`: one durable job owns a request replay key.
-- `uq_production_job_items_job_knowledge_unit`: one work item per source material within one claim/job.
-- `uq_artifacts_job_source_kind`: at most one Artifact of a given kind for a source material within one claim/job.
-- `uq_posts_job_knowledge_unit`: at most one canonical Post for a material within one claim/job; different jobs can produce independent Posts for that material.
+The migration downgrade restores replay fields from persisted claims where possible. It does not delete or merge posts or execution items.
 
-A second intentional output of the same kind is supported in a new explicit claim/job. Multiple same-kind outputs for the same material *inside one claim* require a stable output-slot/stage identity and safe conflict handling first; dropping uniqueness alone is unsafe.
+## Output and completion semantics
 
-## NEEDS / DONE semantics
+Posts and Artifacts retain independent IDs and lifecycles. Review, approval, rejection, schedules, and publications continue to reference the exact Post ID. Existing per-job constraints remain:
 
-The current Post Bank completion count is specifically a **Post-completion indicator**. It counts Posts only when their owning job has a persisted, matching resolved product/version, recipe/version, and identity/version context. It does not treat an Artifact as a completed text Post, and it does not infer a line from a legacy Post without reliable provenance. This prevents cross-product and cross-identity contamination.
+- `uq_production_job_items_job_knowledge_unit`: one work item per source material per execution.
+- `uq_artifacts_job_source_kind`: at most one Artifact of a kind per material per execution.
+- `uq_posts_job_knowledge_unit`: at most one canonical Post per material per execution.
 
-This indicator is not a universal completion metric for every artifact kind. An image/audio/video product must use an artifact-kind/output-contract-aware indicator before its UI can claim that those non-Post outputs are complete. Do not reuse the Post count as a generic multi-output completion count. Previous outputs remain available in their respective banks.
+Independent claims/jobs can create independent outputs of the same kind. Multiple same-kind output slots for the same material inside one claim/job are **not** supported until a stable output-slot/stage identity, safe uniqueness constraint, and corresponding tests are implemented. Dropping a constraint alone is not acceptable.
 
-Because the current UI does not select an existing claim by ID, a deliberate repeat run is started explicitly as a new claim; it is never inferred from matching settings. The `ALL` view is the route to intentionally repeat work already produced by the selected line.
+Post Bank `NEEDS / DONE` remains specifically a Post-completion indicator. It matches persisted, trustworthy product/version, recipe/version, and identity/version context; it does not infer a line for legacy Posts and does not count Audio/Image/Video Artifacts as completed text Posts. Other output types require an artifact-kind/output-contract-aware completion indicator.
 
-## Retry and concurrency rules
+## Acceptance rules
 
-- Same idempotency key + same request fingerprint: return the original job.
-- Same idempotency key + different fingerprint: reject the request.
-- Concurrent same-key submissions: the unique constraint elects one owner; the losing request resolves to that same job after the conflict is handled.
-- New explicit claim: fresh idempotency key and new job, even if all production settings match.
-- Resume/retry: operate on the original job and its pending/failed items; completed item/output references and the pinned resolved context remain intact.
-- CI acceptance must not send to Telegram, perform paid generation, or touch Railway.
-
-## Historical-data compatibility
-
-The migration adds nullable replay/provenance fields and retains legacy rows. Rows without a production job or a persisted resolved context are not assigned fabricated historical provenance. Post review and schedule/publication references remain attached to the exact Post ID.
+1. Same idempotency key + same fingerprint returns the same claim and job.
+2. Same idempotency key + different fingerprint is rejected.
+3. Concurrent same-key requests converge on one claim/job through database uniqueness and conflict recovery.
+4. A new explicit claim with identical settings gets distinct claim and job UUIDs.
+5. Resume/retry operates on the original job and preserves completed outputs and pinned context.
+6. CI must cover migrations, backend, frontend typecheck/unit/build, and Playwright.
+7. No Railway operations, paid generation, or Telegram sends are part of this acceptance gate.
