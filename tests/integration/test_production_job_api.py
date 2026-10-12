@@ -268,3 +268,52 @@ async def test_production_job_items_api_exposes_provider_reconciliation_fields()
         assert item_payload["provider_operation_name"] is None
         assert "provider_operation_status" in item_payload
     monkeypatch.undo()
+
+
+
+@pytest.mark.asyncio
+async def test_production_claim_idempotency_replays_same_job(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    payload = {
+        "source_id": str(source_id),
+        "scope": "SOURCE",
+        "idempotency_key": "same-request-key",
+    }
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/production-jobs", json=payload)
+        replay = await client.post("/production-jobs", json=payload)
+        assert first.status_code == 202
+        assert replay.status_code == 202
+        assert replay.json()["job_id"] == first.json()["job_id"]
+
+
+@pytest.mark.asyncio
+async def test_production_claim_idempotency_rejects_key_reuse_for_different_request(monkeypatch: pytest.MonkeyPatch):
+    source_id, unit_ids = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "idempotency_key": "reused-request-key",
+        })
+        conflict = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SELECTION",
+            "knowledge_unit_ids": [str(unit_ids[0])],
+            "idempotency_key": "reused-request-key",
+        })
+        assert first.status_code == 202
+        assert conflict.status_code == 400
+        assert "different production request" in conflict.json()["detail"]
