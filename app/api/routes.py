@@ -229,6 +229,7 @@ def _production_job_payload(
     failed = job.failed_items if failed_items is None else failed_items
     return {
         "job_id": str(job.id),
+        "claim_id": str(job.claim_id) if job.claim_id else None,
         "source_id": str(job.source_id),
         "status": job.status,
         "scope": job.scope,
