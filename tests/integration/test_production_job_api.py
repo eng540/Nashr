@@ -395,6 +395,7 @@ async def test_source_production_state_ignores_legacy_and_other_product_posts():
                 },
             ),
         ])
+        await session.commit()
         session.add_all([
             PostModel(id=uuid4(), knowledge_unit_id=unit_ids[0], production_job_id=selected_job_id, content="Line A post", status="DRAFT"),
             PostModel(id=uuid4(), knowledge_unit_id=unit_ids[1], production_job_id=other_job_id, content="Line B post", status="DRAFT"),
