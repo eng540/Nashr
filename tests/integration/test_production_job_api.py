@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID, uuid4
 
 import httpx
@@ -6,7 +7,7 @@ from sqlalchemy import select
 
 from app.main import app
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, ProductionJobItemModel, ProductionJobModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -343,3 +344,89 @@ async def test_same_settings_with_new_claim_key_creates_new_job(monkeypatch: pyt
         assert first.status_code == 202
         assert second.status_code == 202
         assert second.json()["job_id"] != first.json()["job_id"]
+
+
+
+@pytest.mark.asyncio
+async def test_same_idempotency_key_is_atomic_under_concurrent_submissions(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = {
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "idempotency_key": "concurrent-same-claim",
+        }
+        first, second = await asyncio.gather(
+            client.post("/production-jobs", json=payload),
+            client.post("/production-jobs", json=payload),
+        )
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert first.json()["job_id"] == second.json()["job_id"]
+
+
+@pytest.mark.asyncio
+async def test_source_production_state_ignores_legacy_and_other_product_posts():
+    source_id, unit_ids = await _api_fixture()
+    async with SessionFactory() as session:
+        selected_job_id = uuid4()
+        other_job_id = uuid4()
+        session.add_all([
+            ProductionJobModel(
+                id=selected_job_id, source_id=source_id, scope="SOURCE", status="COMPLETED",
+                total_items=1, resolved_context={
+                    "product": {"key": "LINE_A", "version": 1},
+                    "identity": {"key": "IDENTITY_A", "version": 1},
+                    "recipe": {"key": "RECIPE_A", "version": 2},
+                },
+            ),
+            ProductionJobModel(
+                id=other_job_id, source_id=source_id, scope="SOURCE", status="COMPLETED",
+                total_items=1, resolved_context={
+                    "product": {"key": "LINE_B", "version": 1},
+                    "identity": {"key": "IDENTITY_A", "version": 1},
+                    "recipe": {"key": "RECIPE_A", "version": 2},
+                },
+            ),
+        ])
+        session.add_all([
+            PostModel(id=uuid4(), knowledge_unit_id=unit_ids[0], production_job_id=selected_job_id, content="Line A post", status="DRAFT"),
+            PostModel(id=uuid4(), knowledge_unit_id=unit_ids[1], production_job_id=other_job_id, content="Line B post", status="DRAFT"),
+            PostModel(id=uuid4(), knowledge_unit_id=unit_ids[1], content="Legacy post without provenance", status="DRAFT"),
+        ])
+        await session.commit()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        matching = await client.get(
+            "/sources",
+            params={
+                "product_key": "LINE_A", "product_version": 1,
+                "identity_key": "IDENTITY_A", "identity_version": 1,
+                "recipe_key": "RECIPE_A", "recipe_version": 2,
+            },
+        )
+        assert matching.status_code == 200
+        source = next(item for item in matching.json() if item["id"] == str(source_id))
+        assert source["material_count"] == 2
+        assert source["produced_count"] == 1
+        assert source["pending_count"] == 1
+
+        other_identity = await client.get(
+            "/sources",
+            params={
+                "product_key": "LINE_A", "product_version": 1,
+                "identity_key": "IDENTITY_B", "identity_version": 1,
+                "recipe_key": "RECIPE_A", "recipe_version": 2,
+            },
+        )
+        assert other_identity.status_code == 200
+        source = next(item for item in other_identity.json() if item["id"] == str(source_id))
+        assert source["produced_count"] == 0
+        assert source["pending_count"] == 2
