@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.main import app
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionClaimModel, ProductionJobItemModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -292,6 +292,8 @@ async def test_production_claim_idempotency_replays_same_job(monkeypatch: pytest
         assert first.status_code == 202
         assert replay.status_code == 202
         assert replay.json()["job_id"] == first.json()["job_id"]
+        assert replay.json()["claim_id"] == first.json()["claim_id"]
+        assert replay.json()["claim_id"] != replay.json()["job_id"]
 
 
 @pytest.mark.asyncio
@@ -344,6 +346,9 @@ async def test_same_settings_with_new_claim_key_creates_new_job(monkeypatch: pyt
         assert first.status_code == 202
         assert second.status_code == 202
         assert second.json()["job_id"] != first.json()["job_id"]
+        assert second.json()["claim_id"] != first.json()["claim_id"]
+        assert first.json()["claim_id"] != first.json()["job_id"]
+        assert second.json()["claim_id"] != second.json()["job_id"]
 
 
 
@@ -369,6 +374,7 @@ async def test_same_idempotency_key_is_atomic_under_concurrent_submissions(monke
         assert first.status_code == 202
         assert second.status_code == 202
         assert first.json()["job_id"] == second.json()["job_id"]
+        assert first.json()["claim_id"] == second.json()["claim_id"]
 
 
 @pytest.mark.asyncio
@@ -431,3 +437,33 @@ async def test_source_production_state_ignores_legacy_and_other_product_posts():
         source = next(item for item in other_identity.json() if item["id"] == str(source_id))
         assert source["produced_count"] == 0
         assert source["pending_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_legacy_job_without_claim_remains_readable_without_fabricated_claim():
+    source_id, _ = await _api_fixture()
+    legacy_job_id = uuid4()
+    async with SessionFactory() as session:
+        legacy_job = ProductionJobModel(
+            id=legacy_job_id,
+            source_id=source_id,
+            scope="SOURCE",
+            status="COMPLETED",
+            total_items=0,
+        )
+        session.add(legacy_job)
+        await session.commit()
+        persisted = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == legacy_job_id)
+        )).scalar_one()
+        assert persisted.claim_id is None
+        assert (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.source_id == source_id)
+        )).scalars().all() == []
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/production-jobs/{legacy_job_id}")
+    assert response.status_code == 200
+    assert response.json()["job_id"] == str(legacy_job_id)
+    assert response.json()["claim_id"] is None
