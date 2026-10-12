@@ -7,8 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.main import app
+from app.api.routes import _job_payload
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionClaimModel, ProductionJobItemModel, ProductionJobModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, DiscoveryJobModel, KnowledgeUnitModel, PostModel, ProductionClaimModel, ProductionJobItemModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -521,3 +522,26 @@ async def test_book_map_returns_source_materials_without_topic_assignment():
     assert len(payload["materials"]) == 1
     assert payload["materials"][0]["id"] == str(material_id)
     assert payload["materials"][0]["topic_id"] is None
+
+
+
+def test_discovery_job_payload_does_not_require_production_claim_fields():
+    job = DiscoveryJobModel(
+        id=uuid4(),
+        source_id=uuid4(),
+        status="RUNNING",
+        stage="DISCOVERING",
+        topics_total=3,
+        topics_completed=1,
+        chunks_total=4,
+        chunks_completed=2,
+        materials_discovered=5,
+    )
+
+    payload = _job_payload(job)
+
+    assert payload["job_id"] == str(job.id)
+    assert payload["source_id"] == str(job.source_id)
+    assert payload["status"] == "RUNNING"
+    assert payload["topics_completed"] == 1
+    assert "claim_id" not in payload
