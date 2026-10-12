@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.main import app
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
@@ -297,7 +298,7 @@ async def test_production_claim_idempotency_replays_same_job(monkeypatch: pytest
 
     async with SessionFactory() as session:
         claim = (await session.execute(
-            select(ProductionClaimModel).where(ProductionClaimModel.id == UUID(first.json()["claim_id"]))
+            select(ProductionClaimModel).options(selectinload(ProductionClaimModel.job)).where(ProductionClaimModel.id == UUID(first.json()["claim_id"]))
         )).scalar_one()
         job = (await session.execute(
             select(ProductionJobModel).where(ProductionJobModel.id == UUID(first.json()["job_id"]))
