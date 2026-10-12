@@ -317,3 +317,29 @@ async def test_production_claim_idempotency_rejects_key_reuse_for_different_requ
         assert first.status_code == 202
         assert conflict.status_code == 400
         assert "different production request" in conflict.json()["detail"]
+
+
+
+@pytest.mark.asyncio
+async def test_same_settings_with_new_claim_key_creates_new_job(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "idempotency_key": "explicit-claim-one",
+        })
+        second = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "idempotency_key": "explicit-claim-two",
+        })
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert second.json()["job_id"] != first.json()["job_id"]
