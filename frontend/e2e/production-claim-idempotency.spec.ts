@@ -68,6 +68,7 @@ test("React factory reuses the same production claim key after an ambiguous netw
 
   await page.goto("/posts/workspace");
   await expect(page.getByLabel("المنتج")).toBeVisible();
+  await page.getByLabel("المنتج").selectOption(productKey);
   await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
   await expect(page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" })).toBeEnabled();
