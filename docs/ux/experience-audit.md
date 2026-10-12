@@ -176,3 +176,20 @@
 
 
 اختيار المواد في PR #127 أضيف إليه البحث بالعنوان، والفلترة بنوع المادة، وترقيم الصفحات، وتحديد الصفحة وإلغاء تحديدها ومسح التحديد. يوضح العرض بقاء العناصر المختارة خارج المرشح الحالي. هذه الإضافة غير مدمجة؛ راجع أحدث CI في سجل التنفيذ قبل اعتمادها.
+
+
+## 11. Follow-up correction — wizard dependency order (2026-10-12)
+
+A review of PR #127 found a confirmed sequencing defect in the first implementation: the final review step still rendered the topic selector and the manual-material picker. That forced scope choices to happen during review, contrary to the target flow.
+
+The implementation now places the topic selector and all SELECTION controls (type filter, title search, pagination, page selection/deselection, and retained cross-filter selection) in **step 2: source and scope**. Step 3 is explicitly **“مراجعة إعداد الإنتاج”** and contains the review summary, edit-back action, and explicit start action only.
+
+Transition readiness is derived from shared predicates rather than divergent inline checks:
+- Product and identity options must load successfully; the product and selected identity must be active, and the product's configured recipe must have an active version.
+- The source must be selected from current valid source options and its book map must load successfully.
+- SOURCE requires a non-empty actual source material list; TOPIC requires a valid topic belonging to the selected book with materials; SELECTION requires at least one selected ID and every selected ID must belong to the current source.
+- Loading/error states block review and start. Failed option queries expose retry actions.
+
+The review summary includes product, identity, source, scope, actual scope count, and selected material IDs for SELECTION. The create request is assembled from the same validated state and retains pending idempotency behavior for ambiguous responses. No API or backend contract changed.
+
+Playwright coverage now exercises SOURCE, TOPIC, and SELECTION, asserts the intercepted POST payload, and checks linked plus unassigned materials and retained selections across search/type filters/pages. See implementation-log.md for commit and CI evidence. Manual visual verification on real mobile viewports and RTL remains outstanding.
