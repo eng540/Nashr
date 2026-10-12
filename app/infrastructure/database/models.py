@@ -141,7 +141,7 @@ class ProductionClaimModel(Base):
     scope: Mapped[str] = mapped_column(String(30), nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    request_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    request_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     job: Mapped["ProductionJobModel | None"] = relationship(back_populates="claim", uselist=False)
 
