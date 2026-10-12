@@ -1585,7 +1585,10 @@ async def publish_telegram(
             "published_at": publication.published_at,
         }
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from excdef _production_job_payload(
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _production_job_payload(
     job: ProductionJobModel,
     pending_items: int | None = None,
     running_items: int = 0,
