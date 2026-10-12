@@ -93,6 +93,8 @@ export function PostBankPage() {
   const [productKey, setProductKey] = useState(() => pendingRequestFromStorage()?.product_key ?? "ARABIC_LITERATURE_TELEGRAM_POST");
   const [productionMode, setProductionMode] = useState<"ALL" | "NEEDS" | "DONE">(() => pendingRequestFromStorage() ? "ALL" : "NEEDS");
   const [productionKind, setProductionKind] = useState("");
+  const [productionMaterialQuery, setProductionMaterialQuery] = useState("");
+  const [productionMaterialPage, setProductionMaterialPage] = useState(0);
   const [scope, setScope] = useState<ProductionScope>(() => pendingRequestFromStorage()?.scope ?? "SOURCE");
   const [productionTopicId, setProductionTopicId] = useState(() => pendingRequestFromStorage()?.topic_id ?? "");
   const [materialIds, setMaterialIds] = useState<string[]>(() => pendingRequestFromStorage()?.knowledge_unit_ids ?? []);
@@ -195,7 +197,11 @@ export function PostBankPage() {
     : scope === "TOPIC"
       ? visibleTopics.find((t) => t.id === productionTopicId)?.materials ?? []
       : sourceMaterials;
-  const materials = allProductionMaterials.filter((material) => (!isPostProduct || productionMode === "ALL" || productionMode === "NEEDS" && !material.has_post || productionMode === "DONE" && material.has_post) && (!productionKind || material.kind === productionKind));
+  const materials = allProductionMaterials.filter((material) => (!isPostProduct || productionMode === "ALL" || productionMode === "NEEDS" && !material.has_post || productionMode === "DONE" && material.has_post) && (!productionKind || material.kind === productionKind) && (!productionMaterialQuery.trim() || material.title.toLocaleLowerCase().includes(productionMaterialQuery.trim().toLocaleLowerCase())));
+  const materialPageCount = Math.max(1, Math.ceil(materials.length / 20));
+  const materialPageItems = materials.slice(productionMaterialPage * 20, (productionMaterialPage + 1) * 20);
+  const currentMaterialPageIds = materialPageItems.map((material) => material.id);
+  const allCurrentMaterialPageSelected = currentMaterialPageIds.length > 0 && currentMaterialPageIds.every((id) => materialIds.includes(id));
   const selectedTopic = topics.find((topic) => topic.id === productionTopicId);
   const scopeMaterialCount = scope === "SOURCE" ? sourceMaterials.length : scope === "TOPIC" ? (selectedTopic?.materials.length ?? 0) : materialIds.filter((id) => sourceMaterials.some((material) => material.id === id)).length;
   const productionKinds = Array.from(new Set(allProductionMaterials.map((material) => material.kind).filter((kind): kind is string => Boolean(kind)))).sort();
@@ -214,6 +220,7 @@ export function PostBankPage() {
   const loadBank = () => { setPage(0); setSelected([]); setHasLoaded(true); };
   const clearFilters = () => { setFilterSourceId(ALL_SOURCES); setTopicId(""); setKind(""); setStatus(""); setSort("created"); setQueryInput(""); setQuery(""); setPage(0); setSelected([]); setSearchParams({}); };
   const toggleCurrentPage = (checked: boolean) => setSelected((current) => checked ? Array.from(new Set([...current, ...currentPageIds])) : current.filter((id) => !currentPageIds.includes(id)));
+  const toggleMaterialPageSelection = (checked: boolean) => setMaterialIds((current) => checked ? Array.from(new Set([...current, ...currentMaterialPageIds])) : current.filter((id) => !currentMaterialPageIds.includes(id)));
 
   return <section data-testid="post-bank-workspace" className="space-y-6">
     <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold text-indigo-600">Workspace 02</p><h2 className="mt-1 text-3xl font-bold">مصنع المنشورات</h2><p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">حوّل المواد إلى منشورات، ثم راجعها واعتمدها قبل نقلها إلى مساحة النشر.</p></div><Link to="/publishing" className="rounded-xl border px-4 py-2 text-sm font-semibold">مساحة النشر</Link></header>
@@ -260,7 +267,36 @@ export function PostBankPage() {
       {productionStep >= 2 && bookMap.isError && <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">تعذر تحميل محاور ومواد الكتاب. تحقق من الاتصال ثم أعد اختيار الكتاب.</p>}
       {productionStep >= 2 && scope === "SOURCE" && bookMap.isSuccess && scopeMaterialCount === 0 && <p role="status" className="mt-3 rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">لا توجد مواد ضمن هذا النطاق؛ اختر مصدرًا أو نطاقًا آخر قبل المتابعة.</p>}
       {productionStep === 3 && scope === "TOPIC" && bookMap.isSuccess && visibleTopics.length === 0 && <p role="status" className="mt-3 rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">{topics.length === 0 ? "لم تُكتشف محاور لهذا الكتاب بعد. يمكنك اختيار المواد المتاحة يدويًا، أو إكمال اكتشاف الكتاب أولًا." : "لا توجد محاور تطابق حالة الإنتاج الحالية. غيّر حالة الإنتاج إلى «كل الكتب» لعرض جميع المحاور."}</p>}
-      {productionStep === 3 && scope === "SELECTION" && <div className="mt-4"><label className="text-sm font-semibold">نوع المادة<select aria-label="نوع المادة للإنتاج" value={productionKind} onChange={(e) => setProductionKind(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الأنواع المتاحة</option>{productionKinds.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><div className="mt-3 max-h-64 overflow-auto rounded-xl border">{bookMap.isLoading ? <p role="status" className="p-3 text-sm text-slate-500">جارٍ تحميل مواد الكتاب...</p> : bookMap.isError ? <p role="alert" className="p-3 text-sm text-rose-700">تعذر تحميل مواد الكتاب.</p> : materials.length ? materials.map((m) => <label key={m.id} className="flex gap-3 border-b p-3"><input type="checkbox" checked={materialIds.includes(m.id)} onChange={(e) => setMaterialIds(toggleSelection(materialIds, m.id, e.target.checked))}/><span><strong>{m.title}</strong><span className="block text-xs text-slate-500">{m.kind || "بدون نوع"}{m.topic_id ? " · ضمن محور" : " · غير مصنّفة ضمن محور"}</span></span></label>) : <p className="p-3 text-sm text-slate-500">لا توجد مواد متاحة لهذا الكتاب ضمن حالة الإنتاج ونوع المادة المحددين.</p>}</div></div>}
+      {productionStep === 3 && scope === "SELECTION" && <div className="mt-4 space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-semibold">نوع المادة
+            <select aria-label="نوع المادة للإنتاج" value={productionKind} onChange={(e) => { setProductionKind(e.target.value); setProductionMaterialPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal">
+              <option value="">كل الأنواع المتاحة</option>{productionKinds.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label className="text-sm font-semibold">البحث في المواد
+            <input aria-label="بحث مواد الإنتاج" value={productionMaterialQuery} onChange={(e) => { setProductionMaterialQuery(e.target.value); setProductionMaterialPage(0); }} placeholder="ابحث بعنوان المادة..." className="mt-2 w-full rounded-xl border p-3 font-normal" />
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 p-3">
+          <span className="text-sm font-semibold">{materialIds.length} مادة محددة{materialIds.some((id) => !materials.some((material) => material.id === id)) ? " · توجد اختيارات محفوظة خارج الفلتر الحالي" : ""}</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => toggleMaterialPageSelection(!allCurrentMaterialPageSelected)} disabled={!materialPageItems.length} className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40">{allCurrentMaterialPageSelected ? "إلغاء تحديد الصفحة" : "تحديد الصفحة"}</button>
+            <button type="button" onClick={() => setMaterialIds([])} disabled={!materialIds.length} className="rounded-lg border bg-white px-3 py-2 text-sm disabled:opacity-40">مسح التحديد</button>
+          </div>
+        </div>
+        <div className="max-h-80 overflow-auto rounded-xl border">
+          {bookMap.isLoading ? <p role="status" className="p-3 text-sm text-slate-500">جارٍ تحميل مواد الكتاب...</p> : bookMap.isError ? <p role="alert" className="p-3 text-sm text-rose-700">تعذر تحميل مواد الكتاب.</p> : materialPageItems.length ? materialPageItems.map((m) => <label key={m.id} className="flex gap-3 border-b p-3">
+            <input type="checkbox" checked={materialIds.includes(m.id)} onChange={(e) => setMaterialIds(toggleSelection(materialIds, m.id, e.target.checked))}/>
+            <span><strong>{m.title}</strong><span className="block text-xs text-slate-500">{m.kind || "بدون نوع"}{m.topic_id ? " · ضمن محور" : " · غير مصنّفة ضمن محور"}</span></span>
+          </label>) : <p className="p-3 text-sm text-slate-500">{materials.length ? "لا توجد مواد في هذه الصفحة." : "لا توجد مواد تطابق البحث والفلاتر الحالية."}</p>}
+        </div>
+        {materials.length > 20 && <nav aria-label="صفحات مواد الإنتاج" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+          <button type="button" onClick={() => setProductionMaterialPage((page) => Math.max(0, page - 1))} disabled={productionMaterialPage === 0 || bookMap.isFetching} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">السابق</button>
+          <span className="text-sm font-semibold">صفحة {productionMaterialPage + 1} من {materialPageCount} · {materials.length} مادة مطابقة</span>
+          <button type="button" onClick={() => setProductionMaterialPage((page) => Math.min(materialPageCount - 1, page + 1))} disabled={productionMaterialPage >= materialPageCount - 1 || bookMap.isFetching} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">التالي</button>
+        </nav>}
+      </div>}
       {productionStep < 3 && <div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={() => setProductionStep((step) => step === 1 ? 2 : 3)} disabled={productionStep === 1 ? !(products.isSuccess && availableProducts.some((product) => product.key === productKey)) : !productionSourceId || !bookMap.isSuccess || bookMap.isError || (scope === "SOURCE" && scopeMaterialCount === 0)} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">{productionStep === 1 ? "متابعة إلى اختيار المصدر" : "متابعة إلى مراجعة الإعدادات"}</button>{productionStep === 2 && <button type="button" onClick={() => setProductionStep(1)} className="rounded-xl border px-4 py-3 text-sm font-semibold">رجوع إلى المنتج</button>}</div>}
       {productionStep === 3 && <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4" data-testid="production-summary"><h4 className="font-bold">ملخص إعداد الإنتاج</h4><dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">المنتج</dt><dd className="mt-1 font-semibold">{selectedProduct?.name ?? productKey}</dd></div><div><dt className="text-slate-500">الكتاب</dt><dd className="mt-1 font-semibold">{productionSources.find((source) => source.id === productionSourceId)?.book_title || productionSources.find((source) => source.id === productionSourceId)?.filename || "—"}</dd></div><div><dt className="text-slate-500">النطاق</dt><dd className="mt-1 font-semibold">{scope === "SOURCE" ? "الكتاب كاملًا" : scope === "TOPIC" ? `محور: ${visibleTopics.find((topic) => topic.id === productionTopicId)?.title ?? "غير محدد"}` : "مواد محددة"}</dd></div><div><dt className="text-slate-500">المواد الداخلة في الطلب</dt><dd className="mt-1 font-semibold">{!bookMap.isSuccess ? "لم يكتمل تحميل العدد" : scopeMaterialCount}</dd></div></dl><p className="mt-3 text-xs leading-6 text-slate-600">{scope === "SOURCE" ? "سيشمل الطلب جميع المواد المرتبطة بهذا الكتاب وفق نطاق المصدر في الخادم، وليس المواد الظاهرة فقط بعد مرشحات الواجهة." : scope === "TOPIC" ? "سيشمل الطلب المواد المرتبطة بالمحور المختار من هذا الكتاب." : "سيشمل الطلب المواد المحددة صراحةً فقط."} لن يبدأ أي إنتاج حتى تضغط زر البدء أدناه.</p><button type="button" onClick={() => setProductionStep(2)} className="mt-3 rounded-lg border bg-white px-3 py-2 text-sm font-semibold">تعديل المصدر والنطاق</button></div>}
       {productionStep === 3 && <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="start-production" type="button" onClick={() => {
