@@ -2,12 +2,51 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useEffect, useMemo, useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
-import { productionJobsApi, type ProductionScope } from "../../shared/api/productionJobsApi";
+import { productionJobsApi, type ProductionLineFilter, type ProductionScope, type ProductionProductOption, type EditorialIdentityOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
 import { GenericArtifactReviewPanel } from "../artifacts/GenericArtifactReviewPanel";
 import { toggleSelection } from "../../shared/utils/selection";
 
 const PAGE_SIZE = 30;
 const ALL_SOURCES = "ALL";
+const PENDING_CLAIM_STORAGE_KEY = "nashr.pending-production-claim.v1";
+type PendingClaim = { key: string; payload: string };
+type CreateProductionRequest = { source_id: string; scope: ProductionScope; topic_id?: string; knowledge_unit_ids?: string[]; identity_key?: string; product_key?: string; idempotency_key: string };
+
+function productionLineFilter(products: ProductionProductOption[] | undefined, identities: EditorialIdentityOption[] | undefined, recipes: ProductionRecipeOption[] | undefined, productKey: string, identityKey: string): ProductionLineFilter {
+  const product = products?.find((item) => item.key === productKey);
+  const productVersion = product?.versions.find((version) => version.version === product.active_version);
+  const recipeKey = productVersion?.definition.recipe_key;
+  const recipe = recipes?.find((item) => item.key === recipeKey);
+  const identity = identities?.find((item) => item.key === identityKey);
+  return { product_key: product?.key, product_version: product?.active_version ?? undefined, identity_key: identity?.key, identity_version: identity?.active_version ?? undefined, recipe_key: recipeKey, recipe_version: recipe?.active_version ?? undefined };
+}
+
+function pendingClaimFor(payload: string): PendingClaim {
+  const stored = window.localStorage.getItem(PENDING_CLAIM_STORAGE_KEY);
+  if (stored) {
+    try {
+      const claim = JSON.parse(stored) as PendingClaim;
+      if (claim.key && claim.payload === payload) return claim;
+      if (claim.key && claim.payload !== payload) throw new Error("هناك مطالبة سابقة لم تُحسم بعد بإعدادات مختلفة. استخدم «بدء مطالبة جديدة» إذا كنت تقصد إنشاء مطالبة مستقلة.");
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("مطالبة سابقة")) throw error;
+      window.localStorage.removeItem(PENDING_CLAIM_STORAGE_KEY);
+    }
+  }
+  const key = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `claim-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const claim = { key, payload };
+  window.localStorage.setItem(PENDING_CLAIM_STORAGE_KEY, JSON.stringify(claim));
+  return claim;
+}
+
+function clearPendingClaim(key?: string) {
+  const stored = window.localStorage.getItem(PENDING_CLAIM_STORAGE_KEY);
+  if (!stored) return;
+  try {
+    const claim = JSON.parse(stored) as PendingClaim;
+    if (!key || claim.key === key) window.localStorage.removeItem(PENDING_CLAIM_STORAGE_KEY);
+  } catch { window.localStorage.removeItem(PENDING_CLAIM_STORAGE_KEY); }
+}
 
 type SortMode = "created" | "title" | "kind" | "topic";
 
@@ -41,9 +80,14 @@ export function PostBankPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
-  const sources = useQuery({ queryKey: ["production", "sources"], queryFn: productionJobsApi.sources });
   const identities = useQuery({ queryKey: ["control-plane", "identities"], queryFn: productionJobsApi.identities });
   const products = useQuery({ queryKey: ["control-plane", "products"], queryFn: productionJobsApi.products });
+  const recipes = useQuery({ queryKey: ["control-plane", "recipes"], queryFn: productionJobsApi.recipes });
+  const lineFilter = productionLineFilter(products.data, identities.data, recipes.data, productKey, identityKey);
+  const sources = useQuery({
+    queryKey: ["production", "sources", lineFilter.product_key, lineFilter.product_version, lineFilter.identity_key, lineFilter.identity_version, lineFilter.recipe_key, lineFilter.recipe_version],
+    queryFn: () => productionJobsApi.sources(lineFilter),
+  });
   const filterOptions = useQuery({
     queryKey: ["post-bank", "filter-options", filterSourceId],
     queryFn: () => postsApi.filterOptions(filterSourceId === ALL_SOURCES ? undefined : filterSourceId),
@@ -63,7 +107,7 @@ export function PostBankPage() {
     enabled: hasLoaded,
     placeholderData: (previous) => previous,
   });
-  const bookMap = useQuery({ queryKey: ["production", "book-map", productionSourceId], queryFn: () => productionJobsApi.bookMap(productionSourceId), enabled: Boolean(productionSourceId) });
+  const bookMap = useQuery({ queryKey: ["production", "book-map", productionSourceId, lineFilter.product_key, lineFilter.product_version, lineFilter.identity_key, lineFilter.identity_version, lineFilter.recipe_key, lineFilter.recipe_version], queryFn: () => productionJobsApi.bookMap(productionSourceId, lineFilter), enabled: Boolean(productionSourceId) });
   const [jobItemsPage, setJobItemsPage] = useState(0);
   const job = useQuery({ queryKey: ["production", "job", jobId], queryFn: () => productionJobsApi.get(jobId!), enabled: Boolean(jobId), refetchInterval: (q) => q.state.data && ["COMPLETED", "FAILED"].includes(q.state.data.status) ? false : 1500 });
   const jobItems = useQuery({ queryKey: ["production", "job-items", jobId, jobItemsPage], queryFn: () => productionJobsApi.items(jobId!, jobItemsPage * 20, 20), enabled: Boolean(jobId) });
@@ -95,14 +139,14 @@ export function PostBankPage() {
     onSuccess: (result) => { setMessage(`اعتمد ${result.approved_count} منشور، وفشل ${result.failed_count}.`); setSelected([]); void client.invalidateQueries({ queryKey: ["post-bank"] }); },
   });
   const createProduction = useMutation({
-    mutationFn: () => {
-      if (!productionSourceId) throw new Error("اختر كتابًا أولًا.");
-      if (scope === "TOPIC" && !productionTopicId) throw new Error("اختر محورًا.");
-      if (scope === "SELECTION" && !materialIds.length) throw new Error("اختر مادة واحدة على الأقل.");
-      return productionJobsApi.create({ source_id: productionSourceId, scope, product_key: productKey, ...(scope === "TOPIC" ? { topic_id: productionTopicId } : {}), ...(scope === "SELECTION" ? { knowledge_unit_ids: materialIds } : {}), ...(identityKey ? { identity_key: identityKey } : {}) });
+    mutationFn: (request: CreateProductionRequest) => productionJobsApi.create(request),
+    onSuccess: (data, request) => {
+      clearPendingClaim(request.idempotency_key);
+      setJobId(data.job_id); setJobItemsPage(0); setMessage("بدأت مطالبة الإنتاج."); void client.invalidateQueries({ queryKey: ["post-bank"] });
+      void client.invalidateQueries({ queryKey: ["production", "sources"] });
+      void client.invalidateQueries({ queryKey: ["production", "book-map", productionSourceId] });
     },
-    onSuccess: (data) => { setJobId(data.job_id); setJobItemsPage(0); setMessage("بدأ إنتاج المنشورات."); void client.invalidateQueries({ queryKey: ["post-bank"] }); },
-    onError: (error) => setMessage(error instanceof Error ? error.message : "تعذر بدء الإنتاج."),
+    onError: (error) => setMessage(error instanceof Error ? error.message : "تعذر بدء الإنتاج. احتُفظ بمفتاح الطلب لإعادة الإرسال بأمان."),
   });
   const retryProduction = useMutation({ mutationFn: () => productionJobsApi.resume(jobId!), onSuccess: (data) => { setJobId(data.job_id); setJobItemsPage(0); void client.invalidateQueries({ queryKey: ["production", "job", jobId] }); void client.invalidateQueries({ queryKey: ["production", "job-items", jobId] }); } });
 
@@ -167,7 +211,16 @@ export function PostBankPage() {
         <label className="text-sm font-semibold">الهوية التحريرية<select aria-label="الهوية التحريرية للإنتاج" value={identityKey} onChange={(e) => setIdentityKey(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">استخدم إعدادات القالب الحالية</option>{availableIdentities.map((identity) => <option key={identity.key} value={identity.key}>{identity.name} · v{identity.active_version}</option>)}</select></label>
       </div>
       {scope === "SELECTION" && <div className="mt-4"><label className="text-sm font-semibold">نوع المادة<select aria-label="نوع المادة للإنتاج" value={productionKind} onChange={(e) => setProductionKind(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الأنواع المتاحة</option>{productionKinds.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><div className="mt-3 max-h-64 overflow-auto rounded-xl border">{materials.map((m) => <label key={m.id} className="flex gap-3 border-b p-3"><input type="checkbox" checked={materialIds.includes(m.id)} onChange={(e) => setMaterialIds(toggleSelection(materialIds, m.id, e.target.checked))}/><span><strong>{m.title}</strong><span className="block text-xs text-slate-500">{m.kind || "بدون نوع"}</span></span></label>)}</div></div>}
-      <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="start-production" type="button" onClick={() => createProduction.mutate()} disabled={createProduction.isPending || !productionSourceId || !productKey} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">تشغيل إنتاج المنشورات</button><span className="text-sm text-slate-500">{scope === "SELECTION" ? `${materialIds.length} مادة محددة` : scope === "TOPIC" ? "إنتاج مواد المحور" : "إنتاج مواد الكتاب كاملة"}</span></div>
+      <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="start-production" type="button" onClick={() => {
+        try {
+          if (!productionSourceId) throw new Error("اختر كتابًا أولًا.");
+          if (scope === "TOPIC" && !productionTopicId) throw new Error("اختر محورًا أولًا.");
+          if (scope === "SELECTION" && !materialIds.length) throw new Error("اختر مادة واحدة على الأقل.");
+          const request: Omit<CreateProductionRequest, "idempotency_key"> = { source_id: productionSourceId, scope, product_key: productKey, ...(scope === "TOPIC" ? { topic_id: productionTopicId } : {}), ...(scope === "SELECTION" ? { knowledge_unit_ids: [...materialIds].sort() } : {}), ...(identityKey ? { identity_key: identityKey } : {}) };
+          const claim = pendingClaimFor(JSON.stringify(request));
+          createProduction.mutate({ ...request, idempotency_key: claim.key });
+        } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر بدء المطالبة."); }
+      }} disabled={createProduction.isPending || !productionSourceId || !productKey} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">تشغيل مطالبة الإنتاج</button><button data-testid="new-production-claim" type="button" onClick={() => { clearPendingClaim(); setMessage("يمكنك الآن بدء مطالبة مستقلة جديدة؛ لن تُدمج مع المطالبة السابقة."); }} className="rounded-xl border px-4 py-3 text-sm font-semibold">بدء مطالبة جديدة</button><span className="text-sm text-slate-500">{scope === "SELECTION" ? `${materialIds.length} مادة محددة` : scope === "TOPIC" ? "إنتاج مواد المحور" : "إنتاج مواد الكتاب كاملة"}</span></div>
       {(job.data || jobId) && <div className="mt-4 space-y-4 rounded-xl border bg-slate-50 p-4" data-testid="production-job-details">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><strong>{job.data?.status ?? "QUEUED"}</strong><p className="mt-1 break-all text-xs text-slate-500">معرّف العملية: {job.data?.job_id ?? jobId}</p></div>
