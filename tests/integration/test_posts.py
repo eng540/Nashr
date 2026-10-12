@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -6,8 +7,9 @@ from sqlalchemy.orm import selectinload
 
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.application.posts import ProducePost
+from app.application.reviews import ReviewPost
 from app.application.control_plane import ControlPlaneResolver, PromptTemplateService
-from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobModel, SourceModel, TopicModel
+from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobModel, PublicationModel, ScheduleItemModel, ScheduleModel, SourceModel, TopicModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -186,3 +188,46 @@ async def test_runtime_uses_new_published_prompt_without_code_change(monkeypatch
     async with SessionFactory() as session:
         await ProducePost(drafter, ControlPlaneResolver()).execute(session, unit2)
     assert drafter.prompts[-1] == "PROMPT_V2"
+
+
+
+async def test_independent_posts_keep_review_and_publication_references_separate() -> None:
+    _, _, unit_id = await _unit()
+    async with SessionFactory() as session:
+        first = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
+        second = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
+        review = ReviewPost()
+        first = await review.approve(session, first.id, "Approved independently")
+        second = await review.reject(session, second.id, "Rejected independently")
+
+        schedule = ScheduleModel(id=uuid4(), name="Independent post schedule", status="DRAFT", timezone="UTC")
+        schedule_item = ScheduleItemModel(
+            id=uuid4(), schedule_id=schedule.id, post_id=first.id, position=1,
+            scheduled_at=datetime.now(timezone.utc), status="PENDING",
+        )
+        publication = PublicationModel(
+            id=uuid4(), knowledge_unit_id=unit_id, post_id=first.id, platform="telegram",
+            destination="test-destination", content=first.content, status="DRAFT",
+        )
+        session.add_all([schedule, schedule_item, publication])
+        await session.commit()
+
+        persisted_posts = {
+            row.id: row
+            for row in (await session.execute(
+                select(PostModel).where(PostModel.id.in_([first.id, second.id]))
+            )).scalars().all()
+        }
+        persisted_schedule_item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.id == schedule_item.id)
+        )).scalar_one()
+        persisted_publication = (await session.execute(
+            select(PublicationModel).where(PublicationModel.id == publication.id)
+        )).scalar_one()
+        assert persisted_posts[first.id].status == "APPROVED"
+        assert persisted_posts[second.id].status == "REJECTED"
+        assert persisted_posts[first.id].review_note == "Approved independently"
+        assert persisted_posts[second.id].review_note == "Rejected independently"
+        assert persisted_schedule_item.post_id == first.id
+        assert persisted_publication.post_id == first.id
+        assert persisted_publication.content == first.content
