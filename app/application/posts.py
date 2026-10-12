@@ -139,15 +139,12 @@ class ProducePost:
         return _to_domain(row)
 
     async def _find_existing(
-        self, session: AsyncSession, knowledge_unit_id: UUID, production_job_id: UUID
+        self, session: AsyncSession, knowledge_unit_id: UUID, production_job_id: UUID | None = None
     ) -> PostModel | None:
+        query = select(PostModel).where(PostModel.knowledge_unit_id == knowledge_unit_id)
+        if production_job_id is not None:
+            query = query.where(PostModel.production_job_id == production_job_id)
         result = await session.execute(
-            select(PostModel)
-            .where(
-                PostModel.knowledge_unit_id == knowledge_unit_id,
-                PostModel.production_job_id == production_job_id,
-            )
-            .order_by(PostModel.created_at.asc(), PostModel.id.asc())
-            .limit(1)
+            query.order_by(PostModel.created_at.asc(), PostModel.id.asc()).limit(1)
         )
         return result.scalar_one_or_none()
