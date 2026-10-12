@@ -3,7 +3,7 @@
 **Document purpose:** A durable entry point for developers and reviewers. It records what exists, what has actually been verified, what remains a future goal, and when implementation work is justified.
 **Last reviewed:** 2026-10-11
 **Repository:** `eng540/Nashr`
-**Reviewed main commit for the latest status snapshot:** `a0577225be13dd76a20df43d89674fd0cb09196d` (after PR #121).
+**Latest UX review baseline:** `f2122d4ff75b1228d910f7ad6dd4c0461c00c774` (2026-10-12; verify current `main` before relying on this snapshot).
 **Status semantics:** “Merged” means code/docs are on main; “CI passed” means the relevant PR checks passed; “deployed” means Railway reports a successful deployment for the commit; none of these alone proves full end-to-end production acceptance.
 
 ## 1. How to use this document
@@ -13,6 +13,9 @@ Start here when joining the project or resuming work after a break. Then read th
 - [Shared Production Engine lifecycle audit](shared-production-engine-lifecycle-audit-2026-10-11.md) — original audit findings and subsequent follow-up status.
 - [Shared Production Engine contract](shared-production-engine-contract.md) — required boundaries and output/lifecycle rules; it is a contract, not proof that every acceptance item has passed.
 - [Foundation roadmap](foundation-roadmap.md) — wider product/architecture sequence.
+- [UX experience audit](../ux/experience-audit.md) — verified UX findings, target flows, and acceptance rules.
+- [UX workflow/function inventory](../ux/workflow-and-function-inventory.md) — durable function IDs and end-to-end workflow contracts.
+- [UX implementation log](../ux/implementation-log.md) — current branch/PR/test status and handoff notes.
 
 For any new task, inspect the current `main`, relevant code, tests, recent PRs, and these documents first. Do not assume a status in a dated snapshot is still current without checking.
 
@@ -147,3 +150,8 @@ This gate is intentionally open in the reviewed snapshot. The open gate is a rec
 - No public unauthenticated reconciliation override.
 - No claim of exactly-once provider execution unless the provider contract actually supports the required guarantees.
 - No broad architecture rewrite, queue/worker expansion, or schema migration without a concrete requirement and a reviewed plan.
+
+
+## UX workflow implementation — 2026-10-12
+
+The UX review is tracked in `docs/ux/` rather than duplicating detailed findings here. At the reviewed main baseline `f2122d4ff75b1228d910f7ad6dd4c0461c00c774`, `PostBankPage.tsx` still combines production setup, job monitoring, post bank/review, and generic Artifact review. The new UX branch begins with a guided three-step production setup and an accurate preflight summary; this is branch work and must not be described as merged or CI-verified until the PR checks prove it. The job lifecycle still has QUEUED/RUNNING/COMPLETED/FAILED and no separately verified cancel/pause endpoint; unknown provider outcomes remain protected from ordinary retry. See the three UX references above for the inventory, acceptance criteria, and ongoing log.
