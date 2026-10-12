@@ -143,7 +143,7 @@ test("manual production selection includes materials that have no topic assignme
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
   await page.getByLabel("نطاق الإنتاج").selectOption("SELECTION");
   await page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" }).click();
-  await expect(page.getByText("Unassigned Material")).toBeVisible();
+  await expect(page.getByText("Unassigned Material", { exact: true })).toBeVisible();
   await expect(page.getByLabel("بحث مواد الإنتاج")).toBeVisible();
   await expect(page.getByText("صفحة 1 من 2")).toBeVisible();
   await page.getByText("Unassigned Material", { exact: true }).locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
