@@ -91,6 +91,7 @@ test("React factory reuses the same production claim key after an ambiguous netw
   expect(submittedKeys[0]).toBeTruthy();
   expect(submittedKeys[1]).toBe(submittedKeys[0]);
 
+  await page.getByRole("button", { name: /إعداد الإنتاج/ }).click();
   await page.getByTestId("new-production-claim").click();
   await page.getByTestId("start-production").click();
   await expect.poll(() => submittedKeys.length).toBe(3);
