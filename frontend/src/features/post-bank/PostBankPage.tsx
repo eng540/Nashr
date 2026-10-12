@@ -168,6 +168,7 @@ export function PostBankPage() {
   const allCurrentSelected = currentPageIds.length > 0 && currentPageIds.every((id) => selected.includes(id));
   const approvedSelected = useMemo(() => items.filter((p) => selected.includes(p.post_id) && p.status === "APPROVED"), [items, selected]);
   const topics = bookMap.data?.topics ?? [];
+  const sourceMaterials = bookMap.data?.materials ?? topics.flatMap((topic) => topic.materials);
   const availableIdentities = (identities.data ?? []).filter((identity) => identity.active_version !== null);
   const availableProducts = (products.data ?? []).filter((product) => product.active_version !== null);
   const selectedProduct = availableProducts.find((product) => product.key === productKey);
@@ -179,18 +180,24 @@ export function PostBankPage() {
   const visibleTopics = topics.filter((topic) => !isPostProduct
     ? topic.materials.length > 0
     : productionMode === "ALL" || productionMode === "NEEDS" && topic.materials.some((material) => !material.has_post) || productionMode === "DONE" && topic.materials.length > 0 && topic.materials.every((material) => material.has_post));
-  const allProductionMaterials = scope === "TOPIC" ? visibleTopics.find((t) => t.id === productionTopicId)?.materials ?? [] : visibleTopics.flatMap((t) => t.materials);
+  const allProductionMaterials = scope === "SELECTION"
+    ? sourceMaterials
+    : scope === "TOPIC"
+      ? visibleTopics.find((t) => t.id === productionTopicId)?.materials ?? []
+      : sourceMaterials;
   const materials = allProductionMaterials.filter((material) => (!isPostProduct || productionMode === "ALL" || productionMode === "NEEDS" && !material.has_post || productionMode === "DONE" && material.has_post) && (!productionKind || material.kind === productionKind));
   const productionKinds = Array.from(new Set(allProductionMaterials.map((material) => material.kind).filter((kind): kind is string => Boolean(kind)))).sort();
   const filterTopics = filterOptions.data?.topics ?? [];
 
   useEffect(() => {
+    // Do not clear a user's book selection while product/line filters are still loading.
+    if (products.isLoading || sources.isLoading || !products.isSuccess || !sources.isSuccess) return;
     if (productionSourceId && !productionSources.some((source) => source.id === productionSourceId)) {
       setProductionSourceId("");
       setProductionTopicId("");
       setMaterialIds([]);
     }
-  }, [productionMode, productionSourceId, productionSources]);
+  }, [products.isLoading, products.isSuccess, sources.isLoading, sources.isSuccess, productionMode, productionSourceId, productionSources]);
 
   const loadBank = () => { setPage(0); setSelected([]); setHasLoaded(true); };
   const clearFilters = () => { setFilterSourceId(ALL_SOURCES); setTopicId(""); setKind(""); setStatus(""); setSort("created"); setQueryInput(""); setQuery(""); setPage(0); setSelected([]); setSearchParams({}); };
@@ -221,7 +228,10 @@ export function PostBankPage() {
         <label className="text-sm font-semibold">المنتج<select aria-label="المنتج" value={productKey} onChange={(e) => setProductKey(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">اختر منتجًا...</option>{availableProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · v{product.active_version}</option>)}</select></label>
         <label className="text-sm font-semibold">الهوية التحريرية<select aria-label="الهوية التحريرية للإنتاج" value={identityKey} onChange={(e) => setIdentityKey(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">استخدم إعدادات القالب الحالية</option>{availableIdentities.map((identity) => <option key={identity.key} value={identity.key}>{identity.name} · v{identity.active_version}</option>)}</select></label>
       </div>
-      {scope === "SELECTION" && <div className="mt-4"><label className="text-sm font-semibold">نوع المادة<select aria-label="نوع المادة للإنتاج" value={productionKind} onChange={(e) => setProductionKind(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الأنواع المتاحة</option>{productionKinds.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><div className="mt-3 max-h-64 overflow-auto rounded-xl border">{materials.map((m) => <label key={m.id} className="flex gap-3 border-b p-3"><input type="checkbox" checked={materialIds.includes(m.id)} onChange={(e) => setMaterialIds(toggleSelection(materialIds, m.id, e.target.checked))}/><span><strong>{m.title}</strong><span className="block text-xs text-slate-500">{m.kind || "بدون نوع"}</span></span></label>)}</div></div>}
+      {scope === "TOPIC" && bookMap.isLoading && <p role="status" className="mt-3 text-sm text-slate-500">جارٍ تحميل محاور الكتاب...</p>}
+      {scope !== "SOURCE" && bookMap.isError && <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">تعذر تحميل محاور ومواد الكتاب. تحقق من الاتصال ثم أعد اختيار الكتاب.</p>}
+      {scope === "TOPIC" && bookMap.isSuccess && visibleTopics.length === 0 && <p role="status" className="mt-3 rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">{topics.length === 0 ? "لم تُكتشف محاور لهذا الكتاب بعد. يمكنك اختيار المواد المتاحة يدويًا، أو إكمال اكتشاف الكتاب أولًا." : "لا توجد محاور تطابق حالة الإنتاج الحالية. غيّر حالة الإنتاج إلى «كل الكتب» لعرض جميع المحاور."}</p>}
+      {scope === "SELECTION" && <div className="mt-4"><label className="text-sm font-semibold">نوع المادة<select aria-label="نوع المادة للإنتاج" value={productionKind} onChange={(e) => setProductionKind(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الأنواع المتاحة</option>{productionKinds.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><div className="mt-3 max-h-64 overflow-auto rounded-xl border">{bookMap.isLoading ? <p role="status" className="p-3 text-sm text-slate-500">جارٍ تحميل مواد الكتاب...</p> : bookMap.isError ? <p role="alert" className="p-3 text-sm text-rose-700">تعذر تحميل مواد الكتاب.</p> : materials.length ? materials.map((m) => <label key={m.id} className="flex gap-3 border-b p-3"><input type="checkbox" checked={materialIds.includes(m.id)} onChange={(e) => setMaterialIds(toggleSelection(materialIds, m.id, e.target.checked))}/><span><strong>{m.title}</strong><span className="block text-xs text-slate-500">{m.kind || "بدون نوع"}{m.topic_id ? " · ضمن محور" : " · غير مصنّفة ضمن محور"}</span></span></label>) : <p className="p-3 text-sm text-slate-500">لا توجد مواد متاحة لهذا الكتاب ضمن حالة الإنتاج ونوع المادة المحددين.</p>}</div></div>}
       <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="start-production" type="button" onClick={() => {
         try {
           if (!productionSourceId) throw new Error("اختر كتابًا أولًا.");
