@@ -115,10 +115,11 @@ class KnowledgeUnitModel(Base):
 
 class PostModel(Base):
     __tablename__ = "posts"
-    __table_args__ = (UniqueConstraint("knowledge_unit_id", name="uq_posts_knowledge_unit"),)
+    __table_args__ = (UniqueConstraint("production_job_id", "knowledge_unit_id", name="uq_posts_job_knowledge_unit"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     knowledge_unit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("knowledge_units.id", ondelete="RESTRICT"), nullable=False)
+    production_job_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("production_jobs.id", ondelete="SET NULL"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -131,10 +132,13 @@ class PostModel(Base):
 
 class ProductionJobModel(Base):
     __tablename__ = "production_jobs"
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_production_jobs_idempotency_key"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
     scope: Mapped[str] = mapped_column(String(30), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="QUEUED")
     total_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
