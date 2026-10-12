@@ -5,8 +5,9 @@ export interface EditorialIdentityOption { id: string; key: string; name: string
 export interface ProductionRecipeOption { id: string; key: string; name: string; purpose: string; active_version: number | null; versions: Array<{ version: number; status: string; stages: Array<{ key: string; capability_key: string; capability_version: number; configuration?: Record<string, unknown> }> }> }
 export interface ProductionProductOption { id: string; key: string; name: string; purpose: string; active_version: number | null; versions: Array<{ version: number; status: string; definition: { recipe_key: string; output_contract_key: string; policy_key: string; audience: string; experience: string } }> }
 export interface SourceSummary { id: string; filename: string; book_title: string; status: string; material_count: number; produced_count: number; pending_count: number; }
-export interface BookTopic { id: string; position: number; title: string; description: string; materials: Array<{ id: string; title: string; kind: string | null; content: string; has_post: boolean; }>; }
-export interface BookMap { source_id: string; book: { title: string; description: string }; topics: BookTopic[]; count: number; }
+export interface BookMapMaterial { id: string; position: number; title: string; kind: string | null; content: string; has_post: boolean; topic_id?: string | null; source_reference?: string | null; discovery_page_start?: number | null; discovery_page_end?: number | null; }
+export interface BookTopic { id: string; position: number; title: string; description: string; materials: BookMapMaterial[]; discovery_status?: string | null; discovery_error?: string | null; }
+export interface BookMap { source_id: string; book: { title: string; description: string }; topics: BookTopic[]; materials: BookMapMaterial[]; count: number; job?: { status: string; error_message?: string | null } | null; }
 export interface ProductionJob {
   job_id: string; source_id: string; status: string; scope: ProductionScope;
   total_items: number; completed_items: number; failed_items: number; pending_items: number; running_items: number; reconciliation_required_items: number;

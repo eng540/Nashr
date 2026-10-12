@@ -25,8 +25,9 @@ test("React factory reuses the same production claim key after an ambiguous netw
     if (url.pathname.endsWith("/book-map")) {
       return route.fulfill({ json: {
         source_id: sourceId, book: { title: "E2E Book", description: "" }, count: 1,
+        materials: [{ id: materialId, position: 1, title: "Material", kind: "TEXT", content: "Source text", has_post: false, topic_id: "topic-id" }],
         topics: [{ id: "topic-id", position: 1, title: "Topic", description: "", materials: [{
-          id: materialId, position: 1, title: "Material", kind: "TEXT", content: "Source text", has_post: false,
+          id: materialId, position: 1, title: "Material", kind: "TEXT", content: "Source text", has_post: false, topic_id: "topic-id",
         }] }],
       } });
     }
@@ -84,4 +85,44 @@ test("React factory reuses the same production claim key after an ambiguous netw
   await page.getByTestId("start-production").click();
   await expect.poll(() => submittedKeys.length).toBe(3);
   expect(submittedKeys[2]).not.toBe(submittedKeys[0]);
+});
+
+
+test("manual production selection includes materials that have no topic assignment", async ({ page }) => {
+  const sourceId = "41111111-1111-4111-8111-111111111111";
+  const materialId = "42222222-2222-4222-8222-222222222222";
+  const productKey = "E2E_POST_PRODUCT";
+  await page.addInitScript(() => { window.localStorage.clear(); });
+  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{
+    id: "recipe-id", key: "E2E_POST_RECIPE", name: "E2E Recipe", purpose: "test", active_version: 1,
+    versions: [{ version: 1, status: "PUBLISHED", stages: [{ key: "produce", capability_key: "produce_post", capability_version: 1 }] }],
+  }] }));
+  await page.route("**/api/control/products", (route) => route.fulfill({ json: [{
+    id: "product-id", key: productKey, name: "E2E Post Product", purpose: "test", active_version: 1,
+    versions: [{ version: 1, status: "PUBLISHED", definition: {
+      recipe_key: "E2E_POST_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "EDITORIAL_DEFAULT",
+      audience: "readers", experience: "post",
+    } }],
+  }] }));
+  await page.route("**/sources**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/book-map")) {
+      return route.fulfill({ json: {
+        source_id: sourceId, book: { title: "Legacy Book", description: "" }, count: 1,
+        topics: [],
+        materials: [{ id: materialId, position: 1, title: "Unassigned Material", kind: "TEXT", content: "Source text", has_post: false, topic_id: null }],
+      } });
+    }
+    return route.fulfill({ json: [{
+      id: sourceId, filename: "legacy.pdf", book_title: "Legacy Book", status: "READY",
+      material_count: 1, produced_count: 0, pending_count: 1,
+    }] });
+  });
+  await page.goto("/posts/workspace");
+  await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
+  await page.getByLabel("نطاق الإنتاج").selectOption("SELECTION");
+  await expect(page.getByText("Unassigned Material")).toBeVisible();
+  await page.getByText("Unassigned Material").locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
+  await expect(page.getByText("1 مادة محددة")).toBeVisible();
 });
