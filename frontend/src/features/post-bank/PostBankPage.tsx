@@ -217,7 +217,7 @@ export function PostBankPage() {
   const scopeReady = Boolean(sourceReady && bookMap.isSuccess && scopeMaterialCount > 0
     && (scope !== "TOPIC" || topicReady)
     && (scope !== "SELECTION" || selectedMaterialIds.length > 0 && selectedMaterialIds.length === materialIds.length));
-  const canReviewProduction = Boolean(lineReady && scopeReady && !sources.isFetching && !bookMap.isFetching);
+  const canReviewProduction = Boolean(lineReady && scopeReady && !products.isFetching && !identities.isFetching && !recipes.isFetching && !sources.isFetching && !bookMap.isFetching);
 
   const filterTopics = filterOptions.data?.topics ?? [];
 
