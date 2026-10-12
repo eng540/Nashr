@@ -101,8 +101,14 @@ class ProducePost:
         knowledge_unit_id: UUID,
         *,
         system_prompt: str | None = None,
+        production_job_id: UUID | None = None,
     ) -> Post:
-        existing = await self._find_existing(session, knowledge_unit_id)
+        # Retries within one durable job reuse that job's Post. A direct request
+        # or a different job is a new explicit production claim and gets its own Post.
+        existing = (
+            await self._find_existing(session, knowledge_unit_id, production_job_id)
+            if production_job_id is not None else None
+        )
         if existing is not None:
             return _to_domain(existing)
 
@@ -112,6 +118,7 @@ class ProducePost:
         row = PostModel(
             id=uuid4(),
             knowledge_unit_id=knowledge_unit_id,
+            production_job_id=production_job_id,
             content=drafted.content,
             status=PostStatus.DRAFT.value,
         )
@@ -120,7 +127,10 @@ class ProducePost:
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            existing = await self._find_existing(session, knowledge_unit_id)
+            existing = (
+                await self._find_existing(session, knowledge_unit_id, production_job_id)
+                if production_job_id is not None else None
+            )
             if existing is None:
                 raise
             return _to_domain(existing)
@@ -128,11 +138,13 @@ class ProducePost:
         await session.refresh(row)
         return _to_domain(row)
 
-    async def _find_existing(self, session: AsyncSession, knowledge_unit_id: UUID) -> PostModel | None:
+    async def _find_existing(
+        self, session: AsyncSession, knowledge_unit_id: UUID, production_job_id: UUID | None = None
+    ) -> PostModel | None:
+        query = select(PostModel).where(PostModel.knowledge_unit_id == knowledge_unit_id)
+        if production_job_id is not None:
+            query = query.where(PostModel.production_job_id == production_job_id)
         result = await session.execute(
-            select(PostModel)
-            .where(PostModel.knowledge_unit_id == knowledge_unit_id)
-            .order_by(PostModel.created_at.asc(), PostModel.id.asc())
-            .limit(1)
+            query.order_by(PostModel.created_at.asc(), PostModel.id.asc()).limit(1)
         )
         return result.scalar_one_or_none()

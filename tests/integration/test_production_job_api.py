@@ -1,12 +1,14 @@
+import asyncio
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.main import app
 from app.application.identity_control_plane import EditorialIdentityControlPlaneService
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, ProductionJobItemModel, ProductionJobModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionClaimModel, ProductionJobItemModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -268,3 +270,227 @@ async def test_production_job_items_api_exposes_provider_reconciliation_fields()
         assert item_payload["provider_operation_name"] is None
         assert "provider_operation_status" in item_payload
     monkeypatch.undo()
+
+
+
+@pytest.mark.asyncio
+async def test_production_claim_idempotency_replays_same_job(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    payload = {
+        "source_id": str(source_id),
+        "scope": "SOURCE",
+        "idempotency_key": "same-request-key",
+    }
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/production-jobs", json=payload)
+        replay = await client.post("/production-jobs", json=payload)
+        assert first.status_code == 202
+        assert replay.status_code == 202
+        assert replay.json()["job_id"] == first.json()["job_id"]
+        assert replay.json()["claim_id"] == first.json()["claim_id"]
+        assert replay.json()["claim_id"] != replay.json()["job_id"]
+
+    async with SessionFactory() as session:
+        claim = (await session.execute(
+            select(ProductionClaimModel).options(selectinload(ProductionClaimModel.job)).where(ProductionClaimModel.id == UUID(first.json()["claim_id"]))
+        )).scalar_one()
+        job = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == UUID(first.json()["job_id"]))
+        )).scalar_one()
+        assert job.claim_id == claim.id
+        assert claim.job is not None and claim.job.id == job.id
+        assert claim.id != job.id
+        assert claim.idempotency_key == "same-request-key"
+        assert len(claim.request_fingerprint) == 64
+        assert claim.request_payload["source_id"] == str(source_id)
+
+
+@pytest.mark.asyncio
+async def test_production_claim_idempotency_rejects_key_reuse_for_different_request(monkeypatch: pytest.MonkeyPatch):
+    source_id, unit_ids = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "idempotency_key": "reused-request-key",
+        })
+        conflict = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SELECTION",
+            "knowledge_unit_ids": [str(unit_ids[0])],
+            "idempotency_key": "reused-request-key",
+        })
+        assert first.status_code == 202
+        assert conflict.status_code == 400
+        assert "different production request" in conflict.json()["detail"]
+
+
+
+@pytest.mark.asyncio
+async def test_same_settings_with_new_claim_key_creates_new_job(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "idempotency_key": "explicit-claim-one",
+        })
+        second = await client.post("/production-jobs", json={
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "idempotency_key": "explicit-claim-two",
+        })
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert second.json()["job_id"] != first.json()["job_id"]
+        assert second.json()["claim_id"] != first.json()["claim_id"]
+        assert first.json()["claim_id"] != first.json()["job_id"]
+        assert second.json()["claim_id"] != second.json()["job_id"]
+
+
+
+@pytest.mark.asyncio
+async def test_same_idempotency_key_is_atomic_under_concurrent_submissions(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = {
+            "source_id": str(source_id),
+            "scope": "SOURCE",
+            "idempotency_key": "concurrent-same-claim",
+        }
+        first, second = await asyncio.gather(
+            client.post("/production-jobs", json=payload),
+            client.post("/production-jobs", json=payload),
+        )
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert first.json()["job_id"] == second.json()["job_id"]
+        assert first.json()["claim_id"] == second.json()["claim_id"]
+
+
+@pytest.mark.asyncio
+async def test_source_production_state_ignores_legacy_and_other_product_posts():
+    source_id, unit_ids = await _api_fixture()
+    async with SessionFactory() as session:
+        selected_job_id = uuid4()
+        other_job_id = uuid4()
+        session.add_all([
+            ProductionJobModel(
+                id=selected_job_id, source_id=source_id, scope="SOURCE", status="COMPLETED",
+                total_items=1, resolved_context={
+                    "product": {"key": "LINE_A", "version": 1},
+                    "identity": {"key": "IDENTITY_A", "version": 1},
+                    "recipe": {"key": "RECIPE_A", "version": 2},
+                },
+            ),
+            ProductionJobModel(
+                id=other_job_id, source_id=source_id, scope="SOURCE", status="COMPLETED",
+                total_items=1, resolved_context={
+                    "product": {"key": "LINE_B", "version": 1},
+                    "identity": {"key": "IDENTITY_A", "version": 1},
+                    "recipe": {"key": "RECIPE_A", "version": 2},
+                },
+            ),
+        ])
+        await session.commit()
+        session.add_all([
+            PostModel(id=uuid4(), knowledge_unit_id=unit_ids[0], production_job_id=selected_job_id, content="Line A post", status="DRAFT"),
+            PostModel(id=uuid4(), knowledge_unit_id=unit_ids[1], production_job_id=other_job_id, content="Line B post", status="DRAFT"),
+            PostModel(id=uuid4(), knowledge_unit_id=unit_ids[1], content="Legacy post without provenance", status="DRAFT"),
+        ])
+        await session.commit()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        matching = await client.get(
+            "/sources",
+            params={
+                "product_key": "LINE_A", "product_version": 1,
+                "identity_key": "IDENTITY_A", "identity_version": 1,
+                "recipe_key": "RECIPE_A", "recipe_version": 2,
+            },
+        )
+        assert matching.status_code == 200
+        source = next(item for item in matching.json() if item["id"] == str(source_id))
+        assert source["material_count"] == 2
+        assert source["produced_count"] == 1
+        assert source["pending_count"] == 1
+
+        other_identity = await client.get(
+            "/sources",
+            params={
+                "product_key": "LINE_A", "product_version": 1,
+                "identity_key": "IDENTITY_B", "identity_version": 1,
+                "recipe_key": "RECIPE_A", "recipe_version": 2,
+            },
+        )
+        assert other_identity.status_code == 200
+        source = next(item for item in other_identity.json() if item["id"] == str(source_id))
+        assert source["produced_count"] == 0
+        assert source["pending_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_legacy_job_without_claim_remains_readable_and_resumable(monkeypatch: pytest.MonkeyPatch):
+    source_id, _ = await _api_fixture()
+    legacy_job_id = uuid4()
+    async with SessionFactory() as session:
+        legacy_job = ProductionJobModel(
+            id=legacy_job_id,
+            source_id=source_id,
+            scope="SOURCE",
+            status="FAILED",
+            total_items=0,
+        )
+        session.add(legacy_job)
+        await session.commit()
+        persisted = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == legacy_job_id)
+        )).scalar_one()
+        assert persisted.claim_id is None
+        assert (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.source_id == source_id)
+        )).scalars().all() == []
+
+    async def noop(job_id):
+        return None
+
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/production-jobs/{legacy_job_id}")
+        resumed = await client.post(
+            f"/production-jobs/{legacy_job_id}/resume",
+            json={"retry_failed": False},
+        )
+    assert response.status_code == 200
+    assert response.json()["job_id"] == str(legacy_job_id)
+    assert response.json()["claim_id"] is None
+    assert resumed.status_code == 202
+    assert resumed.json()["job_id"] == str(legacy_job_id)
+    assert resumed.json()["claim_id"] is None
+    assert resumed.json()["status"] == "QUEUED"

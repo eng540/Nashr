@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -6,8 +7,9 @@ from sqlalchemy.orm import selectinload
 
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.application.posts import ProducePost
+from app.application.reviews import ReviewPost
 from app.application.control_plane import ControlPlaneResolver, PromptTemplateService
-from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel, TopicModel
+from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobModel, PublicationModel, ScheduleItemModel, ScheduleModel, SourceModel, TopicModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -78,7 +80,7 @@ async def test_post_provenance_reaches_source_and_topic() -> None:
         assert row.knowledge_unit.topic.source.id == source_id
 
 
-async def test_produce_post_is_idempotent() -> None:
+async def test_new_explicit_post_claim_creates_independent_post() -> None:
     _, _, unit_id = await _unit()
     async with SessionFactory() as session:
         drafter = FakeEditorialDrafter()
@@ -87,6 +89,24 @@ async def test_produce_post_is_idempotent() -> None:
         count = (
             await session.execute(
                 select(PostModel).where(PostModel.knowledge_unit_id == unit_id)
+            )
+        ).scalars().all()
+        assert first.id != second.id
+        assert len(count) == 2
+
+
+async def test_retry_within_same_production_job_reuses_its_post() -> None:
+    source_id, _, unit_id = await _unit()
+    job_id = uuid4()
+    async with SessionFactory() as session:
+        session.add(ProductionJobModel(id=job_id, source_id=source_id, scope="SELECTION", status="QUEUED", total_items=1))
+        await session.commit()
+        drafter = FakeEditorialDrafter()
+        first = await ProducePost(drafter).execute(session, unit_id, production_job_id=job_id)
+        second = await ProducePost(drafter).execute(session, unit_id, production_job_id=job_id)
+        count = (
+            await session.execute(
+                select(PostModel).where(PostModel.production_job_id == job_id)
             )
         ).scalars().all()
         assert first.id == second.id
@@ -117,20 +137,23 @@ async def test_draft_failure_leaves_no_post() -> None:
         assert rows == []
 
 
-async def test_existing_post_is_returned_without_regeneration() -> None:
+async def test_new_claim_does_not_reuse_legacy_post() -> None:
     _, _, unit_id = await _unit()
     async with SessionFactory() as session:
         row = PostModel(
             id=uuid4(),
             knowledge_unit_id=unit_id,
-            content="Existing post",
+            content="Existing legacy post",
             status="DRAFT",
         )
         session.add(row)
         await session.commit()
-        post = await ProducePost(FailingDrafter()).execute(session, unit_id)
-        assert post.id == row.id
-        assert post.content == "Existing post"
+        post = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
+        assert post.id != row.id
+        rows = (await session.execute(
+            select(PostModel).where(PostModel.knowledge_unit_id == unit_id)
+        )).scalars().all()
+        assert len(rows) == 2
 
 
 class PromptRecordingDrafter:
@@ -165,3 +188,48 @@ async def test_runtime_uses_new_published_prompt_without_code_change(monkeypatch
     async with SessionFactory() as session:
         await ProducePost(drafter, ControlPlaneResolver()).execute(session, unit2)
     assert drafter.prompts[-1] == "PROMPT_V2"
+
+
+
+async def test_independent_posts_keep_review_and_publication_references_separate() -> None:
+    _, _, unit_id = await _unit()
+    async with SessionFactory() as session:
+        first = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
+        second = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
+        review = ReviewPost()
+        first = await review.approve(session, first.id, "Approved independently")
+        second = await review.reject(session, second.id, "Rejected independently")
+
+        schedule = ScheduleModel(id=uuid4(), name="Independent post schedule", status="DRAFT", timezone="UTC")
+        session.add(schedule)
+        await session.commit()
+        schedule_item = ScheduleItemModel(
+            id=uuid4(), schedule_id=schedule.id, post_id=first.id, position=1,
+            scheduled_at=datetime.now(timezone.utc), status="PENDING",
+        )
+        publication = PublicationModel(
+            id=uuid4(), knowledge_unit_id=unit_id, post_id=first.id, platform="telegram",
+            destination="test-destination", content=first.content, status="DRAFT",
+        )
+        session.add_all([schedule_item, publication])
+        await session.commit()
+
+        persisted_posts = {
+            row.id: row
+            for row in (await session.execute(
+                select(PostModel).where(PostModel.id.in_([first.id, second.id]))
+            )).scalars().all()
+        }
+        persisted_schedule_item = (await session.execute(
+            select(ScheduleItemModel).where(ScheduleItemModel.id == schedule_item.id)
+        )).scalar_one()
+        persisted_publication = (await session.execute(
+            select(PublicationModel).where(PublicationModel.id == publication.id)
+        )).scalar_one()
+        assert persisted_posts[first.id].status == "APPROVED"
+        assert persisted_posts[second.id].status == "REJECTED"
+        assert persisted_posts[first.id].review_note == "Approved independently"
+        assert persisted_posts[second.id].review_note == "Rejected independently"
+        assert persisted_schedule_item.post_id == first.id
+        assert persisted_publication.post_id == first.id
+        assert persisted_publication.content == first.content

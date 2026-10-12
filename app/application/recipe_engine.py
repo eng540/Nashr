@@ -96,6 +96,7 @@ class ProducePostCapability:
             context.session,
             knowledge_unit_id,
             system_prompt=system_prompt,
+            production_job_id=context.run_id,
         )
         return await ensure_post_artifact(
             context.session,

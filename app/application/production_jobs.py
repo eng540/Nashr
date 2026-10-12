@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 import os
 import re
@@ -28,6 +30,7 @@ from app.infrastructure.database.models import (
     ArtifactModel,
     KnowledgeUnitModel,
     PostModel,
+    ProductionClaimModel,
     ProductionJobItemModel,
     ProductionJobModel,
     SourceModel,
@@ -117,7 +120,42 @@ async def create_production_job(
     recipe_key: str = BOOK_TO_TELEGRAM_POST.key,
     identity_key: str | None = None,
     product_key: str | None = None,
+    idempotency_key: str | None = None,
+    request_fingerprint: str | None = None,
+    request_payload: dict | None = None,
 ) -> ProductionJobModel:
+    # A claim is durable user intent; the job is a separate execution record.
+    # A missing key means an explicit fresh claim, never a settings-based dedupe.
+    normalized_units = sorted(str(unit_id) for unit_id in (knowledge_unit_ids or []))
+    canonical_request_payload = {
+        "source_id": str(source_id),
+        "scope": scope.value,
+        "topic_id": str(topic_id) if topic_id is not None else None,
+        "knowledge_unit_ids": normalized_units,
+        "recipe_key": recipe_key,
+        "identity_key": identity_key,
+        "product_key": product_key,
+    }
+    if request_fingerprint is None:
+        request_fingerprint = hashlib.sha256(
+            json.dumps(canonical_request_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+    persisted_request_payload = request_payload if request_payload is not None else canonical_request_payload
+
+    if idempotency_key is not None:
+        existing_claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.idempotency_key == idempotency_key)
+        )).scalar_one_or_none()
+        if existing_claim is not None:
+            if existing_claim.request_fingerprint != request_fingerprint:
+                raise ValueError("Idempotency key was already used for a different production request.")
+            existing_job = (await session.execute(
+                select(ProductionJobModel).where(ProductionJobModel.claim_id == existing_claim.id)
+            )).scalar_one_or_none()
+            if existing_job is None:
+                raise RuntimeError("Production claim exists without its execution job.")
+            return existing_job
+
     # Resolve once before persisting the job. The resolver reads one committed version.
     resolver = ControlPlaneResolver()
     resolved_prompt = await resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)
@@ -150,8 +188,17 @@ async def create_production_job(
         topic_id,
         knowledge_unit_ids or [],
     )
+    claim = ProductionClaimModel(
+        id=uuid4(),
+        source_id=source_id,
+        scope=scope.value,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+        request_payload=persisted_request_payload,
+    )
     job = ProductionJobModel(
         id=uuid4(),
+        claim_id=claim.id,
         source_id=source_id,
         scope=scope.value,
         status=ProductionJobStatus.QUEUED.value,
@@ -165,6 +212,7 @@ async def create_production_job(
             product=resolved_product,
         ).to_dict(),
     )
+    session.add(claim)
     session.add(job)
     for position, unit in enumerate(units, start=1):
         session.add(
@@ -180,6 +228,18 @@ async def create_production_job(
         await session.commit()
     except IntegrityError:
         await session.rollback()
+        if idempotency_key is not None:
+            existing_claim = (await session.execute(
+                select(ProductionClaimModel).where(ProductionClaimModel.idempotency_key == idempotency_key)
+            )).scalar_one_or_none()
+            if existing_claim is not None:
+                if existing_claim.request_fingerprint != request_fingerprint:
+                    raise ValueError("Idempotency key was already used for a different production request.")
+                existing_job = (await session.execute(
+                    select(ProductionJobModel).where(ProductionJobModel.claim_id == existing_claim.id)
+                )).scalar_one_or_none()
+                if existing_job is not None:
+                    return existing_job
         raise
     await session.refresh(job)
     logger.info(
