@@ -7,7 +7,7 @@ test("React factory reuses the same production claim key after an ambiguous netw
   let submittedKeys: string[] = [];
   let jobId = "33333333-3333-4333-8333-333333333333";
 
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => { if (!window.sessionStorage.getItem("e2e-production-claim-cleaned")) { window.localStorage.clear(); window.sessionStorage.setItem("e2e-production-claim-cleaned", "1"); } });
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{
     id: "recipe-id", key: "E2E_POST_RECIPE", name: "E2E Recipe", purpose: "test", active_version: 1,
@@ -71,12 +71,16 @@ test("React factory reuses the same production claim key after an ambiguous netw
   await expect(page.getByRole("status")).toContainText("تعذر بدء الإنتاج");
   expect(submittedKeys).toHaveLength(1);
 
+  // Reload proves the unresolved claim and its selected settings survive a page lifecycle.
+  await page.reload();
+  await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
   await page.getByTestId("start-production").click();
   await expect(page.getByTestId("production-job-details")).toBeVisible();
   expect(submittedKeys).toHaveLength(2);
   expect(submittedKeys[0]).toBeTruthy();
   expect(submittedKeys[1]).toBe(submittedKeys[0]);
 
+  await page.getByTestId("new-production-claim").click();
   await page.getByTestId("start-production").click();
   await expect.poll(() => submittedKeys.length).toBe(3);
   expect(submittedKeys[2]).not.toBe(submittedKeys[0]);
