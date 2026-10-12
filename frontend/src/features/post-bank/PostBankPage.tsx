@@ -273,7 +273,7 @@ export function PostBankPage() {
           createProduction.mutate({ ...request, idempotency_key: claim.key });
         } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر بدء المطالبة."); }
       }} disabled={createProduction.isPending || !productionSourceId || !productKey || !bookMap.isSuccess || scopeMaterialCount === 0 || (scope === "TOPIC" && !productionTopicId) || (scope === "SELECTION" && !materialIds.length)} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">تشغيل مطالبة الإنتاج</button><button data-testid="new-production-claim" type="button" onClick={() => { clearPendingClaim(); setMessage("يمكنك الآن بدء مطالبة مستقلة جديدة؛ لن تُدمج مع المطالبة السابقة."); }} className="rounded-xl border px-4 py-3 text-sm font-semibold">بدء مطالبة جديدة</button><span className="text-sm text-slate-500">{scope === "SELECTION" ? `${materialIds.length} مادة محددة` : scope === "TOPIC" ? "إنتاج مواد المحور" : "إنتاج مواد الكتاب كاملة"}</span></div>
-      </div>}
+      }
       </>}
       {workspaceView === "job" && (job.data || jobId) && <div className="mt-4 space-y-4 rounded-xl border bg-slate-50 p-4" data-testid="production-job-details">
         <div className="flex flex-wrap items-start justify-between gap-3">
