@@ -494,3 +494,30 @@ async def test_legacy_job_without_claim_remains_readable_and_resumable(monkeypat
     assert resumed.json()["job_id"] == str(legacy_job_id)
     assert resumed.json()["claim_id"] is None
     assert resumed.json()["status"] == "QUEUED"
+
+
+@pytest.mark.asyncio
+async def test_book_map_returns_source_materials_without_topic_assignment():
+    source_id = uuid4()
+    material_id = uuid4()
+    async with SessionFactory() as session:
+        session.add(SourceModel(
+            id=source_id, filename="legacy-book.pdf", mime_type="application/pdf",
+            storage_path="./storage/test/legacy-book.pdf", size_bytes=10, status="STORED",
+        ))
+        session.add(KnowledgeUnitModel(
+            id=material_id, source_id=source_id, topic_id=None, position=1,
+            title="Unassigned material", content="Legacy content",
+        ))
+        await session.commit()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/sources/{source_id}/book-map")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["topics"] == []
+    assert len(payload["materials"]) == 1
+    assert payload["materials"][0]["id"] == str(material_id)
+    assert payload["materials"][0]["topic_id"] is None
