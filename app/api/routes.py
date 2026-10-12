@@ -320,6 +320,63 @@ def _book_map_checkpoint_payload(sections: list[BookMapSectionModel]) -> dict[st
     }
 
 
+async def _production_line_post_ids(
+    session: AsyncSession,
+    knowledge_unit_ids: list[UUID],
+    *,
+    product_key: str | None = None,
+    product_version: int | None = None,
+    identity_key: str | None = None,
+    identity_version: int | None = None,
+    recipe_key: str | None = None,
+    recipe_version: int | None = None,
+) -> set[UUID]:
+    if not knowledge_unit_ids:
+        return set()
+    # Without an explicit product filter retain the legacy aggregate for callers
+    # outside the production workspace. The React factory always supplies a line.
+    if product_key is None:
+        return set((await session.execute(
+            select(PostModel.knowledge_unit_id).where(PostModel.knowledge_unit_id.in_(knowledge_unit_ids))
+        )).scalars().all())
+
+    jobs = (await session.execute(
+        select(ProductionJobModel).where(ProductionJobModel.resolved_context.is_not(None))
+    )).scalars().all()
+
+    def matches(job: ProductionJobModel) -> bool:
+        context = job.resolved_context or {}
+        product = context.get("product") or {}
+        identity = context.get("identity")
+        recipe = context.get("recipe") or {}
+        if product.get("key") != product_key:
+            return False
+        if product_version is not None and product.get("version") != product_version:
+            return False
+        if identity_key is None:
+            if identity is not None:
+                return False
+        elif not identity or identity.get("key") != identity_key:
+            return False
+        if identity_version is not None and (not identity or identity.get("version") != identity_version):
+            return False
+        if recipe_key is not None and recipe.get("key") != recipe_key:
+            return False
+        if recipe_version is not None and recipe.get("version") != recipe_version:
+            return False
+        return True
+
+    job_ids = [job.id for job in jobs if matches(job)]
+    if not job_ids:
+        return set()
+    return set((await session.execute(
+        select(PostModel.knowledge_unit_id).where(
+            PostModel.knowledge_unit_id.in_(knowledge_unit_ids),
+            PostModel.production_job_id.in_(job_ids),
+        )
+    )).scalars().all())
+
+
 def _topic_payload(topic: TopicModel, units: list[KnowledgeUnitModel], produced_ids: set[UUID] | None = None) -> dict[str, Any]:
     return {
         "id": str(topic.id),
@@ -418,7 +475,15 @@ async def create_source(
 
 
 @router.get("/sources")
-async def list_sources(session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
+async def list_sources(
+    product_key: str | None = Query(default=None),
+    product_version: int | None = Query(default=None, ge=1),
+    identity_key: str | None = Query(default=None),
+    identity_version: int | None = Query(default=None, ge=1),
+    recipe_key: str | None = Query(default=None),
+    recipe_version: int | None = Query(default=None, ge=1),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
     result = await session.execute(
         select(SourceModel).options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
     )
@@ -428,12 +493,25 @@ async def list_sources(session: AsyncSession = Depends(get_session)) -> list[dic
         .where(KnowledgeUnitModel.source_id.in_([source.id for source in sources]))
         .group_by(KnowledgeUnitModel.source_id)
     )).all()) if sources else {}
-    post_counts = dict((await session.execute(
-        select(KnowledgeUnitModel.source_id, func.count(PostModel.id))
-        .join(PostModel, PostModel.knowledge_unit_id == KnowledgeUnitModel.id)
-        .where(KnowledgeUnitModel.source_id.in_([source.id for source in sources]))
-        .group_by(KnowledgeUnitModel.source_id)
-    )).all()) if sources else {}
+    all_unit_ids = (await session.execute(
+        select(KnowledgeUnitModel.id).where(KnowledgeUnitModel.source_id.in_([source.id for source in sources]))
+    )).scalars().all() if sources else []
+    line_post_ids = await _production_line_post_ids(
+        session, all_unit_ids, product_key=product_key, product_version=product_version,
+        identity_key=identity_key, identity_version=identity_version,
+        recipe_key=recipe_key, recipe_version=recipe_version,
+    )
+    post_counts: dict[UUID, int] = {}
+    if line_post_ids:
+        post_counts = dict((await session.execute(
+            select(KnowledgeUnitModel.source_id, func.count(func.distinct(KnowledgeUnitModel.id)))
+            .join(PostModel, PostModel.knowledge_unit_id == KnowledgeUnitModel.id)
+            .where(
+                KnowledgeUnitModel.source_id.in_([source.id for source in sources]),
+                KnowledgeUnitModel.id.in_(line_post_ids),
+            )
+            .group_by(KnowledgeUnitModel.source_id)
+        )).all())
     return [
         {
             "id": str(source.id),
@@ -514,7 +592,16 @@ async def retry_discovery(
 
 
 @router.get("/sources/{source_id}/book-map")
-async def get_book_map(source_id: UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+async def get_book_map(
+    source_id: UUID,
+    product_key: str | None = Query(default=None),
+    product_version: int | None = Query(default=None, ge=1),
+    identity_key: str | None = Query(default=None),
+    identity_version: int | None = Query(default=None, ge=1),
+    recipe_key: str | None = Query(default=None),
+    recipe_version: int | None = Query(default=None, ge=1),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
     result = await session.execute(
         select(SourceModel).options(defer(SourceModel.file_payload)).where(SourceModel.id == source_id)
     )
@@ -530,9 +617,11 @@ async def get_book_map(source_id: UUID, session: AsyncSession = Depends(get_sess
         select(KnowledgeUnitModel).where(KnowledgeUnitModel.source_id == source_id).order_by(KnowledgeUnitModel.position)
     )
     units = units_result.scalars().all()
-    produced_ids = set((await session.execute(
-        select(PostModel.knowledge_unit_id).where(PostModel.knowledge_unit_id.in_([unit.id for unit in units]))
-    )).scalars().all()) if units else set()
+    produced_ids = await _production_line_post_ids(
+        session, [unit.id for unit in units], product_key=product_key, product_version=product_version,
+        identity_key=identity_key, identity_version=identity_version,
+        recipe_key=recipe_key, recipe_version=recipe_version,
+    )
     grouped = {topic.id: [] for topic in topics}
     for unit in units:
         if unit.topic_id in grouped:
