@@ -171,7 +171,6 @@ def get_approve_and_publish() -> ApproveAndPublish:
 def _job_payload(job: DiscoveryJobModel) -> dict[str, Any]:
     return {
         "job_id": str(job.id),
-        "claim_id": str(job.claim_id) if job.claim_id else None,
         "source_id": str(job.source_id),
         "status": job.status,
         "stage": job.stage,
