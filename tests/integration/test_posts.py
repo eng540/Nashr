@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.application.posts import ProducePost
 from app.application.control_plane import ControlPlaneResolver, PromptTemplateService
-from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel, TopicModel
+from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobModel, SourceModel, TopicModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -78,7 +78,7 @@ async def test_post_provenance_reaches_source_and_topic() -> None:
         assert row.knowledge_unit.topic.source.id == source_id
 
 
-async def test_produce_post_is_idempotent() -> None:
+async def test_new_explicit_post_claim_creates_independent_post() -> None:
     _, _, unit_id = await _unit()
     async with SessionFactory() as session:
         drafter = FakeEditorialDrafter()
@@ -87,6 +87,24 @@ async def test_produce_post_is_idempotent() -> None:
         count = (
             await session.execute(
                 select(PostModel).where(PostModel.knowledge_unit_id == unit_id)
+            )
+        ).scalars().all()
+        assert first.id != second.id
+        assert len(count) == 2
+
+
+async def test_retry_within_same_production_job_reuses_its_post() -> None:
+    source_id, _, unit_id = await _unit()
+    job_id = uuid4()
+    async with SessionFactory() as session:
+        session.add(ProductionJobModel(id=job_id, source_id=source_id, scope="SELECTION", status="QUEUED", total_items=1))
+        await session.commit()
+        drafter = FakeEditorialDrafter()
+        first = await ProducePost(drafter).execute(session, unit_id, production_job_id=job_id)
+        second = await ProducePost(drafter).execute(session, unit_id, production_job_id=job_id)
+        count = (
+            await session.execute(
+                select(PostModel).where(PostModel.production_job_id == job_id)
             )
         ).scalars().all()
         assert first.id == second.id
@@ -117,20 +135,23 @@ async def test_draft_failure_leaves_no_post() -> None:
         assert rows == []
 
 
-async def test_existing_post_is_returned_without_regeneration() -> None:
+async def test_new_claim_does_not_reuse_legacy_post() -> None:
     _, _, unit_id = await _unit()
     async with SessionFactory() as session:
         row = PostModel(
             id=uuid4(),
             knowledge_unit_id=unit_id,
-            content="Existing post",
+            content="Existing legacy post",
             status="DRAFT",
         )
         session.add(row)
         await session.commit()
-        post = await ProducePost(FailingDrafter()).execute(session, unit_id)
-        assert post.id == row.id
-        assert post.content == "Existing post"
+        post = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
+        assert post.id != row.id
+        rows = (await session.execute(
+            select(PostModel).where(PostModel.knowledge_unit_id == unit_id)
+        )).scalars().all()
+        assert len(rows) == 2
 
 
 class PromptRecordingDrafter:
