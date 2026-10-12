@@ -283,6 +283,12 @@ test("production wizard selects SOURCE, TOPIC and SELECTION before review and su
   const pageTwoMaterial = materials.find((material) => material.title === "Additional material 19")!;
   await page.getByText(pageTwoMaterial.title, { exact: true }).locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
   await expect(page.getByText("3 مادة محددة").first()).toBeVisible();
+  await page.getByRole("button", { name: "تحديد الصفحة", exact: true }).click();
+  await expect(page.getByText("6 مادة محددة").first()).toBeVisible();
+  await page.getByRole("button", { name: "إلغاء تحديد الصفحة", exact: true }).click();
+  await expect(page.getByText("2 مادة محددة").first()).toBeVisible();
+  await page.getByText(pageTwoMaterial.title, { exact: true }).locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
+  await expect(page.getByText("3 مادة محددة").first()).toBeVisible();
   await page.getByRole("button", { name: "السابق", exact: true }).click();
   await page.getByLabel("نوع المادة للإنتاج").selectOption("HTML");
   await page.getByLabel("نوع المادة للإنتاج").selectOption("");
