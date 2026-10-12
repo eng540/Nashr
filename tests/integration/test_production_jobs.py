@@ -220,7 +220,7 @@ async def test_failure_is_isolated_and_later_items_continue():
         assert [item.status for item in items] == ["COMPLETED", "FAILED", "COMPLETED", "COMPLETED"]
 
 
-async def test_existing_post_is_reused_by_job():
+async def test_new_job_creates_post_independent_of_legacy_post():
     source_id, _, unit_ids = await _fixture(materials=1)
     async with SessionFactory() as session:
         existing = PostModel(id=uuid4(), knowledge_unit_id=unit_ids[0], content="Existing", status="DRAFT")
@@ -231,9 +231,11 @@ async def test_existing_post_is_reused_by_job():
     async with SessionFactory() as session:
         posts = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_ids[0]))).scalars().all()
         item = (await session.execute(select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id))).scalar_one()
-        assert len(posts) == 1
-        assert posts[0].id == existing.id
-        assert item.post_id == existing.id
+        generated = [post for post in posts if post.production_job_id == job.id]
+        assert len(posts) == 2
+        assert existing.id in {post.id for post in posts}
+        assert len(generated) == 1
+        assert item.post_id == generated[0].id
 
 
 async def test_resume_skips_completed_and_retries_failed_only_when_requested():
