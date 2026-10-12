@@ -130,15 +130,30 @@ class PostModel(Base):
     publications: Mapped[list["PublicationModel"]] = relationship(back_populates="post", cascade="save-update, merge")
 
 
-class ProductionJobModel(Base):
-    __tablename__ = "production_jobs"
-    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_production_jobs_idempotency_key"),)
+class ProductionClaimModel(Base):
+    """Durable user intent and HTTP replay identity, independent from execution."""
+
+    __tablename__ = "production_claims"
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_production_claims_idempotency_key"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
     scope: Mapped[str] = mapped_column(String(30), nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    request_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    job: Mapped["ProductionJobModel | None"] = relationship(back_populates="claim", uselist=False)
+
+
+class ProductionJobModel(Base):
+    __tablename__ = "production_jobs"
+    __table_args__ = (UniqueConstraint("claim_id", name="uq_production_jobs_claim_id"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    claim_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("production_claims.id", ondelete="SET NULL"), nullable=True, index=True)
+    source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
+    scope: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="QUEUED")
     total_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -156,6 +171,7 @@ class ProductionJobModel(Base):
     editorial_prompt_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     source: Mapped[SourceModel] = relationship(back_populates="production_jobs")
+    claim: Mapped[ProductionClaimModel | None] = relationship(back_populates="job")
     items: Mapped[list["ProductionJobItemModel"]] = relationship(back_populates="job", cascade="all, delete-orphan")
 
 
