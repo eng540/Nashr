@@ -157,7 +157,7 @@ export function PostBankPage() {
       void client.invalidateQueries({ queryKey: ["production", "sources"] });
       void client.invalidateQueries({ queryKey: ["production", "book-map", productionSourceId] });
     },
-    onError: (error) => setMessage(error instanceof Error ? error.message : "تعذر بدء الإنتاج. احتُفظ بمفتاح الطلب لإعادة الإرسال بأمان."),
+    onError: (error) => setMessage(`تعذر بدء الإنتاج: ${error instanceof Error ? error.message : "حدث خطأ غير معروف."} احتُفظ بمفتاح الطلب لإعادة الإرسال بأمان.`),
   });
   const retryProduction = useMutation({ mutationFn: () => productionJobsApi.resume(jobId!), onSuccess: (data) => { setJobId(data.job_id); setJobItemsPage(0); void client.invalidateQueries({ queryKey: ["production", "job", jobId] }); void client.invalidateQueries({ queryKey: ["production", "job-items", jobId] }); } });
 
