@@ -148,6 +148,11 @@ test("manual production selection includes materials that have no topic assignme
   await expect(page.getByText("صفحة 1 من 2")).toBeVisible();
   await page.getByText("Unassigned Material", { exact: true }).locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
   await expect(page.getByText("1 مادة محددة")).toBeVisible();
+  await page.getByLabel("بحث مواد الإنتاج").fill("Material 25");
+  await expect(page.getByText("Unassigned Material 25", { exact: true })).toBeVisible();
+  await expect(page.getByText(/توجد اختيارات محفوظة خارج الفلتر الحالي/)).toBeVisible();
+  await page.getByLabel("بحث مواد الإنتاج").fill("");
+  await expect(page.getByText("صفحة 1 من 2")).toBeVisible();
   await page.getByRole("button", { name: "التالي", exact: true }).click();
   await expect(page.getByText("Unassigned Material 25", { exact: true })).toBeVisible();
   await expect(page.getByText("1 مادة محددة")).toBeVisible();
