@@ -144,17 +144,17 @@ async def test_patch_post_rejects_empty_content_and_missing_post():
 
 
 @pytest.mark.asyncio
-async def test_existing_post_is_not_duplicated():
+async def test_new_explicit_claim_creates_independent_post():
     _, _, _, _, _, units, post_by_unit = await _fixture()
     unit_id = units[0]
-    post_id = post_by_unit[unit_id]
+    prior_post_id = post_by_unit[unit_id]
     async with SessionFactory() as session:
         result = await ProducePost(FakeEditorialDrafter()).execute(session, unit_id)
-        assert result.id == post_id
+        assert result.id != prior_post_id
         count = len((await session.execute(
             select(PostModel).where(PostModel.knowledge_unit_id == unit_id)
         )).scalars().all())
-    assert count == 1
+    assert count == 2
 
 
 @pytest.mark.asyncio
