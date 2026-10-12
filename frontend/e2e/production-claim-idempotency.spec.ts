@@ -74,6 +74,8 @@ test("React factory reuses the same production claim key after an ambiguous netw
   await expect(page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" })).toBeEnabled();
   await page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" }).click();
   await expect(page.getByTestId("production-summary")).toBeVisible();
+  await expect(page.getByTestId("production-summary")).toContainText("سيشمل الطلب جميع المواد المرتبطة بهذا الكتاب");
+  await expect(page.getByTestId("production-summary")).toContainText("المواد الداخلة في الطلب");
   await page.getByTestId("start-production").click();
   await expect(page.getByText(/تعذر بدء الإنتاج/)).toBeVisible();
   expect(submittedKeys).toHaveLength(1);
