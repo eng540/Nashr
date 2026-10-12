@@ -278,15 +278,54 @@ test("production wizard selects SOURCE, TOPIC and SELECTION before review and su
   await page.getByLabel("بحث مواد الإنتاج").fill("Unassigned material");
   await page.getByText("Unassigned material", { exact: true }).locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
   await page.getByLabel("بحث مواد الإنتاج").fill("");
+  await expect(page.getByText("صفحة 1 من 2")).toBeVisible();
+  await page.getByRole("button", { name: "التالي", exact: true }).click();
+  const pageTwoMaterial = materials.find((material) => material.title === "Additional material 19")!;
+  await page.getByText(pageTwoMaterial.title, { exact: true }).locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
+  await expect(page.getByText("3 مادة محددة").first()).toBeVisible();
+  await page.getByRole("button", { name: "السابق", exact: true }).click();
   await page.getByLabel("نوع المادة للإنتاج").selectOption("HTML");
   await page.getByLabel("نوع المادة للإنتاج").selectOption("");
+  await expect(page.getByText("3 مادة محددة").first()).toBeVisible();
   await page.getByRole("button", { name: "متابعة إلى مراجعة إعداد الإنتاج" }).click();
   await expect(page.getByTestId("production-summary")).toContainText("مواد محددة");
-  await expect(page.getByTestId("production-summary")).toContainText("2");
+  await expect(page.getByTestId("production-summary")).toContainText("3");
   await expect(page.getByTestId("production-summary")).toContainText(assignedId);
   await expect(page.getByTestId("production-summary")).toContainText(unassignedId);
+  await expect(page.getByTestId("production-summary")).toContainText(pageTwoMaterial.id);
   await page.getByTestId("start-production").click();
   await expect(page.getByTestId("production-job-details")).toBeVisible();
-  expect(submitted[2]).toMatchObject({ source_id: sourceId, scope: "SELECTION", product_key: productKey, identity_key: identityKey, knowledge_unit_ids: [assignedId, unassignedId] });
+  expect(submitted[2]).toMatchObject({ source_id: sourceId, scope: "SELECTION", product_key: productKey, identity_key: identityKey, knowledge_unit_ids: [assignedId, unassignedId, pageTwoMaterial.id].sort() });
   expect(submitted[2].idempotency_key).toBeTruthy();
+});
+
+
+test("production setup blocks progression when product, identity, or source options fail to load", async ({ page }) => {
+  await page.addInitScript(() => { window.localStorage.clear(); });
+  await page.route("**/api/control/products", (route) => route.fulfill({ status: 503, json: { detail: "test product failure" } }));
+  await page.route("**/api/control/identities", (route) => route.fulfill({ status: 503, json: { detail: "test identity failure" } }));
+  await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [] }));
+  await page.route("**/sources**", (route) => route.fulfill({ status: 503, json: { detail: "test source failure" } }));
+  await page.goto("/posts/workspace");
+  await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل خيارات المنتج أو الهوية أو الوصفة" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "متابعة إلى اختيار المصدر" })).toBeDisabled();
+
+  await page.unroute("**/api/control/products");
+  await page.route("**/api/control/products", (route) => route.fulfill({ json: [{
+    id: "product-id", key: "E2E_RECOVERED_PRODUCT", name: "Recovered Product", purpose: "test", active_version: 1,
+    versions: [{ version: 1, status: "PUBLISHED", definition: { recipe_key: "E2E_RECOVERED_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "DEFAULT", audience: "readers", experience: "post" } }],
+  }] }));
+  await page.unroute("**/api/control/identities");
+  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
+  await page.unroute("**/api/control/recipes");
+  await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{
+    id: "recipe-id", key: "E2E_RECOVERED_RECIPE", name: "Recovered Recipe", purpose: "test", active_version: 1,
+    versions: [{ version: 1, status: "PUBLISHED", stages: [{ key: "produce", capability_key: "produce_post", capability_version: 1 }] }],
+  }] }));
+  await page.reload();
+  await expect(page.getByLabel("المنتج")).toBeVisible();
+  await page.getByLabel("المنتج").selectOption("E2E_RECOVERED_PRODUCT");
+  await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل الكتب المتاحة" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "متابعة إلى مراجعة إعداد الإنتاج" })).toBeDisabled();
 });
