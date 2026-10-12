@@ -117,7 +117,20 @@ async def create_production_job(
     recipe_key: str = BOOK_TO_TELEGRAM_POST.key,
     identity_key: str | None = None,
     product_key: str | None = None,
+    idempotency_key: str | None = None,
+    request_fingerprint: str | None = None,
 ) -> ProductionJobModel:
+    # An idempotency key identifies one submitted request, not a reusable output
+    # signature. A fresh key (or no key) intentionally creates a fresh claim.
+    if idempotency_key is not None:
+        existing = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.idempotency_key == idempotency_key)
+        )).scalar_one_or_none()
+        if existing is not None:
+            if existing.request_fingerprint != request_fingerprint:
+                raise ValueError("Idempotency key was already used for a different production request.")
+            return existing
+
     # Resolve once before persisting the job. The resolver reads one committed version.
     resolver = ControlPlaneResolver()
     resolved_prompt = await resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)
@@ -154,6 +167,8 @@ async def create_production_job(
         id=uuid4(),
         source_id=source_id,
         scope=scope.value,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
         status=ProductionJobStatus.QUEUED.value,
         total_items=len(units),
         editorial_prompt_key=resolved_prompt.key,
@@ -180,6 +195,14 @@ async def create_production_job(
         await session.commit()
     except IntegrityError:
         await session.rollback()
+        if idempotency_key is not None:
+            existing = (await session.execute(
+                select(ProductionJobModel).where(ProductionJobModel.idempotency_key == idempotency_key)
+            )).scalar_one_or_none()
+            if existing is not None:
+                if existing.request_fingerprint != request_fingerprint:
+                    raise ValueError("Idempotency key was already used for a different production request.")
+                return existing
         raise
     await session.refresh(job)
     logger.info(
