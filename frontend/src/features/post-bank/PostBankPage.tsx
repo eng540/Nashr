@@ -21,6 +21,17 @@ function productionLineFilter(products: ProductionProductOption[] | undefined, i
   return { product_key: product?.key, product_version: product?.active_version ?? undefined, identity_key: identity?.key, identity_version: identity?.active_version ?? undefined, recipe_key: recipeKey, recipe_version: recipe?.active_version ?? undefined };
 }
 
+function pendingRequestFromStorage(): Partial<CreateProductionRequest> | null {
+  try {
+    const stored = window.localStorage.getItem(PENDING_CLAIM_STORAGE_KEY);
+    if (!stored) return null;
+    const claim = JSON.parse(stored) as PendingClaim;
+    if (!claim.key || !claim.payload) return null;
+    const request = JSON.parse(claim.payload) as Partial<CreateProductionRequest>;
+    return request.source_id && request.scope ? request : null;
+  } catch { return null; }
+}
+
 function pendingClaimFor(payload: string): PendingClaim {
   const stored = window.localStorage.getItem(PENDING_CLAIM_STORAGE_KEY);
   if (stored) {
@@ -69,14 +80,14 @@ export function PostBankPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [reviewNote, setReviewNote] = useState("");
-  const [productionSourceId, setProductionSourceId] = useState("");
-  const [identityKey, setIdentityKey] = useState("");
-  const [productKey, setProductKey] = useState("ARABIC_LITERATURE_TELEGRAM_POST");
-  const [productionMode, setProductionMode] = useState<"ALL" | "NEEDS" | "DONE">("NEEDS");
+  const [productionSourceId, setProductionSourceId] = useState(() => pendingRequestFromStorage()?.source_id ?? "");
+  const [identityKey, setIdentityKey] = useState(() => pendingRequestFromStorage()?.identity_key ?? "");
+  const [productKey, setProductKey] = useState(() => pendingRequestFromStorage()?.product_key ?? "ARABIC_LITERATURE_TELEGRAM_POST");
+  const [productionMode, setProductionMode] = useState<"ALL" | "NEEDS" | "DONE">(() => pendingRequestFromStorage() ? "ALL" : "NEEDS");
   const [productionKind, setProductionKind] = useState("");
-  const [scope, setScope] = useState<ProductionScope>("SOURCE");
-  const [productionTopicId, setProductionTopicId] = useState("");
-  const [materialIds, setMaterialIds] = useState<string[]>([]);
+  const [scope, setScope] = useState<ProductionScope>(() => pendingRequestFromStorage()?.scope ?? "SOURCE");
+  const [productionTopicId, setProductionTopicId] = useState(() => pendingRequestFromStorage()?.topic_id ?? "");
+  const [materialIds, setMaterialIds] = useState<string[]>(() => pendingRequestFromStorage()?.knowledge_unit_ids ?? []);
   const [jobId, setJobId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
