@@ -171,6 +171,7 @@ def get_approve_and_publish() -> ApproveAndPublish:
 def _job_payload(job: DiscoveryJobModel) -> dict[str, Any]:
     return {
         "job_id": str(job.id),
+        "claim_id": str(job.claim_id) if job.claim_id else None,
         "source_id": str(job.source_id),
         "status": job.status,
         "stage": job.stage,
@@ -681,7 +682,8 @@ async def create_production_job_route(
             identity_key=payload.identity_key,
             product_key=payload.product_key,
             idempotency_key=payload.idempotency_key,
-            request_fingerprint=request_fingerprint if payload.idempotency_key is not None else None,
+            request_fingerprint=request_fingerprint,
+            request_payload=request_payload,
         )
         background_tasks.add_task(run_production_job, job.id)
         return await _load_production_job_payload(session, job)
