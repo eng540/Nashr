@@ -295,6 +295,20 @@ async def test_production_claim_idempotency_replays_same_job(monkeypatch: pytest
         assert replay.json()["claim_id"] == first.json()["claim_id"]
         assert replay.json()["claim_id"] != replay.json()["job_id"]
 
+    async with SessionFactory() as session:
+        claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.id == UUID(first.json()["claim_id"]))
+        )).scalar_one()
+        job = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == UUID(first.json()["job_id"]))
+        )).scalar_one()
+        assert job.claim_id == claim.id
+        assert claim.job is not None and claim.job.id == job.id
+        assert claim.id != job.id
+        assert claim.idempotency_key == "same-request-key"
+        assert len(claim.request_fingerprint) == 64
+        assert claim.request_payload["source_id"] == str(source_id)
+
 
 @pytest.mark.asyncio
 async def test_production_claim_idempotency_rejects_key_reuse_for_different_request(monkeypatch: pytest.MonkeyPatch):
