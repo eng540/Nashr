@@ -191,13 +191,13 @@ export function PostBankPage() {
 
   useEffect(() => {
     // Do not clear a user's book selection while product/line filters are still loading.
-    if (products.isLoading || sources.isLoading || !products.isSuccess || !sources.isSuccess) return;
+    if (products.isFetching || sources.isFetching || !products.isSuccess || !sources.isSuccess) return;
     if (productionSourceId && !productionSources.some((source) => source.id === productionSourceId)) {
       setProductionSourceId("");
       setProductionTopicId("");
       setMaterialIds([]);
     }
-  }, [products.isLoading, products.isSuccess, sources.isLoading, sources.isSuccess, productionMode, productionSourceId, productionSources]);
+  }, [products.isFetching, products.isSuccess, sources.isFetching, sources.isSuccess, productionMode, productionSourceId, productionSources]);
 
   const loadBank = () => { setPage(0); setSelected([]); setHasLoaded(true); };
   const clearFilters = () => { setFilterSourceId(ALL_SOURCES); setTopicId(""); setKind(""); setStatus(""); setSort("created"); setQueryInput(""); setQuery(""); setPage(0); setSelected([]); setSearchParams({}); };
