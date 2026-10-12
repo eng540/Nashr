@@ -25,8 +25,9 @@ test("React factory reuses the same production claim key after an ambiguous netw
     if (url.pathname.endsWith("/book-map")) {
       return route.fulfill({ json: {
         source_id: sourceId, book: { title: "E2E Book", description: "" }, count: 1,
+        materials: [{ id: materialId, position: 1, title: "Material", kind: "TEXT", content: "Source text", has_post: false, topic_id: "topic-id" }],
         topics: [{ id: "topic-id", position: 1, title: "Topic", description: "", materials: [{
-          id: materialId, position: 1, title: "Material", kind: "TEXT", content: "Source text", has_post: false,
+          id: materialId, position: 1, title: "Material", kind: "TEXT", content: "Source text", has_post: false, topic_id: "topic-id",
         }] }],
       } });
     }
