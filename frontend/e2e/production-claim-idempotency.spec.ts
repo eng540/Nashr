@@ -67,14 +67,23 @@ test("React factory reuses the same production claim key after an ambiguous netw
   await page.route(`**/production-jobs/${jobId}/items**`, (route) => route.fulfill({ json: { job_id: jobId, total: 0, limit: 20, offset: 0, items: [] } }));
 
   await page.goto("/posts/workspace");
+  await expect(page.getByLabel("المنتج")).toBeVisible();
+  await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
+  await expect(page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" })).toBeEnabled();
+  await page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" }).click();
+  await expect(page.getByTestId("production-summary")).toBeVisible();
   await page.getByTestId("start-production").click();
   await expect(page.getByText(/تعذر بدء الإنتاج/)).toBeVisible();
   expect(submittedKeys).toHaveLength(1);
 
   // Reload proves the unresolved claim and its selected settings survive a page lifecycle.
   await page.reload();
+  await expect(page.getByLabel("المنتج")).toBeVisible();
+  await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
+  await page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" }).click();
+  await expect(page.getByTestId("production-summary")).toBeVisible();
   await page.getByTestId("start-production").click();
   await expect(page.getByTestId("production-job-details")).toBeVisible();
   expect(submittedKeys).toHaveLength(2);
@@ -120,8 +129,11 @@ test("manual production selection includes materials that have no topic assignme
     }] });
   });
   await page.goto("/posts/workspace");
+  await expect(page.getByLabel("المنتج")).toBeVisible();
+  await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
   await page.getByLabel("نطاق الإنتاج").selectOption("SELECTION");
+  await page.getByRole("button", { name: "متابعة إلى مراجعة الإعدادات" }).click();
   await expect(page.getByText("Unassigned Material")).toBeVisible();
   await page.getByText("Unassigned Material").locator("xpath=ancestor::label").locator('input[type="checkbox"]').check();
   await expect(page.getByText("1 مادة محددة")).toBeVisible();
