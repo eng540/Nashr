@@ -122,11 +122,12 @@ async def create_production_job(
     product_key: str | None = None,
     idempotency_key: str | None = None,
     request_fingerprint: str | None = None,
+    request_payload: dict | None = None,
 ) -> ProductionJobModel:
     # A claim is durable user intent; the job is a separate execution record.
     # A missing key means an explicit fresh claim, never a settings-based dedupe.
     normalized_units = sorted(str(unit_id) for unit_id in (knowledge_unit_ids or []))
-    request_payload = {
+    canonical_request_payload = {
         "source_id": str(source_id),
         "scope": scope.value,
         "topic_id": str(topic_id) if topic_id is not None else None,
@@ -137,8 +138,9 @@ async def create_production_job(
     }
     if request_fingerprint is None:
         request_fingerprint = hashlib.sha256(
-            json.dumps(request_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            json.dumps(canonical_request_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         ).hexdigest()
+    persisted_request_payload = request_payload if request_payload is not None else canonical_request_payload
 
     if idempotency_key is not None:
         existing_claim = (await session.execute(
@@ -192,7 +194,7 @@ async def create_production_job(
         scope=scope.value,
         idempotency_key=idempotency_key,
         request_fingerprint=request_fingerprint,
-        request_payload=request_payload,
+        request_payload=persisted_request_payload,
     )
     job = ProductionJobModel(
         id=uuid4(),
