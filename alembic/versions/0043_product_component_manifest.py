@@ -5,7 +5,7 @@ creates new published versions instead of rewriting existing published records.
 """
 from typing import Sequence, Union
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from alembic import op
 import sqlalchemy as sa
@@ -57,7 +57,7 @@ def upgrade() -> None:
         INSERT INTO editorial_identities (id, key, name, purpose)
         VALUES (:id, :key, :name, :purpose)
     """), {
-        "id": IDENTITY_ID,
+        "id": UUID(IDENTITY_ID),
         "key": IDENTITY_KEY,
         "name": "الهوية الأدبية الأمينة للمصدر",
         "purpose": identity_definition["purpose"],
@@ -66,8 +66,8 @@ def upgrade() -> None:
         INSERT INTO editorial_identity_versions (id, identity_id, version, definition, status)
         VALUES (:version_id, :identity_id, 1, CAST(:definition AS JSONB), 'PUBLISHED')
     """), {
-        "version_id": IDENTITY_VERSION_ID,
-        "identity_id": IDENTITY_ID,
+        "version_id": UUID(IDENTITY_VERSION_ID),
+        "identity_id": UUID(IDENTITY_ID),
         "definition": json.dumps(identity_definition, ensure_ascii=False),
     })
 
@@ -138,7 +138,7 @@ def upgrade() -> None:
             UPDATE production_product_versions SET status = 'ARCHIVED'
             WHERE id = :id AND status = 'PUBLISHED'
         """), {"id": product["product_version_id"]})
-        created_version_id = str(uuid4())
+        created_version_id = uuid4()
         bind.execute(sa.text("""
             INSERT INTO production_product_versions (id, product_id, version, definition, status)
             VALUES (:id, :product_id, :version, CAST(:definition AS JSONB), 'PUBLISHED')
@@ -151,7 +151,7 @@ def upgrade() -> None:
         bind.execute(sa.text("""
             INSERT INTO product_manifest_bootstrap_versions (product_version_id, previous_version_id)
             VALUES (:created_id, :previous_id)
-        """), {"created_id": created_version_id, "previous_id": str(product["product_version_id"])})
+        """), {"created_id": str(created_version_id), "previous_id": str(product["product_version_id"])})
 
     # Keep inactive built-in media drafts easy to complete in Control Plane; they
     # remain drafts and still require compatibility/storage checks before publish.
@@ -230,7 +230,7 @@ def downgrade() -> None:
             WHERE id::text = :id
         """), {"id": draft["version_id"], "definition": json.dumps(draft["previous_definition"], ensure_ascii=False)})
 
-    bind.execute(sa.text("DELETE FROM editorial_identity_versions WHERE id = :id"), {"id": IDENTITY_VERSION_ID})
-    bind.execute(sa.text("DELETE FROM editorial_identities WHERE id = :id"), {"id": IDENTITY_ID})
+    bind.execute(sa.text("DELETE FROM editorial_identity_versions WHERE id = :id"), {"id": UUID(IDENTITY_VERSION_ID)})
+    bind.execute(sa.text("DELETE FROM editorial_identities WHERE id = :id"), {"id": UUID(IDENTITY_ID)})
     op.drop_table("product_manifest_bootstrap_drafts")
     op.drop_table("product_manifest_bootstrap_versions")
