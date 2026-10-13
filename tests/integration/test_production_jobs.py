@@ -583,6 +583,13 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
         assert context.product.definition["recipe_key"] == context.recipe.key
         assert context.product.definition["output_contract_key"] == context.output_contract.key
         assert context.product.definition["policy_key"] == context.policy.key
+        manifest = context.product.definition["component_versions"]
+        assert manifest["prompt"]["version_id"] == context.prompt_template.version_id
+        assert context.identity is not None
+        assert manifest["identity"]["version_id"] == context.identity.version_id
+        assert manifest["recipe"]["version_id"] == context.recipe.version_id
+        assert manifest["output_contract"]["version_id"] == context.output_contract.version_id
+        assert manifest["policy"]["version_id"] == context.policy.version_id
 
     drafter = RecordingDrafter()
     await ProductionJobRunner(drafter).run(job.id)
