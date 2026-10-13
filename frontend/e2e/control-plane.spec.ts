@@ -143,9 +143,9 @@ test("a published product can be derived independently with pinned components re
   // can still replace the just-edited form with the persisted prompt value.
   await page.reload();
   await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
-  await expect(page.getByLabel("التعليمات المنشورة").locator("option").filter({ hasValue: alternatePromptKey })).toHaveCount(1);
+  await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
   await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
-  await expect(page.getByLabel("التعليمات المنشورة").locator("option").filter({ hasValue: alternatePromptKey })).toHaveCount(1);
+  await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
   await page.getByLabel("التعليمات المنشورة").selectOption(alternatePromptKey);
   await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(alternatePromptKey);
   await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
