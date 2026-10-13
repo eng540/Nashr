@@ -13,7 +13,7 @@ from app.application.policy_control_plane import ProductionPolicyControlPlaneSer
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, ProductionProductModel, ProductionProductVersionModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
 from app.infrastructure.database.control_plane import PromptTemplateRepository
 from app.infrastructure.database.session import SessionFactory
 
@@ -563,6 +563,49 @@ async def test_job_pins_policy_version_when_a_new_version_is_published():
         restore = await policies.create_draft("EDITORIAL_DEFAULT", permissive)
         assert restore["version"] == 3
         await policies.publish("EDITORIAL_DEFAULT", 3)
+
+
+async def test_legacy_published_product_requires_explicit_manifest_upgrade():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    product_id = uuid4()
+    async with SessionFactory() as session:
+        session.add(ProductionProductModel(
+            id=product_id,
+            key="LEGACY_PRODUCT_NO_MANIFEST_TEST",
+            name="Legacy Product",
+            purpose="Represents a product created before component manifests.",
+        ))
+        session.add(ProductionProductVersionModel(
+            id=uuid4(),
+            product_id=product_id,
+            version=1,
+            definition={
+                "recipe_key": "BOOK_TO_TELEGRAM_POST",
+                "output_contract_key": "TELEGRAM_POST",
+                "policy_key": "EDITORIAL_DEFAULT",
+                "audience": "Readers",
+                "experience": "Reviewable output",
+            },
+            status="PUBLISHED",
+        ))
+        await session.commit()
+
+        with pytest.raises(ValueError, match="legacy product version has no pinned component manifest"):
+            await create_production_job(
+                session, source_id, ProductionScope.SOURCE,
+                product_key="LEGACY_PRODUCT_NO_MANIFEST_TEST",
+            )
+
+
+async def test_product_identity_cannot_be_overridden_at_runtime():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        with pytest.raises(ValueError, match="cannot override the editorial identity"):
+            await create_production_job(
+                session, source_id, ProductionScope.SOURCE,
+                product_key="ARABIC_LITERATURE_BRIEF_TELEGRAM_POST",
+                identity_key="UNRELATED_RUNTIME_IDENTITY",
+            )
 
 
 async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_engine():
