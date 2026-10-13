@@ -54,6 +54,17 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         assert created.json()["created_version"]["status"] == "DRAFT"
         published_v1 = await client.post("/api/control/products/TEST_PRODUCT_LIFECYCLE/versions/1/publish")
         assert published_v1.status_code == 200, published_v1.text
+        manifest_v1 = published_v1.json()["definition"]["component_versions"]
+        assert set(manifest_v1) == {"prompt", "identity", "recipe", "policy", "output_contract"}
+        assert manifest_v1["prompt"]["key"] == "editorial.drafter"
+        assert manifest_v1["prompt"]["version"] == 1
+        assert manifest_v1["identity"]["key"] == "TEST_PRODUCT_IDENTITY"
+
+        prompt_v2 = await client.post("/api/control/prompts/editorial.drafter/versions", json={
+            "body": "Updated prompt used only by newly published product versions.",
+        })
+        assert prompt_v2.status_code == 201, prompt_v2.text
+        assert (await client.post("/api/control/prompts/editorial.drafter/versions/2/publish")).status_code == 200
 
         draft_v2 = await client.post("/api/control/products/TEST_PRODUCT_LIFECYCLE/versions", json={
             "definition": definition("BOOK_TO_TELEGRAM_POST_BRIEF"),
@@ -71,6 +82,9 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         assert versions[1]["status"] == "ARCHIVED"
         assert versions[2]["status"] == "PUBLISHED"
         assert versions[2]["definition"]["recipe_key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
+        assert versions[1]["definition"]["component_versions"]["prompt"] == manifest_v1["prompt"]
+        assert versions[2]["definition"]["component_versions"]["prompt"]["version"] == 2
+        assert versions[2]["definition"]["component_versions"]["recipe"]["version"] == 2
 
 
 @pytest.mark.asyncio
