@@ -258,7 +258,8 @@ test("production wizard selects SOURCE, TOPIC and SELECTION before review and su
   await page.goto("/posts/workspace");
   await expect(page.getByLabel("المنتج")).toBeVisible();
   await page.getByLabel("المنتج").selectOption(productKey);
-  await page.getByLabel("الهوية التحريرية للإنتاج").selectOption(identityKey);
+  await expect(page.getByLabel("الهوية التحريرية للإنتاج")).toHaveValue(identityKey);
+  await expect(page.getByLabel("الهوية التحريرية للإنتاج")).toBeDisabled();
   await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
   await page.getByLabel("الكتاب للإنتاج").selectOption(sourceId);
