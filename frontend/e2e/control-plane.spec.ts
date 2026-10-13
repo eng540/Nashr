@@ -114,7 +114,10 @@ test("a published product can be derived independently with pinned components re
   expect(sourceVersion?.definition.component_versions).toBeTruthy();
 
   await page.goto("/control");
+  await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: new RegExp(sourceKey) }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("button", { name: "اشتقاق منتج مستقل" })).toBeEnabled();
   await page.getByRole("button", { name: "اشتقاق منتج مستقل" }).click();
   const derivedKey = "E2E_DERIVED_" + Date.now();
   await page.getByLabel("مفتاح المنتج المشتق").fill(derivedKey);
@@ -143,6 +146,11 @@ test("a published product can be derived independently with pinned components re
   await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
   await page.getByRole("button", { name: "نشر الإصدار" }).click();
   await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
+  // Re-fetch persisted lineage/diff state, rather than asserting only transient form state.
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
+  await page.waitForLoadState("networkidle");
   const derivedResponse = await page.request.get("/api/control/products/" + derivedKey);
   expect(derivedResponse.ok()).toBeTruthy();
   const derived = await derivedResponse.json();
