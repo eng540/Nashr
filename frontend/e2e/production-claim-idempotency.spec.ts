@@ -130,7 +130,7 @@ test("manual production selection includes materials that have no topic assignme
   const productKey = "E2E_POST_PRODUCT";
   const identityKey = "E2E_POST_IDENTITY";
   await page.addInitScript(() => { window.localStorage.clear(); });
-  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [identityOption(identityKey)] }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{
     id: "recipe-id", key: "E2E_POST_RECIPE", name: "E2E Recipe", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", stages: [{ key: "produce", capability_key: "produce_post", capability_version: 1 }] }],
@@ -139,6 +139,8 @@ test("manual production selection includes materials that have no topic assignme
     id: "product-id", key: productKey, name: "E2E Post Product", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", definition: {
       recipe_key: "E2E_POST_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "EDITORIAL_DEFAULT",
+      prompt_key: "editorial.drafter", identity_key: identityKey,
+      component_versions: componentManifest("E2E_POST_RECIPE", identityKey),
       audience: "readers", experience: "post",
     } }],
   }] }));
@@ -340,7 +342,12 @@ test("production setup blocks progression when product, identity, or source opti
   await page.unroute("**/api/control/products");
   await page.route("**/api/control/products", (route) => route.fulfill({ json: [{
     id: "product-id", key: "E2E_RECOVERED_PRODUCT", name: "Recovered Product", purpose: "test", active_version: 1,
-    versions: [{ version: 1, status: "PUBLISHED", definition: { recipe_key: "E2E_RECOVERED_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "DEFAULT", audience: "readers", experience: "post" } }],
+    versions: [{ version: 1, status: "PUBLISHED", definition: {
+      recipe_key: "E2E_RECOVERED_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "DEFAULT",
+      prompt_key: "editorial.drafter", identity_key: "E2E_RECOVERED_IDENTITY",
+      component_versions: componentManifest("E2E_RECOVERED_RECIPE", "E2E_RECOVERED_IDENTITY", "DEFAULT"),
+      audience: "readers", experience: "post",
+    } }],
   }] }));
   await page.unroute("**/api/control/identities");
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [identityOption("E2E_RECOVERED_IDENTITY")] }));
