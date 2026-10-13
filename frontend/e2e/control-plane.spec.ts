@@ -135,6 +135,9 @@ test("a published product can be derived independently with pinned components re
   expect(prompt.ok()).toBeTruthy();
   expect((await page.request.post("/api/control/prompts/" + alternatePromptKey + "/versions/1/publish")).ok()).toBeTruthy();
 
+  // Refresh the Control Plane's hydrated prompt list, then reselect the draft product.
+  await page.reload();
+  await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
   await page.getByLabel("التعليمات المنشورة").selectOption(alternatePromptKey);
   await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
   await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
