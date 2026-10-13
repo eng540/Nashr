@@ -9,6 +9,8 @@ def definition(recipe_key: str = "BOOK_TO_TELEGRAM_POST") -> dict[str, str]:
         "recipe_key": recipe_key,
         "output_contract_key": "TELEGRAM_POST",
         "policy_key": "EDITORIAL_DEFAULT",
+        "prompt_key": "editorial.drafter",
+        "identity_key": "TEST_PRODUCT_IDENTITY",
         "audience": "Readers of Arabic literature",
         "experience": "Source-grounded content ready for review",
     }
@@ -18,6 +20,24 @@ def definition(recipe_key: str = "BOOK_TO_TELEGRAM_POST") -> dict[str, str]:
 async def test_product_lifecycle_versions_and_published_reference_validation():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        identity = await client.post("/api/control/identities", json={
+            "key": "TEST_PRODUCT_IDENTITY",
+            "name": "Test Product Identity",
+            "purpose": "Stable editorial identity for product manifest tests.",
+            "definition": {
+                "purpose": "Create source-grounded Arabic literary content.",
+                "audience": "Readers of Arabic literature",
+                "voice": "Careful literary editor",
+                "tone": "Precise and restrained",
+                "principles": ["Preserve source meaning"],
+                "objectives": ["Faithful editorial output"],
+                "constraints": ["Do not invent facts"],
+            },
+        })
+        assert identity.status_code == 201, identity.text
+        identity_publish = await client.post("/api/control/identities/TEST_PRODUCT_IDENTITY/versions/1/publish")
+        assert identity_publish.status_code == 200, identity_publish.text
+
         seeded = await client.get("/api/control/products")
         assert seeded.status_code == 200, seeded.text
         keys = {item["key"] for item in seeded.json()}
