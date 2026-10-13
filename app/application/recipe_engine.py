@@ -360,6 +360,22 @@ class ProduceVideoArtifactCapability:
             f"Source title: {unit.title}\nSource name: {source_name}\n"
             f"Source material (bounded excerpt):\n{unit.content[:6000]}"
         )
+        editorial_prompt = context.configuration.get("editorial_prompt")
+        if (
+            not isinstance(editorial_prompt, Mapping)
+            or not isinstance(editorial_prompt.get("body"), str)
+            or not editorial_prompt["body"].strip()
+        ):
+            raise ValueError(
+                "produce_video_artifact requires the pinned editorial_prompt body."
+            )
+        # The runner composes the job's pinned prompt and identity into this body.
+        # Include it explicitly: video generation must not silently bypass the
+        # resolved editorial context merely because it has a modality-specific prompt.
+        prompt += (
+            "\n\nPinned editorial instructions and identity context (must be followed):\n"
+            + editorial_prompt["body"].strip()
+        )
         if style_instructions:
             prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
 
