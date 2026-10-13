@@ -12,8 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Use the public ECR mirror to avoid Docker Hub's unauthenticated pull-rate limit.
-        image: public.ecr.aws/docker/library/postgres:16
+        # Google Artifact Registry's Docker Hub mirror avoids the exhausted public ECR data allowance.
+        image: mirror.gcr.io/library/postgres:16
         env:
           POSTGRES_DB: nashr
           POSTGRES_USER: nashr
