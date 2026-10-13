@@ -23,6 +23,16 @@ PROMPT_KEY = "editorial.drafter"
 
 def upgrade() -> None:
     bind = op.get_bind()
+    op.create_table(
+        "product_manifest_bootstrap_versions",
+        sa.Column("product_version_id", sa.String(length=36), primary_key=True),
+        sa.Column("previous_version_id", sa.String(length=36), nullable=False),
+    )
+    op.create_table(
+        "product_manifest_bootstrap_drafts",
+        sa.Column("version_id", sa.String(length=36), primary_key=True),
+        sa.Column("previous_definition", sa.JSON(), nullable=False),
+    )
     identity_definition = {
         "purpose": "تحرير أدبي أمين للمصدر، يوازن بين إبراز القيمة الأصلية والتدخل بالقدر الضروري فقط.",
         "audience": "قراء الأدب العربي والثقافة واللغة.",
@@ -128,58 +138,101 @@ def upgrade() -> None:
             UPDATE production_product_versions SET status = 'ARCHIVED'
             WHERE id = :id AND status = 'PUBLISHED'
         """), {"id": product["product_version_id"]})
+        created_version_id = str(uuid4())
         bind.execute(sa.text("""
             INSERT INTO production_product_versions (id, product_id, version, definition, status)
             VALUES (:id, :product_id, :version, CAST(:definition AS JSONB), 'PUBLISHED')
         """), {
-            "id": str(uuid4()),
+            "id": created_version_id,
             "product_id": product["product_id"],
             "version": int(latest) + 1,
             "definition": json.dumps(definition, ensure_ascii=False),
         })
+        bind.execute(sa.text("""
+            INSERT INTO product_manifest_bootstrap_versions (product_version_id, previous_version_id)
+            VALUES (:created_id, :previous_id)
+        """), {"created_id": created_version_id, "previous_id": str(product["product_version_id"])})
 
     # Keep inactive built-in media drafts easy to complete in Control Plane; they
     # remain drafts and still require compatibility/storage checks before publish.
-    bind.execute(sa.text("""
-        UPDATE production_product_versions
-        SET definition = definition || CAST(:references AS JSONB)
-        WHERE status = 'DRAFT'
-          AND definition->>'recipe_key' IS NOT NULL
-          AND definition->>'prompt_key' IS NULL
-          AND product_id IN (
-              SELECT p.id FROM production_products p
-              WHERE p.key IN ('ARABIC_LITERATURE_IMAGE', 'ARABIC_LITERATURE_VIDEO', 'ARABIC_LITERATURE_AUDIO')
-          )
-    """), {
-        "references": json.dumps({"prompt_key": PROMPT_KEY, "identity_key": IDENTITY_KEY})
-    })
+    drafts = bind.execute(sa.text("""
+        SELECT pv.id, pv.definition
+        FROM production_product_versions pv
+        JOIN production_products p ON p.id = pv.product_id
+        WHERE pv.status = 'DRAFT'
+          AND pv.definition->>'recipe_key' IS NOT NULL
+          AND pv.definition->>'prompt_key' IS NULL
+          AND p.key IN ('ARABIC_LITERATURE_IMAGE', 'ARABIC_LITERATURE_VIDEO', 'ARABIC_LITERATURE_AUDIO')
+    """)).mappings().all()
+    for draft in drafts:
+        bind.execute(sa.text("""
+            INSERT INTO product_manifest_bootstrap_drafts (version_id, previous_definition)
+            VALUES (:id, CAST(:definition AS JSONB))
+        """), {"id": str(draft["id"]), "definition": json.dumps(draft["definition"], ensure_ascii=False)})
+        bind.execute(sa.text("""
+            UPDATE production_product_versions
+            SET definition = definition || CAST(:references AS JSONB)
+            WHERE id = :id
+        """), {
+            "id": str(draft["id"]),
+            "references": json.dumps({"prompt_key": PROMPT_KEY, "identity_key": IDENTITY_KEY}),
+        })
 
 
 def downgrade() -> None:
     bind = op.get_bind()
-    # Remove only manifests introduced by this bootstrap identity. Historical
-    # product versions are retained; restore the preceding version as active.
     created = bind.execute(sa.text("""
-        SELECT id, product_id, version
-        FROM production_product_versions
-        WHERE definition->'component_versions'->'identity'->>'version_id' = :identity_version
-    """), {"identity_version": IDENTITY_VERSION_ID}).mappings().all()
+        SELECT product_version_id, previous_version_id
+        FROM product_manifest_bootstrap_versions
+    """)).mappings().all()
+    created_ids = [row["product_version_id"] for row in created]
     for row in created:
-        bind.execute(sa.text("DELETE FROM production_product_versions WHERE id = :id"), {"id": row["id"]})
-        previous = bind.execute(sa.text("""
-            SELECT id FROM production_product_versions
-            WHERE product_id = :product_id AND version < :version
-            ORDER BY version DESC LIMIT 1
-        """), {"product_id": row["product_id"], "version": row["version"]}).scalar_one_or_none()
-        if previous is not None:
-            bind.execute(sa.text("""
-                UPDATE production_product_versions SET status = 'PUBLISHED' WHERE id = :id
-            """), {"id": previous})
-    bind.execute(sa.text("""
-        UPDATE production_product_versions
-        SET definition = definition - 'prompt_key' - 'identity_key'
-        WHERE status = 'DRAFT' AND definition->>'identity_key' = :identity_key
-          AND definition->>'component_versions' IS NULL
-    """), {"identity_key": IDENTITY_KEY})
+        referenced = bind.execute(sa.text("""
+            SELECT 1 FROM production_jobs
+            WHERE resolved_context->'product'->>'version_id' = :version_id
+            LIMIT 1
+        """), {"version_id": row["product_version_id"]}).scalar_one_or_none()
+        if referenced is not None:
+            raise RuntimeError(
+                "Cannot downgrade product manifest bootstrap: a production job references a bootstrapped product version."
+            )
+    external_reference = bind.execute(sa.text("""
+        SELECT 1 FROM production_product_versions
+        WHERE definition->'component_versions'->'identity'->>'version_id' = :identity_version
+          AND id NOT IN (SELECT product_version_id FROM product_manifest_bootstrap_versions)
+        LIMIT 1
+    """), {"identity_version": IDENTITY_VERSION_ID}).scalar_one_or_none()
+    if external_reference is not None:
+        raise RuntimeError(
+            "Cannot downgrade product manifest bootstrap: another product version references the bootstrap identity."
+        )
+
+    changed_drafts = bind.execute(sa.text("""
+        SELECT d.version_id, d.previous_definition, pv.definition, pv.status
+        FROM product_manifest_bootstrap_drafts d
+        JOIN production_product_versions pv ON pv.id::text = d.version_id
+    """)).mappings().all()
+    expected_suffix = json.dumps({"prompt_key": PROMPT_KEY, "identity_key": IDENTITY_KEY}, ensure_ascii=False)
+    for draft in changed_drafts:
+        expected = dict(draft["previous_definition"])
+        expected.update({"prompt_key": PROMPT_KEY, "identity_key": IDENTITY_KEY})
+        if draft["status"] != "DRAFT" or draft["definition"] != expected:
+            raise RuntimeError(
+                "Cannot downgrade product manifest bootstrap: a migrated media draft changed after migration."
+            )
+
+    for row in created:
+        bind.execute(sa.text("DELETE FROM production_product_versions WHERE id::text = :id"), {"id": row["product_version_id"]})
+        bind.execute(sa.text("""
+            UPDATE production_product_versions SET status = 'PUBLISHED' WHERE id::text = :id
+        """), {"id": row["previous_version_id"]})
+    for draft in changed_drafts:
+        bind.execute(sa.text("""
+            UPDATE production_product_versions SET definition = CAST(:definition AS JSONB)
+            WHERE id::text = :id
+        """), {"id": draft["version_id"], "definition": json.dumps(draft["previous_definition"], ensure_ascii=False)})
+
     bind.execute(sa.text("DELETE FROM editorial_identity_versions WHERE id = :id"), {"id": IDENTITY_VERSION_ID})
     bind.execute(sa.text("DELETE FROM editorial_identities WHERE id = :id"), {"id": IDENTITY_ID})
+    op.drop_table("product_manifest_bootstrap_drafts")
+    op.drop_table("product_manifest_bootstrap_versions")
