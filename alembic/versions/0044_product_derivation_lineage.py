@@ -52,9 +52,8 @@ def upgrade() -> None:
     op.create_index("ix_production_products_derived_from_version_id", "production_products", ["derived_from_version_id"])
 
 
-def downgrade() -> None:
-    # Never silently erase lineage after real derived products have been created.
-    connection = op.get_bind()
+def _guard_no_existing_lineage(connection) -> None:
+    """Refuse rollback when it would erase persisted source relationships."""
     derived_count = connection.execute(
         sa.text(
             "SELECT count(*) FROM production_products "
@@ -66,6 +65,11 @@ def downgrade() -> None:
             "Cannot downgrade 0044_product_derivation_lineage: derived products exist; "
             "export or explicitly remove lineage records before retrying."
         )
+
+
+def downgrade() -> None:
+    # Never silently erase lineage after real derived products have been created.
+    _guard_no_existing_lineage(op.get_bind())
 
     op.drop_index("ix_production_products_derived_from_version_id", table_name="production_products")
     op.drop_index("ix_production_products_parent_product_id", table_name="production_products")
