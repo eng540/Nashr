@@ -242,7 +242,7 @@ def test_derivation_migration_downgrade_refuses_to_drop_existing_lineage(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_downgrade_guard_blocks_rollback_when_real_derived_product_exists():
+async def test_downgrade_guard_blocks_rollback_when_real_derived_product_exists(monkeypatch):
     import importlib.util
     from pathlib import Path
     from uuid import uuid4
@@ -276,8 +276,15 @@ async def test_downgrade_guard_blocks_rollback_when_real_derived_product_exists(
 
     async with SessionFactory() as session:
         connection = await session.connection()
-        with pytest.raises(RuntimeError, match="derived products exist"):
-            await connection.run_sync(migration._guard_no_existing_lineage)
+
+        def attempt_downgrade(sync_connection):
+            monkeypatch.setattr(migration.op, "get_bind", lambda: sync_connection)
+            with pytest.raises(RuntimeError, match="derived products exist"):
+                migration.downgrade()
+
+        # Invoke the actual Alembic downgrade function against the real test DB
+        # connection after creating a persisted derived product above.
+        await connection.run_sync(attempt_downgrade)
 
 
 
