@@ -220,3 +220,20 @@ Next work, in dependency order:
 4. Operational runbook, stale-item metrics, provider operation age, output-storage verification, and exact Railway deployment evidence.
 
 No new queue or microservice is approved by this status update. Telegram publication is excluded from reliability tests.
+
+
+## Product architecture and operational memory — 2026-10-13
+
+The product layer has reached versioned definitions and UI integration, but the next milestone is not adding more generic components: it is proving that each published product version resolves into a complete immutable runtime manifest and that all execution/resume/retry paths honor it.
+
+Follow [Product Model and Gap Audit](product-model-and-gap-audit.md) for evidence and acceptance criteria. Target behavior is proposed in [ADR-001](decisions/ADR-001-product-version-manifest.md), which remains Proposed until the full model/API audit and review are complete. No schema migration is authorized by the audit alone.
+
+Priority order:
+1. Audit product, identity, prompt, recipe, policy, and output-contract models/repositories/migrations/APIs and all production-job creation paths.
+2. Verify pinned context on create, resume, and retry, including legacy compatibility.
+3. Read-only inspect the previous `QUL_WA_LA_TAQUL_VIDEO` job, provider operation, Artifact, and storage metadata before considering a new generation.
+4. Trace video duration from product/experience to recipe, provider request, and returned media metadata.
+5. Add focused tests and narrow implementation PRs only for demonstrated gaps.
+6. Update [Product Architecture Operational Status](../operations/product-architecture-status.md) with exact CI/deployment/live evidence.
+
+Do not send to Telegram, publish externally, or launch duplicate paid provider work.
