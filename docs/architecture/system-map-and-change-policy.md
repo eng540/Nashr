@@ -175,3 +175,12 @@ The previous UX note above described PR #127 as open at an earlier point. The ob
 Current main after the documentation merge is `195bf73b0276203f125f7f8a2d45950cf7d9971e`; Railway production remains on `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c`. The product execution trace proves the following gaps in code: global `editorial.drafter` is resolved before product selection; identity remains a request-level optional override; product definition stores component keys but not exact versions; and video capability builds a separate prompt that bypasses the pinned editorial prompt and identity. The seeded video recipe uses 5 seconds and the capability supports only 5/6/8 seconds, so a 30–60-second output requires multi-clip assembly, not a duration constant change.
 
 See [Product Model and Gap Audit](product-model-and-gap-audit.md) for path evidence and acceptance sequence. ADR-001 remains Proposed; no code fix for these gaps has been merged. The old UX implementation log statement that PR #127 remains open is stale; PR #127 is merged as `01634eb9312eb13abb76235af032b7008529cf74`.
+
+## Product manifest boundary update (candidate branch, 2026-10-13)
+
+The intended ownership boundary is now explicit in the candidate branch: the published product version owns the immutable references to its editorial prompt, identity, recipe, policy, and output contract. Control Plane resolves and freezes those references at product publication; the shared production engine consumes the saved references and does not choose product-specific editorial rules inside a capability.
+
+The product factory is a run interface, not a composition editor. It must use the product-pinned identity and may not silently override it. Capability code may add modality execution details (for example, video rendering mechanics), but those details must not become a hidden substitute for the product's editorial identity/instructions.
+
+This is candidate-branch documentation, not yet a merged-main or production claim. Product derivation lineage/diffs and full compatibility preflight remain open. Legacy jobs continue from their saved context; legacy products without a manifest must be explicitly upgraded before new jobs start.
+
