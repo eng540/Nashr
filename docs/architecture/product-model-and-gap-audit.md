@@ -2,7 +2,8 @@
 
 **Reviewed:** 2026-10-13  
 **Repository:** `eng540/Nashr`  
-**Main HEAD observed:** `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c` (`fix: prevent Book Map 500 for discovery jobs (#128)`)  
+**Current main HEAD after PR #129:** `195bf73b0276203f125f7f8a2d45950cf7d9971e` (documentation merge).  
+**Production code commit observed in Railway:** `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c` (deployment succeeded 2026-10-12).  
 **Scope:** code-backed architecture audit; not a claim of live product acceptance.
 
 ## Evidence inspected
@@ -62,3 +63,43 @@ These recommendations require implementation review against the complete models,
 3. Map duration from product UX through recipe/configuration to provider request and returned media metadata.
 4. Build a per-modality matrix of pinning, provider parameters, Artifact validation, storage readback, and review visibility.
 5. Only then open a narrowly scoped code PR for proven defects. No Telegram send and no full-book generation.
+
+
+## Expanded execution-path evidence — 2026-10-13
+
+### Create path and component resolution
+
+- `create_production_job(...)` in `app/application/production_jobs.py` resolves `EDITORIAL_PROMPT_KEY = editorial.drafter` before resolving the product. The product definition has no prompt reference, so all new jobs using this path receive the active editorial.drafter version, regardless of product.
+- Recipe, policy, and output-contract are selected by key from the product definition, but their resolvers fetch the currently active PUBLISHED version. The product version itself does not contain component version numbers. A future job created from the same product version can therefore resolve newer component versions.
+- Identity is resolved only from the request's optional `identity_key`; it is not defined by the product. Factory identity selection affects the production context independently of the product version.
+- The job stores `ResolvedProductionContext.capture(...)` with prompt, recipe, optional identity, output contract, policy, and product snapshots. This preserves the actual resolved versions for that job once created, but does not make the product version immutable across future jobs.
+- `ProductionProductControlPlaneService.publish` validates the active recipe against the active output contract and checks that the policy has an active published version; it does not validate product-owned prompt or identity references because neither exists in the product definition. It checks storage access for STORAGE_URI contracts before publication.
+- `ControlPlanePage.tsx` exposes recipe key, policy key, output-contract key, audience, and experience. Its summary explicitly says identity and instructions are resolved at job creation and are not required to be bound to the product. “Create draft from this version” creates a version of the same product; it is not a derived product with parent lineage and component diff.
+
+### Execution, retry, and Artifact provenance
+
+- `ProductionJobRunner.run` reads the saved resolved context, verifies the prompt snapshot agrees with legacy prompt key/version/body fields, and uses the pinned recipe when present. Jobs predating context snapshots use their persisted prompt body and legacy `BOOK_TO_TELEGRAM_POST` route; missing historical prompt pins fail rather than being reconstructed from today's active prompt.
+- Stale recovery checks for a durable Artifact first, then a saved provider-operation handle. A valid output marks the item complete; a saved provider operation returns the item to pending for resume; no output and no provider handle is held as `PROVIDER_OUTCOME_UNKNOWN` rather than automatically generating again.
+- Generic Artifact persistence stores `resolved_context`, the strongest available provenance record for generic artifact paths. This does not prove media duration, dimensions, or semantic content were inspected.
+
+### Video capability evidence
+
+- `alembic/versions/0036_video_artifact_recipe.py` seeds `BOOK_TO_VIDEO_ARTIFACT` v1 with aspect ratio 9:16, resolution 720p, and duration_seconds 5.
+- `app/domain/recipes.py` validates `duration_seconds` only as 5, 6, or 8 seconds for `produce_video_artifact` v1. A single clip of 30–60 seconds is not supported by this capability contract.
+- `ProduceVideoArtifactCapability.execute` builds its own generic English video prompt from the material, product audience/experience, and recipe `style_instructions`. It does not call `_stage_system_prompt` or use the runner's composed editorial prompt. Consequently, the pinned editorial.drafter body and composed identity are not inputs to this video prompt path. The recipe stage's `style_instructions` is the only explicit video-specific editorial instruction.
+- Artifact metadata records requested duration, aspect ratio, resolution, model, and source/title, but inspected code does not probe the resulting media to verify actual duration, dimensions, scene sequence, or audio/text content.
+- Railway logs show repeated HTTP 200 GET polling of job `9a1f240a-4e6f-4a69-859a-551b444af087` on 2026-10-13, but logs do not expose response JSON or the provider/item/Artifact rows. The current state of that job and its relation to material `97befce9-1fa8-467c-acbf-fd913ba2535f` remain unverified, not inferred from polling logs.
+
+## Confirmed gap severity
+
+The product-to-run configuration gap is proven by code: product definition cannot select a prompt or identity and stores component keys rather than exact component versions. The video prompt bypass is also proven in capability code. Safe repair requires a compatibility-aware product manifest, version-specific resolvers, Control Plane form/API updates, tests, and a controlled legacy policy. Do not solve this by changing only a default key or silently rewriting production rows.
+
+## Required next implementation slice
+
+1. Introduce a versioned product manifest with prompt and identity references plus exact versions for recipe, policy, and output contract; reuse existing component records.
+2. Add resolvers for explicit component versions, including previously published/archived versions referenced by a published product; reject DRAFT or missing versions.
+3. Validate the exact manifest and recipe/capability/output-contract/provider compatibility before publishing.
+4. Update Control Plane editing to select existing component versions or create drafts; implement derived products as a distinct operation with parent lineage and component diff.
+5. Make ordinary factory execution use the product manifest. Keep overrides in a clearly marked experiment path and preserve legacy compatibility for old products/jobs.
+6. Design a multi-clip assembly capability if 30–60-second videos are required; do not represent a single 5/6/8-second request as a 30–60-second deliverable.
+7. Add tests for pinned versions, missing component rejection, resume/retry, derived-product independence, and video prompt/duration semantics before production acceptance.
