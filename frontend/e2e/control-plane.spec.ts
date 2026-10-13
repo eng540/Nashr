@@ -22,6 +22,12 @@ test("control plane keeps prompt management available beside product controls", 
 
 
 test("a product can be created in Control Plane and selected in the factory", async ({ page }) => {
+  const promptsResponse = await page.request.get("/api/control/prompts");
+  expect(promptsResponse.ok()).toBeTruthy();
+  const promptItems = await promptsResponse.json();
+  const promptKey = promptItems.find((prompt: { active_version?: number | null }) => prompt.active_version != null)?.key;
+  expect(promptKey).toBeTruthy();
+
   const recipe = await page.request.post("/api/control/recipes", { data: {
     key: "E2E_PRODUCT_RECIPE",
     name: "E2E Product Recipe",
@@ -74,7 +80,7 @@ test("a product can be created in Control Plane and selected in the factory", as
   await page.getByLabel("الوصفة المنشورة").selectOption("E2E_PRODUCT_RECIPE");
   await page.getByLabel("السياسة المنشورة").selectOption("E2E_PRODUCT_POLICY");
   await page.getByLabel("عقد المخرج المنشور").selectOption("E2E_PRODUCT_CONTRACT");
-  await page.getByLabel("التعليمات المنشورة").selectOption("editorial.drafter");
+  await page.getByLabel("التعليمات المنشورة").selectOption(promptKey);
   await page.getByLabel("الهوية التحريرية المنشورة").selectOption("E2E_PRODUCT_IDENTITY");
   await page.getByLabel("الجمهور").fill("E2E audience");
   await page.getByLabel("تجربة المنتج").fill("E2E product experience");
