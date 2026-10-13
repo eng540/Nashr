@@ -202,6 +202,7 @@ async def test_video_capability_uses_the_published_products_pinned_prompt_and_id
     assert artifact.metadata["requested_duration_seconds"] == 5
     assert "QUL PRODUCT INSTRUCTION" in generator.start_calls[0][0]
     assert "state the common phrase" in generator.start_calls[0][0]
+    assert f"Identity key: {identity_key}" in generator.start_calls[0][0]
     assert identity_definition["voice"] in generator.start_calls[0][0]
     assert row.review_status == "DRAFT"
     assert item.provider_operation_name == "operations/test-video-1"
