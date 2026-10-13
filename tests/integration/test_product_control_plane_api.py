@@ -84,7 +84,8 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         assert versions[2]["definition"]["recipe_key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
         assert versions[1]["definition"]["component_versions"]["prompt"] == manifest_v1["prompt"]
         assert versions[2]["definition"]["component_versions"]["prompt"]["version"] == 2
-        assert versions[2]["definition"]["component_versions"]["recipe"]["version"] == 2
+        assert versions[2]["definition"]["component_versions"]["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
+        assert versions[2]["definition"]["component_versions"]["recipe"]["version"] == 1
 
 
 @pytest.mark.asyncio
