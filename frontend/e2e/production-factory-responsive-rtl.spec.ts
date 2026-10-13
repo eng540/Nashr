@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const sourceId = "61111111-1111-4111-8111-111111111111";
 const topicId = "62222222-2222-4222-8222-222222222222";
 const productKey = "E2E_VISUAL_PRODUCT";
+const identityKey = "E2E_VISUAL_IDENTITY";
 const materials = Array.from({ length: 25 }, (_, index) => ({
   id: `63333333-3333-4333-8333-${String(index + 1).padStart(12, "0")}`,
   position: index + 1,
@@ -15,7 +16,10 @@ const materials = Array.from({ length: 25 }, (_, index) => ({
 
 async function mockFactoryApi(page: Page, failSources = false) {
   await page.addInitScript(() => { window.localStorage.clear(); });
-  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [{
+    id: "identity-id", key: identityKey, name: "وحدة تحريرية تجريبية", purpose: "test", active_version: 1,
+    versions: [{ version: 1, status: "PUBLISHED" }],
+  }] }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{
     id: "recipe-id", key: "E2E_VISUAL_RECIPE", name: "وصفة تجريبية", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", stages: [{ key: "produce", capability_key: "produce_post", capability_version: 1 }] }],
@@ -24,6 +28,14 @@ async function mockFactoryApi(page: Page, failSources = false) {
     id: "product-id", key: productKey, name: "منتج تجريبي", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", definition: {
       recipe_key: "E2E_VISUAL_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "EDITORIAL_DEFAULT",
+      prompt_key: "editorial.drafter", identity_key: identityKey,
+      component_versions: {
+        prompt: { key: "editorial.drafter", version_id: "20000000-0000-4000-8000-000000000001", version: 1 },
+        identity: { key: identityKey, version_id: "20000000-0000-4000-8000-000000000002", version: 1 },
+        recipe: { key: "E2E_VISUAL_RECIPE", version_id: "20000000-0000-4000-8000-000000000003", version: 1 },
+        policy: { key: "EDITORIAL_DEFAULT", version_id: "20000000-0000-4000-8000-000000000004", version: 1 },
+        output_contract: { key: "TELEGRAM_POST", version_id: "20000000-0000-4000-8000-000000000005", version: 1 },
+      },
       audience: "readers", experience: "post",
     } }],
   }] }));
