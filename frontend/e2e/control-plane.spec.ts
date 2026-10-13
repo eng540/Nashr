@@ -104,3 +104,94 @@ test("a product can be created in Control Plane and selected in the factory", as
   await page.getByLabel("المنتج").selectOption("E2E_UI_PRODUCT");
   await expect(page.getByLabel("المنتج")).toHaveValue("E2E_UI_PRODUCT");
 });
+
+test("a published product can be derived independently with pinned components reused", async ({ page }) => {
+  const sourceKey = "ARABIC_LITERATURE_TELEGRAM_POST";
+  const sourceResponse = await page.request.get("/api/control/products/" + sourceKey);
+  expect(sourceResponse.ok()).toBeTruthy();
+  const source = await sourceResponse.json();
+  const sourceVersion = source.versions.find((version: { version: number; status: string }) => version.version === source.active_version);
+  expect(sourceVersion?.definition.component_versions).toBeTruthy();
+
+  await page.goto("/control");
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: new RegExp(sourceKey) }).click();
+  await page.waitForLoadState("networkidle");
+  // Explicitly select the source version in the Control Plane before deriving.
+  await page.getByLabel("الإصدار").selectOption(String(source.active_version));
+  await expect(page.getByLabel("الإصدار")).toHaveValue(String(source.active_version));
+  await expect(page.getByRole("button", { name: "اشتقاق منتج مستقل" })).toBeEnabled();
+  await page.getByRole("button", { name: "اشتقاق منتج مستقل" }).click();
+  const derivedKey = "E2E_DERIVED_" + Date.now();
+  await page.getByLabel("مفتاح المنتج المشتق").fill(derivedKey);
+  await page.getByLabel("اسم المنتج المشتق").fill("E2E derived product");
+  await page.getByLabel("غرض المنتج المشتق").fill("Verify independent product lineage and exact component reuse");
+  await page.getByRole("button", { name: "إنشاء المنتج المشتق" }).click();
+
+  await expect(page.getByText("سجل اشتقاق المنتج")).toBeVisible();
+  await expect(page.locator("strong").filter({ hasText: sourceKey })).toBeVisible();
+
+  const alternatePromptKey = "E2E_DERIVED_PROMPT_" + Date.now();
+  const prompt = await page.request.post("/api/control/prompts", { data: {
+    key: alternatePromptKey,
+    name: "Derived product alternate prompt",
+    purpose: "Verify a single component change is surfaced accurately.",
+    body: "Alternative prompt for the derived product only.",
+  } });
+  expect(prompt.ok()).toBeTruthy();
+  expect((await page.request.post("/api/control/prompts/" + alternatePromptKey + "/versions/1/publish")).ok()).toBeTruthy();
+
+  // Refresh the Control Plane's hydrated prompt list, then wait for its async
+  // initial load to finish before selecting the derived draft. Otherwise reload()
+  // can still replace the just-edited form with the persisted prompt value.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
+  await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
+  await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
+  await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
+  await page.getByLabel("التعليمات المنشورة").selectOption(alternatePromptKey);
+  await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(alternatePromptKey);
+  await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
+  await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
+  const savedDraftResponse = await page.request.get("/api/control/products/" + derivedKey);
+  expect(savedDraftResponse.ok()).toBeTruthy();
+  const savedDraftProduct = await savedDraftResponse.json();
+  expect(savedDraftProduct.versions.find((version: { status: string }) => version.status === "DRAFT")?.definition.prompt_key).toBe(alternatePromptKey);
+  await page.getByRole("button", { name: "نشر الإصدار" }).click();
+  await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
+  // Re-fetch persisted lineage/diff state, rather than asserting only transient form state.
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
+  await page.waitForLoadState("networkidle");
+  const derivedResponse = await page.request.get("/api/control/products/" + derivedKey);
+  expect(derivedResponse.ok()).toBeTruthy();
+  const derived = await derivedResponse.json();
+  expect(derived.derivation.parent_product_key).toBe(sourceKey);
+  expect(derived.derivation.source_version).toBe(source.active_version);
+  expect(derived.derivation.changes.prompt_key).toEqual({
+    from: sourceVersion.definition.prompt_key,
+    to: alternatePromptKey,
+  });
+  expect(derived.derivation.component_diffs.prompt.from).toEqual(sourceVersion.definition.component_versions.prompt);
+  expect(derived.derivation.component_diffs.prompt.to.key).toBe(alternatePromptKey);
+  expect(derived.derivation.component_diffs.prompt.to.version).toBe(1);
+  await expect(page.getByText("تغييرات المكونات المثبتة")).toBeVisible();
+  await expect(page.locator("p").filter({ hasText: "مرجع المشتق:" }).filter({ hasText: alternatePromptKey })).toBeVisible();
+  for (const component of ["identity", "recipe", "policy", "output_contract"]) {
+    expect(derived.derivation.component_diffs[component]).toBeUndefined();
+    expect(derived.versions.find((version: { status: string }) => version.status === "PUBLISHED")?.definition.component_versions[component]).toEqual(sourceVersion.definition.component_versions[component]);
+  }
+  await expect(page.getByText("مرجع الأصل:", { exact: false })).toBeVisible();
+  await expect(page.getByText("مرجع المشتق:", { exact: false })).toBeVisible();
+  await expect(
+    page.locator("p").filter({ hasText: "مرجع الأصل:" }).filter({ hasText: sourceVersion.definition.component_versions.prompt.key }),
+  ).toBeVisible();
+  await expect(
+    page.locator("p").filter({ hasText: "مرجع المشتق:" }).filter({ hasText: alternatePromptKey }),
+  ).toBeVisible();
+
+  const sourceAfter = await (await page.request.get("/api/control/products/" + sourceKey)).json();
+  const sourceVersionAfter = sourceAfter.versions.find((version: { version: number }) => version.version === source.active_version);
+  expect(sourceVersionAfter.definition).toEqual(sourceVersion.definition);
+});

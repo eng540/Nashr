@@ -17,6 +17,15 @@ type ControlItem = {
   purpose: string;
   active_version?: number | null;
   versions?: Version[];
+  parent_product_id?: string | null;
+  derived_from_version_id?: string | null;
+  derivation?: {
+    parent_product_key: string;
+    source_version: number;
+    source_version_id: string;
+    changes: Record<string, { from: unknown; to: unknown }>;
+    component_diffs: Record<string, { from: unknown; to: unknown }>;
+  };
 };
 type StageForm = { key: string; capability_key: string; capability_version: string; configuration: string };
 type FormState = Record<string, string>;
@@ -80,6 +89,7 @@ function initialForm(_section: SectionKey, item?: ControlItem, version?: Version
     policy_key: asText(definition.policy_key),
     prompt_key: asText(definition.prompt_key, "editorial.drafter"),
     identity_key: asText(definition.identity_key),
+    component_versions_json: asText(JSON.stringify(definition.component_versions ?? {}), "{}"),
     audience: asText(definition.audience),
     experience: asText(definition.experience),
     identity_purpose: asText(definition.purpose, item?.purpose ?? ""),
@@ -101,6 +111,15 @@ function initialForm(_section: SectionKey, item?: ControlItem, version?: Version
   };
 }
 
+function pinnedComponentVersion(version: Version | undefined, component: string): number | undefined {
+  const refs = version?.definition?.component_versions;
+  if (!refs || typeof refs !== "object" || Array.isArray(refs)) return undefined;
+  const reference = (refs as Record<string, unknown>)[component];
+  if (!reference || typeof reference !== "object" || Array.isArray(reference)) return undefined;
+  const value = (reference as { version?: unknown }).version;
+  return typeof value === "number" ? value : undefined;
+}
+
 function stagesFromVersion(version?: Version): StageForm[] {
   const stages = version?.stages ?? [];
   return stages.map((stage) => ({
@@ -116,15 +135,41 @@ function lines(value: string): string[] {
 }
 
 function definitionFor(section: SectionKey, form: FormState, stages: StageForm[]): Record<string, unknown> {
-  if (section === "products") return {
-    recipe_key: form.recipe_key,
-    output_contract_key: form.output_contract_key,
-    policy_key: form.policy_key,
-    prompt_key: form.prompt_key,
-    identity_key: form.identity_key,
-    audience: form.audience,
-    experience: form.experience,
-  };
+  if (section === "products") {
+    const definition: Record<string, unknown> = {
+      recipe_key: form.recipe_key,
+      output_contract_key: form.output_contract_key,
+      policy_key: form.policy_key,
+      prompt_key: form.prompt_key,
+      identity_key: form.identity_key,
+      audience: form.audience,
+      experience: form.experience,
+    };
+    let savedReferences: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(form.component_versions_json || "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        savedReferences = parsed as Record<string, unknown>;
+      }
+    } catch {
+      throw new Error("مراجع مكونات المنتج المحفوظة غير صالحة؛ أعد تحميل الإصدار قبل حفظه.");
+    }
+    const selectedKeys: Record<string, string> = {
+      prompt: form.prompt_key,
+      identity: form.identity_key,
+      recipe: form.recipe_key,
+      policy: form.policy_key,
+      output_contract: form.output_contract_key,
+    };
+    const preserved = Object.fromEntries(
+      Object.entries(savedReferences).filter(([component, reference]) => {
+        if (!reference || typeof reference !== "object" || Array.isArray(reference)) return false;
+        return "key" in reference && (reference as { key?: unknown }).key === selectedKeys[component];
+      }),
+    );
+    if (Object.keys(preserved).length) definition.component_versions = preserved;
+    return definition;
+  }
   if (section === "recipes") return {
     stages: stages.map((stage) => {
       let configuration: Record<string, unknown> = {};
@@ -210,6 +255,7 @@ export function ControlPlanePage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [deriveDialog, setDeriveDialog] = useState<{ key: string; name: string; purpose: string } | null>(null);
 
   const section = sections.find((item) => item.key === activeSection)!;
   const items = itemsBySection[activeSection];
@@ -217,7 +263,6 @@ export function ControlPlanePage() {
   const selectedVersion = selected?.versions?.find((version) => version.version === selectedVersionNumber) ?? (selected ? latestVersion(selected) : undefined);
   const draft = selected?.versions?.find((version) => version.status === "DRAFT");
   const activeVersion = selected?.versions?.find((version) => version.status === "PUBLISHED");
-  const selectedProductNeedsManifest = activeSection === "products" && Boolean(activeVersion) && !activeVersion?.definition?.component_versions;
   const isNew = selectedKey === null;
   const publishedRecipes = itemsBySection.recipes.filter((item) => item.active_version != null);
   const publishedPolicies = itemsBySection.policies.filter((item) => item.active_version != null);
@@ -241,6 +286,15 @@ export function ControlPlanePage() {
           return item;
         }
       }));
+      if (sectionToSelect === "products" && keyToSelect) {
+        const productEndpoint = sections.find((entry) => entry.key === "products")!.endpoint;
+        try {
+          const detail = await request<ControlItem>(productEndpoint + "/" + encodeURIComponent(keyToSelect));
+          next.products = next.products.map((item) => item.key === keyToSelect ? detail : item);
+        } catch {
+          // Keep the list response usable if optional lineage detail is unavailable.
+        }
+      }
       setItemsBySection(next);
       const found = keyToSelect ? next[sectionToSelect].find((item) => item.key === keyToSelect) : undefined;
       const version = found?.versions?.find((candidate) => candidate.version === versionToSelect) ?? (found ? latestVersion(found) : undefined);
@@ -270,12 +324,15 @@ export function ControlPlanePage() {
 
   async function selectItem(item: ControlItem) {
     let resolved = item;
-    if (activeSection === "prompts") {
+    if (activeSection === "prompts" || activeSection === "products") {
       try {
         resolved = await request<ControlItem>(section.endpoint + "/" + encodeURIComponent(item.key));
-        setItemsBySection((current) => ({ ...current, prompts: current.prompts.map((entry) => entry.key === resolved.key ? resolved : entry) }));
+        setItemsBySection((current) => ({
+          ...current,
+          [activeSection]: current[activeSection].map((entry) => entry.key === resolved.key ? resolved : entry),
+        }));
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "تعذر تحميل القالب.");
+        setError(cause instanceof Error ? cause.message : "تعذر تحميل تفاصيل العنصر.");
         return;
       }
     }
@@ -364,6 +421,27 @@ export function ControlPlanePage() {
     } finally { setBusy(false); }
   }
 
+  async function deriveSelectedProduct() {
+    if (activeSection !== "products" || !selected || !selectedVersion || !deriveDialog) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const created = await request<ControlItem & { created_version?: Version }>(
+        "/api/control/products/" + encodeURIComponent(selected.key) + "/versions/" + selectedVersion.version + "/derive",
+        "POST",
+        { key: deriveDialog.key.trim(), name: deriveDialog.name.trim(), purpose: deriveDialog.purpose.trim() },
+      );
+      setDeriveDialog(null);
+      setMessage("تم إنشاء منتج مشتق مستقل بمسودة أولى؛ المكونات المشتركة ما زالت تشير إلى الإصدارات نفسها.");
+      await reload("products", created.key, created.created_version?.version ?? 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "تعذر اشتقاق المنتج.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function versionAction(action: "publish" | "archive", version: Version) {
     if (!selected) return;
     setBusy(true); setError(""); setMessage("");
@@ -406,13 +484,11 @@ export function ControlPlanePage() {
           <div className="space-y-2">{items.map((item) => {
             const published = item.versions?.find((version) => version.status === "PUBLISHED");
             const itemDraft = item.versions?.find((version) => version.status === "DRAFT");
-            const legacyProduct = activeSection === "products" && Boolean(published) && !published?.definition?.component_versions;
             return <button key={item.key} type="button" onClick={() => selectItem(item)} className={"block w-full rounded-xl border p-3 text-right " + (selectedKey === item.key ? "border-indigo-500 bg-indigo-50" : "bg-white hover:bg-slate-50")}>
               <span className="block font-semibold">{item.name}</span>
               <span className="mt-1 block text-xs text-slate-500">{item.key}</span>
               <span className="mt-2 flex flex-wrap gap-1 text-xs">
                 {published && <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800">فعال v{published.version}</span>}
-                {legacyProduct && <span className="rounded-full bg-rose-100 px-2 py-1 text-rose-800">يتطلب ترقية قبل الإنتاج</span>}
                 {itemDraft && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800">مسودة v{itemDraft.version}</span>}
                 {!published && !itemDraft && <span className="rounded-full bg-slate-100 px-2 py-1">لا يوجد إصدار منشور</span>}
               </span>
@@ -427,12 +503,28 @@ export function ControlPlanePage() {
           {selected && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm">الإصدار المنشور: <strong>{activeVersion ? "v" + activeVersion.version : "لا يوجد"}</strong></div>}
         </div>
 
-        {selectedProductNeedsManifest && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-7 text-amber-950">
-          هذا الإصدار المنشور لا يثبت مكونات المنتج، لذلك لن يظهر في مصنع المحتوى ولا يمكن بدء مهام جديدة به.
-          أنشئ مسودة إصدار جديدة من الإصدار المحدد، واختر التعليمات والهوية المنشورتين، ثم راجع الوصفة والسياسة وعقد المخرج وانشر الإصدار الجديد.
-          تبقى المهام التاريخية وسياقاتها المحفوظة دون تغيير.
-        </p>}
-
+        {activeSection === "products" && selected?.derivation && <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+          <h4 className="font-bold">سجل اشتقاق المنتج</h4>
+          <p className="mt-1 text-sm">الأصل: <strong>{selected.derivation.parent_product_key}</strong> · الإصدار v{selected.derivation.source_version}</p>
+          <p className="mt-1 text-xs text-slate-600">هذه نسخة مستقلة؛ التغييرات هنا لا تعدّل الأصل. المكونات التي لم تتغير تعيد استخدام مراجع الإصدارات نفسها.</p>
+          {Object.entries(selected.derivation.component_diffs ?? {}).length > 0 && <div className="mt-3 space-y-2">
+            <h5 className="text-sm font-semibold">تغييرات المكونات المثبتة</h5>
+            {Object.entries(selected.derivation.component_diffs).map(([component, change]) => <div key={component} className="rounded-lg bg-white p-3 text-xs">
+              <strong>{component}</strong>
+              <p className="mt-1 break-words text-slate-600">مرجع الأصل: {JSON.stringify(change.from)}</p>
+              <p className="break-words text-slate-700">مرجع المشتق: {JSON.stringify(change.to)}</p>
+            </div>)}
+          </div>}
+          <div className="mt-3 space-y-2">
+            {Object.entries(selected.derivation.changes).length === 0 && Object.entries(selected.derivation.component_diffs ?? {}).length === 0
+              ? <p className="text-sm text-slate-600">لا توجد فروقات عن إصدار الأصل حتى الآن.</p>
+              : Object.entries(selected.derivation.changes).map(([field, change]) => <div key={field} className="rounded-lg bg-white p-3 text-xs">
+                <strong>{field}</strong>
+                <p className="mt-1 break-words text-slate-600">الأصل: {JSON.stringify(change.from)}</p>
+                <p className="break-words text-slate-700">المشتق: {JSON.stringify(change.to)}</p>
+              </div>)}
+          </div>
+        </div>}
         {selected?.versions?.length ? <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
           <label className="text-sm font-semibold">الإصدار
             <select value={selectedVersionNumber ?? ""} onChange={(event) => changeVersion(Number(event.target.value))} className="mr-2 rounded-lg border bg-white p-2 font-normal">
@@ -444,6 +536,16 @@ export function ControlPlanePage() {
             const source = selectedVersion ?? activeVersion ?? latestVersion(selected);
             if (source) void createDraftFromVersion(source);
           }} className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold disabled:opacity-50">إنشاء مسودة من هذا الإصدار</button>}
+          {activeSection === "products" && selectedVersion && ["PUBLISHED", "ARCHIVED"].includes(selectedVersion.status)
+            && (() => {
+              const refs = selectedVersion.definition?.component_versions as Record<string, unknown> | undefined;
+              const complete = ["prompt", "identity", "recipe", "policy", "output_contract"].every((key) => refs && key in refs);
+              return complete ? <button type="button" disabled={busy} onClick={() => setDeriveDialog({
+                key: selected.key + "_DERIVED",
+                name: selected.name + " — مشتق",
+                purpose: selected.purpose,
+              })} className="rounded-lg bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-800 disabled:opacity-50">اشتقاق منتج مستقل</button> : null;
+            })()}
         </div> : null}
 
         {activeSection !== "prompts" && <div className="grid gap-3 md:grid-cols-2">
@@ -476,11 +578,19 @@ export function ControlPlanePage() {
           <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">يتحقق الخادم من توافق الوصفة والسياسة وعقد المخرج عند النشر، وتظهر هنا رسالة السبب إذا رفض التحقق.</p>
           {selected && <div className="rounded-xl border p-4"><h4 className="font-bold">مكونات الإصدار</h4><div className="mt-3 grid gap-3 sm:grid-cols-3">
             {[
-              { label: "الوصفة", key: form.recipe_key, item: publishedRecipes.find((item) => item.key === form.recipe_key) },
-              { label: "السياسة", key: form.policy_key, item: publishedPolicies.find((item) => item.key === form.policy_key) },
-              { label: "عقد المخرج", key: form.output_contract_key, item: publishedContracts.find((item) => item.key === form.output_contract_key) },
-            ].map(({ label, key, item }) => <div key={label} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="text-xs text-slate-500">{label}</p><strong>{item ? item.name : key || "غير محدد"}</strong><p className="mt-1 text-xs">{item ? "الإصدار المنشور v" + item.active_version : "لا يوجد إصدار منشور"}</p></div>)}
-          </div><p className="mt-3 text-xs text-slate-500">عند نشر الإصدار تُثبّت مراجع الهوية والتعليمات مع الوصفة والسياسة وعقد المخرج؛ وتستخدم المهمة هذه المراجع من سياقها المحفوظ.</p></div>}
+              { label: "الوصفة", component: "recipe", key: form.recipe_key, item: publishedRecipes.find((item) => item.key === form.recipe_key) },
+              { label: "التعليمات", component: "prompt", key: form.prompt_key, item: publishedPrompts.find((item) => item.key === form.prompt_key) },
+              { label: "الهوية التحريرية", component: "identity", key: form.identity_key, item: publishedIdentities.find((item) => item.key === form.identity_key) },
+              { label: "السياسة", component: "policy", key: form.policy_key, item: publishedPolicies.find((item) => item.key === form.policy_key) },
+              { label: "عقد المخرج", component: "output_contract", key: form.output_contract_key, item: publishedContracts.find((item) => item.key === form.output_contract_key) },
+            ].map(({ label, component, key, item }) => {
+              const pinnedVersion = pinnedComponentVersion(selectedVersion, component);
+              return <div key={label} className="rounded-lg bg-slate-50 p-3 text-sm">
+                <p className="text-xs text-slate-500">{label}</p><strong>{item ? item.name : key || "غير محدد"}</strong>
+                <p className="mt-1 text-xs">{pinnedVersion != null ? "الإصدار المثبت v" + pinnedVersion : item ? "سيُثبت الإصدار المنشور v" + item.active_version + " عند النشر" : "لا يوجد إصدار منشور"}</p>
+              </div>;
+            })}
+          </div><p className="mt-3 text-xs text-slate-500">الهوية التحريرية والتعليمات مثبتتان بإصدارات محددة في بيان المنتج المنشور؛ لا يحق لتشغيل عابر تجاوزهما.</p></div>}
         </div>}
 
         {activeSection === "recipes" && <div className="space-y-3">
@@ -527,6 +637,19 @@ export function ControlPlanePage() {
           <p className="md:col-span-2 rounded-xl bg-slate-50 p-3 text-xs leading-6 text-slate-600">العقد يفرض توافق نوع MIME وطريقة التخزين مع نوع المخرج. تبقى قواعد الصلاحية النهائية في نموذج الخادم وخدمة النشر.</p>
         </div>}
 
+        {deriveDialog && activeSection === "products" && <div role="dialog" aria-modal="true" aria-label="اشتقاق منتج مستقل" className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+          <h3 className="font-bold">اشتقاق منتج مستقل من {selected?.key} v{selectedVersionNumber}</h3>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <Field label="مفتاح المنتج المشتق" value={deriveDialog.key} onChange={(value) => setDeriveDialog((current) => current ? { ...current, key: value.toUpperCase().replace(/[^A-Z0-9._-]/g, "_") } : current)} disabled={busy} />
+            <Field label="اسم المنتج المشتق" value={deriveDialog.name} onChange={(value) => setDeriveDialog((current) => current ? { ...current, name: value } : current)} disabled={busy} />
+            <div className="md:col-span-2"><Field label="غرض المنتج المشتق" value={deriveDialog.purpose} onChange={(value) => setDeriveDialog((current) => current ? { ...current, purpose: value } : current)} disabled={busy} multiline /></div>
+          </div>
+          <p className="mt-3 text-xs leading-6 text-slate-600">سيُنشأ سجل منتج مستقل مرتبط بإصدار الأصل. لا تُنسخ تعريفات المكونات؛ تُحفظ مراجع الإصدارات المشتركة كما هي.</p>
+          <div className="mt-3 flex gap-2">
+            <button type="button" disabled={busy || !deriveDialog.key.trim() || !deriveDialog.name.trim() || !deriveDialog.purpose.trim()} onClick={() => void deriveSelectedProduct()} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">إنشاء المنتج المشتق</button>
+            <button type="button" disabled={busy} onClick={() => setDeriveDialog(null)} className="rounded-lg border bg-white px-4 py-2 text-sm">إلغاء</button>
+          </div>
+        </div>}
         <div className="flex flex-wrap gap-2 border-t pt-4">
           {isNew ? <button type="button" disabled={busy || !form.key.trim() || !form.name.trim() || !form.purpose.trim() || (activeSection === "prompts" && !form.body.trim()) || (activeSection === "products" && (!form.prompt_key || !form.identity_key))} onClick={() => void createItem()} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">إنشاء ومسودة أولى</button>
             : <button type="button" disabled={busy || !selected || selectedVersion?.status === "ARCHIVED" || (selectedVersion?.status === "PUBLISHED")} onClick={() => void saveDraft()} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-40">حفظ / إنشاء مسودة</button>}

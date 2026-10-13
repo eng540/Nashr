@@ -1,5 +1,11 @@
 # Product Architecture — Operational Status
 
+## Product derivation acceptance boundary
+
+PR #133 tracks source product/version lineage and exposes field/component diffs. Migration 0044 leaves legacy products unlinked, enforces paired lineage references, and uses a composite foreign key so the source version must belong to the selected parent product. Downgrade is blocked when derived-product lineage exists to prevent silent data loss.
+
+CI validates repository behavior only; it does not establish production migration safety, Railway deployment, provider readiness, or real output quality. Capability/provider/output-contract preflight remains a separate follow-up and is not part of PR #133. ADR-001 remains Proposed until architectural and operational acceptance criteria are complete.
+
 **Checked:** 2026-10-13  
 **Current main HEAD after PR #129:** `195bf73b0276203f125f7f8a2d45950cf7d9971e`  
 **Production code commit:** `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c`  
@@ -63,13 +69,14 @@ The updated Product Model and Gap Audit proves that prompt is resolved globally 
 
 **Status boundary:** no CI result, merge, Railway deployment, or production acceptance is claimed for the candidate manifest branch. Derivation/lineage, complete compatibility preflight, legacy-product upgrade UX, and actual video duration acceptance remain open. No Telegram send or external publication was performed.
 
-## PR #132 live status checkpoint (2026-10-13)
+## Derivation/lineage candidate — 2026-10-13
 
-- PR #132 remains open and must not be merged as part of this task.
-- The CI environment failure on SHA 59ddd43b36d0dd122cea5d24d26b59eea47be0fb was not an application-test failure: PostgreSQL container initialization failed while pulling public.ecr.aws/docker/library/postgres:16 with toomanyrequests: Data limit exceeded; no migrations or tests ran on that attempt.
-- .github/workflows/test.yml now uses mirror.gcr.io/library/postgres:16. Workflow run 38447408736 succeeded end-to-end on SHA f55b11af828b24b19abcc113dff4f859b481efd1: Initialize containers, Apply migrations, backend tests, frontend typecheck/unit/build, and Playwright all passed. This is evidence for that exact SHA only.
-- Subsequent commits add migration rollback/collision guards, product retry coverage, legacy-product upgrade messaging, and identity-override/legacy-product tests. Confirm the latest workflow run for the current PR head before calling this branch CI-passing.
-- The migration creates new versions for selected built-in post/text products and preserves previous definitions; custom products are not auto-assigned a generic identity. Legacy products without a manifest are explicitly upgraded in /control; old jobs retain their stored context.
-- The migration has not been applied to Railway. No live product row for QUL_WA_LA_TAQUL_VIDEO was retrieved, and no video request, Telegram send, or external publication was performed.
+A stacked candidate branch, `feat/product-derivation-lineage`, extends the manifest work with:
+- `parent_product_id` and `derived_from_version_id` references on product records.
+- Control Plane API/UI flow to derive an independent product from a published or archived manifest-backed product version.
+- Preserved component version IDs for unchanged components; explicit repinning only for components whose selected key changed.
+- A source-version link and component-level diff in the product details.
+- An integration test asserting that the source is unchanged and shared component references are reused.
 
-Still open: product derivation lineage and component diff, full capability/provider compatibility preflight, live custom-product inventory/upgrade, and video duration acceptance based on actual output metadata.
+The branch is not merged, CI-validated, or deployed. It is stacked on PR #132; do not merge it independently into main until the manifest base is accepted. Full recipe/contract/capability/provider compatibility preflight and measured video duration remain open.
+

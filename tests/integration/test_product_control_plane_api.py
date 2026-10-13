@@ -102,6 +102,93 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         assert versions[2]["definition"]["component_versions"]["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
         assert versions[2]["definition"]["component_versions"]["recipe"]["version"] == 1
 
+        # Source product v1 is ARCHIVED and its pinned prompt v1 is ARCHIVED too.
+        # An untouched derived product must retain that exact historical component ref.
+        archived_source = await client.get("/api/control/products/TEST_PRODUCT_LIFECYCLE")
+        assert archived_source.status_code == 200
+        archived_source_v1 = next(v for v in archived_source.json()["versions"] if v["version"] == 1)
+        assert archived_source_v1["status"] == "ARCHIVED"
+        assert archived_source_v1["definition"]["component_versions"]["prompt"] == manifest_v1["prompt"]
+
+        unchanged_derived = await client.post(
+            "/api/control/products/TEST_PRODUCT_LIFECYCLE/versions/1/derive",
+            json={
+                "key": "TEST_PRODUCT_DERIVED_ARCHIVED_REFS",
+                "name": "Derived product preserving archived references",
+                "purpose": "Prove unchanged archived component refs remain pinned",
+            },
+        )
+        assert unchanged_derived.status_code == 201, unchanged_derived.text
+        unchanged_published = await client.post(
+            "/api/control/products/TEST_PRODUCT_DERIVED_ARCHIVED_REFS/versions/1/publish"
+        )
+        assert unchanged_published.status_code == 200, unchanged_published.text
+        unchanged_manifest = unchanged_published.json()["definition"]["component_versions"]
+        assert unchanged_manifest == manifest_v1
+        assert unchanged_manifest["prompt"] == manifest_v1["prompt"]
+        async with SessionFactory() as session:
+            archived_prompt = await ControlPlaneResolver().resolve_prompt_version(session, unchanged_manifest["prompt"])
+            assert archived_prompt.version == 1
+            assert str(archived_prompt.version_id) == manifest_v1["prompt"]["version_id"]
+        prompt_detail = await client.get("/api/control/prompts/TEST_PRODUCT_PROMPT")
+        assert prompt_detail.status_code == 200, prompt_detail.text
+        archived_prompt_v1 = next(v for v in prompt_detail.json()["versions"] if v["version"] == 1)
+        assert archived_prompt_v1["status"] == "ARCHIVED"
+
+        prompt_alt = await client.post("/api/control/prompts", json={
+            "key": "TEST_PRODUCT_PROMPT_ALT",
+            "name": "Alternate Product Prompt",
+            "purpose": "Replacement instruction component for derivation tests.",
+            "body": "Alternate product instructions.",
+        })
+        assert prompt_alt.status_code == 201, prompt_alt.text
+        assert (await client.post("/api/control/prompts/TEST_PRODUCT_PROMPT_ALT/versions/1/publish")).status_code == 200
+
+        derived = await client.post("/api/control/products/TEST_PRODUCT_LIFECYCLE/versions/1/derive", json={
+            "key": "TEST_PRODUCT_DERIVED",
+            "name": "Derived Product",
+            "purpose": "Independent derived product fixture",
+        })
+        assert derived.status_code == 201, derived.text
+        derived_payload = derived.json()
+        assert derived_payload["parent_product_id"] is not None
+        assert derived_payload["derived_from_version_id"] == published_v1.json()["id"]
+        derived_definition = derived_payload["created_version"]["definition"]
+        assert derived_definition["component_versions"] == manifest_v1
+
+        derived_definition["audience"] = "Audience unique to the derived product"
+        derived_definition["prompt_key"] = "TEST_PRODUCT_PROMPT_ALT"
+        derived_definition["component_versions"].pop("prompt")
+        derived_draft = await client.patch("/api/control/products/TEST_PRODUCT_DERIVED/versions/1", json={
+            "definition": derived_definition,
+        })
+        assert derived_draft.status_code == 200, derived_draft.text
+        derived_published = await client.post("/api/control/products/TEST_PRODUCT_DERIVED/versions/1/publish")
+        assert derived_published.status_code == 200, derived_published.text
+        derived_manifest = derived_published.json()["definition"]["component_versions"]
+        assert derived_manifest["prompt"]["key"] == "TEST_PRODUCT_PROMPT_ALT"
+        assert derived_manifest["prompt"]["version"] == 1
+        for component in ("identity", "recipe", "policy", "output_contract"):
+            assert derived_manifest[component] == manifest_v1[component]
+
+        source_after_derivation = await client.get("/api/control/products/TEST_PRODUCT_LIFECYCLE")
+        assert source_after_derivation.status_code == 200
+        source_v1_after = next(v for v in source_after_derivation.json()["versions"] if v["version"] == 1)
+        assert source_v1_after["definition"]["audience"] == "Readers of Arabic literature"
+        assert source_v1_after["definition"]["component_versions"] == manifest_v1
+
+        derived_detail = await client.get("/api/control/products/TEST_PRODUCT_DERIVED")
+        assert derived_detail.status_code == 200
+        derivation = derived_detail.json()["derivation"]
+        assert derivation["parent_product_key"] == "TEST_PRODUCT_LIFECYCLE"
+        assert derivation["source_version"] == 1
+        assert derivation["changes"]["audience"]["from"] == "Readers of Arabic literature"
+        assert derivation["changes"]["audience"]["to"] == "Audience unique to the derived product"
+        assert derivation["changes"]["prompt_key"]["from"] == "TEST_PRODUCT_PROMPT"
+        assert derivation["changes"]["prompt_key"]["to"] == "TEST_PRODUCT_PROMPT_ALT"
+        assert derivation["component_diffs"]["prompt"]["from"]["key"] == "TEST_PRODUCT_PROMPT"
+        assert derivation["component_diffs"]["prompt"]["to"]["key"] == "TEST_PRODUCT_PROMPT_ALT"
+
 
 @pytest.mark.asyncio
 async def test_product_cannot_publish_with_missing_component_reference():
@@ -116,3 +203,158 @@ async def test_product_cannot_publish_with_missing_component_reference():
         assert created.status_code == 201, created.text
         publish = await client.post("/api/control/products/TEST_PRODUCT_MISSING_RECIPE/versions/1/publish")
         assert publish.status_code == 404
+
+
+
+@pytest.mark.asyncio
+async def test_derivation_database_constraints_keep_source_version_with_its_parent():
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+    from app.infrastructure.database.models import ProductionProductModel
+
+    async with SessionFactory() as session:
+        source = (await session.execute(
+            text("SELECT id FROM production_products WHERE key = 'ARABIC_LITERATURE_TELEGRAM_POST'")
+        )).scalar_one()
+        source_version = (await session.execute(
+            text("SELECT id FROM production_product_versions WHERE product_id = :product_id ORDER BY version DESC LIMIT 1"),
+            {"product_id": source},
+        )).scalar_one()
+        other = ProductionProductModel(key="TEST_DERIVATION_OTHER", name="Other", purpose="Constraint test")
+        session.add(other)
+        await session.flush()
+        wrong_version = ProductionProductModel(
+            key="TEST_DERIVATION_WRONG_SOURCE", name="Wrong source", purpose="Must be rejected",
+            parent_product_id=other.id, derived_from_version_id=source_version,
+        )
+        session.add(wrong_version)
+        with pytest.raises(IntegrityError):
+            await session.flush()
+        await session.rollback()
+
+    async with SessionFactory() as session:
+        source = (await session.execute(
+            text("SELECT id FROM production_products WHERE key = 'ARABIC_LITERATURE_TELEGRAM_POST'")
+        )).scalar_one()
+        invalid_half_reference = ProductionProductModel(
+            key="TEST_DERIVATION_HALF_REF", name="Half ref", purpose="Must be rejected",
+            parent_product_id=source, derived_from_version_id=None,
+        )
+        session.add(invalid_half_reference)
+        with pytest.raises(IntegrityError):
+            await session.flush()
+        await session.rollback()
+
+
+def test_derivation_migration_downgrade_refuses_to_drop_existing_lineage(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = Path(__file__).parents[2] / "alembic" / "versions" / "0044_product_derivation_lineage.py"
+    spec = importlib.util.spec_from_file_location("migration_0044_product_derivation_lineage_test", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+
+    class Result:
+        def scalar_one(self):
+            return 1
+
+    class Connection:
+        def execute(self, statement):
+            assert "production_products" in str(statement)
+            return Result()
+
+    drops = []
+    monkeypatch.setattr(migration.op, "get_bind", lambda: Connection())
+    monkeypatch.setattr(migration.op, "drop_index", lambda *args, **kwargs: drops.append(("index", args)))
+    with pytest.raises(RuntimeError, match="derived products exist"):
+        migration.downgrade()
+    assert drops == []
+
+
+
+@pytest.mark.asyncio
+async def test_downgrade_guard_blocks_rollback_when_real_derived_product_exists(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    from uuid import uuid4
+
+    migration_path = Path(__file__).parents[2] / "alembic" / "versions" / "0044_product_derivation_lineage.py"
+    spec = importlib.util.spec_from_file_location("migration_0044_real_lineage_guard_test", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        source_response = await client.get("/api/control/products/ARABIC_LITERATURE_TELEGRAM_POST")
+        assert source_response.status_code == 200, source_response.text
+        source = source_response.json()
+        source_version = next(
+            version for version in source["versions"] if version["version"] == source["active_version"]
+        )
+        derived_key = "TEST_ROLLBACK_GUARD_" + uuid4().hex.upper()
+        created = await client.post(
+            f"/api/control/products/ARABIC_LITERATURE_TELEGRAM_POST/versions/{source_version['version']}/derive",
+            json={
+                "key": derived_key,
+                "name": "Rollback guard fixture",
+                "purpose": "Prove a real lineage row blocks destructive downgrade",
+            },
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["parent_product_id"] == source["id"]
+        assert created.json()["derived_from_version_id"] == source_version["id"]
+
+    async with SessionFactory() as session:
+        connection = await session.connection()
+
+        def attempt_downgrade(sync_connection):
+            monkeypatch.setattr(migration.op, "get_bind", lambda: sync_connection)
+            with pytest.raises(RuntimeError, match="derived products exist"):
+                migration.downgrade()
+
+        # Invoke the actual Alembic downgrade function against the real test DB
+        # connection after creating a persisted derived product above.
+        await connection.run_sync(attempt_downgrade)
+
+
+
+def test_derivation_migration_downgrade_removes_constraints_when_no_lineage_exists(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = Path(__file__).parents[2] / "alembic" / "versions" / "0044_product_derivation_lineage.py"
+    spec = importlib.util.spec_from_file_location("migration_0044_empty_lineage_downgrade_test", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+
+    class Result:
+        def scalar_one(self):
+            return 0
+
+    class Connection:
+        def execute(self, statement):
+            assert "production_products" in str(statement)
+            return Result()
+
+    operations = []
+    monkeypatch.setattr(migration.op, "get_bind", lambda: Connection())
+    monkeypatch.setattr(migration.op, "drop_index", lambda *args, **kwargs: operations.append(("index", args[0])))
+    monkeypatch.setattr(migration.op, "drop_constraint", lambda *args, **kwargs: operations.append(("constraint", args[0])))
+    monkeypatch.setattr(migration.op, "drop_column", lambda *args, **kwargs: operations.append(("column", args[1])))
+
+    migration.downgrade()
+
+    assert operations == [
+        ("index", "ix_production_products_derived_from_version_id"),
+        ("index", "ix_production_products_parent_product_id"),
+        ("constraint", "ck_production_products_derivation_refs_pair"),
+        ("constraint", "fk_production_products_source_version_matches_parent"),
+        ("constraint", "fk_production_products_parent_product_id"),
+        ("column", "derived_from_version_id"),
+        ("column", "parent_product_id"),
+        ("constraint", "uq_production_product_versions_id_product"),
+    ]

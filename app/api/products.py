@@ -18,6 +18,7 @@ class ProductDefinitionRequest(BaseModel):
     policy_key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     prompt_key: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9._-]+$")
     identity_key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
+    component_versions: dict[str, Any] | None = None
     audience: str = Field(min_length=1, max_length=2000)
     experience: str = Field(min_length=1, max_length=2000)
 
@@ -33,6 +34,13 @@ class ProductCreateRequest(BaseModel):
 class ProductVersionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     definition: ProductDefinitionRequest
+
+
+class ProductDeriveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
+    name: str = Field(min_length=1, max_length=300)
+    purpose: str = Field(min_length=1, max_length=2000)
 
 
 def _definition(payload: ProductDefinitionRequest) -> dict[str, Any]:
@@ -86,6 +94,23 @@ async def update_product_version(key: str, version: int, payload: ProductVersion
 async def publish_product_version(key: str, version: int, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     try:
         return await ProductionProductControlPlaneService(session).publish(key, version)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/{source_key}/versions/{version}/derive", status_code=201)
+async def derive_product(
+    source_key: str,
+    version: int,
+    payload: ProductDeriveRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        return await ProductionProductControlPlaneService(session).derive_product(
+            source_key, version, payload.key, payload.name, payload.purpose
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

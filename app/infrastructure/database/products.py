@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +23,7 @@ class ProductionProductRepository:
 
     async def get_versions(self, key: str) -> list[ProductionProductVersionModel]:
         result = await self.session.execute(
-            select(ProductionProductVersionModel).join(ProductionProductModel)
+            select(ProductionProductVersionModel).join(ProductionProductModel, ProductionProductVersionModel.product_id == ProductionProductModel.id)
             .where(ProductionProductModel.key == key)
             .order_by(ProductionProductVersionModel.version.desc())
         )
@@ -40,8 +40,21 @@ class ProductionProductRepository:
             raise LookupError(f"No active published product exists for key '{key}'.")
         return row
 
-    async def create_product(self, key: str, name: str, purpose: str, definition: dict[str, object]):
-        product = ProductionProductModel(id=uuid4(), key=key, name=name, purpose=purpose)
+    async def create_product(
+        self,
+        key: str,
+        name: str,
+        purpose: str,
+        definition: dict[str, object],
+        *,
+        parent_product_id: UUID | None = None,
+        derived_from_version_id: UUID | None = None,
+    ):
+        product = ProductionProductModel(
+            id=uuid4(), key=key, name=name, purpose=purpose,
+            parent_product_id=parent_product_id,
+            derived_from_version_id=derived_from_version_id,
+        )
         self.session.add(product)
         await self.session.flush()
         version = ProductionProductVersionModel(
@@ -114,7 +127,9 @@ class ProductionProductRepository:
 
     async def _get_version_row(self, key: str, version: int) -> ProductionProductVersionModel | None:
         result = await self.session.execute(
-            select(ProductionProductVersionModel).join(ProductionProductModel)
-            .where(ProductionProductModel.key == key, ProductionProductVersionModel.version == version)
+            select(ProductionProductVersionModel).join(
+                ProductionProductModel,
+                ProductionProductVersionModel.product_id == ProductionProductModel.id,
+            ).where(ProductionProductModel.key == key, ProductionProductVersionModel.version == version)
         )
         return result.scalar_one_or_none()
