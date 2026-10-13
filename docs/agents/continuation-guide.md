@@ -62,3 +62,20 @@ Use distinct labels: **implemented in code**, **CI passed on exact SHA**, **merg
 - Video capability constructs a separate prompt from audience/experience and recipe style instructions, bypassing the pinned editorial prompt and composed identity.
 - Current video recipe contract allows only 5, 6, or 8 seconds; 30–60 seconds requires a multi-clip assembly architecture, not a constant change.
 - PR #127 and PR #129 are merged. Do not repeat the stale status in the older UX implementation log.
+
+## Continuation checkpoint — product manifest work (2026-10-13)
+
+Continue from PR #131 merged and branch `feat/immutable-product-component-manifest`; do not re-audit the project from scratch.
+
+Candidate changes currently on the branch:
+1. `app/domain/products.py`: manifest reference validation.
+2. `app/application/control_plane.py`: resolve exact component versions by version ID, including archived versions.
+3. `app/application/product_control_plane.py`: freeze references at publication.
+4. `app/application/production_jobs.py`: new product jobs resolve the published manifest and reject legacy products lacking one; runtime identity overrides are rejected when they conflict with the product.
+5. `app/domain/production_context.py`: validates resolved snapshots against manifest references.
+6. `alembic/versions/0043_product_component_manifest.py`: creates new manifest-backed versions for built-in post/text products without rewriting their old versions; custom products are not auto-assigned an identity.
+7. Control Plane UI and factory changes require prompt/identity selection and consume the product-pinned identity.
+8. Integration/E2E assertions exercise pinned component IDs and component-version stability.
+
+Next: inspect the complete diff and CI. Do not merge on a failing or pending CI result. Correct migration downgrade safety if needed, and fix any test failures at their root. Then implement product derivation with parent/version lineage and an explicit component diff in Control Plane, followed by compatibility preflight for capability/output contract/provider and a documented, measurable video-duration decision. Keep Telegram/external publication disabled in tests. Do not mark ADR-001 Accepted until all acceptance gates are met; do not claim Railway deployment from GitHub CI.
+
