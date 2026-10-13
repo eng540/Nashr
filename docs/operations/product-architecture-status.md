@@ -63,3 +63,13 @@ The updated Product Model and Gap Audit proves that prompt is resolved globally 
 
 **Status boundary:** no CI result, merge, Railway deployment, or production acceptance is claimed for the candidate manifest branch. Derivation/lineage, complete compatibility preflight, legacy-product upgrade UX, and actual video duration acceptance remain open. No Telegram send or external publication was performed.
 
+## PR #132 live status checkpoint (2026-10-13)
+
+- PR #132 remains open and must not be merged as part of this task.
+- The CI environment failure on SHA 59ddd43b36d0dd122cea5d24d26b59eea47be0fb was not an application-test failure: PostgreSQL container initialization failed while pulling public.ecr.aws/docker/library/postgres:16 with toomanyrequests: Data limit exceeded; no migrations or tests ran on that attempt.
+- .github/workflows/test.yml now uses mirror.gcr.io/library/postgres:16. Workflow run 38447408736 succeeded end-to-end on SHA f55b11af828b24b19abcc113dff4f859b481efd1: Initialize containers, Apply migrations, backend tests, frontend typecheck/unit/build, and Playwright all passed. This is evidence for that exact SHA only.
+- Subsequent commits add migration rollback/collision guards, product retry coverage, legacy-product upgrade messaging, and identity-override/legacy-product tests. Confirm the latest workflow run for the current PR head before calling this branch CI-passing.
+- The migration creates new versions for selected built-in post/text products and preserves previous definitions; custom products are not auto-assigned a generic identity. Legacy products without a manifest are explicitly upgraded in /control; old jobs retain their stored context.
+- The migration has not been applied to Railway. No live product row for QUL_WA_LA_TAQUL_VIDEO was retrieved, and no video request, Telegram send, or external publication was performed.
+
+Still open: product derivation lineage and component diff, full capability/provider compatibility preflight, live custom-product inventory/upgrade, and video duration acceptance based on actual output metadata.

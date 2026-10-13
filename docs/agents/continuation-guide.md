@@ -79,3 +79,16 @@ Candidate changes currently on the branch:
 
 Next: inspect the complete diff and CI. Do not merge on a failing or pending CI result. Correct migration downgrade safety if needed, and fix any test failures at their root. Then implement product derivation with parent/version lineage and an explicit component diff in Control Plane, followed by compatibility preflight for capability/output contract/provider and a documented, measurable video-duration decision. Keep Telegram/external publication disabled in tests. Do not mark ADR-001 Accepted until all acceptance gates are met; do not claim Railway deployment from GitHub CI.
 
+## Continuation checkpoint — PR #132 hardening
+
+Continue on the existing PR #132 branch feat/immutable-product-component-manifest; do not start a duplicate PR. Re-read the live PR head and CI before changing anything.
+
+Implemented in the candidate: explicit component version refs for prompt/identity/recipe/policy/output contract; exact ID+number resolvers that accept archived versions; publish-time manifest freeze; context/manifest consistency checks; runtime identity override rejection; factory filtering of legacy products; migration creating new built-in post/text versions without rewriting their historical definitions; and an actionable Control Plane upgrade path for legacy products. Tests now cover product manifest pins, prompt replacement followed by retry, a legacy published product being blocked with an explicit upgrade message, and rejection of runtime identity override.
+
+CI environment issue: .github/workflows/test.yml switched PostgreSQL from exhausted public ECR to mirror.gcr.io/library/postgres:16. Run 38447408736 passed all stages on f55b11af828b24b19abcc113dff4f859b481efd1; this predates later commits. Always verify the run for the exact current head. Do not run tests locally, do not merge, do not deploy, and do not start provider generation or Telegram/external publishing.
+
+Migration review note: 0043_product_component_manifest.py relies on the prior migration chain seeding editorial.drafter; it fails explicitly if that published prompt or any referenced published recipe/policy/contract is missing. It uses reserved identity UUIDs and now fails safely if the ID/key collides. Downgrade refuses when product versions, jobs, Artifacts, or modified drafts would make rollback unsafe. CI's alembic upgrade head tests the migration chain on a fresh database; it is not proof of compatibility with Railway's existing data.
+
+Do not claim the actual live definition/status of QUL_WA_LA_TAQUL_VIDEO: no read-only live product query was available. Its safe route is explicit /control version creation with selected prompt/identity and compatible recipe/policy/contract. Historical jobs continue from their persisted context.
+
+Next sequence: (1) finish latest-head CI and fix any failures at root; (2) complete code review and hand off without merge; (3) in a later stage, implement derived-product parent lineage and component diff; (4) implement full product/recipe/contract/capability/provider preflight; (5) define and verify actual video duration/assembly; (6) separately obtain read-only live DB/API access to inspect the QUL product and verify deployment/runtime. ADR-001 stays Proposed.

@@ -251,3 +251,10 @@ Remaining in dependency order:
 
 Until these gates pass, do not describe the Product Layer or ADR-001 as accepted. No external publication is part of these tests.
 
+## Product Layer implementation checkpoint (2026-10-13)
+
+PR #132 is still an unmerged candidate. The branch adds exact component manifests for prompt, identity, recipe, policy, and output contract, publish-time pinning, archived-version resolution, resolved-context validation, a factory identity guard, and an explicit Control Plane route to upgrade legacy product versions without rewriting their history. Migration 0043_product_component_manifest.py creates new manifest-backed versions for selected built-in post/text products; it does not infer an identity for custom products and leaves built-in media definitions as drafts.
+
+CI's earlier container initialization error was the public ECR data-limit response, not an application regression. The workflow now uses mirror.gcr.io/library/postgres:16; run 38447408736 passed migrations, backend, frontend, and Playwright on SHA f55b11af828b24b19abcc113dff4f859b481efd1. Later commits add safety guards and tests, so verify the latest PR head's run before deciding readiness. No merge/deployment is implied.
+
+Next gates: current-head CI; review migration against a realistic pre-migration production snapshot without applying it to Railway; independent derived-product lineage/diff; product/recipe/output-contract/capability/provider preflight; actual video-duration/assembly verification; and live modality acceptance. Do not mark ADR-001 Accepted until the gates are complete.

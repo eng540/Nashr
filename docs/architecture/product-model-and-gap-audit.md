@@ -119,3 +119,14 @@ The candidate implementation now adds these code paths:
 
 **Not yet accepted:** CI has not validated this candidate branch. Product derivation/parent lineage and component diffs remain unimplemented. Provider/capability compatibility preflight remains partial. The 30–60-second video requirement is still unresolved; the 5/6/8-second capability limit is not changed here. No provider request or external publication was launched.
 
+## PR #132 review checkpoint — manifest, migration, and legacy path
+
+The candidate implementation now validates five exact references per published product version: prompt, identity, recipe, policy, and output contract. Each reference carries component key, version UUID, and numeric version; the resolver accepts the exact referenced version in PUBLISHED or ARCHIVED state and rejects missing or mismatched IDs/version numbers. Publication freezes references, and the resolved production context validates the component snapshots against the product manifest.
+
+The factory only offers product versions with a manifest and derives the identity from that manifest. For a legacy product, the explicit upgrade route is Control Plane: create a new product version, select a published prompt and identity, verify recipe/policy/output contract, then publish the new version. Existing product versions and saved job contexts are not rewritten. A runtime identity override that differs from the pinned product identity is rejected.
+
+Migration 0043_product_component_manifest.py creates new manifest-backed versions for the selected built-in literary post/text products and archives their previous versions without rewriting their definitions. It deliberately does not assign the generic baseline identity to custom products such as QUL_WA_LA_TAQUL_VIDEO. It also leaves built-in media products as drafts. Downgrade now refuses to remove bootstrapped versions/identity when jobs or Artifacts reference them and refuses to roll back changed drafts or later published product versions.
+
+CI environment failure was isolated to the public ECR PostgreSQL mirror's toomanyrequests: Data limit exceeded, before checkout or tests. .github/workflows/test.yml now uses mirror.gcr.io/library/postgres:16. Run 38447408736 passed all workflow stages on SHA f55b11af828b24b19abcc113dff4f859b481efd1, proving the alternate image path can initialize and the then-current code passed migrations, backend, frontend, and Playwright. That run predates later migration-guard and retry/legacy-test commits; only a run tied to the current PR head establishes their result.
+
+The live production product records, including QUL_WA_LA_TAQUL_VIDEO, were not readable through the available Railway/web interfaces in this task. Do not infer that product's current database definition or status from the migration or repository alone.

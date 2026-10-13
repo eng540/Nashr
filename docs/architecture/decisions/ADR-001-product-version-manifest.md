@@ -59,3 +59,10 @@ Candidate evidence to review in PR:
 
 Acceptance requirements still open: CI on the candidate branch; proof of safe legacy resume/retry; product derivation lineage and explicit diffs; full recipe/contract/capability/provider compatibility preflight; and video duration acceptance based on actual output evidence. Do not change this ADR to Accepted until those gates are reviewed and the implementation is merged. Production deployment and operational evidence must be recorded separately.
 
+## PR #132 implementation checkpoint (2026-10-13)
+
+Status remains Proposed. The candidate implements explicit immutable references for prompt, identity, recipe, policy, and output contract and resolves archived versions by exact ID plus version number. It adds migration 0043_product_component_manifest.py, a Control Plane prompt/identity selection path, a factory identity guard, and tests for manifest pinning, prompt replacement, product retry, legacy-product blocking, and runtime identity override.
+
+The migration preserves old product definitions and creates new manifest-backed versions only for selected built-in literary post/text products; custom products are not automatically assigned an identity. Its downgrade is guarded against later product publication and saved job/Artifact references. CI run 38447408736 passed on f55b11af828b24b19abcc113dff4f859b481efd1, but later commits added further guards/tests, so that result does not certify the latest PR head. Review the latest run for the exact head before any merge decision.
+
+Still required before acceptance: latest-head CI, review of migration behavior against realistic production data, explicit product derivation lineage/diffs, complete capability/provider preflight, and measured video-duration acceptance. No Railway migration/deployment or live acceptance has been performed.
