@@ -1,15 +1,17 @@
 # Product Architecture — Operational Status
 
 **Checked:** 2026-10-13  
-**Observed main HEAD:** `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c`  
+**Current main HEAD after PR #129:** `195bf73b0276203f125f7f8a2d45950cf7d9971e`  
+**Production code commit:** `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c`  
 **Current commit message:** `fix: prevent Book Map 500 for discovery jobs (#128)`
 
 ## Evidence categories
 
 - **Repository:** the GitHub repository `eng540/Nashr` exists, is private, and reports `main` as its default branch.
 - **Latest commit:** GitHub commit search returned `f0ea7a2...` as the latest commit observed at check time.
-- **CI/deployment:** the commit combined-status endpoint returned a successful Railway integration status URL. This is not, by itself, evidence that all GitHub Actions workflows passed or that the app is deployed at the expected commit.
-- **Open PR query:** the GitHub connector's open-PR search returned no results, but the query is not sufficient to prove there are no open PRs across every search mode. Recheck GitHub PR state directly before merge/release decisions.
+- **PR #129:** merged as `195bf73b0276203f125f7f8a2d45950cf7d9971e`. Its latest PR head `a8bb682918fcec5149b60ab6c6938550b5de1639` had GitHub Actions workflow `test` run #670 complete successfully. The merge commit itself had no reported workflow runs/status checks in the queried endpoints.
+- **Railway deployment:** project `zealous-communication`, workspace `CoinTellx`, environment `production`, service `Nashr`; latest deployment `5e6e8d3a-2ccb-45c5-b0db-4fe72cd10b16` reports SUCCESS for commit `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c`, created 2026-10-12 21:02:49 UTC. The docs-only merge was not deployed, as expected; no staged Railway changes were present.
+- **PR #127:** verified CLOSED and MERGED as `01634eb9312eb13abb76235af032b7008529cf74`; the older UX implementation log statement that it remains open was stale and is corrected in this follow-up.
 - **Railway live app/database:** not queried in this documentation pass. No claim is made about live deployment SHA, database product rows, provider operation state, or Artifact availability.
 - **Telegram/external distribution:** no send or publication was initiated by this task.
 
@@ -37,3 +39,16 @@
 5. Never treat provider request acceptance as successful output creation.
 6. Record app commit, product/version, job/item IDs, pinned components, provider operation state, Artifact storage/readback, media duration/dimensions, and review visibility.
 7. Keep CI, merge, deploy, and live acceptance as separate statuses.
+
+
+## Additional execution evidence (2026-10-13)
+
+- Railway logs show repeated HTTP 200 GETs to `/production-jobs/9a1f240a-4e6f-4a69-859a-551b444af087` during 16:42–16:48 UTC. Logs expose request paths/status only, not response JSON. They do not prove the job's current status.
+- A job-created log entry exists at 2026-10-13 15:36:19 UTC, but it does not establish item status or provider state.
+- Filtered logs did not show a provider-operation event for this job; this is not proof no provider operation exists because no provider API/database query was available.
+- The Railway connector provided deployment/configuration and logs but no read-only SQL or arbitrary HTTP response action. The public-web retrieval path could not fetch the live job endpoint. No production mutation or new video request was attempted.
+- Current main includes the docs-only PR #129 merge after the production commit; production app SHA remains `f0ea7a2...`.
+
+## Proven product-manifest gaps
+
+The updated Product Model and Gap Audit proves that prompt is resolved globally as `editorial.drafter` before product resolution; identity comes from optional request `identity_key`; recipe, policy, and output contract resolve active versions by key rather than exact versions stored in the product; video capability bypasses the pinned editorial prompt/identity; and the recipe contract allows only 5/6/8-second clips. The current Control Plane draft action versions the same product, not a separate derived product with lineage. No code fix for these gaps has been merged. ADR-001 remains Proposed.
