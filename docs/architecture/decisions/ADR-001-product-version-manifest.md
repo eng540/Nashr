@@ -44,3 +44,18 @@ For legacy products/jobs, use a documented compatibility path based on their exi
 - PR and CI evidence; production evidence recorded separately.
 
 This ADR records the intended decision, not proof that it is implemented.
+
+## Implementation status update (2026-10-13)
+
+**ADR status remains Proposed.** The branch `feat/immutable-product-component-manifest` contains a candidate implementation, but it is not merged and is not evidence of acceptance.
+
+Candidate evidence to review in PR:
+
+- Product definitions carry exact version references for prompt, identity, recipe, policy, and output contract.
+- Publication freezes component version IDs/numbers into the product version.
+- Job creation resolves the frozen references, including archived versions, and the resolved context validates that each pinned component matches the manifest.
+- The factory does not allow an ordinary runtime identity selection to override the product's identity.
+- A compatibility migration creates new manifest-backed versions for built-in post/text products rather than rewriting their historical versions; custom products are not auto-assigned a generic identity.
+
+Acceptance requirements still open: CI on the candidate branch; proof of safe legacy resume/retry; product derivation lineage and explicit diffs; full recipe/contract/capability/provider compatibility preflight; and video duration acceptance based on actual output evidence. Do not change this ADR to Accepted until those gates are reviewed and the implementation is merged. Production deployment and operational evidence must be recorded separately.
+
