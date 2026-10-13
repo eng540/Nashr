@@ -229,10 +229,17 @@ export function ControlPlanePage() {
     try {
       const entries = await Promise.all(sections.map(async (entry) => [entry.key, await request<ControlItem[]>(entry.endpoint)] as const));
       const next = Object.fromEntries(entries) as Record<SectionKey, ControlItem[]>;
-      if (sectionToSelect === "prompts" && keyToSelect) {
-        const prompt = await request<ControlItem>(sections.find((entry) => entry.key === "prompts")!.endpoint + "/" + encodeURIComponent(keyToSelect));
-        next.prompts = next.prompts.map((item) => item.key === keyToSelect ? prompt : item);
-      }
+      // The prompt list endpoint returns template metadata only. Hydrate each
+      // prompt's versions so product drafts can select a genuinely published
+      // instruction template instead of showing an empty or stale option list.
+      const promptEndpoint = sections.find((entry) => entry.key === "prompts")!.endpoint;
+      next.prompts = await Promise.all(next.prompts.map(async (item) => {
+        try {
+          return await request<ControlItem>(promptEndpoint + "/" + encodeURIComponent(item.key));
+        } catch {
+          return item;
+        }
+      }));
       setItemsBySection(next);
       const found = keyToSelect ? next[sectionToSelect].find((item) => item.key === keyToSelect) : undefined;
       const version = found?.versions?.find((candidate) => candidate.version === versionToSelect) ?? (found ? latestVersion(found) : undefined);
