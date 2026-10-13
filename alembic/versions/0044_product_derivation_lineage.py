@@ -12,30 +12,66 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "production_products",
-        sa.Column(
-            "parent_product_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("production_products.id", ondelete="RESTRICT"),
-            nullable=True,
-        ),
+    # The composite FK proves that the source version belongs to parent_product_id.
+    op.create_unique_constraint(
+        "uq_production_product_versions_id_product",
+        "production_product_versions",
+        ["id", "product_id"],
     )
     op.add_column(
         "production_products",
-        sa.Column(
-            "derived_from_version_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("production_product_versions.id", ondelete="RESTRICT"),
-            nullable=True,
-        ),
+        sa.Column("parent_product_id", postgresql.UUID(as_uuid=True), nullable=True),
+    )
+    op.add_column(
+        "production_products",
+        sa.Column("derived_from_version_id", postgresql.UUID(as_uuid=True), nullable=True),
+    )
+    op.create_foreign_key(
+        "fk_production_products_parent_product_id",
+        "production_products",
+        "production_products",
+        ["parent_product_id"],
+        ["id"],
+        ondelete="RESTRICT",
+    )
+    op.create_foreign_key(
+        "fk_production_products_source_version_matches_parent",
+        "production_products",
+        "production_product_versions",
+        ["derived_from_version_id", "parent_product_id"],
+        ["id", "product_id"],
+        ondelete="RESTRICT",
+    )
+    op.create_check_constraint(
+        "ck_production_products_derivation_refs_pair",
+        "production_products",
+        "(parent_product_id IS NULL AND derived_from_version_id IS NULL) OR "
+        "(parent_product_id IS NOT NULL AND derived_from_version_id IS NOT NULL)",
     )
     op.create_index("ix_production_products_parent_product_id", "production_products", ["parent_product_id"])
     op.create_index("ix_production_products_derived_from_version_id", "production_products", ["derived_from_version_id"])
 
 
 def downgrade() -> None:
+    # Never silently erase lineage after real derived products have been created.
+    connection = op.get_bind()
+    derived_count = connection.execute(
+        sa.text(
+            "SELECT count(*) FROM production_products "
+            "WHERE parent_product_id IS NOT NULL OR derived_from_version_id IS NOT NULL"
+        )
+    ).scalar_one()
+    if derived_count:
+        raise RuntimeError(
+            "Cannot downgrade 0044_product_derivation_lineage: derived products exist; "
+            "export or explicitly remove lineage records before retrying."
+        )
+
     op.drop_index("ix_production_products_derived_from_version_id", table_name="production_products")
     op.drop_index("ix_production_products_parent_product_id", table_name="production_products")
+    op.drop_constraint("ck_production_products_derivation_refs_pair", "production_products", type_="check")
+    op.drop_constraint("fk_production_products_source_version_matches_parent", "production_products", type_="foreignkey")
+    op.drop_constraint("fk_production_products_parent_product_id", "production_products", type_="foreignkey")
     op.drop_column("production_products", "derived_from_version_id")
     op.drop_column("production_products", "parent_product_id")
+    op.drop_constraint("uq_production_product_versions_id_product", "production_product_versions", type_="unique")
