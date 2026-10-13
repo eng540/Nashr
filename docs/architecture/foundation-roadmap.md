@@ -237,3 +237,17 @@ Priority order:
 6. Update [Product Architecture Operational Status](../operations/product-architecture-status.md) with exact CI/deployment/live evidence.
 
 Do not send to Telegram, publish externally, or launch duplicate paid provider work.
+
+## Product Layer acceptance checkpoint (2026-10-13)
+
+The Product Layer is **in progress**, not complete. A candidate branch `feat/immutable-product-component-manifest` implements explicit component references for prompt, identity, recipe, policy, and output contract, freezes those references on product publication, and resolves them for job creation. It also adds a compatibility migration for built-in post/text products while preserving their prior published versions.
+
+Remaining in dependency order:
+1. Complete CI and review for the manifest branch, including migration and legacy job tests.
+2. Implement independent product derivation with parent lineage and an auditable component diff in Control Plane.
+3. Complete preflight compatibility validation across product, recipe, output contract, capability, and available provider.
+4. Decide and verify video duration based on the actual output, not only a requested metadata value.
+5. Update this roadmap and ADR-001 with merge evidence; record Railway deployment and live acceptance separately.
+
+Until these gates pass, do not describe the Product Layer or ADR-001 as accepted. No external publication is part of these tests.
+
