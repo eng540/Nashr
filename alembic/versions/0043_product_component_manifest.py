@@ -33,6 +33,18 @@ def upgrade() -> None:
         sa.Column("version_id", sa.String(length=36), primary_key=True),
         sa.Column("previous_definition", sa.JSON(), nullable=False),
     )
+    existing_identity = bind.execute(sa.text("""
+        SELECT 1 FROM editorial_identities
+        WHERE id = :id OR key = :key
+        UNION ALL
+        SELECT 1 FROM editorial_identity_versions WHERE id = :version_id
+        LIMIT 1
+    """), {"id": UUID(IDENTITY_ID), "key": IDENTITY_KEY, "version_id": UUID(IDENTITY_VERSION_ID)}).scalar_one_or_none()
+    if existing_identity is not None:
+        raise RuntimeError(
+            "Cannot bootstrap product manifests: the reserved baseline identity key or UUID already exists; inspect the existing identity instead of overwriting it."
+        )
+
     identity_definition = {
         "purpose": "تحرير أدبي أمين للمصدر، يوازن بين إبراز القيمة الأصلية والتدخل بالقدر الضروري فقط.",
         "audience": "قراء الأدب العربي والثقافة واللغة.",
