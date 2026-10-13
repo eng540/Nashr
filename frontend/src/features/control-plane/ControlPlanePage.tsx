@@ -78,6 +78,8 @@ function initialForm(_section: SectionKey, item?: ControlItem, version?: Version
     recipe_key: asText(definition.recipe_key),
     output_contract_key: asText(definition.output_contract_key),
     policy_key: asText(definition.policy_key),
+    prompt_key: asText(definition.prompt_key, "editorial.drafter"),
+    identity_key: asText(definition.identity_key),
     audience: asText(definition.audience),
     experience: asText(definition.experience),
     identity_purpose: asText(definition.purpose, item?.purpose ?? ""),
@@ -118,6 +120,8 @@ function definitionFor(section: SectionKey, form: FormState, stages: StageForm[]
     recipe_key: form.recipe_key,
     output_contract_key: form.output_contract_key,
     policy_key: form.policy_key,
+    prompt_key: form.prompt_key,
+    identity_key: form.identity_key,
     audience: form.audience,
     experience: form.experience,
   };
@@ -213,20 +217,30 @@ export function ControlPlanePage() {
   const selectedVersion = selected?.versions?.find((version) => version.version === selectedVersionNumber) ?? (selected ? latestVersion(selected) : undefined);
   const draft = selected?.versions?.find((version) => version.status === "DRAFT");
   const activeVersion = selected?.versions?.find((version) => version.status === "PUBLISHED");
+  const selectedProductNeedsManifest = activeSection === "products" && Boolean(activeVersion) && !activeVersion?.definition?.component_versions;
   const isNew = selectedKey === null;
   const publishedRecipes = itemsBySection.recipes.filter((item) => item.active_version != null);
   const publishedPolicies = itemsBySection.policies.filter((item) => item.active_version != null);
   const publishedContracts = itemsBySection["output-contracts"].filter((item) => item.active_version != null);
+  const publishedIdentities = itemsBySection.identities.filter((item) => item.active_version != null);
+  const publishedPrompts = itemsBySection.prompts.filter((item) => item.active_version != null);
 
   async function reload(sectionToSelect = activeSection, keyToSelect: string | null = selectedKey, versionToSelect: number | null = selectedVersionNumber) {
     setLoading(true);
     try {
       const entries = await Promise.all(sections.map(async (entry) => [entry.key, await request<ControlItem[]>(entry.endpoint)] as const));
       const next = Object.fromEntries(entries) as Record<SectionKey, ControlItem[]>;
-      if (sectionToSelect === "prompts" && keyToSelect) {
-        const prompt = await request<ControlItem>(sections.find((entry) => entry.key === "prompts")!.endpoint + "/" + encodeURIComponent(keyToSelect));
-        next.prompts = next.prompts.map((item) => item.key === keyToSelect ? prompt : item);
-      }
+      // The prompt list endpoint returns template metadata only. Hydrate each
+      // prompt's versions so product drafts can select a genuinely published
+      // instruction template instead of showing an empty or stale option list.
+      const promptEndpoint = sections.find((entry) => entry.key === "prompts")!.endpoint;
+      next.prompts = await Promise.all(next.prompts.map(async (item) => {
+        try {
+          return await request<ControlItem>(promptEndpoint + "/" + encodeURIComponent(item.key));
+        } catch {
+          return item;
+        }
+      }));
       setItemsBySection(next);
       const found = keyToSelect ? next[sectionToSelect].find((item) => item.key === keyToSelect) : undefined;
       const version = found?.versions?.find((candidate) => candidate.version === versionToSelect) ?? (found ? latestVersion(found) : undefined);
@@ -392,11 +406,13 @@ export function ControlPlanePage() {
           <div className="space-y-2">{items.map((item) => {
             const published = item.versions?.find((version) => version.status === "PUBLISHED");
             const itemDraft = item.versions?.find((version) => version.status === "DRAFT");
+            const legacyProduct = activeSection === "products" && Boolean(published) && !published?.definition?.component_versions;
             return <button key={item.key} type="button" onClick={() => selectItem(item)} className={"block w-full rounded-xl border p-3 text-right " + (selectedKey === item.key ? "border-indigo-500 bg-indigo-50" : "bg-white hover:bg-slate-50")}>
               <span className="block font-semibold">{item.name}</span>
               <span className="mt-1 block text-xs text-slate-500">{item.key}</span>
               <span className="mt-2 flex flex-wrap gap-1 text-xs">
                 {published && <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800">فعال v{published.version}</span>}
+                {legacyProduct && <span className="rounded-full bg-rose-100 px-2 py-1 text-rose-800">يتطلب ترقية قبل الإنتاج</span>}
                 {itemDraft && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800">مسودة v{itemDraft.version}</span>}
                 {!published && !itemDraft && <span className="rounded-full bg-slate-100 px-2 py-1">لا يوجد إصدار منشور</span>}
               </span>
@@ -410,6 +426,12 @@ export function ControlPlanePage() {
             <p className="mt-1 text-sm text-slate-500">{selected?.purpose ?? "أنشئ عنصرًا جديدًا؛ سيُنشئ الخادم مسودته الأولى وفق العقد الحالي."}</p></div>
           {selected && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm">الإصدار المنشور: <strong>{activeVersion ? "v" + activeVersion.version : "لا يوجد"}</strong></div>}
         </div>
+
+        {selectedProductNeedsManifest && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-7 text-amber-950">
+          هذا الإصدار المنشور لا يثبت مكونات المنتج، لذلك لن يظهر في مصنع المحتوى ولا يمكن بدء مهام جديدة به.
+          أنشئ مسودة إصدار جديدة من الإصدار المحدد، واختر التعليمات والهوية المنشورتين، ثم راجع الوصفة والسياسة وعقد المخرج وانشر الإصدار الجديد.
+          تبقى المهام التاريخية وسياقاتها المحفوظة دون تغيير.
+        </p>}
 
         {selected?.versions?.length ? <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
           <label className="text-sm font-semibold">الإصدار
@@ -440,6 +462,10 @@ export function ControlPlanePage() {
           <div className="grid gap-3 md:grid-cols-2">
             <SelectField label="الوصفة المنشورة" value={form.recipe_key} onChange={(value) => updateField("recipe_key", value)} disabled={formDisabled}
               options={[{ value: "", label: "اختر وصفة..." }, ...(!publishedRecipes.some((item) => item.key === form.recipe_key) && form.recipe_key ? [{ value: form.recipe_key, label: form.recipe_key + " · لا يوجد إصدار منشور" }] : []), ...publishedRecipes.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+            <SelectField label="التعليمات المنشورة" value={form.prompt_key} onChange={(value) => updateField("prompt_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر تعليمات..." }, ...publishedPrompts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+            <SelectField label="الهوية التحريرية المنشورة" value={form.identity_key} onChange={(value) => updateField("identity_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر هوية..." }, ...publishedIdentities.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
             <SelectField label="السياسة المنشورة" value={form.policy_key} onChange={(value) => updateField("policy_key", value)} disabled={formDisabled}
               options={[{ value: "", label: "اختر سياسة..." }, ...(!publishedPolicies.some((item) => item.key === form.policy_key) && form.policy_key ? [{ value: form.policy_key, label: form.policy_key + " · لا يوجد إصدار منشور" }] : []), ...publishedPolicies.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
             <SelectField label="عقد المخرج المنشور" value={form.output_contract_key} onChange={(value) => updateField("output_contract_key", value)} disabled={formDisabled}
@@ -454,7 +480,7 @@ export function ControlPlanePage() {
               { label: "السياسة", key: form.policy_key, item: publishedPolicies.find((item) => item.key === form.policy_key) },
               { label: "عقد المخرج", key: form.output_contract_key, item: publishedContracts.find((item) => item.key === form.output_contract_key) },
             ].map(({ label, key, item }) => <div key={label} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="text-xs text-slate-500">{label}</p><strong>{item ? item.name : key || "غير محدد"}</strong><p className="mt-1 text-xs">{item ? "الإصدار المنشور v" + item.active_version : "لا يوجد إصدار منشور"}</p></div>)}
-          </div><p className="mt-3 text-xs text-slate-500">الهوية التحريرية والتعليمات تُحل عند إنشاء مهمة الإنتاج ولا تُربطان إلزاميًا بالمنتج.</p></div>}
+          </div><p className="mt-3 text-xs text-slate-500">عند نشر الإصدار تُثبّت مراجع الهوية والتعليمات مع الوصفة والسياسة وعقد المخرج؛ وتستخدم المهمة هذه المراجع من سياقها المحفوظ.</p></div>}
         </div>}
 
         {activeSection === "recipes" && <div className="space-y-3">
@@ -502,7 +528,7 @@ export function ControlPlanePage() {
         </div>}
 
         <div className="flex flex-wrap gap-2 border-t pt-4">
-          {isNew ? <button type="button" disabled={busy || !form.key.trim() || !form.name.trim() || !form.purpose.trim() || (activeSection === "prompts" && !form.body.trim())} onClick={() => void createItem()} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">إنشاء ومسودة أولى</button>
+          {isNew ? <button type="button" disabled={busy || !form.key.trim() || !form.name.trim() || !form.purpose.trim() || (activeSection === "prompts" && !form.body.trim()) || (activeSection === "products" && (!form.prompt_key || !form.identity_key))} onClick={() => void createItem()} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">إنشاء ومسودة أولى</button>
             : <button type="button" disabled={busy || !selected || selectedVersion?.status === "ARCHIVED" || (selectedVersion?.status === "PUBLISHED")} onClick={() => void saveDraft()} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-40">حفظ / إنشاء مسودة</button>}
           {selected && versionIsDraft && <button type="button" disabled={busy} onClick={() => selectedVersion && void versionAction("publish", selectedVersion)} className="rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white disabled:opacity-40">نشر الإصدار</button>}
           {selected && selectedVersion && selectedVersion.status !== "ARCHIVED" && <button type="button" disabled={busy || selectedVersion.status === "PUBLISHED"} onClick={() => selectedVersion && void versionAction("archive", selectedVersion)} className="rounded-xl border px-5 py-3 font-semibold disabled:opacity-40">أرشفة الإصدار</button>}

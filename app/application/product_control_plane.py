@@ -3,10 +3,8 @@ from sqlalchemy.exc import IntegrityError
 from app.domain.products import ProductionProductDefinition
 from app.domain.output_contracts import OutputContractDefinition
 from app.infrastructure.database.products import ProductionProductRepository
-from app.infrastructure.database.recipes import ProductionRecipeRepository
-from app.infrastructure.database.output_contracts import OutputContractRepository
-from app.infrastructure.database.policies import ProductionPolicyRepository
 from app.infrastructure.artifact_storage import ArtifactStorageConfigurationError, ArtifactStorageError, S3ArtifactStorage
+from app.application.control_plane import ControlPlaneResolver
 
 
 def _version_payload(row) -> dict[str, object]:
@@ -79,9 +77,13 @@ class ProductionProductControlPlaneService:
         if target.status != "DRAFT":
             raise ValueError("Only DRAFT product versions can be published.")
         definition = ProductionProductDefinition.from_dict(target.definition)
-        recipe = await ProductionRecipeRepository(self.session).resolve_active(definition.recipe_key)
-        _, output_contract_version = await OutputContractRepository(self.session).resolve_active(definition.output_contract_key)
-        output_contract = OutputContractDefinition.from_dict(output_contract_version.definition)
+        resolver = ControlPlaneResolver()
+
+        # Validate recipe/output/policy compatibility before manifest capture.
+        recipe = await resolver.resolve_recipe(self.session, definition.recipe_key)
+        output_contract = await resolver.resolve_output_contract(self.session, definition.output_contract_key)
+        policy = await resolver.resolve_policy(self.session, definition.policy_key)
+        contract_definition = OutputContractDefinition.from_dict(output_contract.definition)
         final_capability = recipe.stages[-1].capability_key
         capability_output_kind = {
             "produce_post": "POST",
@@ -90,14 +92,13 @@ class ProductionProductControlPlaneService:
             "produce_video_artifact": "VIDEO",
             "produce_audio_artifact": "AUDIO",
         }.get(final_capability)
-        if capability_output_kind is None or output_contract.artifact_kind != capability_output_kind:
+        if capability_output_kind is None or contract_definition.artifact_kind != capability_output_kind:
             raise ValueError(
                 f"Product recipe '{definition.recipe_key}' ends with capability '{final_capability}', "
                 f"which is incompatible with output contract '{definition.output_contract_key}' "
-                f"({output_contract.artifact_kind})."
+                f"({contract_definition.artifact_kind})."
             )
-        await ProductionPolicyRepository(self.session).resolve_active(definition.policy_key)
-        if output_contract.content_mode == "STORAGE_URI":
+        if contract_definition.content_mode == "STORAGE_URI":
             try:
                 storage = S3ArtifactStorage.from_environment()
                 await storage.ensure_available()
@@ -105,6 +106,26 @@ class ProductionProductControlPlaneService:
                 raise ValueError(
                     "Cannot publish a media product until durable ARTIFACT_STORAGE_* settings and bucket access are valid."
                 ) from exc
+
+        if not definition.prompt_key or not definition.identity_key:
+            raise ValueError(
+                "A new product version must explicitly select a published editorial prompt and identity before publication."
+            )
+        prompt = await resolver.resolve_prompt(self.session, definition.prompt_key)
+        identity = await resolver.resolve_identity(self.session, definition.identity_key)
+        component_versions = {
+            "prompt": {"key": prompt.key, "version_id": str(prompt.version_id), "version": prompt.version},
+            "identity": {"key": identity.key, "version_id": identity.version_id, "version": identity.version},
+            "recipe": {"key": recipe.key, "version_id": str(recipe.version_id), "version": recipe.version},
+            "policy": {"key": policy.key, "version_id": policy.version_id, "version": policy.version},
+            "output_contract": {
+                "key": output_contract.key,
+                "version_id": output_contract.version_id,
+                "version": output_contract.version,
+            },
+        }
+        target.definition = {**definition.to_dict(), "component_versions": component_versions}
+        await self.session.flush()
         row = await self.repository.publish(key, version)
         await self.session.commit()
         await self.session.refresh(row)

@@ -306,6 +306,25 @@ class ResolvedProductionContext:
             product_definition = ProductionProductDefinition.from_dict(self.product.definition)
             if (product_definition.recipe_key != self.recipe.key or product_definition.output_contract_key != self.output_contract.key or product_definition.policy_key != self.policy.key):
                 raise ValueError("Pinned product definition does not match the recipe, output contract, and policy snapshots.")
+            if product_definition.component_versions is not None:
+                refs = product_definition.component_versions
+                actual = {
+                    "prompt": (self.prompt_template.key, self.prompt_template.version_id, self.prompt_template.version),
+                    "recipe": (self.recipe.key, self.recipe.version_id, self.recipe.version),
+                    "output_contract": (self.output_contract.key, self.output_contract.version_id, self.output_contract.version),
+                    "policy": (self.policy.key, self.policy.version_id, self.policy.version),
+                }
+                for component, (key, version_id, version) in actual.items():
+                    reference = refs[component]
+                    if (reference["key"], reference["version_id"], reference["version"]) != (key, version_id, version):
+                        raise ValueError(f"Pinned product manifest does not match the resolved {component} snapshot.")
+                if self.identity is None:
+                    raise ValueError("Product manifest requires a pinned editorial identity.")
+                identity_ref = refs["identity"]
+                if (identity_ref["key"], identity_ref["version_id"], identity_ref["version"]) != (
+                    self.identity.key, self.identity.version_id, self.identity.version
+                ):
+                    raise ValueError("Pinned product manifest does not match the resolved identity snapshot.")
 
     def to_dict(self) -> dict[str, object]:
         value: dict[str, object] = {

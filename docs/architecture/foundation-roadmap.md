@@ -237,3 +237,24 @@ Priority order:
 6. Update [Product Architecture Operational Status](../operations/product-architecture-status.md) with exact CI/deployment/live evidence.
 
 Do not send to Telegram, publish externally, or launch duplicate paid provider work.
+
+## Product Layer acceptance checkpoint (2026-10-13)
+
+The Product Layer is **in progress**, not complete. A candidate branch `feat/immutable-product-component-manifest` implements explicit component references for prompt, identity, recipe, policy, and output contract, freezes those references on product publication, and resolves them for job creation. It also adds a compatibility migration for built-in post/text products while preserving their prior published versions.
+
+Remaining in dependency order:
+1. Complete CI and review for the manifest branch, including migration and legacy job tests.
+2. Implement independent product derivation with parent lineage and an auditable component diff in Control Plane.
+3. Complete preflight compatibility validation across product, recipe, output contract, capability, and available provider.
+4. Decide and verify video duration based on the actual output, not only a requested metadata value.
+5. Update this roadmap and ADR-001 with merge evidence; record Railway deployment and live acceptance separately.
+
+Until these gates pass, do not describe the Product Layer or ADR-001 as accepted. No external publication is part of these tests.
+
+## Product Layer implementation checkpoint (2026-10-13)
+
+PR #132 is still an unmerged candidate. The branch adds exact component manifests for prompt, identity, recipe, policy, and output contract, publish-time pinning, archived-version resolution, resolved-context validation, a factory identity guard, and an explicit Control Plane route to upgrade legacy product versions without rewriting their history. Migration 0043_product_component_manifest.py creates new manifest-backed versions for selected built-in post/text products; it does not infer an identity for custom products and leaves built-in media definitions as drafts.
+
+CI's earlier container initialization error was the public ECR data-limit response, not an application regression. The workflow now uses mirror.gcr.io/library/postgres:16; run 38447408736 passed migrations, backend, frontend, and Playwright on SHA f55b11af828b24b19abcc113dff4f859b481efd1. Later commits add safety guards and tests, so verify the latest PR head's run before deciding readiness. No merge/deployment is implied.
+
+Next gates: current-head CI; review migration against a realistic pre-migration production snapshot without applying it to Railway; independent derived-product lineage/diff; product/recipe/output-contract/capability/provider preflight; actual video-duration/assembly verification; and live modality acceptance. Do not mark ADR-001 Accepted until the gates are complete.

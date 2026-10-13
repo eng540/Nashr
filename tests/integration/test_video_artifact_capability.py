@@ -4,6 +4,12 @@ import pytest
 from sqlalchemy import select
 
 from app.application.recipe_engine import ProduceVideoArtifactCapability, ProductionExecutionContext
+from app.application.control_plane import ControlPlaneResolver, PromptTemplateService
+from app.application.identity_control_plane import EditorialIdentityControlPlaneService
+from app.application.product_control_plane import ProductionProductControlPlaneService
+from app.application.identity_context import compose_editorial_prompt
+from app.domain.production_context import ResolvedProductionContext
+from app.domain.products import ProductionProductDefinition
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, ProductionJobItemModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
@@ -73,23 +79,84 @@ async def _create_video_job_item():
 
 
 @pytest.mark.asyncio
-async def test_video_capability_persists_operation_and_reuses_it_until_artifact_is_saved():
+async def test_video_capability_uses_the_published_products_pinned_prompt_and_identity(monkeypatch: pytest.MonkeyPatch):
     unit_id, job_id, item_id = await _create_video_job_item()
-    contract = {
-        "contract_id": str(uuid4()), "version_id": str(uuid4()), "key": "VIDEO_ARTIFACT", "version": 1,
-        "definition": {
-            "artifact_kind": "VIDEO", "mime_type": "video/mp4", "content_mode": "STORAGE_URI",
-            "required_metadata_fields": ["title"], "max_content_chars": None,
-        },
+    publish_storage = FakeVideoStorage()
+    monkeypatch.setattr(
+        "app.application.product_control_plane.S3ArtifactStorage.from_environment",
+        lambda *args, **kwargs: publish_storage,
+    )
+    product_key = "QUL_WA_LA_TAQUL_TEST_VIDEO_PRODUCT"
+    prompt_key = "qul.wa_la_taqul.test"
+    identity_key = "QUL_WA_LA_TAQUL_TEST_IDENTITY"
+    prompt_body = (
+        "QUL PRODUCT INSTRUCTION: state the common phrase, the corrected phrase, "
+        "the reason, and one precise example. Do not claim grammatical certainty without evidence."
+    )
+    identity_definition = {
+        "purpose": "تحرير تعليمي دقيق لقواعد الاستعمال اللغوي.",
+        "audience": "متعّلمو العربية ومستخدموها.",
+        "voice": "محرر لغوي عربي دقيق، يميز بين الشائع والصحيح دون تعالٍ.",
+        "tone": "واضح، مقتصد، حازم عند ثبوت القاعدة ومتحفظ عند غياب الدليل.",
+        "principles": ["بيّن الصواب مع السبب", "لا تختلق قاعدة"],
+        "objectives": ["تعليم الاستعمال الصحيح"],
+        "constraints": ["لا تجزم بلا دليل", "لا تسخر من الخطأ الشائع"],
     }
-    product = {
-        "product_id": str(uuid4()), "version_id": str(uuid4()), "key": "ARABIC_LITERATURE_VIDEO", "version": 1,
-        "definition": {
-            "recipe_key": "BOOK_TO_VIDEO_ARTIFACT", "output_contract_key": "VIDEO_ARTIFACT",
-            "policy_key": "EDITORIAL_DEFAULT", "audience": "Readers of Arabic literature",
-            "experience": "A source-grounded vertical video",
-        },
-    }
+
+    async with SessionFactory() as session:
+        prompts = PromptTemplateService(session)
+        await prompts.create_template(
+            prompt_key, "QUL test instructions", "Product-specific usage lesson instructions", prompt_body
+        )
+        await prompts.publish(prompt_key, 1)
+
+        identities = EditorialIdentityControlPlaneService(session)
+        await identities.create_identity(
+            identity_key, "QUL test identity", "Editorial identity for the QUL product test", identity_definition
+        )
+        await identities.publish(identity_key, 1)
+
+        products = ProductionProductControlPlaneService(session)
+        await products.create_product(
+            product_key,
+            "QUL test video product",
+            "A product-owned instruction and identity for language usage videos",
+            {
+                "recipe_key": "BOOK_TO_VIDEO_ARTIFACT",
+                "output_contract_key": "VIDEO_ARTIFACT",
+                "policy_key": "EDITORIAL_DEFAULT",
+                "prompt_key": prompt_key,
+                "identity_key": identity_key,
+                "audience": "Arabic language learners",
+                "experience": "A concise, evidence-based usage lesson ready for review",
+            },
+        )
+        await products.publish(product_key, 1)
+
+        resolver = ControlPlaneResolver()
+        product = await resolver.resolve_product(session, product_key)
+        definition = ProductionProductDefinition.from_dict(product.definition)
+        assert definition.component_versions is not None
+        refs = definition.component_versions
+        pinned_prompt = await resolver.resolve_prompt_version(session, refs["prompt"])
+        pinned_identity = await resolver.resolve_identity_version(session, refs["identity"])
+        pinned_recipe = await resolver.resolve_recipe_version(session, refs["recipe"])
+        pinned_contract = await resolver.resolve_output_contract_version(session, refs["output_contract"])
+        pinned_policy = await resolver.resolve_policy_version(session, refs["policy"])
+        resolved = ResolvedProductionContext.capture(
+            pinned_prompt,
+            recipe=pinned_recipe,
+            identity=pinned_identity,
+            output_contract=pinned_contract,
+            policy=pinned_policy,
+            product=product,
+        )
+        editorial_body = compose_editorial_prompt(pinned_prompt.body, pinned_identity)
+        editorial_body += (
+            f"\n\nProduct audience: {definition.audience}"
+            f"\nProduct experience: {definition.experience}"
+        )
+
     generator, storage = FakeVeoGenerator(), FakeVideoStorage()
     capability = ProduceVideoArtifactCapability(
         generator=generator, storage_factory=lambda: storage, poll_interval_seconds=0, timeout_seconds=5,
@@ -106,17 +173,14 @@ async def test_video_capability_persists_operation_and_reuses_it_until_artifact_
             },
             configuration={
                 "editorial_prompt": {
-                    "key": "editorial.drafter",
-                    "version": 6,
-                    "body": "QUL editorial rules: state the common phrase, corrected phrase, reason, and a precise example. Avoid unsupported grammatical certainty.",
+                    "key": pinned_prompt.key,
+                    "version": pinned_prompt.version,
+                    "body": editorial_body,
                 }
             },
             run_id=job_id,
-            resolved_context={"output_contract": contract, "product": product},
-            stage_configuration={
-                "style_instructions": "Vertical editorial clip", "aspect_ratio": "9:16",
-                "resolution": "720p", "duration_seconds": 5,
-            },
+            resolved_context=resolved.to_dict(),
+            stage_configuration=pinned_recipe.stages[0].configuration,
         )
         artifact = await capability.execute(context)
         item = (await session.execute(
@@ -126,16 +190,25 @@ async def test_video_capability_persists_operation_and_reuses_it_until_artifact_
             select(ArtifactModel).where(ArtifactModel.id == artifact.id)
         )).scalar_one()
 
+    manifest = resolved.product.definition["component_versions"]
+    assert manifest["prompt"]["version_id"] == resolved.prompt_template.version_id
+    assert manifest["identity"]["version_id"] == resolved.identity.version_id
+    assert manifest["recipe"]["version_id"] == resolved.recipe.version_id
+    assert manifest["output_contract"]["version_id"] == resolved.output_contract.version_id
+    assert manifest["policy"]["version_id"] == resolved.policy.version_id
     assert artifact.storage_uri.startswith("s3://nashr-media/artifacts/")
     assert artifact.kind == "VIDEO"
     assert artifact.mime_type == "video/mp4"
     assert artifact.metadata["requested_duration_seconds"] == 5
-    assert "QUL editorial rules" in generator.start_calls[0][0]
-    assert "common phrase" in generator.start_calls[0][0]
+    assert "QUL PRODUCT INSTRUCTION" in generator.start_calls[0][0]
+    assert "state the common phrase" in generator.start_calls[0][0]
+    assert f"Identity key: {identity_key}" in generator.start_calls[0][0]
+    assert identity_definition["voice"] in generator.start_calls[0][0]
     assert row.review_status == "DRAFT"
     assert item.provider_operation_name == "operations/test-video-1"
     assert item.provider_operation_status == "SUCCEEDED"
     assert len(generator.start_calls) == 1
     assert len(generator.poll_calls) == 2
+    assert publish_storage.ensure_available_calls == 1
     assert storage.ensure_available_calls == 1
     assert len(storage.put_calls) == 1

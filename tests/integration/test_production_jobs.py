@@ -13,7 +13,7 @@ from app.application.policy_control_plane import ProductionPolicyControlPlaneSer
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, ProductionProductModel, ProductionProductVersionModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
 from app.infrastructure.database.control_plane import PromptTemplateRepository
 from app.infrastructure.database.session import SessionFactory
 
@@ -565,6 +565,49 @@ async def test_job_pins_policy_version_when_a_new_version_is_published():
         await policies.publish("EDITORIAL_DEFAULT", 3)
 
 
+async def test_legacy_published_product_requires_explicit_manifest_upgrade():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    product_id = uuid4()
+    async with SessionFactory() as session:
+        session.add(ProductionProductModel(
+            id=product_id,
+            key="LEGACY_PRODUCT_NO_MANIFEST_TEST",
+            name="Legacy Product",
+            purpose="Represents a product created before component manifests.",
+        ))
+        session.add(ProductionProductVersionModel(
+            id=uuid4(),
+            product_id=product_id,
+            version=1,
+            definition={
+                "recipe_key": "BOOK_TO_TELEGRAM_POST",
+                "output_contract_key": "TELEGRAM_POST",
+                "policy_key": "EDITORIAL_DEFAULT",
+                "audience": "Readers",
+                "experience": "Reviewable output",
+            },
+            status="PUBLISHED",
+        ))
+        await session.commit()
+
+        with pytest.raises(ValueError, match="legacy product version has no pinned component manifest"):
+            await create_production_job(
+                session, source_id, ProductionScope.SOURCE,
+                product_key="LEGACY_PRODUCT_NO_MANIFEST_TEST",
+            )
+
+
+async def test_product_identity_cannot_be_overridden_at_runtime():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        with pytest.raises(ValueError, match="cannot override the editorial identity"):
+            await create_production_job(
+                session, source_id, ProductionScope.SOURCE,
+                product_key="ARABIC_LITERATURE_BRIEF_TELEGRAM_POST",
+                identity_key="UNRELATED_RUNTIME_IDENTITY",
+            )
+
+
 async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_engine():
     source_id, _, _ = await _fixture(materials=1, topics=1)
     async with SessionFactory() as session:
@@ -583,6 +626,13 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
         assert context.product.definition["recipe_key"] == context.recipe.key
         assert context.product.definition["output_contract_key"] == context.output_contract.key
         assert context.product.definition["policy_key"] == context.policy.key
+        manifest = context.product.definition["component_versions"]
+        assert manifest["prompt"]["version_id"] == context.prompt_template.version_id
+        assert context.identity is not None
+        assert manifest["identity"]["version_id"] == context.identity.version_id
+        assert manifest["recipe"]["version_id"] == context.recipe.version_id
+        assert manifest["output_contract"]["version_id"] == context.output_contract.version_id
+        assert manifest["policy"]["version_id"] == context.policy.version_id
 
     drafter = RecordingDrafter()
     await ProductionJobRunner(drafter).run(job.id)
@@ -590,6 +640,56 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
     assert "Recipe-specific instructions:" in drafter.prompts[0]
     assert "اكتب منشورًا موجزًا ومكثفًا" in drafter.prompts[0]
     assert "Product audience: Readers who prefer concise Arabic literary content" in drafter.prompts[0]
+
+
+async def test_product_job_retry_keeps_its_published_manifest_and_archived_prompt_pin():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        template = await _reset_editorial_prompt(session, "product-prompt-v1")
+        await session.commit()
+        job = await create_production_job(
+            session, source_id, ProductionScope.SOURCE,
+            product_key="ARABIC_LITERATURE_BRIEF_TELEGRAM_POST",
+        )
+        original_context = job.resolved_context.copy()
+        context = ResolvedProductionContext.from_dict(original_context)
+        assert context.product is not None
+        manifest = context.product.definition["component_versions"]
+        assert manifest["prompt"]["version_id"] == context.prompt_template.version_id
+        assert manifest["identity"]["version_id"] == context.identity.version_id
+
+        session.add(PromptTemplateVersionModel(
+            id=uuid4(), prompt_template_id=template.id, version=2,
+            body="product-prompt-v2-must-not-run", status="DRAFT",
+        ))
+        await session.commit()
+        await PromptTemplateRepository(session).publish("editorial.drafter", 2)
+        await session.commit()
+
+    first_attempt = RecordingDrafter(fail_titles={"Material 1"})
+    await ProductionJobRunner(first_attempt).run(job.id)
+    assert len(first_attempt.prompts) == 1
+    assert "product-prompt-v1" in first_attempt.prompts[0]
+    assert "product-prompt-v2-must-not-run" not in first_attempt.prompts[0]
+
+    async with SessionFactory() as session:
+        await resume_production_job(session, job.id, retry_failed=True)
+    retry = RecordingDrafter()
+    await ProductionJobRunner(retry).run(job.id)
+    assert len(retry.prompts) == 1
+    assert "product-prompt-v1" in retry.prompts[0]
+    assert "product-prompt-v2-must-not-run" not in retry.prompts[0]
+    assert "Product audience: Readers who prefer concise Arabic literary content" in retry.prompts[0]
+
+    async with SessionFactory() as session:
+        persisted = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+        assert persisted.resolved_context == original_context
+        restored = ResolvedProductionContext.from_dict(persisted.resolved_context)
+        assert restored.product is not None
+        assert restored.product.version_id == context.product.version_id
+        assert restored.product.definition["component_versions"] == manifest
 
 
 async def test_text_product_generates_reviewable_artifact_without_creating_post():

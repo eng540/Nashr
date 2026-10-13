@@ -1,14 +1,29 @@
 import { expect, test } from "@playwright/test";
 
+function componentManifest(recipeKey: string, identityKey: string, policyKey = "EDITORIAL_DEFAULT", contractKey = "TELEGRAM_POST") {
+  return {
+    prompt: { key: "editorial.drafter", version_id: "10000000-0000-4000-8000-000000000001", version: 1 },
+    identity: { key: identityKey, version_id: "10000000-0000-4000-8000-000000000002", version: 1 },
+    recipe: { key: recipeKey, version_id: "10000000-0000-4000-8000-000000000003", version: 1 },
+    policy: { key: policyKey, version_id: "10000000-0000-4000-8000-000000000004", version: 1 },
+    output_contract: { key: contractKey, version_id: "10000000-0000-4000-8000-000000000005", version: 1 },
+  };
+}
+
+function identityOption(key: string) {
+  return { id: "identity-id", key, name: "E2E Identity", purpose: "test", active_version: 1, versions: [{ version: 1, status: "PUBLISHED" }] };
+}
+
 test("React factory reuses the same production claim key after an ambiguous network failure", async ({ page }) => {
   const sourceId = "11111111-1111-4111-8111-111111111111";
   const materialId = "22222222-2222-4222-8222-222222222222";
   const productKey = "E2E_POST_PRODUCT";
+  const identityKey = "E2E_POST_IDENTITY";
   let submittedKeys: string[] = [];
   let jobId = "33333333-3333-4333-8333-333333333333";
 
   await page.addInitScript(() => { if (!window.sessionStorage.getItem("e2e-production-claim-cleaned")) { window.localStorage.clear(); window.sessionStorage.setItem("e2e-production-claim-cleaned", "1"); } });
-  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [identityOption(identityKey)] }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{
     id: "recipe-id", key: "E2E_POST_RECIPE", name: "E2E Recipe", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", stages: [{ key: "produce", capability_key: "produce_post", capability_version: 1 }] }],
@@ -17,6 +32,8 @@ test("React factory reuses the same production claim key after an ambiguous netw
     id: "product-id", key: productKey, name: "E2E Post Product", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", definition: {
       recipe_key: "E2E_POST_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "EDITORIAL_DEFAULT",
+      prompt_key: "editorial.drafter", identity_key: identityKey,
+      component_versions: componentManifest("E2E_POST_RECIPE", identityKey),
       audience: "readers", experience: "post",
     } }],
   }] }));
@@ -111,8 +128,9 @@ test("manual production selection includes materials that have no topic assignme
     kind: "TEXT", content: "Source text", has_post: false, topic_id: null,
   }));
   const productKey = "E2E_POST_PRODUCT";
+  const identityKey = "E2E_POST_IDENTITY";
   await page.addInitScript(() => { window.localStorage.clear(); });
-  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [identityOption(identityKey)] }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{
     id: "recipe-id", key: "E2E_POST_RECIPE", name: "E2E Recipe", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", stages: [{ key: "produce", capability_key: "produce_post", capability_version: 1 }] }],
@@ -121,6 +139,8 @@ test("manual production selection includes materials that have no topic assignme
     id: "product-id", key: productKey, name: "E2E Post Product", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", definition: {
       recipe_key: "E2E_POST_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "EDITORIAL_DEFAULT",
+      prompt_key: "editorial.drafter", identity_key: identityKey,
+      component_versions: componentManifest("E2E_POST_RECIPE", identityKey),
       audience: "readers", experience: "post",
     } }],
   }] }));
@@ -196,7 +216,10 @@ test("production wizard selects SOURCE, TOPIC and SELECTION before review and su
   await page.route("**/api/control/products", (route) => route.fulfill({ json: [{
     id: "product-id", key: productKey, name: "Reviewed Product", purpose: "test", active_version: 1,
     versions: [{ version: 1, status: "PUBLISHED", definition: {
-      recipe_key: "E2E_REVIEWED_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "EDITORIAL_DEFAULT", audience: "readers", experience: "post",
+      recipe_key: "E2E_REVIEWED_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "EDITORIAL_DEFAULT",
+      prompt_key: "editorial.drafter", identity_key: identityKey,
+      component_versions: componentManifest("E2E_REVIEWED_RECIPE", identityKey),
+      audience: "readers", experience: "post",
     } }],
   }] }));
   await page.route("**/sources**", (route) => {
@@ -235,7 +258,8 @@ test("production wizard selects SOURCE, TOPIC and SELECTION before review and su
   await page.goto("/posts/workspace");
   await expect(page.getByLabel("المنتج")).toBeVisible();
   await page.getByLabel("المنتج").selectOption(productKey);
-  await page.getByLabel("الهوية التحريرية للإنتاج").selectOption(identityKey);
+  await expect(page.getByLabel("الهوية التحريرية للإنتاج")).toHaveValue(identityKey);
+  await expect(page.getByLabel("الهوية التحريرية للإنتاج")).toBeDisabled();
   await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
   await page.getByLabel("الكتاب للإنتاج").selectOption(sourceId);
@@ -319,10 +343,15 @@ test("production setup blocks progression when product, identity, or source opti
   await page.unroute("**/api/control/products");
   await page.route("**/api/control/products", (route) => route.fulfill({ json: [{
     id: "product-id", key: "E2E_RECOVERED_PRODUCT", name: "Recovered Product", purpose: "test", active_version: 1,
-    versions: [{ version: 1, status: "PUBLISHED", definition: { recipe_key: "E2E_RECOVERED_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "DEFAULT", audience: "readers", experience: "post" } }],
+    versions: [{ version: 1, status: "PUBLISHED", definition: {
+      recipe_key: "E2E_RECOVERED_RECIPE", output_contract_key: "TELEGRAM_POST", policy_key: "DEFAULT",
+      prompt_key: "editorial.drafter", identity_key: "E2E_RECOVERED_IDENTITY",
+      component_versions: componentManifest("E2E_RECOVERED_RECIPE", "E2E_RECOVERED_IDENTITY", "DEFAULT"),
+      audience: "readers", experience: "post",
+    } }],
   }] }));
   await page.unroute("**/api/control/identities");
-  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [identityOption("E2E_RECOVERED_IDENTITY")] }));
   await page.unroute("**/api/control/recipes");
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{
     id: "recipe-id", key: "E2E_RECOVERED_RECIPE", name: "Recovered Recipe", purpose: "test", active_version: 1,

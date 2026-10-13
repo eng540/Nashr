@@ -156,30 +156,46 @@ async def create_production_job(
                 raise RuntimeError("Production claim exists without its execution job.")
             return existing_job
 
-    # Resolve once before persisting the job. The resolver reads one committed version.
+    # Resolve a published product's immutable manifest once at job creation.
+    # Legacy products without a manifest may still appear in history, but must not
+    # start new work by silently adopting today's active component versions.
     resolver = ControlPlaneResolver()
-    resolved_prompt = await resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)
-    if not resolved_prompt.body.strip():
-        raise LookupError(f"Published editorial prompt '{EDITORIAL_PROMPT_KEY}' is empty.")
     resolved_product = await resolver.resolve_product(session, product_key) if product_key is not None else None
     if resolved_product is not None:
         product_definition = ProductionProductDefinition.from_dict(resolved_product.definition)
-        recipe_key = product_definition.recipe_key
-        output_contract_key = product_definition.output_contract_key
-        policy_key = product_definition.policy_key
+        if not product_definition.has_immutable_manifest:
+            raise ValueError(
+                "This legacy product version has no pinned component manifest and cannot start a new job safely. "
+                "In /control, create a new product version, explicitly select published prompt and editorial identity "
+                "(and verify its recipe, policy, and output contract), publish that version, then retry. "
+                "Historical jobs remain resumable from their saved context."
+            )
+        if identity_key is not None and identity_key != product_definition.identity_key:
+            raise ValueError(
+                "The runtime identity cannot override the editorial identity selected by the published product."
+            )
+        refs = product_definition.component_versions
+        assert refs is not None
+        resolved_prompt = await resolver.resolve_prompt_version(session, refs["prompt"])
+        resolved_recipe = await resolver.resolve_recipe_version(session, refs["recipe"])
+        resolved_identity = await resolver.resolve_identity_version(session, refs["identity"])
+        resolved_output_contract = await resolver.resolve_output_contract_version(session, refs["output_contract"])
+        resolved_policy = await resolver.resolve_policy_version(session, refs["policy"])
+        recipe_key = resolved_recipe.key
+        output_contract_key = resolved_output_contract.key
+        policy_key = resolved_policy.key
     else:
+        resolved_prompt = await resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)
+        if not resolved_prompt.body.strip():
+            raise LookupError(f"Published editorial prompt '{EDITORIAL_PROMPT_KEY}' is empty.")
         output_contract_key = "TELEGRAM_POST"
         policy_key = "EDITORIAL_DEFAULT"
-    resolved_recipe = await resolver.resolve_recipe(session, recipe_key)
-    if resolved_product is None and any(stage.capability_key == "produce_text_artifact" for stage in resolved_recipe.stages):
-        raise ValueError("Non-Post artifact recipes must be selected through a Product so the correct Output Contract is pinned.")
-    resolved_identity = (
-        await resolver.resolve_identity(session, identity_key)
-        if identity_key is not None
-        else None
-    )
-    resolved_output_contract = await resolver.resolve_output_contract(session, output_contract_key)
-    resolved_policy = await resolver.resolve_policy(session, policy_key)
+        resolved_recipe = await resolver.resolve_recipe(session, recipe_key)
+        if any(stage.capability_key == "produce_text_artifact" for stage in resolved_recipe.stages):
+            raise ValueError("Non-Post artifact recipes must be selected through a Product so the correct Output Contract is pinned.")
+        resolved_identity = await resolver.resolve_identity(session, identity_key) if identity_key is not None else None
+        resolved_output_contract = await resolver.resolve_output_contract(session, output_contract_key)
+        resolved_policy = await resolver.resolve_policy(session, policy_key)
 
     units = await _resolve_units(
         session,

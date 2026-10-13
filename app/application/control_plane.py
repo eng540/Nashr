@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.control_plane import PromptTemplate
+from app.domain.control_plane import PromptTemplate, ResolvedPrompt
+from app.domain.recipes import ProductionRecipe, RecipeStage
 from app.domain.production_context import PinnedIdentity, PinnedOutputContract, PinnedPolicy, PinnedProduct
 from app.domain.identities import EditorialIdentityDefinition
 from app.infrastructure.database.identities import EditorialIdentityRepository
@@ -12,6 +13,15 @@ from app.domain.policies import ProductionPolicyDefinition
 from app.domain.products import ProductionProductDefinition
 from app.infrastructure.database.policies import ProductionPolicyRepository
 from app.infrastructure.database.products import ProductionProductRepository
+from app.infrastructure.database.models import (
+    EditorialIdentityModel, EditorialIdentityVersionModel,
+    OutputContractModel, OutputContractVersionModel,
+    ProductionPolicyModel, ProductionPolicyVersionModel,
+    ProductionRecipeModel, ProductionRecipeVersionModel,
+    PromptTemplateModel, PromptTemplateVersionModel,
+)
+from uuid import UUID
+from sqlalchemy import select
 
 
 EDITORIAL_PROMPT_KEY = "editorial.drafter"
@@ -23,6 +33,88 @@ class ControlPlaneResolver:
 
     async def resolve_recipe(self, session: AsyncSession, key: str):
         return await ProductionRecipeRepository(session).resolve_active(key)
+
+    async def resolve_prompt_version(self, session: AsyncSession, reference: dict[str, object]) -> ResolvedPrompt:
+        version_id = UUID(str(reference["version_id"]))
+        result = await session.execute(
+            select(PromptTemplateModel, PromptTemplateVersionModel)
+            .join(PromptTemplateVersionModel, PromptTemplateVersionModel.prompt_template_id == PromptTemplateModel.id)
+            .where(PromptTemplateModel.key == reference["key"],
+                   PromptTemplateVersionModel.id == version_id,
+                   PromptTemplateVersionModel.status.in_(("PUBLISHED", "ARCHIVED")))
+        )
+        row = result.one_or_none()
+        if row is None or row[1].version != reference["version"]:
+            raise LookupError("Pinned product prompt version is unavailable or does not match its manifest.")
+        return ResolvedPrompt(key=row[0].key, version=row[1].version, body=row[1].body,
+                              template_id=row[0].id, version_id=row[1].id)
+
+    async def resolve_recipe_version(self, session: AsyncSession, reference: dict[str, object]) -> ProductionRecipe:
+        version_id = UUID(str(reference["version_id"]))
+        result = await session.execute(
+            select(ProductionRecipeModel, ProductionRecipeVersionModel)
+            .join(ProductionRecipeVersionModel, ProductionRecipeVersionModel.recipe_id == ProductionRecipeModel.id)
+            .where(ProductionRecipeModel.key == reference["key"],
+                   ProductionRecipeVersionModel.id == version_id,
+                   ProductionRecipeVersionModel.status.in_(("PUBLISHED", "ARCHIVED")))
+        )
+        row = result.one_or_none()
+        if row is None or row[1].version != reference["version"]:
+            raise LookupError("Pinned product recipe version is unavailable or does not match its manifest.")
+        stages = row[1].definition.get("stages")
+        if not isinstance(stages, list):
+            raise ValueError("Pinned product recipe has an invalid stage definition.")
+        return ProductionRecipe(key=row[0].key, version=row[1].version,
+                                stages=tuple(RecipeStage.from_dict(stage) for stage in stages),
+                                recipe_id=str(row[0].id), version_id=str(row[1].id))
+
+    async def resolve_identity_version(self, session: AsyncSession, reference: dict[str, object]) -> PinnedIdentity:
+        version_id = UUID(str(reference["version_id"]))
+        result = await session.execute(
+            select(EditorialIdentityModel, EditorialIdentityVersionModel)
+            .join(EditorialIdentityVersionModel, EditorialIdentityVersionModel.identity_id == EditorialIdentityModel.id)
+            .where(EditorialIdentityModel.key == reference["key"],
+                   EditorialIdentityVersionModel.id == version_id,
+                   EditorialIdentityVersionModel.status.in_(("PUBLISHED", "ARCHIVED")))
+        )
+        row = result.one_or_none()
+        if row is None or row[1].version != reference["version"]:
+            raise LookupError("Pinned product identity version is unavailable or does not match its manifest.")
+        return PinnedIdentity(identity_id=str(row[0].id), version_id=str(row[1].id), key=row[0].key,
+                              version=row[1].version,
+                              definition=EditorialIdentityDefinition.from_dict(row[1].definition).to_dict())
+
+    async def resolve_policy_version(self, session: AsyncSession, reference: dict[str, object]) -> PinnedPolicy:
+        version_id = UUID(str(reference["version_id"]))
+        result = await session.execute(
+            select(ProductionPolicyModel, ProductionPolicyVersionModel)
+            .join(ProductionPolicyVersionModel, ProductionPolicyVersionModel.policy_id == ProductionPolicyModel.id)
+            .where(ProductionPolicyModel.key == reference["key"],
+                   ProductionPolicyVersionModel.id == version_id,
+                   ProductionPolicyVersionModel.status.in_(("PUBLISHED", "ARCHIVED")))
+        )
+        row = result.one_or_none()
+        if row is None or row[1].version != reference["version"]:
+            raise LookupError("Pinned product policy version is unavailable or does not match its manifest.")
+        return PinnedPolicy(policy_id=str(row[0].id), version_id=str(row[1].id), key=row[0].key,
+                            version=row[1].version,
+                            definition=ProductionPolicyDefinition.from_dict(row[1].definition).to_dict())
+
+    async def resolve_output_contract_version(self, session: AsyncSession, reference: dict[str, object]) -> PinnedOutputContract:
+        version_id = UUID(str(reference["version_id"]))
+        result = await session.execute(
+            select(OutputContractModel, OutputContractVersionModel)
+            .join(OutputContractVersionModel, OutputContractVersionModel.contract_id == OutputContractModel.id)
+            .where(OutputContractModel.key == reference["key"],
+                   OutputContractVersionModel.id == version_id,
+                   OutputContractVersionModel.status.in_(("PUBLISHED", "ARCHIVED")))
+        )
+        row = result.one_or_none()
+        if row is None or row[1].version != reference["version"]:
+            raise LookupError("Pinned product output-contract version is unavailable or does not match its manifest.")
+        return PinnedOutputContract(contract_id=str(row[0].id), version_id=str(row[1].id), key=row[0].key,
+                                    version=row[1].version,
+                                    definition=OutputContractDefinition.from_dict(row[1].definition).to_dict())
 
     async def resolve_output_contract(self, session: AsyncSession, key: str) -> PinnedOutputContract:
         contract, version = await OutputContractRepository(session).resolve_active(key)

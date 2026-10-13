@@ -17,8 +17,16 @@ function productionLineFilter(products: ProductionProductOption[] | undefined, i
   const productVersion = product?.versions.find((version) => version.version === product.active_version);
   const recipeKey = productVersion?.definition.recipe_key;
   const recipe = recipes?.find((item) => item.key === recipeKey);
-  const identity = identities?.find((item) => item.key === identityKey);
-  return { product_key: product?.key, product_version: product?.active_version ?? undefined, identity_key: identity?.key, identity_version: identity?.active_version ?? undefined, recipe_key: recipeKey, recipe_version: recipe?.active_version ?? undefined };
+  const pinnedIdentity = productVersion?.definition.component_versions?.identity;
+  const identity = identities?.find((item) => item.key === (pinnedIdentity?.key ?? identityKey));
+  return {
+    product_key: product?.key,
+    product_version: product?.active_version ?? undefined,
+    identity_key: pinnedIdentity?.key ?? identity?.key,
+    identity_version: pinnedIdentity?.version ?? identity?.active_version ?? undefined,
+    recipe_key: recipeKey,
+    recipe_version: productVersion?.definition.component_versions?.recipe.version ?? recipe?.active_version ?? undefined,
+  };
 }
 
 function pendingRequestFromStorage(): Partial<CreateProductionRequest> | null {
@@ -145,9 +153,20 @@ export function PostBankPage() {
   }, [sources.data, productionSourceId]);
   useEffect(() => {
     if (!products.data) return;
-    const available = products.data.filter((product) => product.active_version !== null);
+    const available = products.data.filter((product) => {
+      if (product.active_version === null) return false;
+      const version = product.versions.find((item) => item.version === product.active_version);
+      return Boolean(version?.definition.component_versions);
+    });
     if (!available.some((product) => product.key === productKey)) setProductKey(available[0]?.key ?? "");
   }, [products.data, productKey]);
+  useEffect(() => {
+    if (!products.data) return;
+    const product = products.data.find((item) => item.key === productKey);
+    const version = product?.versions.find((item) => item.version === product.active_version);
+    const pinnedIdentityKey = version?.definition.component_versions?.identity.key;
+    if (pinnedIdentityKey && identityKey !== pinnedIdentityKey) setIdentityKey(pinnedIdentityKey);
+  }, [products.data, productKey, identityKey]);
 
   const review = useMutation({
     mutationFn: ({ id, action }: { id: string; action: "approve" | "reject" }) => action === "approve" ? postsApi.approve(id, reviewNote) : postsApi.reject(id, reviewNote),
@@ -182,9 +201,14 @@ export function PostBankPage() {
   const topics = bookMap.data?.topics ?? [];
   const sourceMaterials = bookMap.data?.materials ?? topics.flatMap((topic) => topic.materials);
   const availableIdentities = (identities.data ?? []).filter((identity) => identity.active_version !== null);
-  const availableProducts = (products.data ?? []).filter((product) => product.active_version !== null);
+  const availableProducts = (products.data ?? []).filter((product) => {
+    if (product.active_version === null) return false;
+    const version = product.versions.find((item) => item.version === product.active_version);
+    return Boolean(version?.definition.component_versions);
+  });
   const selectedProduct = availableProducts.find((product) => product.key === productKey);
   const activeProductVersion = selectedProduct?.versions.find((version) => version.version === selectedProduct.active_version);
+  const pinnedIdentity = activeProductVersion?.definition.component_versions?.identity;
   const isPostProduct = activeProductVersion ? activeProductVersion.definition.output_contract_key === "TELEGRAM_POST" : true;
   const productionSources = (sources.data ?? []).filter((source) => !isPostProduct
     ? source.material_count > 0
@@ -207,7 +231,7 @@ export function PostBankPage() {
   const productionKinds = Array.from(new Set(allProductionMaterials.map((material) => material.kind).filter((kind): kind is string => Boolean(kind)))).sort();
   const selectedSource = productionSources.find((source) => source.id === productionSourceId);
   const productReady = products.isSuccess && availableProducts.some((product) => product.key === productKey);
-  const identityReady = identities.isSuccess && (!identityKey || availableIdentities.some((identity) => identity.key === identityKey));
+  const identityReady = identities.isSuccess && Boolean(pinnedIdentity && identityKey === pinnedIdentity.key && identities.data?.some((identity) => identity.key === pinnedIdentity.key));
   const selectedRecipeKey = activeProductVersion?.definition.recipe_key;
   const recipeReady = recipes.isSuccess && Boolean(selectedRecipeKey && recipes.data.some((recipe) => recipe.key === selectedRecipeKey && recipe.active_version !== null));
   const lineReady = productReady && identityReady && recipeReady;
@@ -267,18 +291,18 @@ export function PostBankPage() {
           return <button key={step} type="button" onClick={() => { if (stepReachable && (step !== 3 || canReviewProduction)) setProductionStep(step); }} disabled={!stepReachable || step === 3 && !canReviewProduction} aria-current={productionStep === step ? "step" : undefined} className={`rounded-lg px-2 py-3 text-sm font-semibold transition ${productionStep === step ? "bg-indigo-600 text-white shadow-sm" : productionStep > step ? "bg-emerald-50 text-emerald-800" : "text-slate-500"} disabled:cursor-not-allowed disabled:opacity-50`}><span className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs">{step}</span>{title}</button>;
         })}
       </nav>
-      <p className="mt-3 text-sm text-slate-600">{productionStep === 1 ? "اختر منتجًا نشطًا وهوية تحريرية صالحة عند الحاجة. لا يمكنك المتابعة قبل تحميل الخيارات والتحقق منها." : productionStep === 2 ? "اختر الكتاب ونطاق الإنتاج، ثم أكمل اختيار المحور أو المواد هنا قبل مراجعة الإعدادات." : "راجع إعداد الإنتاج النهائي. يعكس الملخص الطلب الذي سترسله الواجهة إلى API؛ يمكنك الرجوع لتعديل المصدر أو النطاق قبل البدء."}</p>
+      <p className="mt-3 text-sm text-slate-600">{productionStep === 1 ? "اختر منتجًا منشورًا يثبت تعليماته وهويته التحريرية. لا يمكن تجاوز هوية المنتج من تشغيل عابر." : productionStep === 2 ? "اختر الكتاب ونطاق الإنتاج، ثم أكمل اختيار المحور أو المواد هنا قبل مراجعة الإعدادات." : "راجع إعداد الإنتاج النهائي. يعكس الملخص الطلب الذي سترسله الواجهة إلى API؛ يمكنك الرجوع لتعديل المصدر أو النطاق قبل البدء."}</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         {productionStep === 2 && isPostProduct && <label className="text-sm font-semibold">حالة الإنتاج<select aria-label="حالة إنتاج الكتب" value={productionMode} onChange={(e) => { setProductionMode(e.target.value as typeof productionMode); setProductionKind(""); setProductionTopicId(""); setMaterialIds([]); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="NEEDS">يحتاج إنتاجًا</option><option value="ALL">كل الكتب</option><option value="DONE">اكتمل إنتاجه</option></select></label>}
         {productionStep === 2 && <label className="text-sm font-semibold">الكتاب للإنتاج<select aria-label="الكتاب للإنتاج" value={productionSourceId} onChange={(e) => { setProductionSourceId(e.target.value); setProductionTopicId(""); setMaterialIds([]); setProductionKind(""); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} disabled={!sources.isSuccess || sources.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">اختر كتابًا...</option>{productionSources.map((source) => <option key={source.id} value={source.id}>{source.book_title || source.filename} — {isPostProduct ? `${source.pending_count} متبقٍ` : `${source.material_count} مادة`}</option>)}</select></label>}
         {productionStep === 2 && <label className="text-sm font-semibold">نطاق الإنتاج<select aria-label="نطاق الإنتاج" value={scope} onChange={(e) => { setScope(e.target.value as ProductionScope); setProductionTopicId(""); setMaterialIds([]); setProductionKind(""); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} disabled={!sourceReady || !bookMap.isSuccess || bookMap.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="SOURCE">الكتاب كاملًا</option><option value="TOPIC">محور محدد</option><option value="SELECTION">مواد أحددها بنفسي</option></select></label>}
         {productionStep === 2 && scope === "TOPIC" && <label className="text-sm font-semibold">المحور للإنتاج<select aria-label="المحور للإنتاج" value={productionTopicId} onChange={(e) => { setProductionTopicId(e.target.value); setMaterialIds([]); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} disabled={!bookMap.isSuccess || bookMap.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">اختر محورًا...</option>{visibleTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.position}. {topic.title} — {isPostProduct ? `${topic.materials.filter((material) => !material.has_post).length} متبقٍ` : `${topic.materials.length} مادة`}</option>)}</select></label>}
         {productionStep === 1 && <label className="text-sm font-semibold">المنتج<select aria-label="المنتج" value={productKey} onChange={(e) => { setProductKey(e.target.value); setProductionSourceId(""); setProductionTopicId(""); setMaterialIds([]); }} disabled={!products.isSuccess || products.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">اختر منتجًا...</option>{availableProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · v{product.active_version}</option>)}</select></label>}
-        {productionStep === 1 && <label className="text-sm font-semibold">الهوية التحريرية<select aria-label="الهوية التحريرية للإنتاج" value={identityKey} onChange={(e) => { setIdentityKey(e.target.value); setProductionSourceId(""); setProductionTopicId(""); setMaterialIds([]); }} disabled={!identities.isSuccess || identities.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">استخدم إعدادات القالب الحالية</option>{availableIdentities.map((identity) => <option key={identity.key} value={identity.key}>{identity.name} · v{identity.active_version}</option>)}</select></label>}
+        {productionStep === 1 && <label className="text-sm font-semibold">الهوية التحريرية المحددة بالمنتج<select aria-label="الهوية التحريرية للإنتاج" value={pinnedIdentity?.key ?? ""} disabled={!identities.isSuccess || identities.isFetching || Boolean(pinnedIdentity)} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">{pinnedIdentity ? "تعذر قراءة الهوية المثبتة" : "اختر منتجًا يحدد هويته التحريرية"}</option>{pinnedIdentity && <option value={pinnedIdentity.key}>{identities.data?.find((identity) => identity.key === pinnedIdentity.key)?.name ?? pinnedIdentity.key} · v{pinnedIdentity.version} (مثبتة في المنتج)</option>}{!pinnedIdentity && availableIdentities.map((identity) => <option key={identity.key} value={identity.key}>{identity.name} · v{identity.active_version}</option>)}</select></label>}
       </div>
       {productionStep === 1 && (products.isLoading || identities.isLoading || recipes.isLoading) && <p role="status" className="mt-3 text-sm text-slate-500">جارٍ تحميل المنتجات والهويات والوصفات والتحقق من توافقها...</p>}
       {productionStep === 1 && (products.isError || identities.isError || recipes.isError) && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">تعذر تحميل خيارات المنتج أو الهوية أو الوصفة. أعد المحاولة قبل المتابعة.<div className="mt-2 flex flex-wrap gap-2">{products.isError && <button type="button" onClick={() => void products.refetch()} className="rounded-lg border bg-white px-3 py-1.5">إعادة تحميل المنتجات</button>}{identities.isError && <button type="button" onClick={() => void identities.refetch()} className="rounded-lg border bg-white px-3 py-1.5">إعادة تحميل الهويات</button>}{recipes.isError && <button type="button" onClick={() => void recipes.refetch()} className="rounded-lg border bg-white px-3 py-1.5">إعادة تحميل الوصفات</button>}</div></div>}
-      {productionStep === 1 && products.isSuccess && availableProducts.length === 0 && <p role="status" className="mt-3 rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">لا توجد منتجات نشطة متاحة للإنتاج.</p>}
+      {productionStep === 1 && products.isSuccess && availableProducts.length === 0 && <p role="status" className="mt-3 rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">لا توجد منتجات ذات إصدار منشور وبيان مكونات ثابت متاح للإنتاج. حدّث تعريف المنتج من Control Plane ثم انشر إصدارًا جديدًا.</p>}
       {productionStep === 1 && identities.isSuccess && identityKey && !identityReady && <p role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">الهوية المختارة لم تعد متاحة أو نشطة. اختر هوية أخرى أو استخدم إعدادات القالب الحالية.</p>}
       {productionStep === 2 && sources.isLoading && <p role="status" className="mt-3 text-sm text-slate-500">جارٍ تحميل الكتب المتاحة لهذا المنتج والهوية...</p>}
       {productionStep === 2 && sources.isError && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">تعذر تحميل الكتب المتاحة. تحقق من الاتصال ثم أعد المحاولة.<button type="button" onClick={() => void sources.refetch()} className="mr-2 rounded-lg border bg-white px-3 py-1.5">إعادة تحميل الكتب</button></div>}

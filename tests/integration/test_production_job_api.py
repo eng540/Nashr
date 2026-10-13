@@ -193,7 +193,7 @@ async def test_create_production_job_api_pins_selected_product(monkeypatch: pyte
         context = response.json()["resolved_context"]
         assert context["schema_version"] == 6
         assert context["product"]["key"] == "ARABIC_LITERATURE_BRIEF_TELEGRAM_POST"
-        assert context["product"]["version"] == 1
+        assert context["product"]["version"] == 2
         assert context["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
         assert context["output_contract"]["key"] == "TELEGRAM_POST"
         assert context["policy"]["key"] == "EDITORIAL_DEFAULT"

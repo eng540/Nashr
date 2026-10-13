@@ -22,6 +22,17 @@ test("control plane keeps prompt management available beside product controls", 
 
 
 test("a product can be created in Control Plane and selected in the factory", async ({ page }) => {
+  const promptsResponse = await page.request.get("/api/control/prompts");
+  expect(promptsResponse.ok()).toBeTruthy();
+  const promptItems = await promptsResponse.json();
+  const promptMeta = promptItems.find((prompt: { name: string; key: string }) => prompt.name === "E2E Control Prompt");
+  expect(promptMeta).toBeTruthy();
+  const promptDetailResponse = await page.request.get("/api/control/prompts/" + encodeURIComponent(promptMeta.key));
+  expect(promptDetailResponse.ok()).toBeTruthy();
+  const promptDetail = await promptDetailResponse.json();
+  const promptKey = promptDetail.key as string;
+  expect(promptDetail.active_version).not.toBeNull();
+
   const recipe = await page.request.post("/api/control/recipes", { data: {
     key: "E2E_PRODUCT_RECIPE",
     name: "E2E Product Recipe",
@@ -49,6 +60,23 @@ test("a product can be created in Control Plane and selected in the factory", as
   expect(contract.ok()).toBeTruthy();
   expect((await page.request.post("/api/control/output-contracts/E2E_PRODUCT_CONTRACT/versions/1/publish")).ok()).toBeTruthy();
 
+  const identity = await page.request.post("/api/control/identities", { data: {
+    key: "E2E_PRODUCT_IDENTITY",
+    name: "E2E Product Identity",
+    purpose: "Identity fixture for immutable product manifest",
+    definition: {
+      purpose: "Create accurate and source-grounded Arabic educational content",
+      audience: "Arabic language learners",
+      voice: "Careful language educator",
+      tone: "Clear and precise",
+      principles: ["Preserve meaning"],
+      objectives: ["Teach the correct usage"],
+      constraints: ["Do not invent linguistic claims"],
+    },
+  } });
+  expect(identity.ok()).toBeTruthy();
+  expect((await page.request.post("/api/control/identities/E2E_PRODUCT_IDENTITY/versions/1/publish")).ok()).toBeTruthy();
+
   await page.goto("/control");
   await page.getByRole("button", { name: "جديد" }).click();
   await page.getByLabel("المفتاح").fill("E2E_UI_PRODUCT");
@@ -57,6 +85,8 @@ test("a product can be created in Control Plane and selected in the factory", as
   await page.getByLabel("الوصفة المنشورة").selectOption("E2E_PRODUCT_RECIPE");
   await page.getByLabel("السياسة المنشورة").selectOption("E2E_PRODUCT_POLICY");
   await page.getByLabel("عقد المخرج المنشور").selectOption("E2E_PRODUCT_CONTRACT");
+  await page.getByLabel("التعليمات المنشورة").selectOption(promptKey);
+  await page.getByLabel("الهوية التحريرية المنشورة").selectOption("E2E_PRODUCT_IDENTITY");
   await page.getByLabel("الجمهور").fill("E2E audience");
   await page.getByLabel("تجربة المنتج").fill("E2E product experience");
   await page.getByRole("button", { name: "إنشاء ومسودة أولى" }).click();

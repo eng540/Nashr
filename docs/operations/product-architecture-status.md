@@ -52,3 +52,24 @@
 ## Proven product-manifest gaps
 
 The updated Product Model and Gap Audit proves that prompt is resolved globally as `editorial.drafter` before product resolution; identity comes from optional request `identity_key`; recipe, policy, and output contract resolve active versions by key rather than exact versions stored in the product; video capability bypasses the pinned editorial prompt/identity; and the recipe contract allows only 5/6/8-second clips. The current Control Plane draft action versions the same product, not a separate derived product with lineage. No code fix for these gaps has been merged. ADR-001 remains Proposed.
+
+## Product manifest implementation checkpoint — 2026-10-13
+
+- PR #131 (video capability consumes the runner's pinned editorial context) was merged after a successful CI rerun on its exact head. The first run had one Playwright failure in product creation; the same test passed on the base `main` run and passed on rerun. This is treated as a transient E2E failure, not as proof of a code regression.
+- Candidate product-manifest work is on `feat/immutable-product-component-manifest`; it is not yet merged or deployed.
+- The candidate freezes prompt/identity/recipe/policy/output-contract version IDs into newly published product versions, resolves those exact versions for new jobs, and refuses to start a new job from a legacy product version that lacks a manifest rather than silently adopting active defaults.
+- A migration adds new manifest-backed versions only for built-in literary post/text products and keeps the previous versions as history. Custom product definitions are deliberately not auto-rewritten.
+- The Control Plane now requires prompt and identity selection for new product drafts; the factory uses the product's pinned identity and filters out legacy products until they are explicitly upgraded.
+
+**Status boundary:** no CI result, merge, Railway deployment, or production acceptance is claimed for the candidate manifest branch. Derivation/lineage, complete compatibility preflight, legacy-product upgrade UX, and actual video duration acceptance remain open. No Telegram send or external publication was performed.
+
+## PR #132 live status checkpoint (2026-10-13)
+
+- PR #132 remains open and must not be merged as part of this task.
+- The CI environment failure on SHA 59ddd43b36d0dd122cea5d24d26b59eea47be0fb was not an application-test failure: PostgreSQL container initialization failed while pulling public.ecr.aws/docker/library/postgres:16 with toomanyrequests: Data limit exceeded; no migrations or tests ran on that attempt.
+- .github/workflows/test.yml now uses mirror.gcr.io/library/postgres:16. Workflow run 38447408736 succeeded end-to-end on SHA f55b11af828b24b19abcc113dff4f859b481efd1: Initialize containers, Apply migrations, backend tests, frontend typecheck/unit/build, and Playwright all passed. This is evidence for that exact SHA only.
+- Subsequent commits add migration rollback/collision guards, product retry coverage, legacy-product upgrade messaging, and identity-override/legacy-product tests. Confirm the latest workflow run for the current PR head before calling this branch CI-passing.
+- The migration creates new versions for selected built-in post/text products and preserves previous definitions; custom products are not auto-assigned a generic identity. Legacy products without a manifest are explicitly upgraded in /control; old jobs retain their stored context.
+- The migration has not been applied to Railway. No live product row for QUL_WA_LA_TAQUL_VIDEO was retrieved, and no video request, Telegram send, or external publication was performed.
+
+Still open: product derivation lineage and component diff, full capability/provider compatibility preflight, live custom-product inventory/upgrade, and video duration acceptance based on actual output metadata.

@@ -16,6 +16,8 @@ class ProductDefinitionRequest(BaseModel):
     recipe_key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     output_contract_key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     policy_key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
+    prompt_key: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9._-]+$")
+    identity_key: str = Field(min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     audience: str = Field(min_length=1, max_length=2000)
     experience: str = Field(min_length=1, max_length=2000)
 

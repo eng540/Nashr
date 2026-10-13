@@ -175,3 +175,21 @@ The previous UX note above described PR #127 as open at an earlier point. The ob
 Current main after the documentation merge is `195bf73b0276203f125f7f8a2d45950cf7d9971e`; Railway production remains on `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c`. The product execution trace proves the following gaps in code: global `editorial.drafter` is resolved before product selection; identity remains a request-level optional override; product definition stores component keys but not exact versions; and video capability builds a separate prompt that bypasses the pinned editorial prompt and identity. The seeded video recipe uses 5 seconds and the capability supports only 5/6/8 seconds, so a 30–60-second output requires multi-clip assembly, not a duration constant change.
 
 See [Product Model and Gap Audit](product-model-and-gap-audit.md) for path evidence and acceptance sequence. ADR-001 remains Proposed; no code fix for these gaps has been merged. The old UX implementation log statement that PR #127 remains open is stale; PR #127 is merged as `01634eb9312eb13abb76235af032b7008529cf74`.
+
+## Product manifest boundary update (candidate branch, 2026-10-13)
+
+The intended ownership boundary is now explicit in the candidate branch: the published product version owns the immutable references to its editorial prompt, identity, recipe, policy, and output contract. Control Plane resolves and freezes those references at product publication; the shared production engine consumes the saved references and does not choose product-specific editorial rules inside a capability.
+
+The product factory is a run interface, not a composition editor. It must use the product-pinned identity and may not silently override it. Capability code may add modality execution details (for example, video rendering mechanics), but those details must not become a hidden substitute for the product's editorial identity/instructions.
+
+This is candidate-branch documentation, not yet a merged-main or production claim. Product derivation lineage/diffs and full compatibility preflight remain open. Legacy jobs continue from their saved context; legacy products without a manifest must be explicitly upgraded before new jobs start.
+
+## PR #132 product manifest checkpoint
+
+The candidate branch now treats a published product version as references to exact prompt, editorial identity, recipe, policy, and output-contract versions. These references are validated by key, version ID, and version number; the application resolves the exact referenced version including ARCHIVED records. The job's resolved context is the execution snapshot used by the runner and resume/retry paths; new jobs cannot silently fill missing legacy manifest fields from active defaults.
+
+The CI container image change is narrowly scoped: the PostgreSQL service in .github/workflows/test.yml uses mirror.gcr.io/library/postgres:16 after public.ecr.aws/docker/library/postgres:16 hit the registry's data limit before tests started. Run 38447408736 passed all stages on SHA f55b11af828b24b19abcc113dff4f859b481efd1; later commits require checking the latest PR-head run.
+
+The migration creates new versions for selected built-in post/text products rather than rewriting historical definitions, leaves media products as drafts, and does not auto-assign the baseline identity to custom products. Its downgrade has guards for product/job/Artifact references, changed drafts, later versions, and identity UUID/key collisions. No Railway migration or deployment has been performed. No production data for QUL_WA_LA_TAQUL_VIDEO was available to inspect, so the live record's status is unverified.
+
+Remaining outside this stage: independent product derivation with parent lineage and explicit component diffs; complete capability/provider compatibility preflight; actual duration/assembly acceptance for video; and live acceptance for text/image/video/audio. Keep ADR-001 Proposed until reviewed implementation, latest-head CI, and all acceptance gates are met.
