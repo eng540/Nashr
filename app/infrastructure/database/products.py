@@ -127,7 +127,9 @@ class ProductionProductRepository:
 
     async def _get_version_row(self, key: str, version: int) -> ProductionProductVersionModel | None:
         result = await self.session.execute(
-            select(ProductionProductVersionModel).join(ProductionProductModel)
-            .where(ProductionProductModel.key == key, ProductionProductVersionModel.version == version)
+            select(ProductionProductVersionModel).join(
+                ProductionProductModel,
+                ProductionProductVersionModel.product_id == ProductionProductModel.id,
+            ).where(ProductionProductModel.key == key, ProductionProductVersionModel.version == version)
         )
         return result.scalar_one_or_none()
