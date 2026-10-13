@@ -142,8 +142,13 @@ test("a published product can be derived independently with pinned components re
   await page.reload();
   await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
   await page.getByLabel("التعليمات المنشورة").selectOption(alternatePromptKey);
+  await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(alternatePromptKey);
   await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
   await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
+  const savedDraftResponse = await page.request.get("/api/control/products/" + derivedKey);
+  expect(savedDraftResponse.ok()).toBeTruthy();
+  const savedDraftProduct = await savedDraftResponse.json();
+  expect(savedDraftProduct.versions.find((version: { status: string }) => version.status === "DRAFT")?.definition.prompt_key).toBe(alternatePromptKey);
   await page.getByRole("button", { name: "نشر الإصدار" }).click();
   await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
   // Re-fetch persisted lineage/diff state, rather than asserting only transient form state.
