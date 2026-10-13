@@ -102,6 +102,60 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         assert versions[2]["definition"]["component_versions"]["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
         assert versions[2]["definition"]["component_versions"]["recipe"]["version"] == 1
 
+        prompt_alt = await client.post("/api/control/prompts", json={
+            "key": "TEST_PRODUCT_PROMPT_ALT",
+            "name": "Alternate Product Prompt",
+            "purpose": "Replacement instruction component for derivation tests.",
+            "body": "Alternate product instructions.",
+        })
+        assert prompt_alt.status_code == 201, prompt_alt.text
+        assert (await client.post("/api/control/prompts/TEST_PRODUCT_PROMPT_ALT/versions/1/publish")).status_code == 200
+
+        derived = await client.post("/api/control/products/TEST_PRODUCT_LIFECYCLE/versions/1/derive", json={
+            "key": "TEST_PRODUCT_DERIVED",
+            "name": "Derived Product",
+            "purpose": "Independent derived product fixture",
+        })
+        assert derived.status_code == 201, derived.text
+        derived_payload = derived.json()
+        assert derived_payload["parent_product_id"] is not None
+        assert derived_payload["derived_from_version_id"] == published_v1.json()["id"]
+        derived_definition = derived_payload["created_version"]["definition"]
+        assert derived_definition["component_versions"] == manifest_v1
+
+        derived_definition["audience"] = "Audience unique to the derived product"
+        derived_definition["prompt_key"] = "TEST_PRODUCT_PROMPT_ALT"
+        derived_definition["component_versions"].pop("prompt")
+        derived_draft = await client.patch("/api/control/products/TEST_PRODUCT_DERIVED/versions/1", json={
+            "definition": derived_definition,
+        })
+        assert derived_draft.status_code == 200, derived_draft.text
+        derived_published = await client.post("/api/control/products/TEST_PRODUCT_DERIVED/versions/1/publish")
+        assert derived_published.status_code == 200, derived_published.text
+        derived_manifest = derived_published.json()["definition"]["component_versions"]
+        assert derived_manifest["prompt"]["key"] == "TEST_PRODUCT_PROMPT_ALT"
+        assert derived_manifest["prompt"]["version"] == 1
+        for component in ("identity", "recipe", "policy", "output_contract"):
+            assert derived_manifest[component] == manifest_v1[component]
+
+        source_after_derivation = await client.get("/api/control/products/TEST_PRODUCT_LIFECYCLE")
+        assert source_after_derivation.status_code == 200
+        source_v1_after = next(v for v in source_after_derivation.json()["versions"] if v["version"] == 1)
+        assert source_v1_after["definition"]["audience"] == "Readers of Arabic literature"
+        assert source_v1_after["definition"]["component_versions"] == manifest_v1
+
+        derived_detail = await client.get("/api/control/products/TEST_PRODUCT_DERIVED")
+        assert derived_detail.status_code == 200
+        derivation = derived_detail.json()["derivation"]
+        assert derivation["parent_product_key"] == "TEST_PRODUCT_LIFECYCLE"
+        assert derivation["source_version"] == 1
+        assert derivation["changes"]["audience"]["from"] == "Readers of Arabic literature"
+        assert derivation["changes"]["audience"]["to"] == "Audience unique to the derived product"
+        assert derivation["changes"]["prompt_key"]["from"] == "TEST_PRODUCT_PROMPT"
+        assert derivation["changes"]["prompt_key"]["to"] == "TEST_PRODUCT_PROMPT_ALT"
+        assert derivation["component_diffs"]["prompt"]["from"]["key"] == "TEST_PRODUCT_PROMPT"
+        assert derivation["component_diffs"]["prompt"]["to"]["key"] == "TEST_PRODUCT_PROMPT_ALT"
+
 
 @pytest.mark.asyncio
 async def test_product_cannot_publish_with_missing_component_reference():

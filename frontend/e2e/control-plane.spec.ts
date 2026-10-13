@@ -104,3 +104,36 @@ test("a product can be created in Control Plane and selected in the factory", as
   await page.getByLabel("المنتج").selectOption("E2E_UI_PRODUCT");
   await expect(page.getByLabel("المنتج")).toHaveValue("E2E_UI_PRODUCT");
 });
+
+test("a published product can be derived independently with pinned components reused", async ({ page }) => {
+  const sourceKey = "ARABIC_LITERATURE_TELEGRAM_POST";
+  const sourceResponse = await page.request.get("/api/control/products/" + sourceKey);
+  expect(sourceResponse.ok()).toBeTruthy();
+  const source = await sourceResponse.json();
+  const sourceVersion = source.versions.find((version: { version: number; status: string }) => version.version === source.active_version);
+  expect(sourceVersion?.definition.component_versions).toBeTruthy();
+
+  await page.goto("/control");
+  await page.getByRole("button", { name: new RegExp(sourceKey) }).click();
+  await page.getByRole("button", { name: "اشتقاق منتج مستقل" }).click();
+  const derivedKey = "E2E_DERIVED_" + Date.now();
+  await page.getByLabel("مفتاح المنتج المشتق").fill(derivedKey);
+  await page.getByLabel("اسم المنتج المشتق").fill("E2E derived product");
+  await page.getByLabel("غرض المنتج المشتق").fill("Verify independent product lineage and exact component reuse");
+  await page.getByRole("button", { name: "إنشاء المنتج المشتق" }).click();
+
+  await expect(page.getByText("سجل اشتقاق المنتج")).toBeVisible();
+  await expect(page.getByText(new RegExp(sourceKey))).toBeVisible();
+  const derivedResponse = await page.request.get("/api/control/products/" + derivedKey);
+  expect(derivedResponse.ok()).toBeTruthy();
+  const derived = await derivedResponse.json();
+  expect(derived.derivation.parent_product_key).toBe(sourceKey);
+  expect(derived.derivation.source_version).toBe(source.active_version);
+  expect(derived.derivation.changes).toEqual({});
+  expect(derived.derivation.component_diffs).toEqual({});
+  expect(derived.versions[0].definition.component_versions).toEqual(sourceVersion.definition.component_versions);
+
+  const sourceAfter = await (await page.request.get("/api/control/products/" + sourceKey)).json();
+  const sourceVersionAfter = sourceAfter.versions.find((version: { version: number }) => version.version === source.active_version);
+  expect(sourceVersionAfter.definition).toEqual(sourceVersion.definition);
+});

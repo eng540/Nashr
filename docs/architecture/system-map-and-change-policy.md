@@ -184,12 +184,9 @@ The product factory is a run interface, not a composition editor. It must use th
 
 This is candidate-branch documentation, not yet a merged-main or production claim. Product derivation lineage/diffs and full compatibility preflight remain open. Legacy jobs continue from their saved context; legacy products without a manifest must be explicitly upgraded before new jobs start.
 
-## PR #132 product manifest checkpoint
+## Product derivation boundary (candidate branch, 2026-10-13)
 
-The candidate branch now treats a published product version as references to exact prompt, editorial identity, recipe, policy, and output-contract versions. These references are validated by key, version ID, and version number; the application resolves the exact referenced version including ARCHIVED records. The job's resolved context is the execution snapshot used by the runner and resume/retry paths; new jobs cannot silently fill missing legacy manifest fields from active defaults.
+The Control Plane candidate now models a derived product as a separate product record linked to both its parent product and the exact source product version. The derived draft reuses immutable component references; changing a selected component key removes only that component's preserved reference, while unchanged references remain pinned. Publication fills the resulting manifest and the Control Plane exposes a diff from the source version.
 
-The CI container image change is narrowly scoped: the PostgreSQL service in .github/workflows/test.yml uses mirror.gcr.io/library/postgres:16 after public.ecr.aws/docker/library/postgres:16 hit the registry's data limit before tests started. Run 38447408736 passed all stages on SHA f55b11af828b24b19abcc113dff4f859b481efd1; later commits require checking the latest PR-head run.
+This is a stacked, unmerged candidate. Do not infer acceptance or deployment from the code being present on a branch. A derived product must not mutate its parent, and new versions of shared components must not change an existing product manifest.
 
-The migration creates new versions for selected built-in post/text products rather than rewriting historical definitions, leaves media products as drafts, and does not auto-assign the baseline identity to custom products. Its downgrade has guards for product/job/Artifact references, changed drafts, later versions, and identity UUID/key collisions. No Railway migration or deployment has been performed. No production data for QUL_WA_LA_TAQUL_VIDEO was available to inspect, so the live record's status is unverified.
-
-Remaining outside this stage: independent product derivation with parent lineage and explicit component diffs; complete capability/provider compatibility preflight; actual duration/assembly acceptance for video; and live acceptance for text/image/video/audio. Keep ADR-001 Proposed until reviewed implementation, latest-head CI, and all acceptance gates are met.

@@ -520,6 +520,12 @@ class ProductionProductModel(Base):
     key: Mapped[str] = mapped_column(String(200), nullable=False)
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_product_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("production_products.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    derived_from_version_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("production_product_versions.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

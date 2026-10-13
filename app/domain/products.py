@@ -34,8 +34,8 @@ class ProductionProductDefinition:
                 raise ValueError(f"Product {field} must be a non-empty component key when provided.")
         if self.component_versions is not None:
             refs = self.component_versions
-            if not isinstance(refs, dict) or set(refs) != _MANIFEST_COMPONENTS:
-                raise ValueError("Product component manifest must reference prompt, identity, recipe, policy, and output_contract.")
+            if not isinstance(refs, dict) or not refs or not set(refs).issubset(_MANIFEST_COMPONENTS):
+                raise ValueError("Product component references may include only prompt, identity, recipe, policy, and output_contract.")
             expected_keys = {
                 "prompt": self.prompt_key,
                 "identity": self.identity_key,
@@ -60,7 +60,7 @@ class ProductionProductDefinition:
 
     @property
     def has_immutable_manifest(self) -> bool:
-        return self.component_versions is not None
+        return self.component_versions is not None and set(self.component_versions) == _MANIFEST_COMPONENTS
 
     def to_dict(self) -> dict[str, object]:
         value: dict[str, object] = {

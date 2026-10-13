@@ -59,10 +59,9 @@ Candidate evidence to review in PR:
 
 Acceptance requirements still open: CI on the candidate branch; proof of safe legacy resume/retry; product derivation lineage and explicit diffs; full recipe/contract/capability/provider compatibility preflight; and video duration acceptance based on actual output evidence. Do not change this ADR to Accepted until those gates are reviewed and the implementation is merged. Production deployment and operational evidence must be recorded separately.
 
-## PR #132 implementation checkpoint (2026-10-13)
+## Derivation implementation candidate (2026-10-13)
 
-Status remains Proposed. The candidate implements explicit immutable references for prompt, identity, recipe, policy, and output contract and resolves archived versions by exact ID plus version number. It adds migration 0043_product_component_manifest.py, a Control Plane prompt/identity selection path, a factory identity guard, and tests for manifest pinning, prompt replacement, product retry, legacy-product blocking, and runtime identity override.
+The stacked branch `feat/product-derivation-lineage` adds product parent/source-version references and a Control Plane derivation flow. Its intended semantics are independent product rows with immutable source-version provenance; unchanged component references remain exact, while only components deliberately changed in the draft are resolved to the selected key's active published version on publication. Component-level diffs are exposed for review.
 
-The migration preserves old product definitions and creates new manifest-backed versions only for selected built-in literary post/text products; custom products are not automatically assigned an identity. Its downgrade is guarded against later product publication and saved job/Artifact references. CI run 38447408736 passed on f55b11af828b24b19abcc113dff4f859b481efd1, but later commits added further guards/tests, so that result does not certify the latest PR head. Review the latest run for the exact head before any merge decision.
+This is not yet accepted evidence: the stacked branch has not passed CI or been merged, and the migration must be reviewed against the manifest migration. Keep this ADR Proposed until CI, review, compatibility preflight, and duration acceptance are complete.
 
-Still required before acceptance: latest-head CI, review of migration behavior against realistic production data, explicit product derivation lineage/diffs, complete capability/provider preflight, and measured video-duration acceptance. No Railway migration/deployment or live acceptance has been performed.

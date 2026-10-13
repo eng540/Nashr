@@ -307,6 +307,8 @@ class ResolvedProductionContext:
             if (product_definition.recipe_key != self.recipe.key or product_definition.output_contract_key != self.output_contract.key or product_definition.policy_key != self.policy.key):
                 raise ValueError("Pinned product definition does not match the recipe, output contract, and policy snapshots.")
             if product_definition.component_versions is not None:
+                if not product_definition.has_immutable_manifest:
+                    raise ValueError("A resolved production context cannot contain a partial product component manifest.")
                 refs = product_definition.component_versions
                 actual = {
                     "prompt": (self.prompt_template.key, self.prompt_template.version_id, self.prompt_template.version),
