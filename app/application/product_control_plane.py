@@ -3,9 +3,6 @@ from sqlalchemy.exc import IntegrityError
 from app.domain.products import ProductionProductDefinition
 from app.domain.output_contracts import OutputContractDefinition
 from app.infrastructure.database.products import ProductionProductRepository
-from app.infrastructure.database.recipes import ProductionRecipeRepository
-from app.infrastructure.database.output_contracts import OutputContractRepository
-from app.infrastructure.database.policies import ProductionPolicyRepository
 from app.infrastructure.artifact_storage import ArtifactStorageConfigurationError, ArtifactStorageError, S3ArtifactStorage
 from app.application.control_plane import ControlPlaneResolver
 
