@@ -78,6 +78,8 @@ function initialForm(_section: SectionKey, item?: ControlItem, version?: Version
     recipe_key: asText(definition.recipe_key),
     output_contract_key: asText(definition.output_contract_key),
     policy_key: asText(definition.policy_key),
+    prompt_key: asText(definition.prompt_key, "editorial.drafter"),
+    identity_key: asText(definition.identity_key),
     audience: asText(definition.audience),
     experience: asText(definition.experience),
     identity_purpose: asText(definition.purpose, item?.purpose ?? ""),
@@ -118,6 +120,8 @@ function definitionFor(section: SectionKey, form: FormState, stages: StageForm[]
     recipe_key: form.recipe_key,
     output_contract_key: form.output_contract_key,
     policy_key: form.policy_key,
+    prompt_key: form.prompt_key,
+    identity_key: form.identity_key,
     audience: form.audience,
     experience: form.experience,
   };
@@ -217,6 +221,8 @@ export function ControlPlanePage() {
   const publishedRecipes = itemsBySection.recipes.filter((item) => item.active_version != null);
   const publishedPolicies = itemsBySection.policies.filter((item) => item.active_version != null);
   const publishedContracts = itemsBySection["output-contracts"].filter((item) => item.active_version != null);
+  const publishedIdentities = itemsBySection.identities.filter((item) => item.active_version != null);
+  const publishedPrompts = itemsBySection.prompts.filter((item) => item.active_version != null);
 
   async function reload(sectionToSelect = activeSection, keyToSelect: string | null = selectedKey, versionToSelect: number | null = selectedVersionNumber) {
     setLoading(true);
@@ -440,6 +446,10 @@ export function ControlPlanePage() {
           <div className="grid gap-3 md:grid-cols-2">
             <SelectField label="الوصفة المنشورة" value={form.recipe_key} onChange={(value) => updateField("recipe_key", value)} disabled={formDisabled}
               options={[{ value: "", label: "اختر وصفة..." }, ...(!publishedRecipes.some((item) => item.key === form.recipe_key) && form.recipe_key ? [{ value: form.recipe_key, label: form.recipe_key + " · لا يوجد إصدار منشور" }] : []), ...publishedRecipes.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+            <SelectField label="التعليمات المنشورة" value={form.prompt_key} onChange={(value) => updateField("prompt_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر تعليمات..." }, ...publishedPrompts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+            <SelectField label="الهوية التحريرية المنشورة" value={form.identity_key} onChange={(value) => updateField("identity_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر هوية..." }, ...publishedIdentities.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
             <SelectField label="السياسة المنشورة" value={form.policy_key} onChange={(value) => updateField("policy_key", value)} disabled={formDisabled}
               options={[{ value: "", label: "اختر سياسة..." }, ...(!publishedPolicies.some((item) => item.key === form.policy_key) && form.policy_key ? [{ value: form.policy_key, label: form.policy_key + " · لا يوجد إصدار منشور" }] : []), ...publishedPolicies.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
             <SelectField label="عقد المخرج المنشور" value={form.output_contract_key} onChange={(value) => updateField("output_contract_key", value)} disabled={formDisabled}
@@ -502,7 +512,7 @@ export function ControlPlanePage() {
         </div>}
 
         <div className="flex flex-wrap gap-2 border-t pt-4">
-          {isNew ? <button type="button" disabled={busy || !form.key.trim() || !form.name.trim() || !form.purpose.trim() || (activeSection === "prompts" && !form.body.trim())} onClick={() => void createItem()} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">إنشاء ومسودة أولى</button>
+          {isNew ? <button type="button" disabled={busy || !form.key.trim() || !form.name.trim() || !form.purpose.trim() || (activeSection === "prompts" && !form.body.trim()) || (activeSection === "products" && (!form.prompt_key || !form.identity_key))} onClick={() => void createItem()} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">إنشاء ومسودة أولى</button>
             : <button type="button" disabled={busy || !selected || selectedVersion?.status === "ARCHIVED" || (selectedVersion?.status === "PUBLISHED")} onClick={() => void saveDraft()} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-40">حفظ / إنشاء مسودة</button>}
           {selected && versionIsDraft && <button type="button" disabled={busy} onClick={() => selectedVersion && void versionAction("publish", selectedVersion)} className="rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white disabled:opacity-40">نشر الإصدار</button>}
           {selected && selectedVersion && selectedVersion.status !== "ARCHIVED" && <button type="button" disabled={busy || selectedVersion.status === "PUBLISHED"} onClick={() => selectedVersion && void versionAction("archive", selectedVersion)} className="rounded-xl border px-5 py-3 font-semibold disabled:opacity-40">أرشفة الإصدار</button>}
