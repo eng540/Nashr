@@ -124,14 +124,42 @@ test("a published product can be derived independently with pinned components re
 
   await expect(page.getByText("سجل اشتقاق المنتج")).toBeVisible();
   await expect(page.getByText(new RegExp(sourceKey))).toBeVisible();
+
+  const alternatePromptKey = "E2E_DERIVED_PROMPT_" + Date.now();
+  const prompt = await page.request.post("/api/control/prompts", { data: {
+    key: alternatePromptKey,
+    name: "Derived product alternate prompt",
+    purpose: "Verify a single component change is surfaced accurately.",
+    body: "Alternative prompt for the derived product only.",
+  } });
+  expect(prompt.ok()).toBeTruthy();
+  expect((await page.request.post("/api/control/prompts/" + alternatePromptKey + "/versions/1/publish")).ok()).toBeTruthy();
+
+  await page.getByLabel("التعليمات المنشورة").selectOption(alternatePromptKey);
+  await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
+  await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
+  await page.getByRole("button", { name: "نشر الإصدار" }).click();
+  await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
+  await expect(page.getByText(alternatePromptKey)).toBeVisible();
+
   const derivedResponse = await page.request.get("/api/control/products/" + derivedKey);
   expect(derivedResponse.ok()).toBeTruthy();
   const derived = await derivedResponse.json();
   expect(derived.derivation.parent_product_key).toBe(sourceKey);
   expect(derived.derivation.source_version).toBe(source.active_version);
-  expect(derived.derivation.changes).toEqual({});
-  expect(derived.derivation.component_diffs).toEqual({});
-  expect(derived.versions[0].definition.component_versions).toEqual(sourceVersion.definition.component_versions);
+  expect(derived.derivation.changes.prompt_key).toEqual({
+    from: sourceVersion.definition.prompt_key,
+    to: alternatePromptKey,
+  });
+  expect(derived.derivation.component_diffs.prompt.from).toEqual(sourceVersion.definition.component_versions.prompt);
+  expect(derived.derivation.component_diffs.prompt.to.key).toBe(alternatePromptKey);
+  expect(derived.derivation.component_diffs.prompt.to.version).toBe(1);
+  for (const component of ["identity", "recipe", "policy", "output_contract"]) {
+    expect(derived.derivation.component_diffs[component]).toBeUndefined();
+    expect(derived.versions.find((version: { status: string }) => version.status === "PUBLISHED")?.definition.component_versions[component]).toEqual(sourceVersion.definition.component_versions[component]);
+  }
+  await expect(page.getByText("مرجع الأصل:", { exact: false })).toBeVisible();
+  await expect(page.getByText("مرجع المشتق:", { exact: false })).toBeVisible();
 
   const sourceAfter = await (await page.request.get("/api/control/products/" + sourceKey)).json();
   const sourceVersionAfter = sourceAfter.versions.find((version: { version: number }) => version.version === source.active_version);
