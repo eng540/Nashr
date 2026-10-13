@@ -197,14 +197,14 @@ def downgrade() -> None:
             )
     superseding_version = bind.execute(sa.text("""
         SELECT 1
-        FROM production_product_versions current
+        FROM production_product_versions candidate
         JOIN product_manifest_bootstrap_versions boot
-          ON current.product_id = (
+          ON candidate.product_id = (
               SELECT created.product_id FROM production_product_versions created
               WHERE created.id::text = boot.product_version_id
           )
-        WHERE current.status = 'PUBLISHED'
-          AND current.id::text NOT IN (SELECT product_version_id FROM product_manifest_bootstrap_versions)
+        WHERE candidate.status = 'PUBLISHED'
+          AND candidate.id::text NOT IN (SELECT product_version_id FROM product_manifest_bootstrap_versions)
         LIMIT 1
     """)).scalar_one_or_none()
     if superseding_version is not None:
