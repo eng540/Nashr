@@ -165,7 +165,10 @@ async def create_production_job(
         product_definition = ProductionProductDefinition.from_dict(resolved_product.definition)
         if not product_definition.has_immutable_manifest:
             raise ValueError(
-                "This published product has no immutable component manifest. Create and publish a new product version before starting production."
+                "This legacy product version has no pinned component manifest and cannot start a new job safely. "
+                "In /control, create a new product version, explicitly select published prompt and editorial identity "
+                "(and verify its recipe, policy, and output contract), publish that version, then retry. "
+                "Historical jobs remain resumable from their saved context."
             )
         if identity_key is not None and identity_key != product_definition.identity_key:
             raise ValueError(
