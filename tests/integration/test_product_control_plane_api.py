@@ -238,3 +238,43 @@ def test_derivation_migration_downgrade_refuses_to_drop_existing_lineage(monkeyp
     with pytest.raises(RuntimeError, match="derived products exist"):
         migration.downgrade()
     assert drops == []
+
+
+
+@pytest.mark.asyncio
+async def test_downgrade_guard_blocks_rollback_when_real_derived_product_exists():
+    import importlib.util
+    from pathlib import Path
+    from uuid import uuid4
+
+    migration_path = Path(__file__).parents[2] / "alembic" / "versions" / "0044_product_derivation_lineage.py"
+    spec = importlib.util.spec_from_file_location("migration_0044_real_lineage_guard_test", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        source_response = await client.get("/api/control/products/ARABIC_LITERATURE_TELEGRAM_POST")
+        assert source_response.status_code == 200, source_response.text
+        source = source_response.json()
+        source_version = next(
+            version for version in source["versions"] if version["version"] == source["active_version"]
+        )
+        derived_key = "TEST_ROLLBACK_GUARD_" + uuid4().hex.upper()
+        created = await client.post(
+            f"/api/control/products/ARABIC_LITERATURE_TELEGRAM_POST/versions/{source_version['version']}/derive",
+            json={
+                "key": derived_key,
+                "name": "Rollback guard fixture",
+                "purpose": "Prove a real lineage row blocks destructive downgrade",
+            },
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["parent_product_id"] == source["id"]
+        assert created.json()["derived_from_version_id"] == source_version["id"]
+
+    async with SessionFactory() as session:
+        connection = await session.connection()
+        with pytest.raises(RuntimeError, match="derived products exist"):
+            await connection.run_sync(migration._guard_no_existing_lineage)
