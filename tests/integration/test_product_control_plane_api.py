@@ -102,6 +102,35 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         assert versions[2]["definition"]["component_versions"]["recipe"]["key"] == "BOOK_TO_TELEGRAM_POST_BRIEF"
         assert versions[2]["definition"]["component_versions"]["recipe"]["version"] == 1
 
+        # Source product v1 is ARCHIVED and its pinned prompt v1 is ARCHIVED too.
+        # An untouched derived product must retain that exact historical component ref.
+        archived_source = await client.get("/api/control/products/TEST_PRODUCT_LIFECYCLE")
+        assert archived_source.status_code == 200
+        archived_source_v1 = next(v for v in archived_source.json()["versions"] if v["version"] == 1)
+        assert archived_source_v1["status"] == "ARCHIVED"
+        assert archived_source_v1["definition"]["component_versions"]["prompt"] == manifest_v1["prompt"]
+
+        unchanged_derived = await client.post(
+            "/api/control/products/TEST_PRODUCT_LIFECYCLE/versions/1/derive",
+            json={
+                "key": "TEST_PRODUCT_DERIVED_ARCHIVED_REFS",
+                "name": "Derived product preserving archived references",
+                "purpose": "Prove unchanged archived component refs remain pinned",
+            },
+        )
+        assert unchanged_derived.status_code == 201, unchanged_derived.text
+        unchanged_published = await client.post(
+            "/api/control/products/TEST_PRODUCT_DERIVED_ARCHIVED_REFS/versions/1/publish"
+        )
+        assert unchanged_published.status_code == 200, unchanged_published.text
+        unchanged_manifest = unchanged_published.json()["definition"]["component_versions"]
+        assert unchanged_manifest == manifest_v1
+        assert unchanged_manifest["prompt"] == manifest_v1["prompt"]
+        async with SessionFactory() as session:
+            archived_prompt = await ControlPlaneResolver().resolve_prompt_version(session, unchanged_manifest["prompt"])
+            assert archived_prompt.version == 1
+            assert archived_prompt.status == "ARCHIVED"
+
         prompt_alt = await client.post("/api/control/prompts", json={
             "key": "TEST_PRODUCT_PROMPT_ALT",
             "name": "Alternate Product Prompt",
