@@ -1,5 +1,11 @@
 # Product Architecture — Operational Status
 
+## Product derivation acceptance boundary
+
+PR #133 tracks source product/version lineage and exposes field/component diffs. Migration 0044 leaves legacy products unlinked, enforces paired lineage references, and uses a composite foreign key so the source version must belong to the selected parent product. Downgrade is blocked when derived-product lineage exists to prevent silent data loss.
+
+CI validates repository behavior only; it does not establish production migration safety, Railway deployment, provider readiness, or real output quality. Capability/provider/output-contract preflight remains a separate follow-up and is not part of PR #133. ADR-001 remains Proposed until architectural and operational acceptance criteria are complete.
+
 **Checked:** 2026-10-13  
 **Current main HEAD after PR #129:** `195bf73b0276203f125f7f8a2d45950cf7d9971e`  
 **Production code commit:** `f0ea7a2c23f9f927e2f0f7cc8c9c9eba810b613c`  
