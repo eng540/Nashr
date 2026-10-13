@@ -217,6 +217,7 @@ export function ControlPlanePage() {
   const selectedVersion = selected?.versions?.find((version) => version.version === selectedVersionNumber) ?? (selected ? latestVersion(selected) : undefined);
   const draft = selected?.versions?.find((version) => version.status === "DRAFT");
   const activeVersion = selected?.versions?.find((version) => version.status === "PUBLISHED");
+  const selectedProductNeedsManifest = activeSection === "products" && Boolean(activeVersion) && !activeVersion?.definition?.component_versions;
   const isNew = selectedKey === null;
   const publishedRecipes = itemsBySection.recipes.filter((item) => item.active_version != null);
   const publishedPolicies = itemsBySection.policies.filter((item) => item.active_version != null);
@@ -405,11 +406,13 @@ export function ControlPlanePage() {
           <div className="space-y-2">{items.map((item) => {
             const published = item.versions?.find((version) => version.status === "PUBLISHED");
             const itemDraft = item.versions?.find((version) => version.status === "DRAFT");
+            const legacyProduct = activeSection === "products" && Boolean(published) && !published?.definition?.component_versions;
             return <button key={item.key} type="button" onClick={() => selectItem(item)} className={"block w-full rounded-xl border p-3 text-right " + (selectedKey === item.key ? "border-indigo-500 bg-indigo-50" : "bg-white hover:bg-slate-50")}>
               <span className="block font-semibold">{item.name}</span>
               <span className="mt-1 block text-xs text-slate-500">{item.key}</span>
               <span className="mt-2 flex flex-wrap gap-1 text-xs">
                 {published && <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800">فعال v{published.version}</span>}
+                {legacyProduct && <span className="rounded-full bg-rose-100 px-2 py-1 text-rose-800">يتطلب ترقية قبل الإنتاج</span>}
                 {itemDraft && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800">مسودة v{itemDraft.version}</span>}
                 {!published && !itemDraft && <span className="rounded-full bg-slate-100 px-2 py-1">لا يوجد إصدار منشور</span>}
               </span>
@@ -423,6 +426,12 @@ export function ControlPlanePage() {
             <p className="mt-1 text-sm text-slate-500">{selected?.purpose ?? "أنشئ عنصرًا جديدًا؛ سيُنشئ الخادم مسودته الأولى وفق العقد الحالي."}</p></div>
           {selected && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm">الإصدار المنشور: <strong>{activeVersion ? "v" + activeVersion.version : "لا يوجد"}</strong></div>}
         </div>
+
+        {selectedProductNeedsManifest && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-7 text-amber-950">
+          هذا الإصدار المنشور لا يثبت مكونات المنتج، لذلك لن يظهر في مصنع المحتوى ولا يمكن بدء مهام جديدة به.
+          أنشئ مسودة إصدار جديدة من الإصدار المحدد، واختر التعليمات والهوية المنشورتين، ثم راجع الوصفة والسياسة وعقد المخرج وانشر الإصدار الجديد.
+          تبقى المهام التاريخية وسياقاتها المحفوظة دون تغيير.
+        </p>}
 
         {selected?.versions?.length ? <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
           <label className="text-sm font-semibold">الإصدار
@@ -471,7 +480,7 @@ export function ControlPlanePage() {
               { label: "السياسة", key: form.policy_key, item: publishedPolicies.find((item) => item.key === form.policy_key) },
               { label: "عقد المخرج", key: form.output_contract_key, item: publishedContracts.find((item) => item.key === form.output_contract_key) },
             ].map(({ label, key, item }) => <div key={label} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="text-xs text-slate-500">{label}</p><strong>{item ? item.name : key || "غير محدد"}</strong><p className="mt-1 text-xs">{item ? "الإصدار المنشور v" + item.active_version : "لا يوجد إصدار منشور"}</p></div>)}
-          </div><p className="mt-3 text-xs text-slate-500">الهوية التحريرية والتعليمات تُحل عند إنشاء مهمة الإنتاج ولا تُربطان إلزاميًا بالمنتج.</p></div>}
+          </div><p className="mt-3 text-xs text-slate-500">عند نشر الإصدار تُثبّت مراجع الهوية والتعليمات مع الوصفة والسياسة وعقد المخرج؛ وتستخدم المهمة هذه المراجع من سياقها المحفوظ.</p></div>}
         </div>}
 
         {activeSection === "recipes" && <div className="space-y-3">
