@@ -129,7 +129,11 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         async with SessionFactory() as session:
             archived_prompt = await ControlPlaneResolver().resolve_prompt_version(session, unchanged_manifest["prompt"])
             assert archived_prompt.version == 1
-            assert archived_prompt.status == "ARCHIVED"
+            assert str(archived_prompt.version_id) == manifest_v1["prompt"]["version_id"]
+        prompt_detail = await client.get("/api/control/prompts/TEST_PRODUCT_PROMPT")
+        assert prompt_detail.status_code == 200, prompt_detail.text
+        archived_prompt_v1 = next(v for v in prompt_detail.json()["versions"] if v["version"] == 1)
+        assert archived_prompt_v1["status"] == "ARCHIVED"
 
         prompt_alt = await client.post("/api/control/prompts", json={
             "key": "TEST_PRODUCT_PROMPT_ALT",
