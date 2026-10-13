@@ -11,7 +11,7 @@ def definition(recipe_key: str = "BOOK_TO_TELEGRAM_POST") -> dict[str, str]:
         "recipe_key": recipe_key,
         "output_contract_key": "TELEGRAM_POST",
         "policy_key": "EDITORIAL_DEFAULT",
-        "prompt_key": "editorial.drafter",
+        "prompt_key": "TEST_PRODUCT_PROMPT",
         "identity_key": "TEST_PRODUCT_IDENTITY",
         "audience": "Readers of Arabic literature",
         "experience": "Source-grounded content ready for review",
@@ -22,6 +22,15 @@ def definition(recipe_key: str = "BOOK_TO_TELEGRAM_POST") -> dict[str, str]:
 async def test_product_lifecycle_versions_and_published_reference_validation():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        prompt = await client.post("/api/control/prompts", json={
+            "key": "TEST_PRODUCT_PROMPT",
+            "name": "Test Product Prompt",
+            "purpose": "Version pinning fixture for product manifest tests.",
+            "body": "Original test prompt version.",
+        })
+        assert prompt.status_code == 201, prompt.text
+        assert (await client.post("/api/control/prompts/TEST_PRODUCT_PROMPT/versions/1/publish")).status_code == 200
+
         identity = await client.post("/api/control/identities", json={
             "key": "TEST_PRODUCT_IDENTITY",
             "name": "Test Product Identity",
@@ -58,15 +67,15 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         assert published_v1.status_code == 200, published_v1.text
         manifest_v1 = published_v1.json()["definition"]["component_versions"]
         assert set(manifest_v1) == {"prompt", "identity", "recipe", "policy", "output_contract"}
-        assert manifest_v1["prompt"]["key"] == "editorial.drafter"
+        assert manifest_v1["prompt"]["key"] == "TEST_PRODUCT_PROMPT"
         assert manifest_v1["prompt"]["version"] == 1
         assert manifest_v1["identity"]["key"] == "TEST_PRODUCT_IDENTITY"
 
-        prompt_v2 = await client.post("/api/control/prompts/editorial.drafter/versions", json={
+        prompt_v2 = await client.post("/api/control/prompts/TEST_PRODUCT_PROMPT/versions", json={
             "body": "Updated prompt used only by newly published product versions.",
         })
         assert prompt_v2.status_code == 201, prompt_v2.text
-        assert (await client.post("/api/control/prompts/editorial.drafter/versions/2/publish")).status_code == 200
+        assert (await client.post("/api/control/prompts/TEST_PRODUCT_PROMPT/versions/2/publish")).status_code == 200
         async with SessionFactory() as session:
             pinned_prompt_v1 = await ControlPlaneResolver().resolve_prompt_version(session, manifest_v1["prompt"])
             assert pinned_prompt_v1.version == 1
