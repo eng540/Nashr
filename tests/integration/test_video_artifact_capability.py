@@ -104,7 +104,13 @@ async def test_video_capability_persists_operation_and_reuses_it_until_artifact_
                 "provider_operation_name": None,
                 "provider_operation_status": None,
             },
-            configuration={},
+            configuration={
+                "editorial_prompt": {
+                    "key": "editorial.drafter",
+                    "version": 6,
+                    "body": "QUL editorial rules: state the common phrase, corrected phrase, reason, and a precise example. Avoid unsupported grammatical certainty.",
+                }
+            },
             run_id=job_id,
             resolved_context={"output_contract": contract, "product": product},
             stage_configuration={
@@ -124,6 +130,8 @@ async def test_video_capability_persists_operation_and_reuses_it_until_artifact_
     assert artifact.kind == "VIDEO"
     assert artifact.mime_type == "video/mp4"
     assert artifact.metadata["requested_duration_seconds"] == 5
+    assert "QUL editorial rules" in generator.start_calls[0][0]
+    assert "common phrase" in generator.start_calls[0][0]
     assert row.review_status == "DRAFT"
     assert item.provider_operation_name == "operations/test-video-1"
     assert item.provider_operation_status == "SUCCEEDED"
