@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, LargeBinary, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -514,7 +514,20 @@ class ProductionPolicyVersionModel(Base):
 
 class ProductionProductModel(Base):
     __tablename__ = "production_products"
-    __table_args__ = (UniqueConstraint("key", name="uq_production_products_key"),)
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_production_products_key"),
+        CheckConstraint(
+            "(parent_product_id IS NULL AND derived_from_version_id IS NULL) OR "
+            "(parent_product_id IS NOT NULL AND derived_from_version_id IS NOT NULL)",
+            name="ck_production_products_derivation_refs_pair",
+        ),
+        ForeignKeyConstraint(
+            ["derived_from_version_id", "parent_product_id"],
+            ["production_product_versions.id", "production_product_versions.product_id"],
+            name="fk_production_products_source_version_matches_parent",
+            ondelete="RESTRICT",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     key: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -524,7 +537,7 @@ class ProductionProductModel(Base):
         PGUUID(as_uuid=True), ForeignKey("production_products.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     derived_from_version_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("production_product_versions.id", ondelete="RESTRICT"), nullable=True, index=True
+        PGUUID(as_uuid=True), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
@@ -534,6 +547,7 @@ class ProductionProductVersionModel(Base):
     __tablename__ = "production_product_versions"
     __table_args__ = (
         UniqueConstraint("product_id", "version", name="uq_production_product_versions_product_version"),
+        UniqueConstraint("id", "product_id", name="uq_production_product_versions_id_product"),
         CheckConstraint("version > 0", name="ck_production_product_versions_positive_version"),
         CheckConstraint("status IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')", name="ck_production_product_versions_status"),
         Index("uq_production_product_versions_published", "product_id", unique=True, postgresql_where=text("status = 'PUBLISHED'")),
