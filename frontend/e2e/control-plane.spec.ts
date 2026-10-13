@@ -117,6 +117,9 @@ test("a published product can be derived independently with pinned components re
   await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: new RegExp(sourceKey) }).click();
   await page.waitForLoadState("networkidle");
+  // Explicitly select the source version in the Control Plane before deriving.
+  await page.getByLabel("الإصدار").selectOption(String(source.active_version));
+  await expect(page.getByLabel("الإصدار")).toHaveValue(String(source.active_version));
   await expect(page.getByRole("button", { name: "اشتقاق منتج مستقل" })).toBeEnabled();
   await page.getByRole("button", { name: "اشتقاق منتج مستقل" }).click();
   const derivedKey = "E2E_DERIVED_" + Date.now();
@@ -181,6 +184,12 @@ test("a published product can be derived independently with pinned components re
   }
   await expect(page.getByText("مرجع الأصل:", { exact: false })).toBeVisible();
   await expect(page.getByText("مرجع المشتق:", { exact: false })).toBeVisible();
+  await expect(
+    page.locator("p").filter({ hasText: "مرجع الأصل:" }).filter({ hasText: sourceVersion.definition.component_versions.prompt.key }),
+  ).toBeVisible();
+  await expect(
+    page.locator("p").filter({ hasText: "مرجع المشتق:" }).filter({ hasText: alternatePromptKey }),
+  ).toBeVisible();
 
   const sourceAfter = await (await page.request.get("/api/control/products/" + sourceKey)).json();
   const sourceVersionAfter = sourceAfter.versions.find((version: { version: number }) => version.version === source.active_version);
