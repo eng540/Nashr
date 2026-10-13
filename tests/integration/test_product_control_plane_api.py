@@ -278,3 +278,43 @@ async def test_downgrade_guard_blocks_rollback_when_real_derived_product_exists(
         connection = await session.connection()
         with pytest.raises(RuntimeError, match="derived products exist"):
             await connection.run_sync(migration._guard_no_existing_lineage)
+
+
+
+def test_derivation_migration_downgrade_removes_constraints_when_no_lineage_exists(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = Path(__file__).parents[2] / "alembic" / "versions" / "0044_product_derivation_lineage.py"
+    spec = importlib.util.spec_from_file_location("migration_0044_empty_lineage_downgrade_test", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+
+    class Result:
+        def scalar_one(self):
+            return 0
+
+    class Connection:
+        def execute(self, statement):
+            assert "production_products" in str(statement)
+            return Result()
+
+    operations = []
+    monkeypatch.setattr(migration.op, "get_bind", lambda: Connection())
+    monkeypatch.setattr(migration.op, "drop_index", lambda *args, **kwargs: operations.append(("index", args[0])))
+    monkeypatch.setattr(migration.op, "drop_constraint", lambda *args, **kwargs: operations.append(("constraint", args[0])))
+    monkeypatch.setattr(migration.op, "drop_column", lambda *args, **kwargs: operations.append(("column", args[1])))
+
+    migration.downgrade()
+
+    assert operations == [
+        ("index", "ix_production_products_derived_from_version_id"),
+        ("index", "ix_production_products_parent_product_id"),
+        ("constraint", "ck_production_products_derivation_refs_pair"),
+        ("constraint", "fk_production_products_source_version_matches_parent"),
+        ("constraint", "fk_production_products_parent_product_id"),
+        ("column", "derived_from_version_id"),
+        ("column", "parent_product_id"),
+        ("constraint", "uq_production_product_versions_id_product"),
+    ]
