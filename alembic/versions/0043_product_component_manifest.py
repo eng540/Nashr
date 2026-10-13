@@ -78,6 +78,11 @@ def upgrade() -> None:
         WHERE pv.status = 'PUBLISHED'
           AND pv.definition->>'recipe_key' IS NOT NULL
           AND pv.definition->>'component_versions' IS NULL
+          AND p.key IN (
+              'ARABIC_LITERATURE_TELEGRAM_POST',
+              'ARABIC_LITERATURE_BRIEF_TELEGRAM_POST',
+              'ARABIC_LITERATURE_TEXT'
+          )
         ORDER BY p.key
     """)).mappings().all()
 
@@ -141,6 +146,10 @@ def upgrade() -> None:
         WHERE status = 'DRAFT'
           AND definition->>'recipe_key' IS NOT NULL
           AND definition->>'prompt_key' IS NULL
+          AND key IN (
+              SELECT p.key FROM production_products p
+              WHERE p.key IN ('ARABIC_LITERATURE_IMAGE', 'ARABIC_LITERATURE_VIDEO', 'ARABIC_LITERATURE_AUDIO')
+          )
     """), {
         "references": json.dumps({"prompt_key": PROMPT_KEY, "identity_key": IDENTITY_KEY})
     })
