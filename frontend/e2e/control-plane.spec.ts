@@ -143,8 +143,6 @@ test("a published product can be derived independently with pinned components re
   await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
   await page.getByRole("button", { name: "نشر الإصدار" }).click();
   await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
-  await expect(page.locator("p").filter({ hasText: "مرجع المشتق:" }).filter({ hasText: alternatePromptKey })).toBeVisible();
-
   const derivedResponse = await page.request.get("/api/control/products/" + derivedKey);
   expect(derivedResponse.ok()).toBeTruthy();
   const derived = await derivedResponse.json();
@@ -157,6 +155,8 @@ test("a published product can be derived independently with pinned components re
   expect(derived.derivation.component_diffs.prompt.from).toEqual(sourceVersion.definition.component_versions.prompt);
   expect(derived.derivation.component_diffs.prompt.to.key).toBe(alternatePromptKey);
   expect(derived.derivation.component_diffs.prompt.to.version).toBe(1);
+  await expect(page.getByText("تغييرات المكونات المثبتة")).toBeVisible();
+  await expect(page.locator("p").filter({ hasText: "مرجع المشتق:" }).filter({ hasText: alternatePromptKey })).toBeVisible();
   for (const component of ["identity", "recipe", "policy", "output_contract"]) {
     expect(derived.derivation.component_diffs[component]).toBeUndefined();
     expect(derived.versions.find((version: { status: string }) => version.status === "PUBLISHED")?.definition.component_versions[component]).toEqual(sourceVersion.definition.component_versions[component]);
