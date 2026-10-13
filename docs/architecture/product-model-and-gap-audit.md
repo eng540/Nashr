@@ -103,3 +103,19 @@ The product-to-run configuration gap is proven by code: product definition canno
 5. Make ordinary factory execution use the product manifest. Keep overrides in a clearly marked experiment path and preserve legacy compatibility for old products/jobs.
 6. Design a multi-clip assembly capability if 30–60-second videos are required; do not represent a single 5/6/8-second request as a 30–60-second deliverable.
 7. Add tests for pinned versions, missing component rejection, resume/retry, derived-product independence, and video prompt/duration semantics before production acceptance.
+
+## Follow-up implementation evidence — immutable component manifest (2026-10-13)
+
+**Status: implementation branch, not yet merged or operationally accepted.** Main remains at `6f5fdab3bb00bb0f4d11d816c11464343b1b2c27`; candidate branch `feat/immutable-product-component-manifest` is being prepared for PR review.
+
+The candidate implementation now adds these code paths:
+
+- `ProductionProductDefinition` can represent prompt and identity keys plus a complete `component_versions` manifest. The manifest validator requires concrete version IDs and numbers for prompt, identity, recipe, policy, and output contract, and verifies keys match the product definition.
+- Product publication resolves published components once and writes their exact version references into the product version. It does not copy component bodies/definitions into the product.
+- `ControlPlaneResolver` has version-ID resolvers that accept previously published versions after they become ARCHIVED, and reject missing or mismatched references.
+- Product job creation resolves the component references saved in the published product. A legacy product with no manifest is not silently resolved from current active defaults for a new job; it returns an actionable error. Existing jobs still resume from their saved `resolved_context`.
+- A new migration creates a new manifest-backed version for built-in literary post/text products, retaining the previous published versions as archived history. It does not rewrite custom products such as `QUL_WA_LA_TAQUL_VIDEO`; inactive built-in media drafts receive explicit prompt/identity selection fields but remain drafts.
+- The Control Plane form now requires prompt and identity selections. The factory is being changed to offer only products with a complete manifest and to display/use the identity pinned by that product.
+
+**Not yet accepted:** CI has not validated this candidate branch. Product derivation/parent lineage and component diffs remain unimplemented. Provider/capability compatibility preflight remains partial. The 30–60-second video requirement is still unresolved; the 5/6/8-second capability limit is not changed here. No provider request or external publication was launched.
+
