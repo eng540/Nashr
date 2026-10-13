@@ -170,3 +170,71 @@ async def test_product_cannot_publish_with_missing_component_reference():
         assert created.status_code == 201, created.text
         publish = await client.post("/api/control/products/TEST_PRODUCT_MISSING_RECIPE/versions/1/publish")
         assert publish.status_code == 404
+
+
+
+@pytest.mark.asyncio
+async def test_derivation_database_constraints_keep_source_version_with_its_parent():
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+    from app.infrastructure.database.models import ProductionProductModel
+
+    async with SessionFactory() as session:
+        source = (await session.execute(
+            text("SELECT id FROM production_products WHERE key = 'ARABIC_LITERATURE_TELEGRAM_POST'")
+        )).scalar_one()
+        source_version = (await session.execute(
+            text("SELECT id FROM production_product_versions WHERE product_id = :product_id ORDER BY version DESC LIMIT 1"),
+            {"product_id": source},
+        )).scalar_one()
+        other = ProductionProductModel(key="TEST_DERIVATION_OTHER", name="Other", purpose="Constraint test")
+        session.add(other)
+        await session.flush()
+        wrong_version = ProductionProductModel(
+            key="TEST_DERIVATION_WRONG_SOURCE", name="Wrong source", purpose="Must be rejected",
+            parent_product_id=other.id, derived_from_version_id=source_version,
+        )
+        session.add(wrong_version)
+        with pytest.raises(IntegrityError):
+            await session.flush()
+        await session.rollback()
+
+    async with SessionFactory() as session:
+        source = (await session.execute(
+            text("SELECT id FROM production_products WHERE key = 'ARABIC_LITERATURE_TELEGRAM_POST'")
+        )).scalar_one()
+        invalid_half_reference = ProductionProductModel(
+            key="TEST_DERIVATION_HALF_REF", name="Half ref", purpose="Must be rejected",
+            parent_product_id=source, derived_from_version_id=None,
+        )
+        session.add(invalid_half_reference)
+        with pytest.raises(IntegrityError):
+            await session.flush()
+        await session.rollback()
+
+
+def test_derivation_migration_downgrade_refuses_to_drop_existing_lineage(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = Path(__file__).parents[2] / "alembic" / "versions" / "0044_product_derivation_lineage.py"
+    spec = importlib.util.spec_from_file_location("migration_0044_product_derivation_lineage_test", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+
+    class Result:
+        def scalar_one(self):
+            return 1
+
+    class Connection:
+        def execute(self, statement):
+            assert "production_products" in str(statement)
+            return Result()
+
+    drops = []
+    monkeypatch.setattr(migration.op, "get_bind", lambda: Connection())
+    monkeypatch.setattr(migration.op, "drop_index", lambda *args, **kwargs: drops.append(("index", args)))
+    with pytest.raises(RuntimeError, match="derived products exist"):
+        migration.downgrade()
+    assert drops == []
