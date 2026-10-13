@@ -185,7 +185,6 @@ def downgrade() -> None:
         SELECT product_version_id, previous_version_id
         FROM product_manifest_bootstrap_versions
     """)).mappings().all()
-    created_ids = [row["product_version_id"] for row in created]
     for row in created:
         referenced = bind.execute(sa.text("""
             SELECT 1 FROM production_jobs
@@ -212,7 +211,6 @@ def downgrade() -> None:
         FROM product_manifest_bootstrap_drafts d
         JOIN production_product_versions pv ON pv.id::text = d.version_id
     """)).mappings().all()
-    expected_suffix = json.dumps({"prompt_key": PROMPT_KEY, "identity_key": IDENTITY_KEY}, ensure_ascii=False)
     for draft in changed_drafts:
         expected = dict(draft["previous_definition"])
         expected.update({"prompt_key": PROMPT_KEY, "identity_key": IDENTITY_KEY})
