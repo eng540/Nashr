@@ -80,18 +80,12 @@ class ProductionProductControlPlaneService:
         if target.status != "DRAFT":
             raise ValueError("Only DRAFT product versions can be published.")
         definition = ProductionProductDefinition.from_dict(target.definition)
-        if not definition.prompt_key or not definition.identity_key:
-            raise ValueError(
-                "A new product version must explicitly select a published editorial prompt and identity before publication."
-            )
-
         resolver = ControlPlaneResolver()
-        prompt = await resolver.resolve_prompt(self.session, definition.prompt_key)
-        identity = await resolver.resolve_identity(self.session, definition.identity_key)
+
+        # Validate recipe/output/policy compatibility before manifest capture.
         recipe = await resolver.resolve_recipe(self.session, definition.recipe_key)
         output_contract = await resolver.resolve_output_contract(self.session, definition.output_contract_key)
         policy = await resolver.resolve_policy(self.session, definition.policy_key)
-
         contract_definition = OutputContractDefinition.from_dict(output_contract.definition)
         final_capability = recipe.stages[-1].capability_key
         capability_output_kind = {
@@ -107,6 +101,21 @@ class ProductionProductControlPlaneService:
                 f"which is incompatible with output contract '{definition.output_contract_key}' "
                 f"({contract_definition.artifact_kind})."
             )
+        if contract_definition.content_mode == "STORAGE_URI":
+            try:
+                storage = S3ArtifactStorage.from_environment()
+                await storage.ensure_available()
+            except (ArtifactStorageConfigurationError, ArtifactStorageError) as exc:
+                raise ValueError(
+                    "Cannot publish a media product until durable ARTIFACT_STORAGE_* settings and bucket access are valid."
+                ) from exc
+
+        if not definition.prompt_key or not definition.identity_key:
+            raise ValueError(
+                "A new product version must explicitly select a published editorial prompt and identity before publication."
+            )
+        prompt = await resolver.resolve_prompt(self.session, definition.prompt_key)
+        identity = await resolver.resolve_identity(self.session, definition.identity_key)
         component_versions = {
             "prompt": {"key": prompt.key, "version_id": str(prompt.version_id), "version": prompt.version},
             "identity": {"key": identity.key, "version_id": identity.version_id, "version": identity.version},
@@ -120,15 +129,6 @@ class ProductionProductControlPlaneService:
         }
         target.definition = {**definition.to_dict(), "component_versions": component_versions}
         await self.session.flush()
-
-        if contract_definition.content_mode == "STORAGE_URI":
-            try:
-                storage = S3ArtifactStorage.from_environment()
-                await storage.ensure_available()
-            except (ArtifactStorageConfigurationError, ArtifactStorageError) as exc:
-                raise ValueError(
-                    "Cannot publish a media product until durable ARTIFACT_STORAGE_* settings and bucket access are valid."
-                ) from exc
         row = await self.repository.publish(key, version)
         await self.session.commit()
         await self.session.refresh(row)
