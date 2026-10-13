@@ -143,7 +143,7 @@ test("a published product can be derived independently with pinned components re
   await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
   await page.getByRole("button", { name: "نشر الإصدار" }).click();
   await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
-  await expect(page.getByText(alternatePromptKey)).toBeVisible();
+  await expect(page.locator("p").filter({ hasText: "مرجع المشتق:" }).filter({ hasText: alternatePromptKey })).toBeVisible();
 
   const derivedResponse = await page.request.get("/api/control/products/" + derivedKey);
   expect(derivedResponse.ok()).toBeTruthy();
