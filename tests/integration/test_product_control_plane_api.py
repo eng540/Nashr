@@ -70,7 +70,7 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
         async with SessionFactory() as session:
             pinned_prompt_v1 = await ControlPlaneResolver().resolve_prompt_version(session, manifest_v1["prompt"])
             assert pinned_prompt_v1.version == 1
-            assert pinned_prompt_v1.version_id == manifest_v1["prompt"]["version_id"]
+            assert str(pinned_prompt_v1.version_id) == manifest_v1["prompt"]["version_id"]
 
         draft_v2 = await client.post("/api/control/products/TEST_PRODUCT_LIFECYCLE/versions", json={
             "definition": definition("BOOK_TO_TELEGRAM_POST_BRIEF"),
