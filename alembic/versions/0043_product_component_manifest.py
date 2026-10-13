@@ -222,6 +222,33 @@ def downgrade() -> None:
             "Cannot downgrade product manifest bootstrap: another product version references the bootstrap identity."
         )
 
+    identity_job_reference = bind.execute(sa.text("""
+        SELECT 1 FROM production_jobs
+        WHERE resolved_context->'identity'->>'version_id' = :identity_version
+        LIMIT 1
+    """), {"identity_version": IDENTITY_VERSION_ID}).scalar_one_or_none()
+    identity_artifact_reference = bind.execute(sa.text("""
+        SELECT 1 FROM artifacts
+        WHERE resolved_context->'identity'->>'version_id' = :identity_version
+        LIMIT 1
+    """), {"identity_version": IDENTITY_VERSION_ID}).scalar_one_or_none()
+    if identity_job_reference is not None or identity_artifact_reference is not None:
+        raise RuntimeError(
+            "Cannot downgrade product manifest bootstrap: a job or Artifact retains a snapshot of the bootstrap identity."
+        )
+
+    artifact_reference = bind.execute(sa.text("""
+        SELECT 1 FROM artifacts
+        WHERE resolved_context->'product'->>'version_id' IN (
+            SELECT product_version_id FROM product_manifest_bootstrap_versions
+        )
+        LIMIT 1
+    """)).scalar_one_or_none()
+    if artifact_reference is not None:
+        raise RuntimeError(
+            "Cannot downgrade product manifest bootstrap: an Artifact references a bootstrapped product version."
+        )
+
     changed_drafts = bind.execute(sa.text("""
         SELECT d.version_id, d.previous_definition, pv.definition, pv.status
         FROM product_manifest_bootstrap_drafts d
