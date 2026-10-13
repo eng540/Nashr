@@ -146,8 +146,8 @@ def upgrade() -> None:
         WHERE status = 'DRAFT'
           AND definition->>'recipe_key' IS NOT NULL
           AND definition->>'prompt_key' IS NULL
-          AND key IN (
-              SELECT p.key FROM production_products p
+          AND product_id IN (
+              SELECT p.id FROM production_products p
               WHERE p.key IN ('ARABIC_LITERATURE_IMAGE', 'ARABIC_LITERATURE_VIDEO', 'ARABIC_LITERATURE_AUDIO')
           )
     """), {
