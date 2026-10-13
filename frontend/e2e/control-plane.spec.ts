@@ -25,8 +25,8 @@ test("a product can be created in Control Plane and selected in the factory", as
   const promptsResponse = await page.request.get("/api/control/prompts");
   expect(promptsResponse.ok()).toBeTruthy();
   const promptItems = await promptsResponse.json();
-  const promptKey = promptItems.find((prompt: { active_version?: number | null }) => prompt.active_version != null)?.key;
-  expect(promptKey).toBeTruthy();
+  const promptKey = promptItems.find((prompt: { active_version?: number | null; key?: string }) => prompt.active_version != null)?.key ?? "";
+  expect(promptKey).not.toBe("");
 
   const recipe = await page.request.post("/api/control/recipes", { data: {
     key: "E2E_PRODUCT_RECIPE",
