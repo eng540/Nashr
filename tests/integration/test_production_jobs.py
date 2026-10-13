@@ -599,6 +599,56 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
     assert "Product audience: Readers who prefer concise Arabic literary content" in drafter.prompts[0]
 
 
+async def test_product_job_retry_keeps_its_published_manifest_and_archived_prompt_pin():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        template = await _reset_editorial_prompt(session, "product-prompt-v1")
+        await session.commit()
+        job = await create_production_job(
+            session, source_id, ProductionScope.SOURCE,
+            product_key="ARABIC_LITERATURE_BRIEF_TELEGRAM_POST",
+        )
+        original_context = job.resolved_context.copy()
+        context = ResolvedProductionContext.from_dict(original_context)
+        assert context.product is not None
+        manifest = context.product.definition["component_versions"]
+        assert manifest["prompt"]["version_id"] == context.prompt_template.version_id
+        assert manifest["identity"]["version_id"] == context.identity.version_id
+
+        session.add(PromptTemplateVersionModel(
+            id=uuid4(), prompt_template_id=template.id, version=2,
+            body="product-prompt-v2-must-not-run", status="DRAFT",
+        ))
+        await session.commit()
+        await PromptTemplateRepository(session).publish("editorial.drafter", 2)
+        await session.commit()
+
+    first_attempt = RecordingDrafter(fail_titles={"Material 1"})
+    await ProductionJobRunner(first_attempt).run(job.id)
+    assert len(first_attempt.prompts) == 1
+    assert "product-prompt-v1" in first_attempt.prompts[0]
+    assert "product-prompt-v2-must-not-run" not in first_attempt.prompts[0]
+
+    async with SessionFactory() as session:
+        await resume_production_job(session, job.id, retry_failed=True)
+    retry = RecordingDrafter()
+    await ProductionJobRunner(retry).run(job.id)
+    assert len(retry.prompts) == 1
+    assert "product-prompt-v1" in retry.prompts[0]
+    assert "product-prompt-v2-must-not-run" not in retry.prompts[0]
+    assert "Product audience: Readers who prefer concise Arabic literary content" in retry.prompts[0]
+
+    async with SessionFactory() as session:
+        persisted = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == job.id)
+        )).scalar_one()
+        assert persisted.resolved_context == original_context
+        restored = ResolvedProductionContext.from_dict(persisted.resolved_context)
+        assert restored.product is not None
+        assert restored.product.version_id == context.product.version_id
+        assert restored.product.definition["component_versions"] == manifest
+
+
 async def test_text_product_generates_reviewable_artifact_without_creating_post():
     source_id, _, unit_ids = await _fixture(materials=1, topics=1)
     async with SessionFactory() as session:
