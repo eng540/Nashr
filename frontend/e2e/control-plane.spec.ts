@@ -123,7 +123,7 @@ test("a published product can be derived independently with pinned components re
   await page.getByRole("button", { name: "إنشاء المنتج المشتق" }).click();
 
   await expect(page.getByText("سجل اشتقاق المنتج")).toBeVisible();
-  await expect(page.getByText(new RegExp(sourceKey))).toBeVisible();
+  await expect(page.locator("strong").filter({ hasText: sourceKey })).toBeVisible();
 
   const alternatePromptKey = "E2E_DERIVED_PROMPT_" + Date.now();
   const prompt = await page.request.post("/api/control/prompts", { data: {
