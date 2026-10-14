@@ -97,7 +97,10 @@ test("a product can be created in Control Plane and selected in the factory", as
   expect(productResponse.ok()).toBeTruthy();
   const product = await productResponse.json();
   expect(product.active_version).toBe(1);
-  expect(product.versions.some((version: { version: number; status: string }) => version.version === 1 && version.status === "PUBLISHED")).toBeTruthy();
+  const publishedProductVersion = product.versions.find((version: { version: number; status: string }) => version.version === 1 && version.status === "PUBLISHED");
+  expect(publishedProductVersion).toBeTruthy();
+  expect(publishedProductVersion.definition.prompt_key).toBe(promptKey);
+  expect(publishedProductVersion.definition.identity_key).toBe("E2E_PRODUCT_IDENTITY");
 
   await page.goto("/posts/workspace");
   await expect(page.getByLabel("المنتج")).toContainText("E2E UI Product · v1");
