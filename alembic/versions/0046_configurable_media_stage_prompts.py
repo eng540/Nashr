@@ -179,7 +179,7 @@ def _upgrade_active_product_versions(bind, recipe_info):
         bind.execute(sa.text("""
             INSERT INTO media_prompt_updated_drafts
                 (product_version_id, new_recipe_version_id, previous_definition)
-            VALUES (:product_version_id, :new_recipe_version_id, CAST(:previous_definition AS JSONB))
+            VALUES (:product_version_id, :new_recipe_version_id, CAST(:previous_definition AS JSON))
         """), {
             "product_version_id": str(draft["product_version_id"]),
             "new_recipe_version_id": recipe_info["new_version_id"],
@@ -256,6 +256,17 @@ def downgrade() -> None:
         })
 
     for row in recipe_versions:
+        active_successor = bind.execute(sa.text("""
+            SELECT 1
+            FROM production_recipe_versions current
+            JOIN production_recipe_versions migrated ON migrated.id = :version_id
+            WHERE current.recipe_id = migrated.recipe_id
+              AND current.status = 'PUBLISHED'
+              AND current.id <> migrated.id
+            LIMIT 1
+        """), {"version_id": row["recipe_version_id"]}).scalar_one_or_none()
+        if active_successor is not None:
+            raise RuntimeError("Cannot downgrade media prompt migration: a later recipe version is published.")
         referenced = bind.execute(sa.text("""
             SELECT 1 FROM production_jobs
             WHERE resolved_context->'recipe'->>'version_id' = :version_id
