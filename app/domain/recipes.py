@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 import json
 from uuid import UUID
 
+from app.domain.prompt_templates import validate_template_variables
+
 SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("produce_image_artifact", 1), ("produce_video_artifact", 1), ("produce_audio_artifact", 1)})
 
 
@@ -149,7 +151,7 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
 
 
     if stage.capability_key == "produce_image_artifact" and stage.capability_version == 1:
-        unknown = set(stage.configuration) - {"style_instructions", "aspect_ratio", "image_size"}
+        unknown = set(stage.configuration) - {"style_instructions", "aspect_ratio", "image_size", "generation_prompt"}
         if unknown:
             raise ValueError("produce_image_artifact configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
         instructions = stage.configuration.get("style_instructions")
@@ -163,10 +165,18 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
         image_size = stage.configuration.get("image_size", "1K")
         if image_size not in {"1K", "2K", "4K"}:
             raise ValueError("produce_image_artifact image_size must be 1K, 2K, or 4K.")
+        generation_prompt = stage.configuration.get("generation_prompt")
+        if generation_prompt is not None:
+            if not isinstance(generation_prompt, str) or not generation_prompt.strip() or len(generation_prompt) > 12000:
+                raise ValueError("produce_image_artifact generation_prompt must be a non-empty template up to 12000 characters.")
+            validate_template_variables(
+                generation_prompt,
+                {"audience", "experience", "source_title", "source_name", "source_excerpt", "style_instructions"},
+            )
 
 
     if stage.capability_key == "produce_video_artifact" and stage.capability_version == 1:
-        unknown = set(stage.configuration) - {"style_instructions", "aspect_ratio", "resolution", "duration_seconds"}
+        unknown = set(stage.configuration) - {"style_instructions", "aspect_ratio", "resolution", "duration_seconds", "generation_prompt"}
         if unknown:
             raise ValueError("produce_video_artifact configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
         instructions = stage.configuration.get("style_instructions")
@@ -183,6 +193,14 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
         duration_seconds = stage.configuration.get("duration_seconds", 5)
         if isinstance(duration_seconds, bool) or duration_seconds not in {5, 6, 8}:
             raise ValueError("produce_video_artifact duration_seconds must be 5, 6, or 8.")
+        generation_prompt = stage.configuration.get("generation_prompt")
+        if generation_prompt is not None:
+            if not isinstance(generation_prompt, str) or not generation_prompt.strip() or len(generation_prompt) > 12000:
+                raise ValueError("produce_video_artifact generation_prompt must be a non-empty template up to 12000 characters.")
+            validate_template_variables(
+                generation_prompt,
+                {"audience", "experience", "source_title", "source_name", "source_excerpt", "editorial_prompt", "style_instructions"},
+            )
 
 
     if stage.capability_key == "produce_audio_artifact" and stage.capability_version == 1:
