@@ -86,7 +86,7 @@ async def test_new_media_recipe_cannot_publish_without_editable_generation_promp
             **base_stage["configuration"],
             "generation_prompt": (
                 "{{audience}} {{experience}} {{source_title}} {{source_name}} "
-                "{{source_excerpt}} {{style_instructions}}"
+                "{{source_excerpt}} {{identity_context}} {{style_instructions}}"
             ),
         },
     }
