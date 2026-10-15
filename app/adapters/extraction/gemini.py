@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Mapping
 import hashlib
 import io
 import json
@@ -36,6 +37,23 @@ from app.domain.sources import Source
 logger = logging.getLogger(__name__)
 
 
+def _render_prompt_template(template: str, values: Mapping[str, object]) -> str:
+    """Render explicit double-brace variables without evaluating user-authored code."""
+    template_variables = set(re.findall(r"\{\{([a-zA-Z0-9_]+)\}\}", template))
+    missing = set(values) - template_variables
+    if missing:
+        raise ValueError("Prompt template is missing required variables: " + ", ".join(sorted(missing)))
+    unresolved = template_variables - set(values)
+    if unresolved:
+        raise ValueError("Prompt template has unresolved variables: " + ", ".join(sorted(unresolved)))
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace("{{" + key + "}}", str(value))
+    if not rendered.strip():
+        raise ValueError("Resolved prompt template cannot be empty.")
+    return rendered
+
+
 class GeminiTopic(BaseModel):
     position: int = Field(ge=1)
     title: str
@@ -67,19 +85,24 @@ class GeminiIdeas(BaseModel):
 class GeminiBookMapper(IBookMapper):
     """Understand the book once, then provide evidence-backed topic page bounds."""
 
-    SYSTEM_PROMPT = """أنت مستكشف بنية كتاب، ولست كاتب محتوى.
-أنت تعمل على نافذة محدودة من الكتاب؛ افهم فقط ما تثبته الصفحات الممررة لك، ولا تدّعِ معرفة ما خارجها.
-استخرج البنية الموضوعية الظاهرة في هذه النافذة: الأقسام والمحاور والموضوعات ذات المعنى التي تكشف تنظيم المحتوى فعلاً.
-لا تفترض أن كل كتاب له فصول رسمية. قد يكون التجميع موضوعياً أو مفاهيمياً أو زمنياً أو أدبياً أو غير ذلك.
-لا تستخدم تصنيفاً مغلقاً ولا تفرض عدداً معيناً من الموضوعات. إذا لم توجد موضوعات ذات معنى فأعد topics فارغة.
-لا تستخرج مواد منشورات في هذه الخطوة ولا تخترع عناوين.
-لكل موضوع، أعد page_start و page_end كأرقام الصفحات المطلقة في الكتاب، على أن تقع بالكامل داخل النافذة الممررة.
-source_reference اختياري ولا يوضع إلا إذا كان مدعوماً من الصفحات الممررة.
-حافظ على ترتيب ظهور الأقسام عندما يكون واضحاً."""
-
-    def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        client: genai.Client | None = None,
+        model: str | None = None,
+        prompts: Mapping[str, str] | None = None,
+    ) -> None:
         self.client = client or create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL")
+        # AI generation requires the job-pinned Control Plane snapshot.
+        self.prompts = prompts
+
+    def _prompt(self, key: str) -> str:
+        if self.prompts is None:
+            raise ValueError("This AI capability requires a pinned Control Plane prompt snapshot.")
+        body = self.prompts.get(key)
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError(f"Pinned discovery prompt '{key}' is missing or empty.")
+        return body
 
     async def prepare_document(self, source: Source) -> DocumentReference:
         if source.mime_type != "application/pdf":
@@ -317,17 +340,13 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
     ) -> GeminiBookMap:
         bounded_pdf = self._bounded_pdf(reader, page_start, page_end)
         window_page_count = page_end - page_start + 1
-        prompt = (
-            "هذه نافذة محدودة من كتاب وليست الكتاب كاملاً. "
-            f"النافذة تحتوي {window_page_count} صفحة PDF، وتمثل الصفحات المطلقة {page_start}-{page_end} من الكتاب. "
-            "حلّل فقط الصفحات الموجودة في الملف الممرر لك. "
-            "مهم جداً: حقلا page_start و page_end في إجابتك يجب أن يكونا أرقام الصفحات النسبية "
-            "داخل الملف الممرر فقط، ويجب أن يتراوح كل منهما بين 1 و "
-            f"{window_page_count}. لا تستخدم أرقام الصفحات المطبوعة داخل الكتاب ولا أرقام الصفحات المطلقة "
-            "في هذه الحقول. سيحوّل النظام هذه الأرقام النسبية لاحقاً إلى أرقام PDF مطلقة. "
-            "استخرج البنية الموضوعية الظاهرة في هذه النافذة، ويمكن للموضوع أن يبدأ أو ينتهي خارجها؛ "
-            "في هذه الحالة اجعل page_start/page_end حدوداً محافظة لما تثبته النافذة فقط. "
-            "لا تنشئ مواد منشورات."
+        prompt = _render_prompt_template(
+            self._prompt("knowledge.book_map.section"),
+            {
+                "window_page_count": window_page_count,
+                "page_start": page_start,
+                "page_end": page_end,
+            },
         )
         try:
             response = generate_gemini_content(
@@ -341,7 +360,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
                     "page_end": page_end,
                 },
                 contents=[
-                    self.SYSTEM_PROMPT,
+                    self._prompt("knowledge.book_map.system"),
                     prompt,
                     types.Part.from_bytes(data=bounded_pdf, mime_type="application/pdf"),
                 ],
@@ -501,23 +520,16 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             ],
             ensure_ascii=False,
         )
-        prompt = f"""أنت الآن تقوم بدمج خرائط محلية متجاورة لكتاب واحد.
-ادمج فقط البنية المدعومة في الخرائط الممررة، بما في ذلك دمج الموضوعات المتصلة عبر حدود النوافذ عندما تدعمها الأدلة.
-رتّب الموضوعات حسب ظهورها في الكتاب.
-لا تخترع موضوعاً جديداً غير موجود في الخرائط.
-لا تستخدم تصنيفاً مغلقاً ولا تفرض عدداً معيناً.
-حافظ على page_start/page_end كحدود PDF مطلقة.
-أعد عنوان الكتاب ووصفه من الأدلة المتاحة.
-يجب أن تكون جميع page_start/page_end بين 1 و {page_count}.
-هذه مرحلة دمج، وليست مرحلة استخراج مواد منشورات.
-
-جولة الدمج: {round_index}
-دفعة الدمج: {batch_index}
-عدد النوافذ الأصلية في المهمة: {section_count}
-
-الخرائط:
-{payload}
-"""
+        prompt = _render_prompt_template(
+            self._prompt("knowledge.book_map.merge"),
+            {
+                "page_count": page_count,
+                "round_index": round_index,
+                "batch_index": batch_index,
+                "section_count": section_count,
+                "payload": payload,
+            },
+        )
         try:
             response = generate_gemini_content(
                 self.client,
@@ -586,19 +598,25 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
 class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
     """Discover materials only from a bounded PDF page span."""
 
-    SYSTEM_PROMPT = """أنت مستكشف مواد تحريرية داخل نطاق صفحات محدد من موضوع في كتاب.
-استخرج فقط المواد الموجودة فعلاً في الصفحات التي تم تمريرها لك والمرتبطة بالموضوع.
-لا تخترع مادة ولا تعيد صياغة فكرة عامة لمجرد أنها مناسبة لوسائل التواصل.
-يمكن أن تكون المادة حكمة أو قصة أو قولاً أو لطيفة أو مفهوماً أو تعريفاً أو شعراً أو موقفاً أو مثالاً أو مفارقة أو قاعدة أو وصفاً أو سيرة أو حدثاً أو مقارنة أو أي نوع آخر حقيقي في المصدر.
-لا تفرض عدداً ثابتاً من المواد. أعد صفر مادة عندما لا توجد مادة مستقلة مفيدة في هذا النطاق.
-لا تكرر نفس المقطع أو نفس الفكرة داخل النطاق.
-حافظ على معنى المصدر والنص الأصلي عند الاقتباس.
-أعد source_reference فقط إذا كان مدعوماً من الصفحات الممررة. لا تخمن أرقام الصفحات.
-رقّم النتائج من 1 داخل هذا النطاق."""
-
-    def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        client: genai.Client | None = None,
+        model: str | None = None,
+        prompts: Mapping[str, str] | None = None,
+    ) -> None:
         self.client = client or create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL")
+        # Durable discovery supplies a job-pinned snapshot. None is retained only
+        # for direct legacy adapter use; the production job runner always supplies it.
+        self.prompts = prompts
+
+    def _prompt(self, key: str) -> str:
+        if self.prompts is None:
+            raise ValueError("This AI capability requires a pinned Control Plane prompt snapshot.")
+        body = self.prompts.get(key)
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError(f"Pinned discovery prompt '{key}' is missing or empty.")
+        return body
 
     async def discover_topic(
         self,
@@ -621,12 +639,15 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         if span.page_start < 1 or span.page_end < span.page_start:
             raise ValueError("Invalid discovery page span.")
         bounded_pdf = self._bounded_pdf(source.storage_path, span.page_start, span.page_end)
-        context = (
-            f"عنوان الكتاب: {source.filename}\n"
-            f"الموضوع: {topic.title}\n"
-            f"وصف الموضوع: {topic.description}\n"
-            f"نطاق المصدر الممرر: صفحات PDF {span.page_start}-{span.page_end}. "
-            "تعامل مع هذا النطاق فقط ولا تفترض محتوى خارج الصفحات الممررة."
+        context = _render_prompt_template(
+            self._prompt("knowledge.material_discovery.context"),
+            {
+                "source_name": source.filename,
+                "topic_title": topic.title,
+                "topic_description": topic.description,
+                "page_start": span.page_start,
+                "page_end": span.page_end,
+            },
         )
         logger.info(
             "event=GEMINI_BOUNDED_INPUT source_id=%s topic_id=%s chunk=%s pages=%s-%s bytes=%s",
@@ -639,7 +660,7 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
                 operation="DISCOVERING_MATERIALS",
                 context={"source_id": source.id, "topic_id": topic.id, "chunk_index": span.chunk_index},
                 contents=[
-                    self.SYSTEM_PROMPT,
+                    self._prompt("knowledge.material_discovery.system"),
                     context,
                     types.Part.from_bytes(data=bounded_pdf, mime_type="application/pdf"),
                 ],

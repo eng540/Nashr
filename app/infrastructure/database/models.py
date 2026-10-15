@@ -383,6 +383,7 @@ class DiscoveryJobModel(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resolved_prompts: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

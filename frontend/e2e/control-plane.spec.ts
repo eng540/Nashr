@@ -151,6 +151,10 @@ test("a published product can be derived independently with pinned components re
   await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
   await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
   await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
+  // Wait for the asynchronous product-detail fetch to hydrate the selected form
+  // before interacting with it; otherwise the response can overwrite the edit.
+  await expect(page.getByLabel("المفتاح")).toHaveValue(derivedKey);
+  await expect(page.getByLabel("التعليمات المنشورة")).toBeEnabled();
   await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
   await page.getByLabel("التعليمات المنشورة").selectOption(alternatePromptKey);
   await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(alternatePromptKey);

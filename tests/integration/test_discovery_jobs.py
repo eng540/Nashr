@@ -75,6 +75,23 @@ async def test_discovery_job_checkpoints_failure_and_resumes() -> None:
     async with SessionFactory() as session:
         job = await create_discovery_job(session, source_id)
 
+    assert set(job.resolved_prompts) == {
+        "knowledge.book_map.system",
+        "knowledge.book_map.section",
+        "knowledge.book_map.merge",
+        "knowledge.material_discovery.system",
+        "knowledge.material_discovery.context",
+    }
+    assert all(
+        entry["key"] == key
+        and isinstance(entry["template_id"], str)
+        and isinstance(entry["version_id"], str)
+        and isinstance(entry["version"], int)
+        and isinstance(entry["body"], str)
+        and entry["body"].strip()
+        for key, entry in job.resolved_prompts.items()
+    )
+
     discoverer = ToggleDiscoverer()
     runner = DiscoveryJobRunner(TwoTopicMapper(), discoverer)
     await runner.run(job.id)
@@ -98,6 +115,7 @@ async def test_discovery_job_checkpoints_failure_and_resumes() -> None:
         retry_job = await retry_discovery_job(session, source_id)
 
     assert retry_job.id == job.id
+    assert retry_job.resolved_prompts == job.resolved_prompts
     await runner.run(retry_job.id)
     await runner.run(retry_job.id)
 

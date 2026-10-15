@@ -5,7 +5,9 @@ import pytest
 from pypdf import PdfReader, PdfWriter
 
 from app.adapters.extraction.gemini import (
+    GeminiBookMap,
     GeminiOperationError,
+    GeminiTopic,
     GeminiTopicMaterialDiscoverer,
     classify_gemini_error,
 )
@@ -32,6 +34,15 @@ class FakeClient:
         self.files = type("Files", (), {"upload": lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("upload must not be called"))})()
 
 
+TEST_DISCOVERY_PROMPTS = {
+    "knowledge.material_discovery.system": "test material discovery instructions",
+    "knowledge.material_discovery.context": (
+        "source={{source_name}} topic={{topic_title}} description={{topic_description}} "
+        "pages={{page_start}}-{{page_end}}"
+    ),
+}
+
+
 def _pdf(path: Path, pages: int) -> None:
     writer = PdfWriter()
     for _ in range(pages):
@@ -53,7 +64,7 @@ async def test_topic_discovery_uses_bounded_inline_pdf_without_file_upload(tmp_p
     source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
     topic = BookTopic.create(source.id, 1, "Topic", "Description", "pages 2-4", 2, 4)
     client = FakeClient()
-    discoverer = GeminiTopicMaterialDiscoverer(client=client)
+    discoverer = GeminiTopicMaterialDiscoverer(client=client, prompts=TEST_DISCOVERY_PROMPTS)
     ideas = await discoverer.discover_topic(
         source,
         topic,
@@ -105,7 +116,7 @@ async def test_topic_discovery_falls_back_to_valid_structured_json_when_parsed_i
     source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
     topic = BookTopic.create(source.id, 1, "Topic", "Description", "pages 1-2", 1, 2)
     client = FakeUnparsedClient('{"ideas": []}')
-    discoverer = GeminiTopicMaterialDiscoverer(client=client)
+    discoverer = GeminiTopicMaterialDiscoverer(client=client, prompts=TEST_DISCOVERY_PROMPTS)
 
     ideas = await discoverer.discover_topic(
         source,
@@ -124,7 +135,7 @@ async def test_topic_discovery_rejects_empty_response_when_parsed_is_none(tmp_pa
     source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
     topic = BookTopic.create(source.id, 1, "Topic", "Description", "pages 1-2", 1, 2)
     client = FakeUnparsedClient("")
-    discoverer = GeminiTopicMaterialDiscoverer(client=client)
+    discoverer = GeminiTopicMaterialDiscoverer(client=client, prompts=TEST_DISCOVERY_PROMPTS)
 
     with pytest.raises(GeminiOperationError, match="empty material-discovery response"):
         await discoverer.discover_topic(
@@ -133,3 +144,97 @@ async def test_topic_discovery_rejects_empty_response_when_parsed_is_none(tmp_pa
             DocumentReference("unused", "fake://unused", "application/pdf"),
             DiscoverySpan(1, 2, 1),
         )
+
+@pytest.mark.asyncio
+async def test_topic_discovery_uses_pinned_editable_prompts_and_renders_context_variables(tmp_path: Path) -> None:
+    source_path = tmp_path / "book.pdf"
+    _pdf(source_path, 3)
+    source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
+    topic = BookTopic.create(source.id, 1, "باب الصبر", "معانٍ حول الصبر", "pages 1-2", 1, 2)
+    client = FakeClient()
+    discoverer = GeminiTopicMaterialDiscoverer(
+        client=client,
+        prompts={
+            "knowledge.material_discovery.system": "تعليمات اختبار قابلة للتغيير",
+            "knowledge.material_discovery.context": (
+                "مصدر={{source_name}}؛ موضوع={{topic_title}}؛ وصف={{topic_description}}؛ "
+                "صفحات={{page_start}}-{{page_end}}"
+            ),
+        },
+    )
+
+    await discoverer.discover_topic(
+        source,
+        topic,
+        DocumentReference("unused", "fake://unused", "application/pdf"),
+        DiscoverySpan(1, 2, 1),
+    )
+
+    contents = client.models.calls[0]["contents"]
+    assert contents[0] == "تعليمات اختبار قابلة للتغيير"
+    assert contents[1] == (
+        "مصدر=book.pdf؛ موضوع=باب الصبر؛ وصف=معانٍ حول الصبر؛ صفحات=1-2"
+    )
+
+
+def test_prompt_template_rejects_unresolved_variables() -> None:
+    from app.adapters.extraction.gemini import _render_prompt_template
+
+    with pytest.raises(ValueError, match="unresolved variables"):
+        _render_prompt_template("نطاق {{page_start}} إلى {{page_end}}", {"page_start": 1})
+
+def test_book_map_uses_pinned_system_and_section_prompt_templates(tmp_path: Path, monkeypatch) -> None:
+    from app.adapters.extraction.gemini import GeminiBookMapper
+
+    source_path = tmp_path / "book.pdf"
+    _pdf(source_path, 4)
+    source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
+    mapper = GeminiBookMapper(
+        client=FakeClient(),
+        prompts={
+            "knowledge.book_map.system": "تعليمات بنية الكتاب المنشورة",
+            "knowledge.book_map.section": "حلل النافذة {{page_start}}-{{page_end}} وعدد صفحاتها {{window_page_count}}.",
+        },
+    )
+    calls = []
+
+    class Response:
+        parsed = GeminiBookMap(
+            title="كتاب",
+            description="وصف",
+            topics=[
+                GeminiTopic(
+                    position=1,
+                    title="موضوع",
+                    description="وصف الموضوع",
+                    page_start=1,
+                    page_end=2,
+                )
+            ],
+        )
+        usage_metadata = None
+
+    def fake_generate(_client, **kwargs):
+        calls.append(kwargs)
+        return Response()
+
+    monkeypatch.setattr("app.adapters.extraction.gemini.generate_gemini_content", fake_generate)
+    reader = PdfReader(str(source_path))
+    result = mapper._map_section(source, reader, 2, 3, section_index=1)
+
+    assert calls[0]["contents"][0] == "تعليمات بنية الكتاب المنشورة"
+    assert calls[0]["contents"][1] == "حلل النافذة 2-3 وعدد صفحاتها 2."
+    assert (result.topics[0].page_start, result.topics[0].page_end) == (2, 3)
+
+def test_prompt_template_requires_its_dynamic_values_to_be_used() -> None:
+    from app.adapters.extraction.gemini import _render_prompt_template
+
+    with pytest.raises(ValueError, match="missing required variables"):
+        _render_prompt_template("الصفحة {{page_start}}", {"page_start": 1, "page_end": 2})
+
+def test_prompt_template_does_not_reinterpret_braces_inside_source_values() -> None:
+    from app.adapters.extraction.gemini import _render_prompt_template
+
+    assert _render_prompt_template("المادة: {{source_text}}", {"source_text": "{{not_a_template_variable}}"}) == (
+        "المادة: {{not_a_template_variable}}"
+    )
