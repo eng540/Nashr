@@ -27,7 +27,7 @@ type ControlItem = {
     component_diffs: Record<string, { from: unknown; to: unknown }>;
   };
 };
-type StageForm = { key: string; capability_key: string; capability_version: string; configuration: string; generation_prompt: string };
+type StageForm = { key: string; capability_key: string; capability_version: string; configuration: string; generation_prompt: string; style_instructions: string };
 type FormState = Record<string, string>;
 
 const sections: Array<{ key: SectionKey; label: string; description: string; endpoint: string }> = [
@@ -125,13 +125,16 @@ function stagesFromVersion(version?: Version): StageForm[] {
   return stages.map((stage) => {
     const configuration = { ...(stage.configuration ?? {}) };
     const generationPrompt = typeof configuration.generation_prompt === "string" ? configuration.generation_prompt : "";
+    const styleInstructions = typeof configuration.style_instructions === "string" ? configuration.style_instructions : "";
     delete configuration.generation_prompt;
+    delete configuration.style_instructions;
     return {
       key: stage.key,
       capability_key: stage.capability_key,
       capability_version: String(stage.capability_version),
       configuration: Object.keys(configuration).length ? JSON.stringify(configuration, null, 2) : "",
       generation_prompt: generationPrompt,
+      style_instructions: styleInstructions,
     };
   });
 }
@@ -189,6 +192,12 @@ function definitionFor(section: SectionKey, form: FormState, stages: StageForm[]
         else delete configuration.generation_prompt;
       } else {
         delete configuration.generation_prompt;
+      }
+      if (["produce_post", "produce_text_artifact", "produce_image_artifact", "produce_video_artifact", "produce_audio_artifact"].includes(stage.capability_key)) {
+        if (stage.style_instructions.trim()) configuration.style_instructions = stage.style_instructions;
+        else delete configuration.style_instructions;
+      } else {
+        delete configuration.style_instructions;
       }
       return {
         key: stage.key.trim(),
@@ -262,7 +271,7 @@ export function ControlPlanePage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedVersionNumber, setSelectedVersionNumber] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(() => initialForm("products"));
-  const [stages, setStages] = useState<StageForm[]>([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "" }]);
+  const [stages, setStages] = useState<StageForm[]>([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "", style_instructions: "" }]);
   const [busy, setBusy] = useState(false);
   const [selectingItem, setSelectingItem] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -314,7 +323,7 @@ export function ControlPlanePage() {
       setSelectedKey(found?.key ?? null);
       setSelectedVersionNumber(version?.version ?? null);
       setForm(initialForm(sectionToSelect, found, version));
-      setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "" }]);
+      setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "", style_instructions: "" }]);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر تحميل إعدادات التحكم.");
@@ -330,7 +339,7 @@ export function ControlPlanePage() {
     setSelectedKey(null);
     setSelectedVersionNumber(null);
     setForm(initialForm(next));
-    setStages([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "" }]);
+    setStages([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "", style_instructions: "" }]);
     setMessage("");
     setError("");
   }
@@ -350,7 +359,7 @@ export function ControlPlanePage() {
       setSelectedKey(resolved.key);
       setSelectedVersionNumber(version?.version ?? null);
       setForm(initialForm(activeSection, resolved, version));
-      setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "" }]);
+      setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "", style_instructions: "" }]);
       setMessage("");
       setError("");
     } catch (cause) {
@@ -365,7 +374,7 @@ export function ControlPlanePage() {
     const version = selected.versions?.find((candidate) => candidate.version === number);
     setSelectedVersionNumber(number);
     setForm(initialForm(activeSection, selected, version));
-    setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "" }]);
+    setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "", style_instructions: "" }]);
     setMessage("");
     setError("");
   }
@@ -492,7 +501,7 @@ export function ControlPlanePage() {
       <aside className="rounded-2xl border bg-white p-4">
         <div className="flex items-center justify-between gap-2">
           <div><h3 className="font-bold">{section.label}</h3><p className="mt-1 text-xs text-slate-500">{items.length} عنصر</p></div>
-          <button type="button" disabled={loading || busy} onClick={() => { setSelectedKey(null); setSelectedVersionNumber(null); setForm(initialForm(activeSection)); setStages([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "" }]); setMessage(""); setError(""); }}
+          <button type="button" disabled={loading || busy} onClick={() => { setSelectedKey(null); setSelectedVersionNumber(null); setForm(initialForm(activeSection)); setStages([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "", style_instructions: "" }]); setMessage(""); setError(""); }}
             className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">جديد</button>
         </div>
         <p className="my-3 text-xs leading-6 text-slate-500">{section.description}</p>
@@ -610,7 +619,7 @@ export function ControlPlanePage() {
         </div>}
 
         {activeSection === "recipes" && <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3"><h4 className="font-bold">مراحل الوصفة</h4><button type="button" disabled={formDisabled} onClick={() => setStages((current) => [...current, { key: "stage-" + (current.length + 1), capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "" }])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">إضافة مرحلة</button></div>
+          <div className="flex items-center justify-between gap-3"><h4 className="font-bold">مراحل الوصفة</h4><button type="button" disabled={formDisabled} onClick={() => setStages((current) => [...current, { key: "stage-" + (current.length + 1), capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "", style_instructions: "" }])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">إضافة مرحلة</button></div>
           {stages.map((stage, index) => <div key={index} className="space-y-3 rounded-xl border p-3">
             <div className="flex items-center justify-between"><strong>المرحلة {index + 1}</strong><button type="button" disabled={formDisabled || stages.length === 1} onClick={() => setStages((current) => current.filter((_, stageIndex) => stageIndex !== index))} className="text-sm text-rose-700 disabled:opacity-40">حذف</button></div>
             <div className="grid gap-3 md:grid-cols-3">
@@ -618,6 +627,16 @@ export function ControlPlanePage() {
               <SelectField label="القدرة" value={stage.capability_key} onChange={(value) => setStages((current) => current.map((item, i) => i === index ? { ...item, capability_key: value } : item))} disabled={formDisabled} options={capabilityOptions.map(([value, label]) => ({ value, label }))} />
               <Field label="إصدار القدرة" type="number" value={stage.capability_version} onChange={(value) => setStages((current) => current.map((item, i) => i === index ? { ...item, capability_version: value } : item))} disabled={formDisabled} />
             </div>
+            {["produce_post", "produce_text_artifact", "produce_image_artifact", "produce_video_artifact", "produce_audio_artifact"].includes(stage.capability_key) && <Field
+              label={["produce_image_artifact", "produce_video_artifact"].includes(stage.capability_key)
+                ? "التوجيه البصري"
+                : stage.capability_key === "produce_audio_artifact" ? "توجيه الإلقاء" : "تعليمات التحرير والعرض"}
+              value={stage.style_instructions}
+              onChange={(value) => setStages((current) => current.map((item, i) => i === index ? { ...item, style_instructions: value } : item))}
+              disabled={formDisabled}
+              multiline
+              placeholder="تعليمات خاصة بهذه المرحلة، تُحفظ مع إصدار الوصفة ولا تتطلب تعديل الكود."
+            />}
             {["produce_image_artifact", "produce_video_artifact"].includes(stage.capability_key) && <Field
               label="قالب توجيه التوليد (قابل للتعديل ضمن إصدار الوصفة)"
               value={stage.generation_prompt}
@@ -626,7 +645,7 @@ export function ControlPlanePage() {
               multiline
               placeholder={stage.capability_key === "produce_video_artifact"
                 ? "المتغيرات المطلوبة: {{audience}}, {{experience}}, {{source_title}}, {{source_name}}, {{source_excerpt}}, {{editorial_prompt}}, {{style_instructions}}"
-                : "المتغيرات المطلوبة: {{audience}}, {{experience}}, {{source_title}}, {{source_name}}, {{source_excerpt}}, {{style_instructions}}"}
+                : "المتغيرات المطلوبة: {{audience}}, {{experience}}, {{source_title}}, {{source_name}}, {{source_excerpt}}, {{identity_context}}, {{style_instructions}}"}
             />}
             <details><summary className="cursor-pointer text-xs font-semibold text-slate-600">إعدادات متقدمة للمرحلة (اختياري)</summary><textarea value={stage.configuration} onChange={(event) => setStages((current) => current.map((item, i) => i === index ? { ...item, configuration: event.target.value } : item))} disabled={formDisabled} placeholder='{"setting": "value"}' className="mt-2 min-h-20 w-full rounded-lg border p-3 font-mono text-xs disabled:bg-slate-100" /></details>
           </div>)}
