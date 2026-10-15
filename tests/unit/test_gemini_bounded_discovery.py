@@ -178,10 +178,10 @@ async def test_topic_discovery_uses_pinned_editable_prompts_and_renders_context_
 
 
 def test_prompt_template_rejects_unresolved_variables() -> None:
-    from app.adapters.extraction.gemini import _render_prompt_template
+    from app.domain.prompt_templates import render_prompt_template
 
     with pytest.raises(ValueError, match="unresolved variables"):
-        _render_prompt_template("نطاق {{page_start}} إلى {{page_end}}", {"page_start": 1})
+        render_prompt_template("نطاق {{page_start}} إلى {{page_end}}", {"page_start": 1})
 
 def test_book_map_uses_pinned_system_and_section_prompt_templates(tmp_path: Path, monkeypatch) -> None:
     from app.adapters.extraction.gemini import GeminiBookMapper
