@@ -610,9 +610,9 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         # for direct legacy adapter use; the production job runner always supplies it.
         self.prompts = prompts
 
-    def _prompt(self, key: str, legacy_body: str) -> str:
+    def _prompt(self, key: str) -> str:
         if self.prompts is None:
-            return legacy_body
+            raise ValueError("This AI capability requires a pinned Control Plane prompt snapshot.")
         body = self.prompts.get(key)
         if not isinstance(body, str) or not body.strip():
             raise ValueError(f"Pinned discovery prompt '{key}' is missing or empty.")
