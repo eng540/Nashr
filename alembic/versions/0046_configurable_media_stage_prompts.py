@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0046_configurable_media_stage_prompts"
+revision: str = "0046_media_stage_prompts"
 down_revision: Union[str, Sequence[str], None] = "0045_versioned_discovery_prompts"
 branch_labels = None
 depends_on = None
