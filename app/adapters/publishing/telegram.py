@@ -33,6 +33,11 @@ class _TelegramHTMLSerializer(HTMLParser):
         tag = tag.lower()
         if tag not in _ALLOWED_TAGS:
             raise ValueError(f"Unsupported Telegram HTML tag: <{tag}>")
+        if tag == "br":
+            if attrs:
+                raise ValueError("Telegram line breaks do not accept attributes.")
+            self.output.append("\\n")
+            return
         normalized: list[tuple[str, str]] = []
         for name, value in attrs:
             name = name.lower()
@@ -61,7 +66,7 @@ class _TelegramHTMLSerializer(HTMLParser):
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() != "br" or attrs:
             raise ValueError("Only <br/> is supported as a self-closing Telegram tag.")
-        self.output.append("<br>")
+        self.output.append("\\n")
 
     def handle_data(self, data: str) -> None:
         self.output.append(html.escape(data, quote=False))
