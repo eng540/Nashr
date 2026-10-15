@@ -26,6 +26,9 @@ Source name: {{source_name}}
 Source material (bounded excerpt):
 {{source_excerpt}}
 
+Product identity and editorial constraints (must be respected):
+{{identity_context}}
+
 Visual direction:
 {{style_instructions}}"""
 
