@@ -39,15 +39,16 @@ logger = logging.getLogger(__name__)
 
 def _render_prompt_template(template: str, values: Mapping[str, object]) -> str:
     """Render explicit double-brace variables without evaluating user-authored code."""
-    missing = [key for key in values if "{{" + key + "}}" not in template]
+    template_variables = set(re.findall(r"\{\{([a-zA-Z0-9_]+)\}\}", template))
+    missing = set(values) - template_variables
     if missing:
         raise ValueError("Prompt template is missing required variables: " + ", ".join(sorted(missing)))
+    unresolved = template_variables - set(values)
+    if unresolved:
+        raise ValueError("Prompt template has unresolved variables: " + ", ".join(sorted(unresolved)))
     rendered = template
     for key, value in values.items():
         rendered = rendered.replace("{{" + key + "}}", str(value))
-    unresolved = re.findall(r"\{\{([a-zA-Z0-9_]+)\}\}", rendered)
-    if unresolved:
-        raise ValueError("Prompt template has unresolved variables: " + ", ".join(sorted(set(unresolved))))
     if not rendered.strip():
         raise ValueError("Resolved prompt template cannot be empty.")
     return rendered
