@@ -458,7 +458,8 @@ export function ControlPlanePage() {
 
 
   const versionIsDraft = selectedVersion?.status === "DRAFT";
-  const formDisabled = busy || Boolean(selected && selectedVersion && selectedVersion.status !== "DRAFT");
+  // Editing a published version changes only local form state; saveDraft creates a new immutable draft version.
+  const formDisabled = busy;
 
   return <section dir="rtl" className="space-y-6" data-testid="control-plane-workspace">
     <header className="space-y-2">
