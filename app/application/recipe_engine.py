@@ -19,6 +19,7 @@ from app.adapters.video_generation.veo import VeoVideoGenerator
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.output_contracts import OutputContractDefinition
 from app.domain.production_context import PinnedOutputContract
+from app.domain.prompt_templates import render_prompt_template
 from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
 from app.infrastructure.artifact_storage import ArtifactStorageError, S3ArtifactStorage
 from app.application.provider_operations import record_provider_operation, update_provider_operation_status
@@ -215,16 +216,36 @@ class ProduceImageArtifactCapability:
 
         aspect_ratio = context.stage_configuration.get("aspect_ratio", "1:1")
         image_size = context.stage_configuration.get("image_size", "1K")
-        prompt = (
-            "Create one original, high-quality editorial illustration inspired by the source material below. "
-            "Do not include readable text, captions, logos, or watermarks unless the recipe instructions explicitly require them. "
-            "Respect the source's cultural context; do not invent named people or historical facts.\n\n"
-            f"Audience: {audience}\nIntended experience: {experience}\n"
-            f"Source title: {unit.title}\nSource name: {source_name}\n"
-            f"Source material (bounded excerpt):\n{unit.content[:6000]}"
-        )
-        if style_instructions:
-            prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
+        generation_prompt = context.stage_configuration.get("generation_prompt")
+        if isinstance(generation_prompt, str) and generation_prompt.strip():
+            prompt = render_prompt_template(
+                generation_prompt,
+                {
+                    "audience": audience,
+                    "experience": experience,
+                    "source_title": unit.title,
+                    "source_name": source_name,
+                    "source_excerpt": unit.content[:6000],
+                    "style_instructions": str(style_instructions or "").strip(),
+                },
+            )
+        else:
+            # Compatibility for historical recipe v1 snapshots only. Newly
+            # published image recipes require generation_prompt in the recipe.
+            recipe_snapshot = context.resolved_context.get("recipe")
+            recipe_version = recipe_snapshot.get("version", 1) if isinstance(recipe_snapshot, Mapping) else 1
+            if isinstance(recipe_version, int) and recipe_version >= 2:
+                raise ValueError("Pinned image recipe is missing its generation_prompt.")
+            prompt = (
+                "Create one original, high-quality editorial illustration inspired by the source material below. "
+                "Do not include readable text, captions, logos, or watermarks unless the recipe instructions explicitly require them. "
+                "Respect the source's cultural context; do not invent named people or historical facts.\n\n"
+                f"Audience: {audience}\nIntended experience: {experience}\n"
+                f"Source title: {unit.title}\nSource name: {source_name}\n"
+                f"Source material (bounded excerpt):\n{unit.content[:6000]}"
+            )
+            if style_instructions:
+                prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
 
         # Resolve from the pinned recipe stage configuration (or deployment default).
         # The provider adapter owns all model-specific API details.
@@ -352,14 +373,6 @@ class ProduceVideoArtifactCapability:
         aspect_ratio = context.stage_configuration.get("aspect_ratio", "9:16")
         resolution = context.stage_configuration.get("resolution", "720p")
         duration_seconds = context.stage_configuration.get("duration_seconds", 5)
-        prompt = (
-            "Create a short, coherent, source-grounded editorial video inspired by the material below. "
-            "Avoid captions, logos, or watermarks; do not invent historical facts or named people. "
-            "Use culturally respectful visual storytelling.\n\n"
-            f"Audience: {audience}\nIntended experience: {experience}\n"
-            f"Source title: {unit.title}\nSource name: {source_name}\n"
-            f"Source material (bounded excerpt):\n{unit.content[:6000]}"
-        )
         editorial_prompt = context.configuration.get("editorial_prompt")
         if (
             not isinstance(editorial_prompt, Mapping)
@@ -369,15 +382,42 @@ class ProduceVideoArtifactCapability:
             raise ValueError(
                 "produce_video_artifact requires the pinned editorial_prompt body."
             )
-        # The runner composes the job's pinned prompt and identity into this body.
-        # Include it explicitly: video generation must not silently bypass the
-        # resolved editorial context merely because it has a modality-specific prompt.
-        prompt += (
-            "\n\nPinned editorial instructions and identity context (must be followed):\n"
-            + editorial_prompt["body"].strip()
-        )
-        if style_instructions:
-            prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
+        generation_prompt = context.stage_configuration.get("generation_prompt")
+        if isinstance(generation_prompt, str) and generation_prompt.strip():
+            prompt = render_prompt_template(
+                generation_prompt,
+                {
+                    "audience": audience,
+                    "experience": experience,
+                    "source_title": unit.title,
+                    "source_name": source_name,
+                    "source_excerpt": unit.content[:6000],
+                    "editorial_prompt": editorial_prompt["body"].strip(),
+                    "style_instructions": str(style_instructions or "").strip(),
+                },
+            )
+        else:
+            # Compatibility for historical recipe v1 snapshots only. Newly
+            # published video recipes require generation_prompt in the recipe.
+            recipe_snapshot = context.resolved_context.get("recipe")
+            recipe_version = recipe_snapshot.get("version", 1) if isinstance(recipe_snapshot, Mapping) else 1
+            if isinstance(recipe_version, int) and recipe_version >= 2:
+                raise ValueError("Pinned video recipe is missing its generation_prompt.")
+            prompt = (
+                "Create a short, coherent, source-grounded editorial video inspired by the material below. "
+                "Avoid captions, logos, or watermarks; do not invent historical facts or named people. "
+                "Use culturally respectful visual storytelling.\n\n"
+                f"Audience: {audience}\nIntended experience: {experience}\n"
+                f"Source title: {unit.title}\nSource name: {source_name}\n"
+                f"Source material (bounded excerpt):\n{unit.content[:6000]}"
+            )
+            # Legacy prompt composition preserves the pinned editorial instructions.
+            prompt += (
+                "\n\nPinned editorial instructions and identity context (must be followed):\n"
+                + editorial_prompt["body"].strip()
+            )
+            if style_instructions:
+                prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
 
         provider_name = getattr(self.generator, "provider_name", "google-veo")
         operation_name = context.inputs.get("provider_operation_name")
