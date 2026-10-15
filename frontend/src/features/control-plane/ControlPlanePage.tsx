@@ -640,13 +640,15 @@ export function ControlPlanePage() {
             </div>
             {["produce_post", "produce_text_artifact", "produce_image_artifact", "produce_video_artifact", "produce_audio_artifact"].includes(stage.capability_key) && <Field
               label={["produce_image_artifact", "produce_video_artifact"].includes(stage.capability_key)
-                ? "التوجيه البصري"
-                : stage.capability_key === "produce_audio_artifact" ? "توجيه الإلقاء" : "تعليمات التحرير والعرض"}
+                ? "التوجيه البصري للمرحلة"
+                : stage.capability_key === "produce_audio_artifact"
+                  ? "توجيه الإلقاء للمرحلة"
+                  : "تعليمات المرحلة المشتركة"}
               value={stage.style_instructions}
               onChange={(value) => setStages((current) => current.map((item, i) => i === index ? { ...item, style_instructions: value } : item))}
               disabled={formDisabled}
               multiline
-              placeholder="تعليمات خاصة بهذه المرحلة، تُحفظ مع إصدار الوصفة ولا تتطلب تعديل الكود."
+              placeholder="تعليمات مشتركة لهذه المرحلة، تُحفظ مع إصدار الوصفة. استخدم حقل المنتج إذا كانت تعليمات العرض خاصة بمنتج واحد."
             />}
             {["produce_image_artifact", "produce_video_artifact"].includes(stage.capability_key) && <Field
               label="قالب توجيه التوليد (قابل للتعديل ضمن إصدار الوصفة)"
