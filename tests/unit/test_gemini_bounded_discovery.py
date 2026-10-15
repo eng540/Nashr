@@ -34,6 +34,15 @@ class FakeClient:
         self.files = type("Files", (), {"upload": lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("upload must not be called"))})()
 
 
+TEST_DISCOVERY_PROMPTS = {
+    "knowledge.material_discovery.system": "test material discovery instructions",
+    "knowledge.material_discovery.context": (
+        "source={{source_name}} topic={{topic_title}} description={{topic_description}} "
+        "pages={{page_start}}-{{page_end}}"
+    ),
+}
+
+
 def _pdf(path: Path, pages: int) -> None:
     writer = PdfWriter()
     for _ in range(pages):
@@ -55,7 +64,7 @@ async def test_topic_discovery_uses_bounded_inline_pdf_without_file_upload(tmp_p
     source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
     topic = BookTopic.create(source.id, 1, "Topic", "Description", "pages 2-4", 2, 4)
     client = FakeClient()
-    discoverer = GeminiTopicMaterialDiscoverer(client=client)
+    discoverer = GeminiTopicMaterialDiscoverer(client=client, prompts=TEST_DISCOVERY_PROMPTS)
     ideas = await discoverer.discover_topic(
         source,
         topic,
