@@ -1,5 +1,6 @@
 """Bounded recipe execution over explicitly registered capabilities."""
 import asyncio
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field as dataclass_field, replace
 from datetime import datetime, timezone
@@ -218,6 +219,21 @@ class ProduceImageArtifactCapability:
         image_size = context.stage_configuration.get("image_size", "1K")
         generation_prompt = context.stage_configuration.get("generation_prompt")
         if isinstance(generation_prompt, str) and generation_prompt.strip():
+            identity_snapshot = context.resolved_context.get("identity")
+            if (
+                not isinstance(identity_snapshot, Mapping)
+                or not isinstance(identity_snapshot.get("definition"), Mapping)
+            ):
+                raise ValueError("produce_image_artifact requires the pinned product identity definition.")
+            identity_context = json.dumps(
+                {
+                    "key": identity_snapshot.get("key"),
+                    "version": identity_snapshot.get("version"),
+                    "definition": identity_snapshot["definition"],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
             prompt = render_prompt_template(
                 generation_prompt,
                 {
@@ -226,6 +242,7 @@ class ProduceImageArtifactCapability:
                     "source_title": unit.title,
                     "source_name": source_name,
                     "source_excerpt": unit.content[:6000],
+                    "identity_context": identity_context,
                     "style_instructions": str(style_instructions or "").strip(),
                 },
             )
