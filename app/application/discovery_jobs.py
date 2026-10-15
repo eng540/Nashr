@@ -56,6 +56,7 @@ async def _resolve_discovery_prompt_snapshot(session: AsyncSession) -> dict[str,
             raise ValueError(f"Published knowledge-discovery prompt '{key}' is empty.")
         snapshot[key] = {
             "key": prompt.key,
+            "template_id": str(prompt.template_id),
             "version_id": str(prompt.version_id),
             "version": prompt.version,
             "body": prompt.body,
