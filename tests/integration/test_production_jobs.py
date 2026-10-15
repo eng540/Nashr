@@ -704,6 +704,7 @@ async def test_text_product_generates_reviewable_artifact_without_creating_post(
         assert context.schema_version == 6
         assert context.product is not None
         assert context.product.key == "ARABIC_LITERATURE_TEXT"
+        assert "سطر فارغ واحد" in context.product.definition["presentation_instructions"]
         assert context.recipe is not None
         assert context.recipe.key == "BOOK_TO_TEXT_ARTIFACT"
         assert context.output_contract is not None
@@ -711,6 +712,7 @@ async def test_text_product_generates_reviewable_artifact_without_creating_post(
 
     drafter = RecordingDrafter()
     await ProductionJobRunner(drafter).run(job.id)
+    assert any("سطر فارغ واحد" in (prompt or "") for prompt in drafter.prompts)
     async with SessionFactory() as session:
         item = (await session.execute(
             select(ProductionJobItemModel).where(
