@@ -81,7 +81,30 @@ export function GenericArtifactReviewPanel() {
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
-        {artifact.content !== null ? <textarea aria-label={`محتوى المخرج ${artifact.id}`} value={drafts[artifact.id]?.content ?? artifact.content} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], content: event.target.value } }))} disabled={status !== "DRAFT"} className="min-h-32 w-full rounded-xl border p-3 text-sm leading-7"/> : <GenericArtifactMediaPreview artifact={artifact} />}
+        {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
+          <section aria-label={`تحرير المخرج ${artifact.id}`} className="min-w-0 space-y-2">
+            <h3 className="text-sm font-bold text-slate-700">المحرر</h3>
+            <textarea
+              aria-label={`محتوى المخرج ${artifact.id}`}
+              value={drafts[artifact.id]?.content ?? artifact.content}
+              onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], content: event.target.value } }))}
+              disabled={status !== "DRAFT"}
+              dir="auto"
+              className="min-h-64 w-full rounded-xl border bg-white p-4 text-sm leading-8"
+            />
+            <p className="text-xs leading-5 text-slate-500">تظهر المعاينة بجانب المحرر وتتحدث مع كل تعديل؛ احفظ التغييرات قبل الاعتماد.</p>
+          </section>
+          <section aria-label={`معاينة قراءة المخرج ${artifact.id}`} className="min-w-0 space-y-2">
+            <h3 className="text-sm font-bold text-slate-700">معاينة القراءة</h3>
+            <div
+              data-testid={`artifact-text-preview-${artifact.id}`}
+              dir="auto"
+              className="min-h-64 max-h-[36rem] overflow-y-auto rounded-xl border bg-slate-50 p-5 text-base leading-8 text-slate-800"
+              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", textAlign: "start" }}
+            >{drafts[artifact.id]?.content ?? artifact.content}</div>
+            <p className="text-xs leading-5 text-slate-500">تحافظ المعاينة على فواصل الأسطر والفقرات كما هي في النص. وهي معاينة للنص العادي، وليست محاكاة كاملة لتنسيقات القناة المستهدفة.</p>
+          </section>
+        </div> : <GenericArtifactMediaPreview artifact={artifact} />}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {Object.keys(artifact.metadata).length > 0 ? <pre className="overflow-x-auto rounded-lg bg-slate-50 p-3 text-xs">{JSON.stringify(artifact.metadata, null, 2)}</pre> : null}
         <input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>
