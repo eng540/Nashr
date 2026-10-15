@@ -80,7 +80,7 @@ type SortMode = "created" | "title" | "kind" | "topic";
 const TELEGRAM_HTML_TAGS = new Set(["b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "span", "br"]);
 
 function isTelegramMarkupValid(content: string): boolean {
-  const tagPattern = /<\\/?([a-zA-Z][\\w-]*)([^>]*)>/g;
+  const tagPattern = /<\/?([a-zA-Z][\w-]*)([^>]*)>/g;
   const tags = Array.from(content.matchAll(tagPattern));
   const hasRichTag = tags.some((match) => TELEGRAM_HTML_TAGS.has(match[1].toLowerCase()));
   if (!hasRichTag) return true;
@@ -88,7 +88,7 @@ function isTelegramMarkupValid(content: string): boolean {
   for (const match of tags) {
     const tag = match[1].toLowerCase();
     const closing = match[0].startsWith("</");
-    const selfClosing = /\\/>$/.test(match[0]) || tag === "br";
+    const selfClosing = /\/>$/.test(match[0]) || tag === "br";
     if (!TELEGRAM_HTML_TAGS.has(tag)) return false;
     if (closing) {
       if (stack.pop() !== tag) return false;
@@ -116,7 +116,7 @@ function renderTelegramNode(node: Node, key: string): ReactNode {
     case "span": return node.classList.contains("tg-spoiler") ? <span key={key} className="rounded bg-slate-800 text-slate-800 hover:text-white">{children}</span> : <span key={key}>{children}</span>;
     case "a": {
       const href = node.getAttribute("href") ?? "";
-      if (!/^(https?:\\/\\/|tg:\\/\\/)/i.test(href)) return <span key={key}>{children}</span>;
+      if (!/^(https?:\/\/|tg:\/\/)/i.test(href)) return <span key={key}>{children}</span>;
       return <a key={key} href={href} target="_blank" rel="noreferrer" className="text-indigo-700 underline">{children}</a>;
     }
     default: return <span key={key}>{children}</span>;
