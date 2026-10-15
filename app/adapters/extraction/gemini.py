@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Mapping
 import hashlib
 import io
 import json
@@ -34,6 +35,19 @@ from app.domain.extraction import (
 from app.domain.sources import Source
 
 logger = logging.getLogger(__name__)
+
+
+def _render_prompt_template(template: str, values: Mapping[str, object]) -> str:
+    """Render only explicit double-brace variables; never evaluate user-authored template code."""
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace("{{" + key + "}}", str(value))
+    unresolved = re.findall(r"\{\{([a-zA-Z0-9_]+)\}\}", rendered)
+    if unresolved:
+        raise ValueError("Prompt template has unresolved variables: " + ", ".join(sorted(set(unresolved))))
+    if not rendered.strip():
+        raise ValueError("Resolved prompt template cannot be empty.")
+    return rendered
 
 
 class GeminiTopic(BaseModel):
@@ -77,9 +91,25 @@ class GeminiBookMapper(IBookMapper):
 source_reference اختياري ولا يوضع إلا إذا كان مدعوماً من الصفحات الممررة.
 حافظ على ترتيب ظهور الأقسام عندما يكون واضحاً."""
 
-    def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        client: genai.Client | None = None,
+        model: str | None = None,
+        prompts: Mapping[str, str] | None = None,
+    ) -> None:
         self.client = client or create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL")
+        # Durable discovery supplies a job-pinned snapshot. None is retained only
+        # for direct legacy adapter use; the production job runner always supplies it.
+        self.prompts = prompts
+
+    def _prompt(self, key: str, legacy_body: str) -> str:
+        if self.prompts is None:
+            return legacy_body
+        body = self.prompts.get(key)
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError(f"Pinned discovery prompt '{key}' is missing or empty.")
+        return body
 
     async def prepare_document(self, source: Source) -> DocumentReference:
         if source.mime_type != "application/pdf":
@@ -317,7 +347,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
     ) -> GeminiBookMap:
         bounded_pdf = self._bounded_pdf(reader, page_start, page_end)
         window_page_count = page_end - page_start + 1
-        prompt = (
+        legacy_section_prompt = (
             "هذه نافذة محدودة من كتاب وليست الكتاب كاملاً. "
             f"النافذة تحتوي {window_page_count} صفحة PDF، وتمثل الصفحات المطلقة {page_start}-{page_end} من الكتاب. "
             "حلّل فقط الصفحات الموجودة في الملف الممرر لك. "
@@ -328,6 +358,18 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             "استخرج البنية الموضوعية الظاهرة في هذه النافذة، ويمكن للموضوع أن يبدأ أو ينتهي خارجها؛ "
             "في هذه الحالة اجعل page_start/page_end حدوداً محافظة لما تثبته النافذة فقط. "
             "لا تنشئ مواد منشورات."
+        )
+        prompt = (
+            legacy_section_prompt
+            if self.prompts is None
+            else _render_prompt_template(
+                self._prompt("knowledge.book_map.section", ""),
+                {
+                    "window_page_count": window_page_count,
+                    "page_start": page_start,
+                    "page_end": page_end,
+                },
+            )
         )
         try:
             response = generate_gemini_content(
@@ -341,7 +383,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
                     "page_end": page_end,
                 },
                 contents=[
-                    self.SYSTEM_PROMPT,
+                    self._prompt("knowledge.book_map.system", self.SYSTEM_PROMPT),
                     prompt,
                     types.Part.from_bytes(data=bounded_pdf, mime_type="application/pdf"),
                 ],
@@ -501,7 +543,7 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
             ],
             ensure_ascii=False,
         )
-        prompt = f"""أنت الآن تقوم بدمج خرائط محلية متجاورة لكتاب واحد.
+        legacy_merge_prompt = f"""أنت الآن تقوم بدمج خرائط محلية متجاورة لكتاب واحد.
 ادمج فقط البنية المدعومة في الخرائط الممررة، بما في ذلك دمج الموضوعات المتصلة عبر حدود النوافذ عندما تدعمها الأدلة.
 رتّب الموضوعات حسب ظهورها في الكتاب.
 لا تخترع موضوعاً جديداً غير موجود في الخرائط.
@@ -518,6 +560,20 @@ source_reference اختياري ولا يوضع إلا إذا كان مدعوم�
 الخرائط:
 {payload}
 """
+        prompt = (
+            legacy_merge_prompt
+            if self.prompts is None
+            else _render_prompt_template(
+                self._prompt("knowledge.book_map.merge", ""),
+                {
+                    "page_count": page_count,
+                    "round_index": round_index,
+                    "batch_index": batch_index,
+                    "section_count": section_count,
+                    "payload": payload,
+                },
+            )
+        )
         try:
             response = generate_gemini_content(
                 self.client,
@@ -596,9 +652,25 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
 أعد source_reference فقط إذا كان مدعوماً من الصفحات الممررة. لا تخمن أرقام الصفحات.
 رقّم النتائج من 1 داخل هذا النطاق."""
 
-    def __init__(self, client: genai.Client | None = None, model: str | None = None) -> None:
+    def __init__(
+        self,
+        client: genai.Client | None = None,
+        model: str | None = None,
+        prompts: Mapping[str, str] | None = None,
+    ) -> None:
         self.client = client or create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL")
+        # Durable discovery supplies a job-pinned snapshot. None is retained only
+        # for direct legacy adapter use; the production job runner always supplies it.
+        self.prompts = prompts
+
+    def _prompt(self, key: str, legacy_body: str) -> str:
+        if self.prompts is None:
+            return legacy_body
+        body = self.prompts.get(key)
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError(f"Pinned discovery prompt '{key}' is missing or empty.")
+        return body
 
     async def discover_topic(
         self,
@@ -621,12 +693,26 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         if span.page_start < 1 or span.page_end < span.page_start:
             raise ValueError("Invalid discovery page span.")
         bounded_pdf = self._bounded_pdf(source.storage_path, span.page_start, span.page_end)
-        context = (
+        legacy_context = (
             f"عنوان الكتاب: {source.filename}\n"
             f"الموضوع: {topic.title}\n"
             f"وصف الموضوع: {topic.description}\n"
             f"نطاق المصدر الممرر: صفحات PDF {span.page_start}-{span.page_end}. "
             "تعامل مع هذا النطاق فقط ولا تفترض محتوى خارج الصفحات الممررة."
+        )
+        context = (
+            legacy_context
+            if self.prompts is None
+            else _render_prompt_template(
+                self._prompt("knowledge.material_discovery.context", ""),
+                {
+                    "source_name": source.filename,
+                    "topic_title": topic.title,
+                    "topic_description": topic.description,
+                    "page_start": span.page_start,
+                    "page_end": span.page_end,
+                },
+            )
         )
         logger.info(
             "event=GEMINI_BOUNDED_INPUT source_id=%s topic_id=%s chunk=%s pages=%s-%s bytes=%s",
@@ -639,7 +725,7 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
                 operation="DISCOVERING_MATERIALS",
                 context={"source_id": source.id, "topic_id": topic.id, "chunk_index": span.chunk_index},
                 contents=[
-                    self.SYSTEM_PROMPT,
+                    self._prompt("knowledge.material_discovery.system", self.SYSTEM_PROMPT),
                     context,
                     types.Part.from_bytes(data=bounded_pdf, mime_type="application/pdf"),
                 ],
