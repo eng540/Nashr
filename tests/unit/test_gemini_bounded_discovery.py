@@ -216,3 +216,9 @@ def test_book_map_uses_pinned_system_and_section_prompt_templates(tmp_path: Path
     assert calls[0]["contents"][0] == "تعليمات بنية الكتاب المنشورة"
     assert calls[0]["contents"][1] == "حلل النافذة 2-3 وعدد صفحاتها 2."
     assert (result.topics[0].page_start, result.topics[0].page_end) == (2, 3)
+
+def test_prompt_template_requires_its_dynamic_values_to_be_used() -> None:
+    from app.adapters.extraction.gemini import _render_prompt_template
+
+    with pytest.raises(ValueError, match="missing required variables"):
+        _render_prompt_template("الصفحة {{page_start}}", {"page_start": 1, "page_end": 2})
