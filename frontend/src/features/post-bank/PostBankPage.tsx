@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { postsApi } from "../../shared/api/postsApi";
 import { productionJobsApi, type ProductionLineFilter, type ProductionScope, type ProductionProductOption, type EditorialIdentityOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
 import { GenericArtifactReviewPanel } from "../artifacts/GenericArtifactReviewPanel";
@@ -76,6 +76,70 @@ function clearPendingClaim(key?: string) {
 }
 
 type SortMode = "created" | "title" | "kind" | "topic";
+
+const TELEGRAM_HTML_TAGS = new Set(["b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "span", "br"]);
+
+function isTelegramMarkupValid(content: string): boolean {
+  const tagPattern = /<\\/?([a-zA-Z][\\w-]*)([^>]*)>/g;
+  const tags = Array.from(content.matchAll(tagPattern));
+  const hasRichTag = tags.some((match) => TELEGRAM_HTML_TAGS.has(match[1].toLowerCase()));
+  if (!hasRichTag) return true;
+  const stack: string[] = [];
+  for (const match of tags) {
+    const tag = match[1].toLowerCase();
+    const closing = match[0].startsWith("</");
+    const selfClosing = /\\/>$/.test(match[0]) || tag === "br";
+    if (!TELEGRAM_HTML_TAGS.has(tag)) return false;
+    if (closing) {
+      if (stack.pop() !== tag) return false;
+    } else if (!selfClosing) {
+      stack.push(tag);
+    }
+  }
+  return stack.length === 0;
+}
+
+function renderTelegramNode(node: Node, key: string): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (!(node instanceof HTMLElement)) return null;
+  const tag = node.tagName.toLowerCase();
+  const children = Array.from(node.childNodes).map((child, index) => renderTelegramNode(child, `${key}-${index}`));
+  switch (tag) {
+    case "b": case "strong": return <strong key={key}>{children}</strong>;
+    case "i": case "em": return <em key={key}>{children}</em>;
+    case "u": case "ins": return <u key={key}>{children}</u>;
+    case "s": case "strike": case "del": return <del key={key}>{children}</del>;
+    case "code": return <code key={key} className="rounded bg-slate-100 px-1">{children}</code>;
+    case "pre": return <pre key={key} className="overflow-x-auto rounded-lg bg-slate-100 p-3 text-left" dir="ltr">{children}</pre>;
+    case "blockquote": return <blockquote key={key} className="my-2 border-r-4 border-slate-300 pr-3 text-slate-600">{children}</blockquote>;
+    case "br": return <br key={key} />;
+    case "span": return node.classList.contains("tg-spoiler") ? <span key={key} className="rounded bg-slate-800 text-slate-800 hover:text-white">{children}</span> : <span key={key}>{children}</span>;
+    case "a": {
+      const href = node.getAttribute("href") ?? "";
+      if (!/^(https?:\\/\\/|tg:\\/\\/)/i.test(href)) return <span key={key}>{children}</span>;
+      return <a key={key} href={href} target="_blank" rel="noreferrer" className="text-indigo-700 underline">{children}</a>;
+    }
+    default: return <span key={key}>{children}</span>;
+  }
+}
+
+function TelegramPreview({ content }: { content: string }) {
+  const valid = isTelegramMarkupValid(content);
+  const nodes = useMemo(() => {
+    if (!valid) return null;
+    const doc = new DOMParser().parseFromString(content, "text/html");
+    const hasRichTag = Array.from(doc.body.querySelectorAll("*")).some((element) => TELEGRAM_HTML_TAGS.has(element.tagName.toLowerCase()));
+    if (!hasRichTag) return content;
+    return Array.from(doc.body.childNodes).map((node, index) => renderTelegramNode(node, `telegram-preview-${index}`));
+  }, [content, valid]);
+  return <section className="mt-4 rounded-xl border bg-slate-50 p-4" aria-label="معاينة تيليجرام">
+    <div className="mb-2 flex items-center justify-between gap-2"><h4 className="text-sm font-bold">معاينة تيليجرام</h4><span className="text-xs text-slate-500">عرض تقني للتنسيق قبل الاعتماد</span></div>
+    {!valid
+      ? <p role="alert" className="text-sm text-rose-700">وسوم HTML غير متوازنة أو غير مدعومة. لن يقبل محول تيليجرام هذا التنسيق.</p>
+      : <div dir="auto" className="whitespace-pre-wrap break-words rounded-lg bg-white p-4 text-sm leading-7 text-slate-800">{nodes}</div>}
+  </section>;
+}
+
 
 export function PostBankPage() {
   const navigate = useNavigate();
@@ -385,7 +449,7 @@ export function PostBankPage() {
     {message && <div role="status" className="rounded-xl border bg-indigo-50 p-4 text-sm">{message}</div>}
     {workspaceView === "review" && (!hasLoaded ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="text-lg font-bold">بنك المنشورات جاهز</h3><p className="mt-2 text-sm text-slate-500">اختر كتابًا أو كل الكتب، ثم اضغط «عرض النتائج» لبدء التصفح.</p></div> : posts.isLoading && !posts.data ? <div role="status" className="rounded-2xl border bg-white p-10 text-center">جاري تحميل الصفحة الأولى فقط...</div> : posts.isError ? <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-5">تعذر تحميل المنشورات: {posts.error.message}</div> : <section className="space-y-3" aria-label="نتائج بنك المنشورات"><div className="rounded-2xl border bg-white p-4 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">النتائج</h3><p className="text-sm text-slate-500">{total ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} من ${total}` : "لا توجد نتائج"}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => toggleCurrentPage(!allCurrentSelected)} disabled={!items.length} className="rounded-xl border px-3 py-2 text-sm font-semibold">{allCurrentSelected ? "إلغاء تحديد الصفحة" : "تحديد الصفحة"}</button><span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold">{selected.length} محدد</span><button type="button" onClick={() => setSelected([])} disabled={!selected.length} className="rounded-xl border px-3 py-2 text-sm disabled:opacity-40">مسح التحديد</button></div></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => bulkApprove.mutate()} disabled={!selected.length || bulkApprove.isPending} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">اعتماد المحدد</button>{approvedSelected.length > 0 && <button data-testid="go-publishing" type="button" onClick={() => navigate(`/publishing?selected_post_ids=${approvedSelected.map((p) => p.post_id).join(",")}`)} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold">الانتقال إلى النشر ({approvedSelected.length})</button>}</div></div>{!items.length ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد نتائج مطابقة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير الكتاب أو الحالة أو النوع أو البحث.</p></div> : items.map((post) => { const checked = selected.includes(post.post_id); return <article key={post.post_id} className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex items-start gap-3"><input aria-label={`تحديد ${post.title}`} type="checkbox" checked={checked} onChange={(e) => setSelected(toggleSelection(selected, post.post_id, e.target.checked))} className="mt-1 h-4 w-4"/><button type="button" onClick={() => { setEditing(post.post_id); setContent(post.content); setReviewNote(post.review_note ?? ""); }} className="min-w-0 flex-1 text-right"><strong className="block">{post.title}</strong><span className="mt-1 block text-xs text-slate-500">{post.source_title} · {post.topic_title || "دون محور"} · {post.status}</span><p className="mt-2 text-sm leading-7 text-slate-600">{post.content_preview}</p></button></div></article>; })}<div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white p-4"><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0 || posts.isFetching} className="rounded-xl border px-4 py-2 disabled:opacity-40">السابق</button><span className="text-sm font-semibold">صفحة {page + 1} من {pageCount}</span><button type="button" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} disabled={page >= pageCount - 1 || posts.isFetching} className="rounded-xl border px-4 py-2 disabled:opacity-40">التالي</button></div></section>)}
 
-    {workspaceView === "review" && editing && <div className="fixed inset-0 z-20 grid place-items-center bg-slate-950/30 p-4"><div role="dialog" className="max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><h3 className="text-xl font-bold">مراجعة المنشور</h3><textarea aria-label="محتوى المنشور" value={content} onChange={(e) => setContent(e.target.value)} className="mt-4 min-h-48 w-full rounded-xl border p-4"/><input aria-label="ملاحظة المراجعة" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="ملاحظة أو سبب الرفض" className="mt-3 w-full rounded-xl border p-3"/><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={() => save.mutate()} disabled={save.isPending} className="rounded-xl border px-4 py-2 font-semibold">حفظ</button><button type="button" onClick={() => review.mutate({ id: editing, action: "approve" })} disabled={review.isPending} className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white">اعتماد</button><button type="button" onClick={() => review.mutate({ id: editing, action: "reject" })} disabled={review.isPending || !reviewNote.trim()} className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white">رفض</button><button type="button" onClick={() => setEditing(null)} className="rounded-xl bg-slate-100 px-4 py-2 font-semibold">إغلاق</button></div></div></div>}
+    {workspaceView === "review" && editing && <div className="fixed inset-0 z-20 grid place-items-center bg-slate-950/30 p-4"><div role="dialog" className="max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><h3 className="text-xl font-bold">مراجعة المنشور</h3><textarea aria-label="محتوى المنشور" value={content} onChange={(e) => setContent(e.target.value)} className="mt-4 min-h-48 w-full rounded-xl border p-4"/><p className="mt-2 text-xs leading-6 text-slate-500">يمكن استخدام تنسيق تيليجرام HTML مثل &lt;b&gt;النص البارز&lt;/b&gt; و&lt;blockquote&gt;الاقتباس&lt;/blockquote&gt;. المعاينة أدناه لعرض التنسيق فقط؛ الحكم التحريري لك.</p><TelegramPreview content={content} /><input aria-label="ملاحظة المراجعة" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="ملاحظة أو سبب الرفض" className="mt-3 w-full rounded-xl border p-3"/><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={() => save.mutate()} disabled={save.isPending} className="rounded-xl border px-4 py-2 font-semibold">حفظ</button><button type="button" onClick={() => review.mutate({ id: editing, action: "approve" })} disabled={review.isPending} className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white">اعتماد</button><button type="button" onClick={() => review.mutate({ id: editing, action: "reject" })} disabled={review.isPending || !reviewNote.trim()} className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white">رفض</button><button type="button" onClick={() => setEditing(null)} className="rounded-xl bg-slate-100 px-4 py-2 font-semibold">إغلاق</button></div></div></div>}
     {workspaceView === "review" && <GenericArtifactReviewPanel />}
   </section>;
 }
