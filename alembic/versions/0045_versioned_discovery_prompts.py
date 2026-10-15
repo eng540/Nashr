@@ -120,6 +120,7 @@ def upgrade() -> None:
         ).mappings().one()
         legacy_snapshot[spec["key"]] = {
             "key": spec["key"],
+            "template_id": str(template),
             "version_id": str(version["id"]),
             "version": version["version"],
             "body": version["body"],
