@@ -102,7 +102,7 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
             "experience": "A source-grounded editorial illustration",
         },
     }
-    resolved_context = {"output_contract": contract, "product": product}
+    resolved_context = {"output_contract": contract, "product": product, "identity": {"key": "TEST_IDENTITY", "version": 1, "definition": {"voice": "Calm, respectful"}}}
     generator, storage = FakeImageGenerator(), FakeArtifactStorage()
     capability = ProduceImageArtifactCapability(generator=generator, storage_factory=lambda: storage)
 
@@ -119,7 +119,7 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
                 "image_size": "1K",
                 "generation_prompt": (
                     "audience={{audience}}; experience={{experience}}; title={{source_title}}; "
-                    "source={{source_name}}; excerpt={{source_excerpt}}; style={{style_instructions}}"
+                    "source={{source_name}}; excerpt={{source_excerpt}}; identity={{identity_context}}; style={{style_instructions}}"
                 ),
             },
         )
@@ -147,6 +147,7 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
     assert "experience=A source-grounded editorial illustration" in generated_prompt
     assert "title=A literary scene" in generated_prompt
     assert "source=Test Book" in generated_prompt
+    assert "Calm, respectful" in generated_prompt
     assert "style=Editorial illustration" in generated_prompt
     assert "A source passage about a traveler crossing an ancient city at dawn." in generated_prompt
     assert storage.ensure_available_calls == 1
