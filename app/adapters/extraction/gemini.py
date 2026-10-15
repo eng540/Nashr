@@ -38,7 +38,10 @@ logger = logging.getLogger(__name__)
 
 
 def _render_prompt_template(template: str, values: Mapping[str, object]) -> str:
-    """Render only explicit double-brace variables; never evaluate user-authored template code."""
+    """Render explicit double-brace variables without evaluating user-authored code."""
+    missing = [key for key in values if "{{" + key + "}}" not in template]
+    if missing:
+        raise ValueError("Prompt template is missing required variables: " + ", ".join(sorted(missing)))
     rendered = template
     for key, value in values.items():
         rendered = rendered.replace("{{" + key + "}}", str(value))
