@@ -5,7 +5,9 @@ import pytest
 from pypdf import PdfReader, PdfWriter
 
 from app.adapters.extraction.gemini import (
+    GeminiBookMap,
     GeminiOperationError,
+    GeminiTopic,
     GeminiTopicMaterialDiscoverer,
     classify_gemini_error,
 )
@@ -171,3 +173,46 @@ def test_prompt_template_rejects_unresolved_variables() -> None:
 
     with pytest.raises(ValueError, match="unresolved variables"):
         _render_prompt_template("نطاق {{page_start}} إلى {{page_end}}", {"page_start": 1})
+
+def test_book_map_uses_pinned_system_and_section_prompt_templates(tmp_path: Path, monkeypatch) -> None:
+    from app.adapters.extraction.gemini import GeminiBookMapper
+
+    source_path = tmp_path / "book.pdf"
+    _pdf(source_path, 4)
+    source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
+    mapper = GeminiBookMapper(
+        client=FakeClient(),
+        prompts={
+            "knowledge.book_map.system": "تعليمات بنية الكتاب المنشورة",
+            "knowledge.book_map.section": "حلل النافذة {{page_start}}-{{page_end}} وعدد صفحاتها {{window_page_count}}.",
+        },
+    )
+    calls = []
+
+    class Response:
+        parsed = GeminiBookMap(
+            title="كتاب",
+            description="وصف",
+            topics=[
+                GeminiTopic(
+                    position=1,
+                    title="موضوع",
+                    description="وصف الموضوع",
+                    page_start=1,
+                    page_end=2,
+                )
+            ],
+        )
+        usage_metadata = None
+
+    def fake_generate(_client, **kwargs):
+        calls.append(kwargs)
+        return Response()
+
+    monkeypatch.setattr("app.adapters.extraction.gemini.generate_gemini_content", fake_generate)
+    reader = PdfReader(str(source_path))
+    result = mapper._map_section(source, reader, 2, 3, section_index=1)
+
+    assert calls[0]["contents"][0] == "تعليمات بنية الكتاب المنشورة"
+    assert calls[0]["contents"][1] == "حلل النافذة 2-3 وعدد صفحاتها 2."
+    assert (result.topics[0].page_start, result.topics[0].page_end) == (2, 3)
