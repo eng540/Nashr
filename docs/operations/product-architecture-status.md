@@ -1,5 +1,16 @@
 # Product Architecture — Operational Status
 
+## Current status — 2026-10-15
+
+- Main includes PR #140 (live text preview), PR #141 (versioned discovery prompts and Control Plane selection race fix), PR #142 (continuation roadmap/output-quality audit), and PR #143 (versioned image/video generation prompt templates).
+- Railway production deployment `14dd29e4-afd5-45fd-9e18-397a23e499bf` reports SUCCESS for merge commit `ee1074c875620e178c2a1baca271ee2e9e438a28`; application startup completed and `/health` returned HTTP 200. This proves deployment/health, not a visual review of generated media.
+- Image/video generation templates now live in versioned RecipeVersion configuration; newly published media recipes require valid templates. Historical recipe v1 paths remain for compatibility.
+- The Telegram publisher currently sends plain text without Markdown/HTML parsing. The generic artifact preview preserves line breaks. Product-specific text presentation instructions are being added as a field in the immutable product version, not as a new service/table.
+- No content was published to Telegram as part of these changes. Real output quality still requires sample-based review; CI and health status alone do not prove reader experience.
+
+The detailed deployment evidence below is a historical snapshot from 2026-10-13 and should not be interpreted as the current HEAD/deployment state.
+
+
 ## Product derivation acceptance boundary
 
 PR #133 tracks source product/version lineage and exposes field/component diffs. Migration 0044 leaves legacy products unlinked, enforces paired lineage references, and uses a composite foreign key so the source version must belong to the selected parent product. Downgrade is blocked when derived-product lineage exists to prevent silent data loss.
