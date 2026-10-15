@@ -153,6 +153,39 @@ def _upgrade_active_product_versions(bind, recipe_info):
             VALUES (:new_id, :previous_id)
         """), {"new_id": str(new_product_version_id), "previous_id": str(product["product_version_id"])})
 
+    drafts = bind.execute(sa.text("""
+        SELECT pv.id AS product_version_id, pv.definition
+        FROM production_product_versions pv
+        WHERE pv.status = 'DRAFT'
+          AND pv.definition->'component_versions'->'recipe'->>'key' = :recipe_key
+          AND pv.definition->'component_versions'->'recipe'->>'version_id' = :old_recipe_version_id
+    """), {
+        "recipe_key": recipe_info["recipe_key"],
+        "old_recipe_version_id": recipe_info["old_version_id"],
+    }).mappings().all()
+    for draft in drafts:
+        previous_definition = json.loads(json.dumps(draft["definition"]))
+        definition = json.loads(json.dumps(previous_definition))
+        recipe_reference = definition["component_versions"]["recipe"]
+        recipe_reference["version_id"] = recipe_info["new_version_id"]
+        recipe_reference["version"] = recipe_info["new_version"]
+        bind.execute(sa.text("""
+            UPDATE production_product_versions SET definition = CAST(:definition AS JSONB)
+            WHERE id = :id AND status = 'DRAFT'
+        """), {
+            "id": draft["product_version_id"],
+            "definition": json.dumps(definition, ensure_ascii=False),
+        })
+        bind.execute(sa.text("""
+            INSERT INTO media_prompt_updated_drafts
+                (product_version_id, new_recipe_version_id, previous_definition)
+            VALUES (:product_version_id, :new_recipe_version_id, CAST(:previous_definition AS JSONB))
+        """), {
+            "product_version_id": str(draft["product_version_id"]),
+            "new_recipe_version_id": recipe_info["new_version_id"],
+            "previous_definition": json.dumps(previous_definition, ensure_ascii=False),
+        })
+
 
 def upgrade() -> None:
     op.create_table(
@@ -164,6 +197,12 @@ def upgrade() -> None:
         "media_prompt_product_versions",
         sa.Column("product_version_id", sa.String(length=36), primary_key=True),
         sa.Column("previous_version_id", sa.String(length=36), nullable=False),
+    )
+    op.create_table(
+        "media_prompt_updated_drafts",
+        sa.Column("product_version_id", sa.String(length=36), primary_key=True),
+        sa.Column("new_recipe_version_id", sa.String(length=36), nullable=False),
+        sa.Column("previous_definition", sa.JSON(), nullable=False),
     )
     bind = op.get_bind()
     for recipe_key, (capability_key, prompt_template) in RECIPE_TEMPLATES.items():
@@ -179,6 +218,19 @@ def downgrade() -> None:
     product_versions = bind.execute(sa.text("""
         SELECT product_version_id, previous_version_id FROM media_prompt_product_versions
     """)).mappings().all()
+    updated_drafts = bind.execute(sa.text("""
+        SELECT product_version_id, new_recipe_version_id, previous_definition
+        FROM media_prompt_updated_drafts
+    """)).mappings().all()
+    for row in updated_drafts:
+        current = bind.execute(sa.text("""
+            SELECT status, definition FROM production_product_versions WHERE id = :id
+        """), {"id": row["product_version_id"]}).mappings().one_or_none()
+        if current is None or current["status"] != "DRAFT":
+            raise RuntimeError("Cannot downgrade media prompt migration: an updated draft is no longer a draft.")
+        current_recipe_id = current["definition"].get("component_versions", {}).get("recipe", {}).get("version_id")
+        if current_recipe_id != row["new_recipe_version_id"]:
+            raise RuntimeError("Cannot downgrade media prompt migration: an updated draft was edited after migration.")
 
     for row in product_versions:
         referenced = bind.execute(sa.text("""
@@ -194,6 +246,14 @@ def downgrade() -> None:
     for row in product_versions:
         bind.execute(sa.text("DELETE FROM production_product_versions WHERE id = :id"), {"id": row["product_version_id"]})
         bind.execute(sa.text("UPDATE production_product_versions SET status = 'PUBLISHED' WHERE id = :id"), {"id": row["previous_version_id"]})
+    for row in updated_drafts:
+        bind.execute(sa.text("""
+            UPDATE production_product_versions SET definition = CAST(:definition AS JSONB)
+            WHERE id = :id AND status = 'DRAFT'
+        """), {
+            "id": row["product_version_id"],
+            "definition": json.dumps(row["previous_definition"], ensure_ascii=False),
+        })
 
     for row in recipe_versions:
         referenced = bind.execute(sa.text("""
@@ -211,5 +271,6 @@ def downgrade() -> None:
         bind.execute(sa.text("DELETE FROM production_recipe_versions WHERE id = :id"), {"id": row["recipe_version_id"]})
         bind.execute(sa.text("UPDATE production_recipe_versions SET status = 'PUBLISHED' WHERE id = :id"), {"id": row["previous_version_id"]})
 
+    op.drop_table("media_prompt_updated_drafts")
     op.drop_table("media_prompt_product_versions")
     op.drop_table("media_prompt_recipe_versions")
