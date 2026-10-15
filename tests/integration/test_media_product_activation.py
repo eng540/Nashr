@@ -3,6 +3,7 @@ from uuid import uuid4
 import pytest
 
 from app.application.product_control_plane import ProductionProductControlPlaneService
+from app.application.recipe_control_plane import ProductionRecipeControlPlaneService
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -52,3 +53,18 @@ async def test_product_publication_rejects_recipe_output_contract_mismatch():
         )
         with pytest.raises(ValueError, match="incompatible with output contract"):
             await service.publish(product_key, 1)
+
+@pytest.mark.asyncio
+async def test_active_media_recipes_pin_editable_generation_prompt_templates():
+    async with SessionFactory() as session:
+        recipes = ProductionRecipeControlPlaneService(session)
+        for key, capability in (
+            ("BOOK_TO_IMAGE_ARTIFACT", "produce_image_artifact"),
+            ("BOOK_TO_VIDEO_ARTIFACT", "produce_video_artifact"),
+        ):
+            recipe = await recipes.get_recipe(key)
+            active = next(version for version in recipe["versions"] if version["status"] == "PUBLISHED")
+            stage = next(stage for stage in active["stages"] if stage["capability_key"] == capability)
+            assert active["version"] >= 2
+            assert isinstance(stage["configuration"].get("generation_prompt"), str)
+            assert stage["configuration"]["generation_prompt"].strip()
