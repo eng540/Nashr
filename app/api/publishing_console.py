@@ -59,11 +59,36 @@ NASHR_PUBLISHING_HTML = r'''<!doctype html>
   <div class="mt-6"><h3 class="font-bold">القادم</h3><div id="upcoming-list" class="mt-3 space-y-2"></div></div>
 </section>
 
-<section id="telegram-preview" class="fixed inset-0 z-50 hidden grid place-items-center bg-slate-900/60 p-4"><div class="w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl"><div class="flex items-center justify-between"><div><p class="text-xs font-bold text-indigo-600">Telegram Preview</p><h2 class="text-xl font-bold">المعاينة النهائية</h2></div><button id="telegram-preview-close" class="rounded-xl border px-3 py-2">إغلاق</button></div><p id="telegram-preview-meta" class="mt-3 text-xs text-slate-500"></p><pre id="telegram-preview-content" dir="rtl" class="mt-4 max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-2xl border bg-slate-50 p-5 text-sm leading-8"></pre></div></section>
+<section id="telegram-preview" class="fixed inset-0 z-50 hidden grid place-items-center bg-slate-900/60 p-4"><div class="w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl"><div class="flex items-center justify-between"><div><p class="text-xs font-bold text-indigo-600">Telegram Preview</p><h2 class="text-xl font-bold">المعاينة النهائية</h2></div><button id="telegram-preview-close" class="rounded-xl border px-3 py-2">إغلاق</button></div><p id="telegram-preview-meta" class="mt-3 text-xs text-slate-500"></p><div id="telegram-preview-content" dir="auto" class="mt-4 max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl border bg-slate-50 p-5 text-sm leading-8"></div></div></section>
 </main><script>
 const $=id=>document.getElementById(id);const setText=(id,value)=>{const el=$(id);if(el)el.textContent=value;};const setDisabled=(id,value)=>{const el=$(id);if(el)el.disabled=value;};const state={selectedPostIds:[],selectedPostMeta:{},eligiblePosts:[],scheduleIdempotencyKey:null,activeScheduleId:null,pendingActivationId:null};
 async function request(url,opt={}){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||'تعذر تنفيذ العملية.');return d;}
 function esc(t){return(t??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function renderTelegramPreview(content){
+  const target=$('telegram-preview-content');
+  const doc=new DOMParser().parseFromString(content||'','text/html');
+  const allowed=new Set(['b','strong','i','em','u','ins','s','strike','del','code','pre','a','blockquote','span','br']);
+  function copy(node){
+    if(node.nodeType===Node.TEXT_NODE)return document.createTextNode(node.textContent||'');
+    if(node.nodeType!==Node.ELEMENT_NODE)return document.createTextNode('');
+    const tag=node.tagName.toLowerCase();
+    if(!allowed.has(tag))throw Error('وسم HTML غير مدعوم: '+tag);
+    const out=document.createElement(tag);
+    if(tag==='a'){
+      const href=node.getAttribute('href')||'';
+      if(!/^(https?:\/\/|tg:\/\/)/i.test(href))throw Error('رابط غير مدعوم في المعاينة.');
+      out.setAttribute('href',href);out.setAttribute('target','_blank');out.setAttribute('rel','noreferrer');
+    }else if(tag==='span'&&node.getAttribute('class')==='tg-spoiler'){
+      out.setAttribute('class','tg-spoiler');
+    }else if(node.attributes.length){
+      throw Error('خاصية HTML غير مدعومة في المعاينة.');
+    }
+    node.childNodes.forEach(child=>out.append(copy(child)));
+    return out;
+  }
+  const nodes=Array.from(doc.body.childNodes).map(copy);
+  target.replaceChildren(...nodes);
+}
 
 function renderSelectionCount(){const count=state.selectedPostIds.length;setDisabled('schedule-from-selection',count===0);setText('post-selection-count',count+' محدد');setText('eligible-selection-count',count+' محدد');}
 async function renderScheduleSelection(){
@@ -99,7 +124,7 @@ async function showTelegramPreview(id){
   try{
     const p=await request('/posts/'+id+'/telegram-preview');
     $('telegram-preview-meta').textContent='Telegram · '+(p.destination||'لم يحدد الوجهة')+' · '+(p.status==='APPROVED'?'معتمد':'غير معتمد');
-    $('telegram-preview-content').textContent=p.content||'';
+    renderTelegramPreview(p.content||'');
     $('telegram-preview').classList.remove('hidden');
   }catch(e){alert(e.message);}
 }
