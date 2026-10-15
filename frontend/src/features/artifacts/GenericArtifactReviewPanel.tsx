@@ -102,7 +102,7 @@ export function GenericArtifactReviewPanel() {
               className="min-h-64 max-h-[36rem] overflow-y-auto rounded-xl border bg-slate-50 p-5 text-base leading-8 text-slate-800"
               style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", textAlign: "start" }}
             >{drafts[artifact.id]?.content ?? artifact.content}</div>
-            <p className="text-xs leading-5 text-slate-500">تحافظ المعاينة على فواصل الأسطر والفقرات كما هي في النص. وهي معاينة للنص العادي، وليست محاكاة كاملة لتنسيقات القناة المستهدفة.</p>
+            <p className="text-xs leading-5 text-slate-500">تحافظ المعاينة على فواصل الأسطر والفقرات كما هي. مسار Telegram الحالي يرسل النص نفسه كنص عادي دون تحويل Markdown/HTML، لذلك تُضبط سهولة القراءة عبر بنية الفقرات والمسافات وتعليمات المنتج. هذه معاينة للمحتوى وليست محاكاة كاملة لواجهة Telegram.</p>
           </section>
         </div> : <GenericArtifactMediaPreview artifact={artifact} />}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
