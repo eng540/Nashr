@@ -92,8 +92,7 @@ class GeminiBookMapper(IBookMapper):
     ) -> None:
         self.client = client or create_gemini_client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = model or os.getenv("GEMINI_MODEL")
-        # Durable discovery supplies a job-pinned snapshot. None is retained only
-        # for direct legacy adapter use; the production job runner always supplies it.
+        # AI generation requires the job-pinned Control Plane snapshot.
         self.prompts = prompts
 
     def _prompt(self, key: str) -> str:
