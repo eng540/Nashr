@@ -8,6 +8,8 @@
 
 ## Evidence inspected
 
+**Follow-up update — 2026-10-15:** The earlier findings below predate PRs #132–#143 in several places. Product manifest references are now implemented and immutable; PR #143 adds versioned media-generation prompt templates; the current follow-up adds product-versioned text presentation instructions. Read the current baseline and final-output audit for the latest state.
+
 - `app/domain/products.py`
 - `app/application/control_plane.py`
 - `app/domain/production_context.py`
@@ -21,7 +23,7 @@ This is a bounded audit of the product-to-context execution path. Database rows 
 
 ## Current implementation (confirmed by code)
 
-1. `ProductionProductDefinition` is a validated value object with `recipe_key`, `output_contract_key`, `policy_key`, `audience`, and `experience`. It does **not** currently declare identity or prompt references in this definition.
+1. `ProductionProductDefinition` is a validated, versioned value object with `recipe_key`, `output_contract_key`, `policy_key`, `audience`, `experience`, optional `prompt_key`/`identity_key`, optional immutable `component_versions`, and now optional product-specific `presentation_instructions`.
 2. `ControlPlaneResolver.resolve_product(session, key)` resolves the active product and returns a `PinnedProduct` containing product ID, version ID, key, version number, and a serialized definition.
 3. `ResolvedProductionContext` is an immutable, versioned snapshot (current schema version 6; supports schema versions 1–6). It has pinned types for prompt, identity, recipe, policy, output contract, and product. This establishes that the snapshot can represent multiple versioned components; it does not alone prove every product version selects all of them explicitly.
 4. `ProductionJobRunner` reads a persisted `resolved_context` and validates that its pinned prompt key/version/body agrees with legacy prompt pin fields. For legacy jobs without a context snapshot it uses the already-persisted prompt body and refuses to guess a missing prompt. The compatibility recipe for pre-snapshot jobs is `BOOK_TO_TELEGRAM_POST`.
