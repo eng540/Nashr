@@ -505,7 +505,7 @@ class GeminiBookMapper(IBookMapper):
             ],
             ensure_ascii=False,
         )
-        prompt = _render_prompt_template(
+        prompt = render_prompt_template(
             self._prompt("knowledge.book_map.merge"),
             {
                 "page_count": page_count,
@@ -624,7 +624,7 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         if span.page_start < 1 or span.page_end < span.page_start:
             raise ValueError("Invalid discovery page span.")
         bounded_pdf = self._bounded_pdf(source.storage_path, span.page_start, span.page_end)
-        context = _render_prompt_template(
+        context = render_prompt_template(
             self._prompt("knowledge.material_discovery.context"),
             {
                 "source_name": source.filename,
