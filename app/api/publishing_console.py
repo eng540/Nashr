@@ -76,7 +76,7 @@ function renderTelegramPreview(content){
     const out=document.createElement(tag);
     if(tag==='a'){
       const href=node.getAttribute('href')||'';
-      if(!/^(https?:\/\/|tg:\/\/)/i.test(href))throw Error('رابط غير مدعوم في المعاينة.');
+      if(!(href.startsWith('https://')||href.startsWith('http://')||href.startsWith('tg://')))throw Error('رابط غير مدعوم في المعاينة.');
       out.setAttribute('href',href);out.setAttribute('target','_blank');out.setAttribute('rel','noreferrer');
     }else if(tag==='span'&&node.getAttribute('class')==='tg-spoiler'){
       out.setAttribute('class','tg-spoiler');
