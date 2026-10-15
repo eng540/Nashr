@@ -123,7 +123,7 @@ function renderTelegramNode(node: Node, key: string): ReactNode {
   }
 }
 
-function TelegramPreview({ content }: { content: string }) {
+export function TelegramPreview({ content }: { content: string }) {
   const valid = isTelegramMarkupValid(content);
   const nodes = useMemo(() => {
     if (!valid) return null;
