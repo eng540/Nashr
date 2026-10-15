@@ -11,7 +11,7 @@ def test_image_recipe_accepts_editable_generation_prompt_with_required_variables
         configuration={
             "generation_prompt": (
                 "{{audience}} {{experience}} {{source_title}} {{source_name}} "
-                "{{source_excerpt}} {{style_instructions}}"
+                "{{source_excerpt}} {{identity_context}} {{style_instructions}}"
             ),
             "aspect_ratio": "4:5",
             "image_size": "1K",
@@ -47,7 +47,7 @@ def test_recipe_rejects_unknown_generation_prompt_variables() -> None:
         configuration={
             "generation_prompt": (
                 "{{audience}} {{experience}} {{source_title}} {{source_name}} "
-                "{{source_excerpt}} {{style_instructions}} {{unknown}}"
+                "{{source_excerpt}} {{identity_context}} {{style_instructions}} {{unknown}}"
             ),
         },
     )
