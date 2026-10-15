@@ -89,7 +89,7 @@ def _stage_system_prompt(context: ProductionExecutionContext, capability_key: st
         if presentation_instructions.strip():
             system_prompt = (
                 f"{system_prompt}\n\n"
-                "Product-specific presentation instructions (format and reader experience):\n"
+                "Product-specific presentation instructions (format and reader experience; preserve source fidelity, pinned identity, and policy):\n"
                 f"{presentation_instructions.strip()}"
             )
     return system_prompt
