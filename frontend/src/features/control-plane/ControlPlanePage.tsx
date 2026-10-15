@@ -92,6 +92,7 @@ function initialForm(_section: SectionKey, item?: ControlItem, version?: Version
     component_versions_json: asText(JSON.stringify(definition.component_versions ?? {}), "{}"),
     audience: asText(definition.audience),
     experience: asText(definition.experience),
+    presentation_instructions: asText(definition.presentation_instructions),
     identity_purpose: asText(definition.purpose, item?.purpose ?? ""),
     voice: asText(definition.voice),
     tone: asText(definition.tone),
@@ -153,6 +154,7 @@ function definitionFor(section: SectionKey, form: FormState, stages: StageForm[]
       identity_key: form.identity_key,
       audience: form.audience,
       experience: form.experience,
+      presentation_instructions: form.presentation_instructions,
     };
     let savedReferences: Record<string, unknown> = {};
     try {
@@ -599,8 +601,17 @@ export function ControlPlanePage() {
               options={[{ value: "", label: "اختر عقد مخرج..." }, ...(!publishedContracts.some((item) => item.key === form.output_contract_key) && form.output_contract_key ? [{ value: form.output_contract_key, label: form.output_contract_key + " · لا يوجد إصدار منشور" }] : []), ...publishedContracts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
             <Field label="الجمهور" value={form.audience} onChange={(value) => updateField("audience", value)} disabled={formDisabled} />
             <div className="md:col-span-2"><Field label="تجربة المنتج" value={form.experience} onChange={(value) => updateField("experience", value)} disabled={formDisabled} multiline /></div>
+             <div className="md:col-span-2"><Field
+               label="تعليمات العرض والتنسيق الخاصة بهذا المنتج"
+               value={form.presentation_instructions}
+               onChange={(value) => updateField("presentation_instructions", value)}
+               disabled={formDisabled}
+               multiline
+               placeholder="مثال: طول الفقرات، المسافات بينها، استخدام العناوين أو القوائم، وما يجب تجنبه في العرض النهائي."
+             /></div>
           </div>
-          <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">يتحقق الخادم من توافق الوصفة والسياسة وعقد المخرج عند النشر، وتظهر هنا رسالة السبب إذا رفض التحقق.</p>
+          <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">تعليمات العرض جزء من إصدار المنتج نفسه، وتُطبّق على المخرجات النصية دون تغيير دورة الإنتاج أو الهوية والسياسة المثبتتين.</p>
+           <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">يتحقق الخادم من توافق الوصفة والسياسة وعقد المخرج عند النشر، وتظهر هنا رسالة السبب إذا رفض التحقق.</p>
           {selected && <div className="rounded-xl border p-4"><h4 className="font-bold">مكونات الإصدار</h4><div className="mt-3 grid gap-3 sm:grid-cols-3">
             {[
               { label: "الوصفة", component: "recipe", key: form.recipe_key, item: publishedRecipes.find((item) => item.key === form.recipe_key) },
