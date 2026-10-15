@@ -68,3 +68,36 @@ async def test_active_media_recipes_pin_editable_generation_prompt_templates():
             assert active["version"] >= 2
             assert isinstance(stage["configuration"].get("generation_prompt"), str)
             assert stage["configuration"]["generation_prompt"].strip()
+
+@pytest.mark.asyncio
+async def test_new_media_recipe_cannot_publish_without_editable_generation_prompt():
+    recipe_key = f"TEST_IMAGE_PROMPT_RECIPE_{uuid4().hex.upper()}"
+    base_stage = {
+        "key": "generate-image",
+        "capability_key": "produce_image_artifact",
+        "capability_version": 1,
+        "configuration": {"aspect_ratio": "1:1", "image_size": "1K"},
+    }
+    valid_stage = {
+        **base_stage,
+        "configuration": {
+            **base_stage["configuration"],
+            "generation_prompt": (
+                "{{audience}} {{experience}} {{source_title}} {{source_name}} "
+                "{{source_excerpt}} {{style_instructions}}"
+            ),
+        },
+    }
+    async with SessionFactory() as session:
+        recipes = ProductionRecipeControlPlaneService(session)
+        await recipes.create_recipe(
+            recipe_key,
+            "Editable image prompt test",
+            "Ensure new media recipes do not rely on code-fixed prompts.",
+            [base_stage],
+        )
+        with pytest.raises(ValueError, match="generation_prompt"):
+            await recipes.publish(recipe_key, 1)
+        await recipes.update_draft(recipe_key, 1, [valid_stage])
+        published = await recipes.publish(recipe_key, 1)
+        assert published["status"] == "PUBLISHED"
