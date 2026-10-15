@@ -84,6 +84,7 @@ async def test_discovery_job_checkpoints_failure_and_resumes() -> None:
     }
     assert all(
         entry["key"] == key
+        and isinstance(entry["template_id"], str)
         and isinstance(entry["version_id"], str)
         and isinstance(entry["version"], int)
         and isinstance(entry["body"], str)
