@@ -252,6 +252,7 @@ export function ControlPlanePage() {
   const [form, setForm] = useState<FormState>(() => initialForm("products"));
   const [stages, setStages] = useState<StageForm[]>([{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "" }]);
   const [busy, setBusy] = useState(false);
+  const [selectingItem, setSelectingItem] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -323,26 +324,28 @@ export function ControlPlanePage() {
   }
 
   async function selectItem(item: ControlItem) {
-    let resolved = item;
-    if (activeSection === "prompts" || activeSection === "products") {
-      try {
+    setSelectingItem(true);
+    try {
+      let resolved = item;
+      if (activeSection === "prompts" || activeSection === "products") {
         resolved = await request<ControlItem>(section.endpoint + "/" + encodeURIComponent(item.key));
         setItemsBySection((current) => ({
           ...current,
           [activeSection]: current[activeSection].map((entry) => entry.key === resolved.key ? resolved : entry),
         }));
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "تعذر تحميل تفاصيل العنصر.");
-        return;
       }
+      const version = latestVersion(resolved);
+      setSelectedKey(resolved.key);
+      setSelectedVersionNumber(version?.version ?? null);
+      setForm(initialForm(activeSection, resolved, version));
+      setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "" }]);
+      setMessage("");
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "تعذر تحميل تفاصيل العنصر.");
+    } finally {
+      setSelectingItem(false);
     }
-    const version = latestVersion(resolved);
-    setSelectedKey(resolved.key);
-    setSelectedVersionNumber(version?.version ?? null);
-    setForm(initialForm(activeSection, resolved, version));
-    setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "" }]);
-    setMessage("");
-    setError("");
   }
 
   function changeVersion(number: number) {
@@ -459,7 +462,7 @@ export function ControlPlanePage() {
 
   const versionIsDraft = selectedVersion?.status === "DRAFT";
   // Editing a published version changes only local form state; saveDraft creates a new immutable draft version.
-  const formDisabled = busy;
+  const formDisabled = busy || selectingItem;
 
   return <section dir="rtl" className="space-y-6" data-testid="control-plane-workspace">
     <header className="space-y-2">
