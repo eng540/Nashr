@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.extraction.gemini import GeminiBookMapper, GeminiOperationError, GeminiTopicMaterialDiscoverer
+from app.application.control_plane import ControlPlaneResolver
 from app.application.discover_book import DiscoverBook
 from app.domain.extraction import DocumentReference
 from app.domain.sources import SourceStatus
@@ -35,6 +36,31 @@ class DiscoveryJobStage:
     BUILDING_BOOK_MAP = "BUILDING_BOOK_MAP"
     DISCOVERING_MATERIALS = "DISCOVERING_MATERIALS"
     FINALIZING = "FINALIZING"
+
+KNOWLEDGE_DISCOVERY_PROMPT_KEYS = (
+    "knowledge.book_map.system",
+    "knowledge.book_map.section",
+    "knowledge.book_map.merge",
+    "knowledge.material_discovery.system",
+    "knowledge.material_discovery.context",
+)
+
+
+async def _resolve_discovery_prompt_snapshot(session: AsyncSession) -> dict[str, dict[str, object]]:
+    """Capture the published knowledge-discovery prompts for one durable job."""
+    resolver = ControlPlaneResolver()
+    snapshot: dict[str, dict[str, object]] = {}
+    for key in KNOWLEDGE_DISCOVERY_PROMPT_KEYS:
+        prompt = await resolver.resolve_prompt(session, key)
+        if not prompt.body.strip():
+            raise ValueError(f"Published knowledge-discovery prompt '{key}' is empty.")
+        snapshot[key] = {
+            "key": prompt.key,
+            "version_id": str(prompt.version_id),
+            "version": prompt.version,
+            "body": prompt.body,
+        }
+    return snapshot
 
 
 async def create_discovery_job(session: AsyncSession, source_id: UUID) -> DiscoveryJobModel:
@@ -70,12 +96,14 @@ async def create_discovery_job(session: AsyncSession, source_id: UUID) -> Discov
     if completed is not None:
         return completed
 
+    resolved_prompts = await _resolve_discovery_prompt_snapshot(session)
     job = DiscoveryJobModel(
         id=uuid4(),
         source_id=source_id,
         status=DiscoveryJobStatus.QUEUED,
         stage=DiscoveryJobStage.PREPARING_DOCUMENT,
         retryable=True,
+        resolved_prompts=resolved_prompts,
     )
     source.status = SourceStatus.STORED.value
     session.add(job)
@@ -437,4 +465,37 @@ class DiscoveryJobRunner:
 
 
 async def run_discovery_job(job_id: UUID) -> None:
-    await DiscoveryJobRunner(GeminiBookMapper(), GeminiTopicMaterialDiscoverer()).run(job_id)
+    async with SessionFactory() as session:
+        job = (await session.execute(
+            select(DiscoveryJobModel).where(DiscoveryJobModel.id == job_id)
+        )).scalar_one_or_none()
+        if job is None:
+            return
+        snapshot = job.resolved_prompts
+        if not isinstance(snapshot, dict):
+            prompts = None
+        else:
+            prompts = {
+                key: entry.get("body")
+                for key in KNOWLEDGE_DISCOVERY_PROMPT_KEYS
+                if isinstance((entry := snapshot.get(key)), dict)
+            }
+        if prompts is None or set(prompts) != set(KNOWLEDGE_DISCOVERY_PROMPT_KEYS) or any(
+            not isinstance(body, str) or not body.strip() for body in prompts.values()
+        ):
+            job.status = DiscoveryJobStatus.FAILED
+            job.error_code = "DISCOVERY_PROMPTS_UNAVAILABLE"
+            job.error_message = "The job has no complete pinned knowledge-discovery prompt snapshot."
+            job.retryable = False
+            job.completed_at = datetime.now(timezone.utc)
+            job.updated_at = job.completed_at
+            await session.commit()
+            logger.error("event=DISCOVERY_PROMPTS_UNAVAILABLE job_id=%s", job_id)
+            return
+
+    # Resume always uses the immutable snapshot captured when the job was created;
+    # publishing a new prompt version cannot change an in-flight discovery job.
+    await DiscoveryJobRunner(
+        GeminiBookMapper(prompts=prompts),
+        GeminiTopicMaterialDiscoverer(prompts=prompts),
+    ).run(job_id)
