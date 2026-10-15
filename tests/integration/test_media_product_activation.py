@@ -68,6 +68,7 @@ async def test_active_media_recipes_pin_editable_generation_prompt_templates():
             assert active["version"] >= 2
             assert isinstance(stage["configuration"].get("generation_prompt"), str)
             assert stage["configuration"]["generation_prompt"].strip()
+            validate_recipe_stage_configuration(RecipeStage.from_dict(stage))
 
 @pytest.mark.asyncio
 async def test_new_media_recipe_cannot_publish_without_editable_generation_prompt():
