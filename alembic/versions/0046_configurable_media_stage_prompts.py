@@ -83,7 +83,7 @@ def _new_recipe_version(bind, recipe_key: str, capability_key: str, prompt_templ
 
     bind.execute(sa.text("""
         UPDATE production_recipe_versions SET status = 'ARCHIVED'
-        WHERE id = :id AND status = 'PUBLISHED'
+        WHERE id = CAST(:id AS UUID) AND status = 'PUBLISHED'
     """), {"id": active["version_id"]})
     bind.execute(sa.text("""
         INSERT INTO production_recipe_versions (id, recipe_id, version, definition, status)
@@ -137,7 +137,7 @@ def _upgrade_active_product_versions(bind, recipe_info):
         new_product_version_id = uuid4()
         bind.execute(sa.text("""
             UPDATE production_product_versions SET status = 'ARCHIVED'
-            WHERE id = :id AND status = 'PUBLISHED'
+            WHERE id = CAST(:id AS UUID) AND status = 'PUBLISHED'
         """), {"id": product["product_version_id"]})
         bind.execute(sa.text("""
             INSERT INTO production_product_versions (id, product_id, version, definition, status)
@@ -171,7 +171,7 @@ def _upgrade_active_product_versions(bind, recipe_info):
         recipe_reference["version"] = recipe_info["new_version"]
         bind.execute(sa.text("""
             UPDATE production_product_versions SET definition = CAST(:definition AS JSONB)
-            WHERE id = :id AND status = 'DRAFT'
+            WHERE id = CAST(:id AS UUID) AND status = 'DRAFT'
         """), {
             "id": draft["product_version_id"],
             "definition": json.dumps(definition, ensure_ascii=False),
@@ -224,7 +224,7 @@ def downgrade() -> None:
     """)).mappings().all()
     for row in updated_drafts:
         current = bind.execute(sa.text("""
-            SELECT status, definition FROM production_product_versions WHERE id = :id
+            SELECT status, definition FROM production_product_versions WHERE id = CAST(:id AS UUID)
         """), {"id": row["product_version_id"]}).mappings().one_or_none()
         if current is None or current["status"] != "DRAFT":
             raise RuntimeError("Cannot downgrade media prompt migration: an updated draft is no longer a draft.")
@@ -244,12 +244,12 @@ def downgrade() -> None:
             raise RuntimeError("Cannot downgrade media prompt migration: a generated product version is in use.")
 
     for row in product_versions:
-        bind.execute(sa.text("DELETE FROM production_product_versions WHERE id = :id"), {"id": row["product_version_id"]})
-        bind.execute(sa.text("UPDATE production_product_versions SET status = 'PUBLISHED' WHERE id = :id"), {"id": row["previous_version_id"]})
+        bind.execute(sa.text("DELETE FROM production_product_versions WHERE id = CAST(:id AS UUID)"), {"id": row["product_version_id"]})
+        bind.execute(sa.text("UPDATE production_product_versions SET status = 'PUBLISHED' WHERE id = CAST(:id AS UUID)"), {"id": row["previous_version_id"]})
     for row in updated_drafts:
         bind.execute(sa.text("""
             UPDATE production_product_versions SET definition = CAST(:definition AS JSONB)
-            WHERE id = :id AND status = 'DRAFT'
+            WHERE id = CAST(:id AS UUID) AND status = 'DRAFT'
         """), {
             "id": row["product_version_id"],
             "definition": json.dumps(row["previous_definition"], ensure_ascii=False),
@@ -259,7 +259,7 @@ def downgrade() -> None:
         active_successor = bind.execute(sa.text("""
             SELECT 1
             FROM production_recipe_versions current
-            JOIN production_recipe_versions migrated ON migrated.id = :version_id
+            JOIN production_recipe_versions migrated ON migrated.id = CAST(:version_id AS UUID)
             WHERE current.recipe_id = migrated.recipe_id
               AND current.status = 'PUBLISHED'
               AND current.id <> migrated.id
@@ -279,8 +279,8 @@ def downgrade() -> None:
             raise RuntimeError("Cannot downgrade media prompt migration: a generated recipe version is in use.")
 
     for row in recipe_versions:
-        bind.execute(sa.text("DELETE FROM production_recipe_versions WHERE id = :id"), {"id": row["recipe_version_id"]})
-        bind.execute(sa.text("UPDATE production_recipe_versions SET status = 'PUBLISHED' WHERE id = :id"), {"id": row["previous_version_id"]})
+        bind.execute(sa.text("DELETE FROM production_recipe_versions WHERE id = CAST(:id AS UUID)"), {"id": row["recipe_version_id"]})
+        bind.execute(sa.text("UPDATE production_recipe_versions SET status = 'PUBLISHED' WHERE id = CAST(:id AS UUID)"), {"id": row["previous_version_id"]})
 
     op.drop_table("media_prompt_updated_drafts")
     op.drop_table("media_prompt_product_versions")
