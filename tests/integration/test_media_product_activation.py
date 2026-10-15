@@ -4,6 +4,7 @@ import pytest
 
 from app.application.product_control_plane import ProductionProductControlPlaneService
 from app.application.recipe_control_plane import ProductionRecipeControlPlaneService
+from app.domain.recipes import RecipeStage, validate_recipe_stage_configuration
 from app.infrastructure.database.session import SessionFactory
 
 
