@@ -231,3 +231,10 @@ def test_prompt_template_requires_its_dynamic_values_to_be_used() -> None:
 
     with pytest.raises(ValueError, match="missing required variables"):
         _render_prompt_template("الصفحة {{page_start}}", {"page_start": 1, "page_end": 2})
+
+def test_prompt_template_does_not_reinterpret_braces_inside_source_values() -> None:
+    from app.adapters.extraction.gemini import _render_prompt_template
+
+    assert _render_prompt_template("المادة: {{source_text}}", {"source_text": "{{not_a_template_variable}}"}) == (
+        "المادة: {{not_a_template_variable}}"
+    )
