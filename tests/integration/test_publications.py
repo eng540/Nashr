@@ -78,7 +78,7 @@ async def test_publication_uses_explicit_artifact_content() -> None:
             id=post.id,
             source_knowledge_unit_id=post.knowledge_unit_id,
             kind=ArtifactKind.POST,
-            content="**Artifact canonical content**",
+            content="Paragraph one.\n\nParagraph two.",
             status="AVAILABLE",
             editorial_status="APPROVED",
             post_id=post.id,
