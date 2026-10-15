@@ -102,7 +102,25 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
             "experience": "A source-grounded editorial illustration",
         },
     }
-    resolved_context = {"output_contract": contract, "product": product, "identity": {"key": "TEST_IDENTITY", "version": 1, "definition": {"voice": "Calm, respectful"}}}
+    resolved_context = {
+        "output_contract": contract,
+        "product": product,
+        "identity": {
+            "identity_id": str(uuid4()),
+            "version_id": str(uuid4()),
+            "key": "TEST_IDENTITY",
+            "version": 1,
+            "definition": {
+                "purpose": "Test visual identity",
+                "audience": "Readers",
+                "voice": "Calm, respectful",
+                "tone": "measured",
+                "principles": ["source-grounded"],
+                "objectives": ["clear visual storytelling"],
+                "constraints": [],
+            },
+        },
+    }
     generator, storage = FakeImageGenerator(), FakeArtifactStorage()
     capability = ProduceImageArtifactCapability(generator=generator, storage_factory=lambda: storage)
 
