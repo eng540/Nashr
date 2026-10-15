@@ -171,7 +171,7 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
                 raise ValueError("produce_image_artifact generation_prompt must be a non-empty template up to 12000 characters.")
             validate_template_variables(
                 generation_prompt,
-                {"audience", "experience", "source_title", "source_name", "source_excerpt", "style_instructions"},
+                {"audience", "experience", "source_title", "source_name", "source_excerpt", "identity_context", "style_instructions"},
             )
 
 
