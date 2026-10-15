@@ -185,11 +185,15 @@ def downgrade() -> None:
             SELECT 1 FROM production_jobs
             WHERE resolved_context->'product'->>'version_id' = :version_id
             UNION ALL
-            SELECT 1 FROM production_products WHERE derived_from_version_id = :version_id
+            SELECT 1 FROM production_products WHERE derived_from_version_id = CAST(:version_id AS UUID)
             LIMIT 1
         """), {"version_id": row["product_version_id"]}).scalar_one_or_none()
         if referenced is not None:
             raise RuntimeError("Cannot downgrade media prompt migration: a generated product version is in use.")
+
+    for row in product_versions:
+        bind.execute(sa.text("DELETE FROM production_product_versions WHERE id = :id"), {"id": row["product_version_id"]})
+        bind.execute(sa.text("UPDATE production_product_versions SET status = 'PUBLISHED' WHERE id = :id"), {"id": row["previous_version_id"]})
 
     for row in recipe_versions:
         referenced = bind.execute(sa.text("""
@@ -203,9 +207,6 @@ def downgrade() -> None:
         if referenced is not None:
             raise RuntimeError("Cannot downgrade media prompt migration: a generated recipe version is in use.")
 
-    for row in product_versions:
-        bind.execute(sa.text("DELETE FROM production_product_versions WHERE id = :id"), {"id": row["product_version_id"]})
-        bind.execute(sa.text("UPDATE production_product_versions SET status = 'PUBLISHED' WHERE id = :id"), {"id": row["previous_version_id"]})
     for row in recipe_versions:
         bind.execute(sa.text("DELETE FROM production_recipe_versions WHERE id = :id"), {"id": row["recipe_version_id"]})
         bind.execute(sa.text("UPDATE production_recipe_versions SET status = 'PUBLISHED' WHERE id = :id"), {"id": row["previous_version_id"]})
