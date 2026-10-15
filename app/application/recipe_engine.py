@@ -75,6 +75,23 @@ def _stage_system_prompt(context: ProductionExecutionContext, capability_key: st
         if not isinstance(style_instructions, str) or not style_instructions.strip():
             raise ValueError(f"{capability_key} style_instructions must be a non-empty string.")
         system_prompt = f"{system_prompt}\n\nRecipe-specific instructions:\n{style_instructions.strip()}"
+
+    product = context.resolved_context.get("product") if isinstance(context.resolved_context, Mapping) else None
+    product_definition = product.get("definition") if isinstance(product, Mapping) else None
+    presentation_instructions = (
+        product_definition.get("presentation_instructions")
+        if isinstance(product_definition, Mapping)
+        else None
+    )
+    if presentation_instructions is not None:
+        if not isinstance(presentation_instructions, str):
+            raise ValueError("Product presentation_instructions must be a string.")
+        if presentation_instructions.strip():
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                "Product-specific presentation instructions (format and reader experience):\n"
+                f"{presentation_instructions.strip()}"
+            )
     return system_prompt
 
 
