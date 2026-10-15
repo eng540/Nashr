@@ -31,7 +31,7 @@ type StageForm = { key: string; capability_key: string; capability_version: stri
 type FormState = Record<string, string>;
 
 const sections: Array<{ key: SectionKey; label: string; description: string; endpoint: string }> = [
-  { key: "products", label: "المنتجات", description: "تعريف المنتج يربط الوصفة والسياسة وعقد المخرج.", endpoint: "/api/control/products" },
+  { key: "products", label: "المنتجات", description: "تعريف المنتج يربط المكونات ويحدد تعليمات العرض الخاصة بالمخرج النصي.", endpoint: "/api/control/products" },
   { key: "recipes", label: "الوصفات", description: "مراحل الإنتاج وقدراتها المدعومة.", endpoint: "/api/control/recipes" },
   { key: "identities", label: "الهويات التحريرية", description: "الصوت والنبرة والجمهور والمبادئ التحريرية.", endpoint: "/api/control/identities" },
   { key: "policies", label: "السياسات", description: "قواعد قبول المحتوى وحدوده.", endpoint: "/api/control/policies" },
