@@ -16,6 +16,7 @@ class ProductionProductDefinition:
     prompt_key: str | None = None
     identity_key: str | None = None
     component_versions: dict[str, dict[str, object]] | None = None
+    presentation_instructions: str = ""
 
     def __post_init__(self) -> None:
         for field in ("recipe_key", "output_contract_key", "policy_key", "audience", "experience"):
@@ -28,6 +29,10 @@ class ProductionProductDefinition:
         for field in ("audience", "experience"):
             if len(getattr(self, field)) > 2000:
                 raise ValueError(f"Product {field} cannot exceed 2000 characters.")
+        if not isinstance(self.presentation_instructions, str):
+            raise ValueError("Product presentation_instructions must be a string.")
+        if len(self.presentation_instructions) > 12000:
+            raise ValueError("Product presentation_instructions cannot exceed 12000 characters.")
         for field in ("prompt_key", "identity_key"):
             value = getattr(self, field)
             if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 200):
@@ -78,6 +83,8 @@ class ProductionProductDefinition:
             value["component_versions"] = {
                 key: dict(reference) for key, reference in self.component_versions.items()
             }
+        if self.presentation_instructions.strip():
+            value["presentation_instructions"] = self.presentation_instructions.strip()
         return value
 
     @classmethod
@@ -85,7 +92,7 @@ class ProductionProductDefinition:
         if not isinstance(value, dict):
             raise ValueError("Product definition must be an object.")
         required = {"recipe_key", "output_contract_key", "policy_key", "audience", "experience"}
-        optional = {"prompt_key", "identity_key", "component_versions"}
+        optional = {"prompt_key", "identity_key", "component_versions", "presentation_instructions"}
         if not required.issubset(value) or set(value) - required - optional:
             raise ValueError("Product definition contains missing or unsupported fields.")
         if any(not isinstance(value[field], str) for field in required):
@@ -93,6 +100,8 @@ class ProductionProductDefinition:
         for field in ("prompt_key", "identity_key"):
             if field in value and value[field] is not None and not isinstance(value[field], str):
                 raise ValueError(f"Product {field} must be a string or null.")
+        if "presentation_instructions" in value and not isinstance(value["presentation_instructions"], str):
+            raise ValueError("Product presentation_instructions must be a string.")
         component_versions = value.get("component_versions")
         if component_versions is not None and not isinstance(component_versions, dict):
             raise ValueError("Product component_versions must be an object.")
@@ -101,4 +110,5 @@ class ProductionProductDefinition:
             prompt_key=value.get("prompt_key"),
             identity_key=value.get("identity_key"),
             component_versions=component_versions,
+            presentation_instructions=value.get("presentation_instructions", ""),
         )
