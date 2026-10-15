@@ -116,7 +116,7 @@ async def test_topic_discovery_falls_back_to_valid_structured_json_when_parsed_i
     source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
     topic = BookTopic.create(source.id, 1, "Topic", "Description", "pages 1-2", 1, 2)
     client = FakeUnparsedClient('{"ideas": []}')
-    discoverer = GeminiTopicMaterialDiscoverer(client=client)
+    discoverer = GeminiTopicMaterialDiscoverer(client=client, prompts=TEST_DISCOVERY_PROMPTS)
 
     ideas = await discoverer.discover_topic(
         source,
@@ -135,7 +135,7 @@ async def test_topic_discovery_rejects_empty_response_when_parsed_is_none(tmp_pa
     source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
     topic = BookTopic.create(source.id, 1, "Topic", "Description", "pages 1-2", 1, 2)
     client = FakeUnparsedClient("")
-    discoverer = GeminiTopicMaterialDiscoverer(client=client)
+    discoverer = GeminiTopicMaterialDiscoverer(client=client, prompts=TEST_DISCOVERY_PROMPTS)
 
     with pytest.raises(GeminiOperationError, match="empty material-discovery response"):
         await discoverer.discover_topic(
