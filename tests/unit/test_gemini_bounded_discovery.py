@@ -133,3 +133,41 @@ async def test_topic_discovery_rejects_empty_response_when_parsed_is_none(tmp_pa
             DocumentReference("unused", "fake://unused", "application/pdf"),
             DiscoverySpan(1, 2, 1),
         )
+
+@pytest.mark.asyncio
+async def test_topic_discovery_uses_pinned_editable_prompts_and_renders_context_variables(tmp_path: Path) -> None:
+    source_path = tmp_path / "book.pdf"
+    _pdf(source_path, 3)
+    source = Source.stored("book.pdf", "application/pdf", str(source_path), source_path.stat().st_size)
+    topic = BookTopic.create(source.id, 1, "باب الصبر", "معانٍ حول الصبر", "pages 1-2", 1, 2)
+    client = FakeClient()
+    discoverer = GeminiTopicMaterialDiscoverer(
+        client=client,
+        prompts={
+            "knowledge.material_discovery.system": "تعليمات اختبار قابلة للتغيير",
+            "knowledge.material_discovery.context": (
+                "مصدر={{source_name}}؛ موضوع={{topic_title}}؛ وصف={{topic_description}}؛ "
+                "صفحات={{page_start}}-{{page_end}}"
+            ),
+        },
+    )
+
+    await discoverer.discover_topic(
+        source,
+        topic,
+        DocumentReference("unused", "fake://unused", "application/pdf"),
+        DiscoverySpan(1, 2, 1),
+    )
+
+    contents = client.models.calls[0]["contents"]
+    assert contents[0] == "تعليمات اختبار قابلة للتغيير"
+    assert contents[1] == (
+        "مصدر=book.pdf؛ موضوع=باب الصبر؛ وصف=معانٍ حول الصبر؛ صفحات=1-2"
+    )
+
+
+def test_prompt_template_rejects_unresolved_variables() -> None:
+    from app.adapters.extraction.gemini import _render_prompt_template
+
+    with pytest.raises(ValueError, match="unresolved variables"):
+        _render_prompt_template("نطاق {{page_start}} إلى {{page_end}}", {"page_start": 1})
