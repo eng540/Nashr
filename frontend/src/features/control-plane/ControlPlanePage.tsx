@@ -602,7 +602,7 @@ export function ControlPlanePage() {
             <Field label="الجمهور" value={form.audience} onChange={(value) => updateField("audience", value)} disabled={formDisabled} />
             <div className="md:col-span-2"><Field label="تجربة المنتج" value={form.experience} onChange={(value) => updateField("experience", value)} disabled={formDisabled} multiline /></div>
              <div className="md:col-span-2"><Field
-               label="تعليمات العرض والتنسيق الخاصة بهذا المنتج"
+               label="تعليمات العرض للنصوص والمنشورات"
                value={form.presentation_instructions}
                onChange={(value) => updateField("presentation_instructions", value)}
                disabled={formDisabled}
@@ -610,7 +610,7 @@ export function ControlPlanePage() {
                placeholder="مثال: طول الفقرات، المسافات بينها، استخدام العناوين أو القوائم، وما يجب تجنبه في العرض النهائي."
              /></div>
           </div>
-          <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">تعليمات العرض جزء من إصدار المنتج نفسه، وتُطبّق على المخرجات النصية دون تغيير دورة الإنتاج أو الهوية والسياسة المثبتتين.</p>
+          <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">هذه التعليمات تخص مخرجات TEXT/POST وتُثبت مع إصدار المنتج؛ أما الصورة والفيديو والصوت فلها توجيهات مرحلية في الوصفة.</p>
            <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">يتحقق الخادم من توافق الوصفة والسياسة وعقد المخرج عند النشر، وتظهر هنا رسالة السبب إذا رفض التحقق.</p>
           {selected && <div className="rounded-xl border p-4"><h4 className="font-bold">مكونات الإصدار</h4><div className="mt-3 grid gap-3 sm:grid-cols-3">
             {[
