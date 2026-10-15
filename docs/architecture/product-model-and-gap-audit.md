@@ -33,19 +33,18 @@ This is a bounded audit of the product-to-context execution path. Database rows 
 
 ## Gap classification
 
-| Requirement | Observed status | Evidence / limit | Required acceptance |
+| Requirement | Current status as of 2026-10-15 | Evidence / limit | Acceptance / follow-up |
 |---|---|---|---|
-| Versioned product entity and active version resolution | Implemented in part | Resolver returns product ID/version ID and definition; inspect repositories/migrations during implementation | Test publish immutability and exact version resolution |
-| Product definition declares recipe, policy, output contract, audience, experience | Implemented | `app/domain/products.py` | Preserve validation and test compatibility |
-| Product explicitly declares prompt and identity versions/references | Gap in product definition | These are pinned separately in context; not fields in `ProductionProductDefinition` | Decide whether product version should select them explicitly; prevent silent defaults |
-| Context pins prompt/identity/recipe/policy/output contract/product | Representable and partially integrated | `production_context.py`, `production_jobs.py` | Trace all creation, resume, retry, and legacy paths |
-| No silent generic prompt fallback | Partially protected | Runner rejects jobs lacking an existing pinned prompt; prompt resolution at job creation still needs full path verification | API/service tests for missing/invalid product prompt configuration |
-| Product derivation / parent lineage / component diff | Not proven in inspected code | UI supports versioned product management per PR #123, but no evidence here establishes derivation semantics | Implement only after checking all product APIs/models and adding lineage tests |
-| Component compatibility preflight | Partially present | PR #124 made server validation authoritative; scope of checks must be verified against runtime capability constraints | Test product/recipe/output contract/provider compatibility before run |
-| Experience reaches provider behavior | Partially implemented | Audience and experience appended to editorial prompt in runner; modality-specific execution not verified | Per-capability tests, not a generic assertion |
-| Video duration consistency | Unresolved | Prior observed 5-second recipe setting conflicts with intended experience; provider capability/current product row not inspected here | Read product/version/recipe/provider limits, pass supported duration, inspect actual output metadata |
-| `QUL_WA_LA_TAQUL_VIDEO` previous job and artifact | Unverified | No production DB/API query performed in this audit | Read-only production inspection before any new run |
-| UI split: control vs factory | Implemented in part | PR #123 integrated product control UI; PR #127 reorganized factory; main commit #128 includes follow-up | Browser acceptance and current deployed-commit check remain separate |
+| Versioned product entity, immutable manifest, and active version resolution | Implemented | `ProductionProductDefinition`, `ControlPlaneResolver`, PRs #132–#133; current product definitions also support versioned presentation instructions | Preserve immutability and add tests for each new product field |
+| Product explicitly pins prompt, identity, recipe, policy, and output-contract versions | Implemented | `component_versions` manifest and `ResolvedProductionContext`; published product versions retain exact component references | Continue checking modality-specific consumption, not only manifest presence |
+| Context pins prompt/identity/recipe/policy/output contract/product | Implemented for product-backed production jobs | `production_context.py`, `production_jobs.py`; extraction prompts are separately snapshotted on `DiscoveryJob` by PR #141 | Protect creation, resume, retry, and legacy compatibility paths with focused tests |
+| No silent generic prompt fallback | Implemented for the inspected product-backed paths; legacy compatibility remains explicit | Prompt/identity resolution and job snapshots; PR #141 removes active discovery-path hardcoded prompts | Any new capability must either consume pinned instructions or declare why it does not need them |
+| Product derivation / parent lineage / component diff | Implemented | PR #133 added independent product derivation and lineage/diff | Preserve lineage when creating new product versions |
+| Component compatibility preflight | Implemented for the current manifest/recipe/policy/output-contract checks | Server-side publication validation is authoritative; provider-specific readiness remains capability-dependent | Extend only where a concrete compatibility gap is demonstrated |
+| Experience reaches provider behavior | Implemented for inspected text/image/video paths | Audience/experience are composed into the respective prompts; PR #143 makes image/video generation templates editable and versioned | Continue adding per-capability assertions for new output types |
+| Video duration consistency | Historical observation from 2026-10-13; not treated as a current gap without a fresh check | Earlier audit recorded a 5-second recipe; current provider/output acceptance was not re-queried in that historical audit | Recheck only if a current product requirement or output sample demonstrates a mismatch |
+| `QUL_WA_LA_TAQUL_VIDEO` previous job and artifact | Historical observation, not a reason to rerun production automatically | The earlier audit did not query production rows; no current claim is made here | Do not trigger paid generation merely to close this historical note |
+| UI split: Control Plane, Factory, Publishing | Implemented in code; live deployment acceptance is a separate concern | Current workspace routes and Control Plane UI | Verify a specific live regression only when evidence points to one |
 
 ## Recommended target (decision proposal, not yet an implementation claim)
 
