@@ -23,6 +23,7 @@ from app.adapters.gemini_policy import (
     create_gemini_client,
     generate_content as generate_gemini_content,
 )
+from app.domain.prompt_templates import render_prompt_template
 from app.domain.book_map import BookMap, BookTopic
 from app.domain.extraction import (
     DiscoverySpan,
@@ -36,22 +37,6 @@ from app.domain.sources import Source
 
 logger = logging.getLogger(__name__)
 
-
-def _render_prompt_template(template: str, values: Mapping[str, object]) -> str:
-    """Render explicit double-brace variables without evaluating user-authored code."""
-    template_variables = set(re.findall(r"\{\{([a-zA-Z0-9_]+)\}\}", template))
-    missing = set(values) - template_variables
-    if missing:
-        raise ValueError("Prompt template is missing required variables: " + ", ".join(sorted(missing)))
-    unresolved = template_variables - set(values)
-    if unresolved:
-        raise ValueError("Prompt template has unresolved variables: " + ", ".join(sorted(unresolved)))
-    rendered = template
-    for key, value in values.items():
-        rendered = rendered.replace("{{" + key + "}}", str(value))
-    if not rendered.strip():
-        raise ValueError("Resolved prompt template cannot be empty.")
-    return rendered
 
 
 class GeminiTopic(BaseModel):
@@ -340,7 +325,7 @@ class GeminiBookMapper(IBookMapper):
     ) -> GeminiBookMap:
         bounded_pdf = self._bounded_pdf(reader, page_start, page_end)
         window_page_count = page_end - page_start + 1
-        prompt = _render_prompt_template(
+        prompt = render_prompt_template(
             self._prompt("knowledge.book_map.section"),
             {
                 "window_page_count": window_page_count,
@@ -520,7 +505,7 @@ class GeminiBookMapper(IBookMapper):
             ],
             ensure_ascii=False,
         )
-        prompt = _render_prompt_template(
+        prompt = render_prompt_template(
             self._prompt("knowledge.book_map.merge"),
             {
                 "page_count": page_count,
@@ -639,7 +624,7 @@ class GeminiTopicMaterialDiscoverer(ITopicMaterialDiscoverer):
         if span.page_start < 1 or span.page_end < span.page_start:
             raise ValueError("Invalid discovery page span.")
         bounded_pdf = self._bounded_pdf(source.storage_path, span.page_start, span.page_end)
-        context = _render_prompt_template(
+        context = render_prompt_template(
             self._prompt("knowledge.material_discovery.context"),
             {
                 "source_name": source.filename,

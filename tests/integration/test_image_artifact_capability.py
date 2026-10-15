@@ -102,7 +102,25 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
             "experience": "A source-grounded editorial illustration",
         },
     }
-    resolved_context = {"output_contract": contract, "product": product}
+    resolved_context = {
+        "output_contract": contract,
+        "product": product,
+        "identity": {
+            "identity_id": str(uuid4()),
+            "version_id": str(uuid4()),
+            "key": "TEST_IDENTITY",
+            "version": 1,
+            "definition": {
+                "purpose": "Test visual identity",
+                "audience": "Readers",
+                "voice": "Calm, respectful",
+                "tone": "measured",
+                "principles": ["source-grounded"],
+                "objectives": ["clear visual storytelling"],
+                "constraints": [],
+            },
+        },
+    }
     generator, storage = FakeImageGenerator(), FakeArtifactStorage()
     capability = ProduceImageArtifactCapability(generator=generator, storage_factory=lambda: storage)
 
@@ -113,7 +131,15 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
             configuration={},
             run_id=job_id,
             resolved_context=resolved_context,
-            stage_configuration={"style_instructions": "Editorial illustration", "aspect_ratio": "4:5", "image_size": "1K"},
+            stage_configuration={
+                "style_instructions": "Editorial illustration",
+                "aspect_ratio": "4:5",
+                "image_size": "1K",
+                "generation_prompt": (
+                    "audience={{audience}}; experience={{experience}}; title={{source_title}}; "
+                    "source={{source_name}}; excerpt={{source_excerpt}}; identity={{identity_context}}; style={{style_instructions}}"
+                ),
+            },
         )
         artifact = await capability.execute(context)
         retried = await capability.execute(context)
@@ -134,6 +160,14 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
     assert row.output_contract_key == "IMAGE_ARTIFACT"
     assert row.output_contract_version == 1
     assert len(generator.calls) == 1
+    generated_prompt = generator.calls[0][0]
+    assert "audience=Readers of Arabic literature and culture" in generated_prompt
+    assert "experience=A source-grounded editorial illustration" in generated_prompt
+    assert "title=A literary scene" in generated_prompt
+    assert "source=Test Book" in generated_prompt
+    assert "Calm, respectful" in generated_prompt
+    assert "style=Editorial illustration" in generated_prompt
+    assert "A source passage about a traveler crossing an ancient city at dawn." in generated_prompt
     assert storage.ensure_available_calls == 1
     assert len(storage.put_calls) == 1
     assert posts == []

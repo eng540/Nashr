@@ -100,6 +100,24 @@ class ProductionRecipeControlPlaneService:
         return _version_payload(result)
 
     async def publish(self, key: str, version: int) -> dict[str, object]:
+        versions = await self.repository.get_versions(key)
+        target = next((item for item in versions if item.version == version), None)
+        if target is None:
+            raise LookupError("Production recipe version not found.")
+        if target.status == "DRAFT":
+            recipe = ProductionRecipe(
+                key=key,
+                version=target.version,
+                stages=tuple(RecipeStage.from_dict(stage) for stage in target.definition["stages"]),
+            )
+            for stage in recipe.stages:
+                validate_recipe_stage_configuration(stage)
+                if stage.capability_key in {"produce_image_artifact", "produce_video_artifact"}:
+                    generation_prompt = stage.configuration.get("generation_prompt")
+                    if not isinstance(generation_prompt, str) or not generation_prompt.strip():
+                        raise ValueError(
+                            f"Stage '{stage.key}' must define a versioned generation_prompt before publishing."
+                        )
         result = await self.repository.publish(key, version)
         await self.session.commit()
         await self.session.refresh(result)

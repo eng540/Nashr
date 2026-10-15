@@ -200,6 +200,10 @@ async def test_video_capability_uses_the_published_products_pinned_prompt_and_id
     assert artifact.kind == "VIDEO"
     assert artifact.mime_type == "video/mp4"
     assert artifact.metadata["requested_duration_seconds"] == 5
+    assert "generation_prompt" in pinned_recipe.stages[0].configuration
+    assert "Create a short, coherent, source-grounded editorial video" in generator.start_calls[0][0]
+    assert "Visual direction:" in generator.start_calls[0][0]
+    assert "أنشئ مقطعاً تحريرياً عمودياً قصيراً" in generator.start_calls[0][0]
     assert "QUL PRODUCT INSTRUCTION" in generator.start_calls[0][0]
     assert "state the common phrase" in generator.start_calls[0][0]
     assert f"Identity key: {identity_key}" in generator.start_calls[0][0]
