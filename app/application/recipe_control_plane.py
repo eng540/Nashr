@@ -111,6 +111,7 @@ class ProductionRecipeControlPlaneService:
                 stages=tuple(RecipeStage.from_dict(stage) for stage in target.definition["stages"]),
             )
             for stage in recipe.stages:
+                validate_recipe_stage_configuration(stage)
                 if stage.capability_key in {"produce_image_artifact", "produce_video_artifact"}:
                     generation_prompt = stage.configuration.get("generation_prompt")
                     if not isinstance(generation_prompt, str) or not generation_prompt.strip():
