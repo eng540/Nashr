@@ -21,10 +21,39 @@ from app.infrastructure.database.models import (
     PromptTemplateModel, PromptTemplateVersionModel,
 )
 from uuid import UUID
+import re
 from sqlalchemy import select
 
 
 EDITORIAL_PROMPT_KEY = "editorial.drafter"
+
+DISCOVERY_PROMPT_REQUIRED_VARIABLES = {
+    "knowledge.book_map.section": {"window_page_count", "page_start", "page_end"},
+    "knowledge.book_map.merge": {"page_count", "round_index", "batch_index", "section_count", "payload"},
+    "knowledge.material_discovery.context": {
+        "source_name", "topic_title", "topic_description", "page_start", "page_end",
+    },
+}
+
+
+def validate_prompt_template_body(key: str, body: str) -> None:
+    """Reject malformed editable templates before publishing them into an active pipeline."""
+    if not isinstance(body, str) or not body.strip():
+        raise ValueError("Prompt body cannot be empty.")
+    required = DISCOVERY_PROMPT_REQUIRED_VARIABLES.get(key)
+    if required is None:
+        return
+    found = set(re.findall(r"\{\{([a-zA-Z0-9_]+)\}\}", body))
+    missing = required - found
+    unsupported = found - required
+    if missing:
+        raise ValueError(
+            f"Prompt template '{key}' is missing required variables: " + ", ".join(sorted(missing))
+        )
+    if unsupported:
+        raise ValueError(
+            f"Prompt template '{key}' contains unsupported variables: " + ", ".join(sorted(unsupported))
+        )
 
 
 class ControlPlaneResolver:
@@ -174,8 +203,7 @@ class PromptTemplateService:
         return template, await self.repository.get_versions(key)
 
     async def create_template(self, key: str, name: str, purpose: str, body: str):
-        if not body.strip():
-            raise ValueError("Prompt body cannot be empty.")
+        validate_prompt_template_body(key.strip(), body)
         if await self.repository.get_template(key):
             raise ValueError("Prompt template key already exists.")
         template = await self.repository.create_template(key.strip(), name.strip(), purpose.strip())
@@ -185,8 +213,7 @@ class PromptTemplateService:
         return template, version
 
     async def create_draft(self, key: str, body: str):
-        if not body.strip():
-            raise ValueError("Prompt body cannot be empty.")
+        validate_prompt_template_body(key, body)
         template = await self.repository.get_template(key)
         if template is None:
             raise LookupError("Prompt template not found.")
@@ -195,13 +222,17 @@ class PromptTemplateService:
         return result
 
     async def update_draft(self, key: str, version: int, body: str):
-        if not body.strip():
-            raise ValueError("Prompt body cannot be empty.")
+        validate_prompt_template_body(key, body)
         result = await self.repository.update_draft(key, version, body)
         await self.repository.session.commit()
         return result
 
     async def publish(self, key: str, version: int):
+        versions = await self.repository.get_versions(key)
+        target = next((item for item in versions if item.version == version), None)
+        if target is None:
+            raise LookupError("Prompt template version not found.")
+        validate_prompt_template_body(key, target.body)
         result = await self.repository.publish(key, version)
         await self.repository.session.commit()
         return result
