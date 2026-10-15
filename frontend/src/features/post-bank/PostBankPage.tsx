@@ -123,7 +123,7 @@ function renderTelegramNode(node: Node, key: string): ReactNode {
   }
 }
 
-export function TelegramPreview({ content }: { content: string }) {
+export function TelegramPreview({ content, onClose }: { content: string; onClose?: () => void }) {
   const valid = isTelegramMarkupValid(content);
   const nodes = useMemo(() => {
     if (!valid) return null;
@@ -133,7 +133,7 @@ export function TelegramPreview({ content }: { content: string }) {
     return Array.from(doc.body.childNodes).map((node, index) => renderTelegramNode(node, `telegram-preview-${index}`));
   }, [content, valid]);
   return <section className="mt-4 rounded-xl border bg-slate-50 p-4" aria-label="معاينة تيليجرام">
-    <div className="mb-2 flex items-center justify-between gap-2"><h4 className="text-sm font-bold">معاينة تيليجرام</h4><span className="text-xs text-slate-500">عرض تقني للتنسيق قبل الاعتماد</span></div>
+    <div className="mb-2 flex items-center justify-between gap-2"><h4 className="text-sm font-bold">معاينة تيليجرام</h4>{onClose ? <button type="button" onClick={onClose} className="rounded-lg border bg-white px-3 py-1 text-sm">إغلاق المعاينة</button> : <span className="text-xs text-slate-500">عرض تقني للتنسيق قبل الاعتماد</span>}</div>
     {!valid
       ? <p role="alert" className="text-sm text-rose-700">وسوم HTML غير متوازنة أو غير مدعومة. لن يقبل محول تيليجرام هذا التنسيق.</p>
       : <div dir="auto" className="whitespace-pre-wrap break-words rounded-lg bg-white p-4 text-sm leading-7 text-slate-800">{nodes}</div>}
