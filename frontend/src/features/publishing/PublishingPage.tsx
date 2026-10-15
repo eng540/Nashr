@@ -5,6 +5,7 @@ import { postsApi } from "../../shared/api/postsApi";
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime } from "../../shared/utils/timezone";
+import { TelegramPreview } from "../post-bank/PostBankPage";
 
 const DEFAULT_TIMEZONE = "Asia/Aden";
 const PAGE_SIZE = 20;
@@ -17,6 +18,7 @@ export function PublishingPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [detail, setDetail] = useState<ScheduleDetail | null>(null);
   const [readyQuery, setReadyQuery] = useState("");
   const [readySort, setReadySort] = useState<"created" | "title" | "kind" | "topic">("created");
@@ -144,7 +146,7 @@ export function PublishingPage() {
   const preview = async (postId: string) => {
     try {
       const p = await schedulesApi.telegramPreview(postId);
-      setMessage(p.content);
+      setPreviewContent(p.content);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "تعذر تحميل معاينة Telegram.");
     }
@@ -199,6 +201,7 @@ export function PublishingPage() {
       </nav>
 
       {message && <div role="status" className="whitespace-pre-wrap rounded-xl border bg-indigo-50 p-4 text-sm">{message}</div>}
+      {previewContent !== null && <div className="rounded-2xl border bg-white p-4 shadow-sm"><TelegramPreview content={previewContent} onClose={() => setPreviewContent(null)} /></div>}
 
       {section === "ready" && (
         <section className="space-y-4" data-testid="publishing-ready">
