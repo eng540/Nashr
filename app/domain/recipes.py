@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.domain.prompt_templates import validate_template_variables
 
-SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("produce_image_artifact", 1), ("produce_video_artifact", 1), ("produce_audio_artifact", 1)})
+SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("compose_thematic_artifact", 1), ("produce_image_artifact", 1), ("produce_video_artifact", 1), ("produce_audio_artifact", 1)})
 
 
 @dataclass(frozen=True)
@@ -139,7 +139,7 @@ BOOK_TO_TELEGRAM_POST = ProductionRecipe(
 
 def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
     """Validate only the public configuration contract of built-in capabilities."""
-    if (stage.capability_key, stage.capability_version) in {("produce_post", 1), ("produce_text_artifact", 1)}:
+    if (stage.capability_key, stage.capability_version) in {("produce_post", 1), ("produce_text_artifact", 1), ("compose_thematic_artifact", 1)}:
         unknown = set(stage.configuration) - {"style_instructions"}
         if unknown:
             raise ValueError(f"{stage.capability_key} configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
