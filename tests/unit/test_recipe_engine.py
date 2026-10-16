@@ -5,11 +5,12 @@ import pytest
 
 from app.application.recipe_engine import (
     CapabilityRegistry,
+    ComposeThematicArtifactCapability,
     ProductionExecutionContext,
     ProductionRecipeEngine,
 )
 from app.domain.artifacts import Artifact, ArtifactKind
-from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe, RecipeStage
+from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe, RecipeStage, SUPPORTED_RECIPE_CAPABILITIES, validate_recipe_stage_configuration
 
 
 class RecordingCapability:
@@ -127,3 +128,28 @@ async def test_recipe_engine_passes_stage_configuration_to_registered_capability
     )
     assert result.content == "draft"
     assert capability.configurations == [{"style_instructions": "Be concise"}]
+
+
+
+def test_thematic_composition_is_a_registered_recipe_contract():
+    assert ("compose_thematic_artifact", 1) in SUPPORTED_RECIPE_CAPABILITIES
+    validate_recipe_stage_configuration(
+        RecipeStage("compose", "compose_thematic_artifact", 1, {"style_instructions": "Preserve source fidelity"})
+    )
+    with pytest.raises(ValueError, match="unsupported fields"):
+        validate_recipe_stage_configuration(
+            RecipeStage("compose", "compose_thematic_artifact", 1, {"hidden_prompt": "hard-coded"})
+        )
+
+
+@pytest.mark.asyncio
+async def test_thematic_capability_requires_explicit_theme_and_source_ids_before_database_access():
+    capability = ComposeThematicArtifactCapability(drafter=object())
+    context = ProductionExecutionContext(
+        session=None,
+        inputs={"knowledge_unit_id": uuid4()},
+        configuration={"editorial_prompt": {"body": "pinned"}},
+        resolved_context={"output_contract": {}},
+    )
+    with pytest.raises(ValueError, match="thematic_theme"):
+        await capability.execute(context)
