@@ -1,5 +1,6 @@
 """Seed a version-pinned product for multi-source thematic text composition."""
 from typing import Sequence, Union
+from uuid import UUID
 import json
 
 from alembic import op
@@ -27,12 +28,12 @@ def upgrade() -> None:
         UNION ALL SELECT 1 FROM production_product_versions WHERE id = :product_version_id
         LIMIT 1
     """), {
-        "recipe_id": RECIPE_ID,
+        "recipe_id": UUID(RECIPE_ID),
         "recipe_key": RECIPE_KEY,
-        "recipe_version_id": RECIPE_VERSION_ID,
-        "product_id": PRODUCT_ID,
+        "recipe_version_id": UUID(RECIPE_VERSION_ID),
+        "product_id": UUID(PRODUCT_ID),
         "product_key": PRODUCT_KEY,
-        "product_version_id": PRODUCT_VERSION_ID,
+        "product_version_id": UUID(PRODUCT_VERSION_ID),
     }).scalar_one_or_none()
     if reserved is not None:
         raise RuntimeError(
@@ -93,7 +94,7 @@ def upgrade() -> None:
         INSERT INTO production_recipes (id, key, name, purpose)
         VALUES (:id, :key, :name, :purpose)
     """), {
-        "id": RECIPE_ID,
+        "id": UUID(RECIPE_ID),
         "key": RECIPE_KEY,
         "name": "Multi-source thematic text",
         "purpose": "Compose one reviewable text Artifact from an explicit selection of materials across books.",
@@ -102,8 +103,8 @@ def upgrade() -> None:
         INSERT INTO production_recipe_versions (id, recipe_id, version, definition, status)
         VALUES (:version_id, :recipe_id, 1, CAST(:definition AS JSONB), 'PUBLISHED')
     """), {
-        "version_id": RECIPE_VERSION_ID,
-        "recipe_id": RECIPE_ID,
+        "version_id": UUID(RECIPE_VERSION_ID),
+        "recipe_id": UUID(RECIPE_ID),
         "definition": json.dumps(recipe_definition, ensure_ascii=False),
     })
 
@@ -127,7 +128,7 @@ def upgrade() -> None:
         INSERT INTO production_products (id, key, name, purpose)
         VALUES (:id, :key, :name, :purpose)
     """), {
-        "id": PRODUCT_ID,
+        "id": UUID(PRODUCT_ID),
         "key": PRODUCT_KEY,
         "name": "Arabic Literature Thematic Text",
         "purpose": "Produce a thematic text from selected materials across multiple books while preserving source provenance.",
@@ -136,8 +137,8 @@ def upgrade() -> None:
         INSERT INTO production_product_versions (id, product_id, version, definition, status)
         VALUES (:version_id, :product_id, 1, CAST(:definition AS JSONB), 'PUBLISHED')
     """), {
-        "version_id": PRODUCT_VERSION_ID,
-        "product_id": PRODUCT_ID,
+        "version_id": UUID(PRODUCT_VERSION_ID),
+        "product_id": UUID(PRODUCT_ID),
         "definition": json.dumps(product_definition, ensure_ascii=False),
     })
 
@@ -155,7 +156,7 @@ def downgrade() -> None:
             raise RuntimeError(
                 "Cannot downgrade thematic text product seed: a production job or Artifact references the product or recipe version."
             )
-    bind.execute(sa.text("DELETE FROM production_product_versions WHERE id = :id"), {"id": PRODUCT_VERSION_ID})
-    bind.execute(sa.text("DELETE FROM production_products WHERE id = :id"), {"id": PRODUCT_ID})
-    bind.execute(sa.text("DELETE FROM production_recipe_versions WHERE id = :id"), {"id": RECIPE_VERSION_ID})
-    bind.execute(sa.text("DELETE FROM production_recipes WHERE id = :id"), {"id": RECIPE_ID})
+    bind.execute(sa.text("DELETE FROM production_product_versions WHERE id = :id"), {"id": UUID(PRODUCT_VERSION_ID)})
+    bind.execute(sa.text("DELETE FROM production_products WHERE id = :id"), {"id": UUID(PRODUCT_ID)})
+    bind.execute(sa.text("DELETE FROM production_recipe_versions WHERE id = :id"), {"id": UUID(RECIPE_VERSION_ID)})
+    bind.execute(sa.text("DELETE FROM production_recipes WHERE id = :id"), {"id": UUID(RECIPE_ID)})
