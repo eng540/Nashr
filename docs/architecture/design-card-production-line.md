@@ -58,8 +58,8 @@ Variable design decisions belong in versioned product/component configuration, n
 | Stage | Deliverable | Evidence required | Status |
 |---|---|---|---|
 | 0 | Verify current main, call paths, model contracts, existing tests, dependency/runtime constraints | GitHub source and CI evidence | Inspected in part; continue verification |
-| 1 | Multi-source input contract in the existing production engine | Backward-compatibility tests; selected units and provenance retained | Pending |
-| 2 | Thematic composition using multiple explicit Knowledge Units | Unit/integration tests for source attribution, missing metadata, unsupported references, and single-source regression | Pending |
+| 1 | Multi-source input contract in the existing production engine | Backward-compatibility tests; selected units and provenance retained | Implemented in PR #146; CI validation pending for the current head |
+| 2 | Thematic composition using multiple explicit Knowledge Units | Explicit multi-book selection, one durable production job item, pinned product prompt/contract, all-source provenance metadata, idempotent Artifact reuse, generic review boundary | Backend capability and workspace/API wiring implemented in PR #146; full CI and end-to-end review verification pending |
 | 3 | Lightweight deterministic renderer proof | CI fixtures for Arabic/RTL and measured runtime/resource behavior in the target environment | Pending |
 | 4 | Versioned visual product/template configuration and pinned provenance | API/schema tests; old products and artifacts unchanged | Pending |
 | 5 | Approved-output library selection and derivatives from approved text only | Tests reject raw/unapproved inputs and preserve exact source text | Pending |
