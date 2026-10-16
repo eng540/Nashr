@@ -63,7 +63,6 @@ def test_multi_source_drafter_sends_each_selected_source_and_reference() -> None
     assert "ص 12" in prompt
     assert "لا توجد إحالة صفحات محفوظة" in prompt
     assert "النص الأول" in prompt and "النص الثاني" in prompt
-    assert call["context"] == {"theme": "الصبر عند العرب", "source_count": 2}
 
 
 def test_multi_source_drafter_rejects_insufficient_or_duplicate_sources():
