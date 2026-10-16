@@ -177,6 +177,7 @@ async def test_thematic_text_artifact_keeps_every_source_and_enters_existing_rev
         )
         assert saved.source_knowledge_unit_id == unit_a
         assert saved.metadata["composition_mode"] == "MULTI_SOURCE_THEMATIC"
+        assert saved.metadata["language"] == "ar"
         assert saved.metadata["source_knowledge_unit_ids"] == [str(unit_a), str(unit_b)]
         assert [source["source_name"] for source in saved.metadata["sources"]] == ["كتاب أ", "كتاب ب"]
         review_queue = await GenericArtifactReviewService(session).list("DRAFT")
