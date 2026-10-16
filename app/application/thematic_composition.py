@@ -118,8 +118,12 @@ async def persist_thematic_draft(
 
     pinned = PinnedOutputContract.from_dict(resolved_context["output_contract"])
     contract = OutputContractDefinition.from_dict(pinned.definition)
-    if contract.artifact_kind != ArtifactKind.TEXT.value or contract.content_mode != "INLINE":
-        raise ValueError("Thematic composition requires a pinned inline TEXT output contract.")
+    if (
+        contract.artifact_kind != ArtifactKind.TEXT.value
+        or contract.content_mode != "INLINE"
+        or contract.mime_type != "text/plain"
+    ):
+        raise ValueError("Thematic composition requires a pinned inline TEXT contract with text/plain MIME type.")
     if not result.content.strip():
         raise ValueError("Thematic Artifact content cannot be empty.")
 
