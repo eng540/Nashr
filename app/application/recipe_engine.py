@@ -633,6 +633,56 @@ class ProduceAudioArtifactCapability:
             raise
 
 
+class ComposeThematicArtifactCapability:
+    """Create one reviewable text Artifact from an explicit, multi-source selection."""
+
+    key = "compose_thematic_artifact"
+    version = 1
+
+    def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
+        self.drafter = drafter
+        self.resolver = resolver or ControlPlaneResolver()
+
+    async def execute(
+        self,
+        context: ProductionExecutionContext,
+        previous_output: object | None = None,
+    ) -> Artifact:
+        from app.application.thematic_composition import ComposeThematicDraft, persist_thematic_draft
+
+        raw_ids = context.inputs.get("thematic_source_knowledge_unit_ids")
+        theme = context.inputs.get("thematic_theme")
+        anchor_id = context.inputs.get("knowledge_unit_id")
+        if not isinstance(theme, str) or not theme.strip():
+            raise ValueError("compose_thematic_artifact requires a non-empty thematic_theme input.")
+        if not isinstance(raw_ids, (list, tuple)) or len(raw_ids) < 2:
+            raise ValueError("compose_thematic_artifact requires at least two explicitly selected source IDs.")
+        try:
+            source_ids = [value if isinstance(value, UUID) else UUID(str(value)) for value in raw_ids]
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Thematic source IDs must be valid UUIDs.") from exc
+        if len(set(source_ids)) != len(source_ids):
+            raise ValueError("Thematic source IDs must not contain duplicates.")
+        if not isinstance(anchor_id, UUID) or source_ids[0] != anchor_id:
+            raise ValueError("The first selected source must match the production item's lineage anchor.")
+        if context.resolved_context is None:
+            raise ValueError("compose_thematic_artifact requires a pinned product context.")
+        system_prompt = _stage_system_prompt(context, self.key)
+        composer = ComposeThematicDraft(drafter=self.drafter, resolver=self.resolver)
+        result = await composer.execute(
+            context.session,
+            theme=theme,
+            knowledge_unit_ids=source_ids,
+            system_prompt=system_prompt,
+        )
+        return await persist_thematic_draft(
+            context.session,
+            result,
+            resolved_context=dict(context.resolved_context),
+            production_job_id=context.run_id,
+        )
+
+
 class ProductionRecipeEngine:
     def __init__(self, capabilities: CapabilityRegistry) -> None:
         self.capabilities = capabilities
@@ -670,6 +720,7 @@ def build_production_recipe_engine(
     capabilities = CapabilityRegistry()
     capabilities.register(ProducePostCapability(drafter, resolver))
     capabilities.register(ProduceTextArtifactCapability(drafter, resolver))
+    capabilities.register(ComposeThematicArtifactCapability(drafter, resolver))
     capabilities.register(ProduceImageArtifactCapability())
     capabilities.register(ProduceVideoArtifactCapability())
     capabilities.register(ProduceAudioArtifactCapability(drafter, resolver))
