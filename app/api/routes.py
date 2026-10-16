@@ -66,6 +66,7 @@ class ProductionJobRequest(BaseModel):
     product_key: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     identity_key: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
+    thematic_theme: str | None = Field(default=None, min_length=1, max_length=500)
 
 
 class ProductionJobResumeRequest(BaseModel):
@@ -702,6 +703,7 @@ async def create_production_job_route(
             idempotency_key=payload.idempotency_key,
             request_fingerprint=request_fingerprint,
             request_payload=request_payload,
+            thematic_theme=payload.thematic_theme,
         )
         background_tasks.add_task(run_production_job, job.id)
         return await _load_production_job_payload(session, job)
