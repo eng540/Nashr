@@ -23,3 +23,9 @@ def test_thematic_selection_requires_theme():
 
 def test_thematic_selection_accepts_explicit_multi_book_selection():
     validate_thematic_selection("الصبر عند العرب", [uuid4(), uuid4(), uuid4()])
+
+
+
+def test_thematic_selection_preserves_user_supplied_order_contract():
+    first, second, third = uuid4(), uuid4(), uuid4()
+    validate_thematic_selection("ثيمة", [third, first, second])
