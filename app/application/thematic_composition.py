@@ -129,6 +129,7 @@ async def persist_thematic_draft(
 
     metadata = {
         "title": result.theme,
+        "language": "ar",
         "theme": result.theme,
         "composition_mode": "MULTI_SOURCE_THEMATIC",
         "source_knowledge_unit_ids": source_ids,
