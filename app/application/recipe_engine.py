@@ -667,6 +667,24 @@ class ComposeThematicArtifactCapability:
             raise ValueError("The first selected source must match the production item's lineage anchor.")
         if context.resolved_context is None:
             raise ValueError("compose_thematic_artifact requires a pinned product context.")
+        existing = await find_existing_generic_artifact(
+            context.session,
+            production_job_id=context.run_id,
+            source_knowledge_unit_id=anchor_id,
+            kind=ArtifactKind.TEXT,
+        )
+        if existing is not None:
+            existing_metadata = existing.metadata or {}
+            if (
+                existing_metadata.get("composition_mode") == "MULTI_SOURCE_THEMATIC"
+                and existing_metadata.get("source_knowledge_unit_ids") == [str(value) for value in source_ids]
+                and existing_metadata.get("theme") == theme.strip()
+            ):
+                return existing
+            raise ValueError(
+                "A TEXT Artifact already exists for this production job and lineage anchor, "
+                "but it does not match this thematic request; refusing to generate a duplicate."
+            )
         system_prompt = _stage_system_prompt(context, self.key)
         composer = ComposeThematicDraft(drafter=self.drafter, resolver=self.resolver)
         result = await composer.execute(
