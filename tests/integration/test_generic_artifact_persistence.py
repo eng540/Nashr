@@ -141,3 +141,43 @@ async def test_same_artifact_kind_is_independent_across_explicit_claims():
         assert first.content == "First explicit claim"
         assert second.content == "Second explicit claim"
         assert first.production_job_id != second.production_job_id
+
+
+
+@pytest.mark.asyncio
+async def test_thematic_text_artifact_keeps_every_source_and_enters_existing_review_queue():
+    from app.application.generic_artifact_review import GenericArtifactReviewService
+    from app.application.thematic_composition import ThematicCompositionResult, persist_thematic_draft
+    from app.domain.editorial import EditorialSourceMaterial
+
+    now = datetime.now(timezone.utc)
+    job_id = uuid4()
+    context = contract_context("TEXT", "text/plain", "INLINE", ["title", "theme", "sources"], 20000)
+    async with SessionFactory() as session:
+        source_a, source_b = uuid4(), uuid4()
+        unit_a, unit_b = uuid4(), uuid4()
+        session.add_all([
+            SourceModel(id=source_a, filename="book-a.pdf", book_title="كتاب أ", mime_type="application/pdf", storage_path="./storage/test/book-a.pdf", size_bytes=1, status="STORED"),
+            SourceModel(id=source_b, filename="book-b.pdf", book_title="كتاب ب", mime_type="application/pdf", storage_path="./storage/test/book-b.pdf", size_bytes=1, status="STORED"),
+            KnowledgeUnitModel(id=unit_a, source_id=source_a, position=1, title="مادة أ", content="النص الأصلي أ"),
+            KnowledgeUnitModel(id=unit_b, source_id=source_b, position=1, title="مادة ب", content="النص الأصلي ب"),
+            ProductionJobModel(id=job_id, source_id=source_a, scope="SELECTION", status="RUNNING", total_items=1),
+        ])
+        await session.commit()
+        result = ThematicCompositionResult(
+            theme="الأمانة في التراث",
+            content="تركيب تحريري للمراجعة البشرية",
+            sources=(
+                EditorialSourceMaterial(str(unit_a), "مادة أ", "النص الأصلي أ", "كتاب أ", "ص 12"),
+                EditorialSourceMaterial(str(unit_b), "مادة ب", "النص الأصلي ب", "كتاب ب", None),
+            ),
+        )
+        saved = await persist_thematic_draft(
+            session, result, resolved_context=context, production_job_id=job_id
+        )
+        assert saved.source_knowledge_unit_id == unit_a
+        assert saved.metadata["composition_mode"] == "MULTI_SOURCE_THEMATIC"
+        assert saved.metadata["source_knowledge_unit_ids"] == [str(unit_a), str(unit_b)]
+        assert [source["source_name"] for source in saved.metadata["sources"]] == ["كتاب أ", "كتاب ب"]
+        review_queue = await GenericArtifactReviewService(session).list("DRAFT")
+        assert any(item["id"] == str(saved.id) for item in review_queue)
