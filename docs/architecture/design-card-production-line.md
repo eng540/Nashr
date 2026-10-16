@@ -1,56 +1,81 @@
-# Design-card production line — implementation record
+# Nashr — approved-output visual derivatives and multi-source composition
 
-**Status:** implementation in progress  
-**Base examined:** `main` at `3f6f52b0d0edfd24d8a41b0826f99cbecad469f4`  
-**Branch:** `feature/design-card-production-line`
+**Status:** revised implementation direction; implementation not yet proven complete  
+**Branch:** `feature/design-card-production-line`  
+**Baseline examined:** `main` at `3f6f52b0d0edfd24d8a41b0826f99cbecad469f4`
 
-This document is the implementation record for the design-card capability. It must be updated with repository/CI/production evidence; a listed task is not proof of completion.
+This record governs implementation direction. Documentation is not feature completion. Every completion claim must be backed by source changes, tests, CI and deployment evidence.
 
-## Architectural findings from the examined main
+## Decision summary
 
-### Existing capabilities to reuse
+Retain the core value of design cards, but do not build a second heavy production system around a headless browser. Prioritize reusable capabilities that transform approved outputs and make Nashr's existing knowledge inventory more valuable.
 
-- `Artifact` already supports `POST`, `TEXT`, `IMAGE`, `VIDEO`, and `AUDIO`; media artifacts use a private storage URI and MIME type.
-- `ProductionRecipe` and its versioned stages dispatch registered capabilities through the shared recipe engine.
-- Published product versions carry an immutable component manifest; resolved production context pins component versions.
-- `S3ArtifactStorage` provides private object storage and short-lived signed media URLs.
-- `GenericArtifactReviewService` provides persisted `DRAFT`, `APPROVED`, and `REJECTED` review for non-POST artifacts.
-- POST review remains owned by the canonical Post workflow.
-- Publishing is a separate workflow and currently selects approved, eligible Posts. Generic IMAGE artifacts are not automatically proven eligible for that path.
-- Production jobs currently resolve their primary inputs as Knowledge Units. Therefore the card line must add an explicit approved-Artifact input boundary; simply registering an image capability in the existing book-to-content job would violate the architecture.
+1. **Multi-source thematic composition** is the strongest differentiated content capability, but is not assumed to be a trivial one-line change. It requires explicit multi-unit selection, source provenance, citation/reference preservation, prompt/version pinning, and tests against unsupported claims.
+2. **Lightweight deterministic visual derivatives** should turn an already-approved text output into a real image/carousel without asking an image model to typeset Arabic. Prefer an SVG/vector renderer or a lightweight library only after verifying Arabic shaping, font handling, output fidelity, deploy compatibility and measured resource use. Do not assume marketing claims such as “15 ms” or “near-zero memory” without benchmarks on Nashr's actual runtime.
+3. **Multi-format bundle** should reuse the same approved text to prepare configured delivery formats (e.g. Telegram HTML, static card, optional vertical visual/audio pairing) without another editorial-generation call. It is a product-controlled set of derivatives, not a hard-coded rule that every post must produce every format.
+4. **Heritage/poetry layout** is a rendering mode, not a rewriting mode. It may arrange the same characters into configurable lines/hemistichs but must not silently normalize, vocalize, correct, paraphrase, or reorder source text.
 
-### Required integration boundary
+## Findings and boundaries
 
-The card line consumes an already-produced and approved content Artifact (or a canonical Post whose editorial status is approved), never a Knowledge Unit as its text source. It creates a new IMAGE Artifact linked to that source Artifact, pins the visual product/recipe/template configuration in provenance, and keeps visual review separate from editorial review. Publishing integration must preserve the existing publishing workflow rather than treating every approved image as a Telegram-ready Post by assumption.
+### Approved output is the source boundary
 
-### Avoided duplication
+The visual derivative pipeline consumes a content Artifact or canonical Post that has passed the existing editorial approval workflow. It must not use a raw Knowledge Unit as the card's final text source. Preserve exact text, punctuation, paragraph and line ordering. If text cannot fit, use an explicitly configured lossless sequence layout or return a clear overflow failure; never silently truncate.
 
-Do not add a separate card database, product registry, object store, job queue, review engine, or publishing scheduler. Extend the existing Product/Recipe/Output Contract/Artifact/storage/review and publication boundaries only where the current contracts are insufficient. A new durable model is justified only if existing Artifact provenance and ProductionJob records cannot represent a real card-production request and its per-item status without conflating unrelated lifecycle states.
+### Reuse the platform
 
-## Implementation gates
+Use existing Product/ProductVersion and immutable component manifests, Recipe and capability registry, Output Contract, Policy/Identity/Prompt where appropriate, Artifact, private artifact storage, shared job/retry machinery, generic artifact review, and the canonical publishing workflow. Do not create a parallel card registry, object store, job queue, review engine, or scheduler. Add a durable model only if code evidence proves current models cannot represent the needed request and per-item outcomes.
 
-| Gate | Evidence required | Status |
-|---|---|---|
-| 0. Baseline and reuse map | Current-main source paths and live Railway status reviewed | Inspected; not a feature-completion claim |
-| 1. Contracts and input eligibility | Tests reject unapproved/non-text sources and preserve source Artifact lineage | Pending |
-| 2. Renderer selection | CI-tested Arabic shaping/RTL, real dimensions, no silent truncation; runtime compatibility assessed | Pending |
-| 3. Shared-engine capability | Capability registered in the existing recipe engine and uses private Artifact storage | Pending |
-| 4. Product/template controls | Published, versioned, pinned visual settings; prior output remains immutable | Pending |
-| 5. Approved-output selection | Existing ready-output library/API reused; no direct raw-material bypass | Pending |
-| 6. Batch/retry | Durable per-item outcomes, retry failed items only, intentional variants remain possible | Pending |
-| 7. Visual review | Final stored image is the preview; independent approve/reject lifecycle | Pending |
-| 8. Publishing handoff | Existing publication flow consumes the approved card output without creating a parallel scheduler | Pending |
-| 9. CI and regression proof | Backend, migration, frontend, browser, contract and failure-path checks pass | Pending |
-| 10. Railway proof | Intended commit deployed and safe end-to-end card review flow verified; no external publish | Pending |
+The current inspected code indicates that production jobs primarily resolve Knowledge Units, generic Artifact review exists for non-POST outputs, and publication currently selects eligible Posts. Do not assume an IMAGE Artifact is automatically publishable. Add an explicit, tested boundary between approved text and its derivatives.
 
-## Safety and correctness invariants
+### Rendering choice
 
-1. The approved source text is immutable during rendering.
-2. The renderer never asks an image model to typeset the actual card text.
-3. Overflow is an explicit failure or an explicitly configured, lossless multi-card split; never silent truncation.
-4. A visual approval never changes editorial approval, and vice versa.
-5. A generated or approved card is not described as published until the existing publishing workflow confirms publication.
-6. Existing product versions and artifacts are not rewritten by migrations or new defaults.
-7. Provider/storage calls must fail visibly; no placeholder image is substituted.
-8. User-controlled visual settings belong in versioned product/recipe/template configuration, while validation and security constraints remain in code.
-9. Every stage's completion claim must cite the relevant PR/CI/deployment evidence.
+Do not require Playwright/Chromium in the production rendering path by default. Evaluate a lightweight SVG/image path (for example, SVG with a renderer that supports the required font shaping) against actual Arabic text fixtures. Selection must be evidence-based, not based on an assumed library speed claim.
+
+The frontend may show a live template preview, but the saved PNG must come from the same rendering specification and be visually consistent with the preview. A browser preview alone is not the persisted image. Browser automation may still be used in CI for UI tests; the restriction is against making a full headless browser the routine server-side image renderer without measured justification.
+
+Acceptance tests must cover Arabic joining and RTL, punctuation, diacritics, mixed Latin/Arabic, long text, font availability, exact output dimensions/MIME, clipping/overflow, and byte-level/source-text preservation. Pin fonts and relevant renderer dependencies. Fail clearly when required fonts or rendering dependencies are unavailable.
+
+## Multi-source thematic composition
+
+The composer should allow a user to select a theme and explicitly choose several Knowledge Units from one or more books. Retrieval can suggest candidates, but the selected source set must be visible and inspectable before generation. Each source's title, book, page/reference metadata and exact content must be supplied to the drafting layer.
+
+The generated result must preserve traceability to all source units. Do not invent page numbers or attribute a claim to a source unless the stored source metadata supports it. Distinguish direct quotation from synthesis, and test unsupported attribution cases. The user remains the editorial judge; engineering validates provenance and structure, not literary beauty.
+
+This is a separate production mode within the existing production engine, not a new standalone engine. Extend the drafter interface compatibly or introduce an explicit multi-source input contract only after inspecting its callers and tests. Do not change the existing single-unit path's semantics.
+
+## Multi-format derivatives and review
+
+A configured product may declare a bundle of derivatives from one approved text: canonical delivery text (including destination-specific formatting), image card(s), optional carousel, and optional audio/video packaging where the existing capabilities support it. Generate only configured outputs. Reuse existing providers, storage, artifacts, review and publishing interfaces.
+
+Editorial approval authorizes the source text; it does not automatically mean every derivative is visually approved or published. Keep technical validation distinct from human visual review, but avoid unnecessary duplicated clicks: present the text and derivative preview together where the existing UI can support it, and allow one review action to cover only the clearly identified objects the reviewer is approving. Never send anything to Telegram or another external destination as part of tests.
+
+## Product controls
+
+Variable design decisions belong in versioned product/component configuration, not hard-coded prompt strings or arbitrary frontend defaults. Controls should include at least: format/output dimensions, template/style, typography/font, text alignment/direction, spacing, source/attribution display, overflow policy, sequence/card limits, and which derivatives to create. Pin the effective settings and component versions to each generated Artifact. Code owns security, validation, rendering correctness and lifecycle invariants.
+
+## Prioritized implementation sequence
+
+| Stage | Deliverable | Evidence required | Status |
+|---|---|---|---|
+| 0 | Verify current main, call paths, model contracts, existing tests, dependency/runtime constraints | GitHub source and CI evidence | Inspected in part; continue verification |
+| 1 | Multi-source input contract in the existing production engine | Backward-compatibility tests; selected units and provenance retained | Pending |
+| 2 | Thematic composition using multiple explicit Knowledge Units | Unit/integration tests for source attribution, missing metadata, unsupported references, and single-source regression | Pending |
+| 3 | Lightweight deterministic renderer proof | CI fixtures for Arabic/RTL and measured runtime/resource behavior in the target environment | Pending |
+| 4 | Versioned visual product/template configuration and pinned provenance | API/schema tests; old products and artifacts unchanged | Pending |
+| 5 | Approved-output library selection and derivatives from approved text only | Tests reject raw/unapproved inputs and preserve exact source text | Pending |
+| 6 | Configurable multi-format bundle / carousel with per-item results | Tests for partial failures, idempotency, retries, and intentional variants | Pending |
+| 7 | Preview and human review of the actual stored image | UI/browser checks show the exact persisted image; review remains distinct from editorial approval | Pending |
+| 8 | Safe handoff to existing publication workflow | Integration tests; no parallel scheduler; no external publish during tests | Pending |
+| 9 | Full CI and regression review | Required checks green; failures repaired rather than bypassed | Pending |
+| 10 | Railway deployment and safe end-to-end proof | Correct commit deployed; real stored Artifact reviewed; no external publication | Pending |
+
+## Non-negotiable invariants
+
+- Never rewrite approved text during visual rendering.
+- Never use an image-generation model to render the card's actual Arabic text.
+- Never truncate text silently or claim lossless splitting without tests.
+- Never infer literary quality with an automated LLM judge; human editorial judgment remains human.
+- Never equate editorial approval, visual approval, and publication.
+- Never claim renderer performance, CI success, or Railway behavior without direct evidence.
+- Never run external Telegram publication as a test.
+- Do not stop at this document: implement, test, open a reviewable PR, fix CI failures, and continue through the verified deployment path.
