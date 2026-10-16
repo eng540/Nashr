@@ -123,6 +123,7 @@ async def create_production_job(
     idempotency_key: str | None = None,
     request_fingerprint: str | None = None,
     request_payload: dict | None = None,
+    thematic_theme: str | None = None,
 ) -> ProductionJobModel:
     # A claim is durable user intent; the job is a separate execution record.
     # A missing key means an explicit fresh claim, never a settings-based dedupe.
@@ -135,6 +136,7 @@ async def create_production_job(
         "recipe_key": recipe_key,
         "identity_key": identity_key,
         "product_key": product_key,
+        "thematic_theme": thematic_theme.strip() if isinstance(thematic_theme, str) else None,
     }
     if request_fingerprint is None:
         request_fingerprint = hashlib.sha256(
@@ -197,13 +199,42 @@ async def create_production_job(
         resolved_output_contract = await resolver.resolve_output_contract(session, output_contract_key)
         resolved_policy = await resolver.resolve_policy(session, policy_key)
 
-    units = await _resolve_units(
-        session,
-        source_id,
-        scope,
-        topic_id,
-        knowledge_unit_ids or [],
-    )
+    if thematic_theme is not None:
+        thematic_theme = thematic_theme.strip()
+        selected_ids = list(knowledge_unit_ids or [])
+        if not thematic_theme:
+            raise ValueError("Thematic composition requires a non-empty theme.")
+        if scope != ProductionScope.SELECTION or topic_id is not None:
+            raise ValueError("Thematic composition requires SELECTION scope without a topic.")
+        if len(selected_ids) < 2:
+            raise ValueError("Thematic composition requires at least two selected knowledge units.")
+        if len(set(selected_ids)) != len(selected_ids):
+            raise ValueError("Thematic source selection must not contain duplicate knowledge units.")
+        if not any(stage.capability_key == "compose_thematic_artifact" for stage in resolved_recipe.stages):
+            raise ValueError("The selected product recipe does not include compose_thematic_artifact.")
+        selected_result = await session.execute(
+            select(KnowledgeUnitModel)
+            .options(selectinload(KnowledgeUnitModel.source))
+            .where(KnowledgeUnitModel.id.in_(selected_ids))
+        )
+        selected_by_id = {unit.id: unit for unit in selected_result.scalars().all()}
+        missing = [str(unit_id) for unit_id in selected_ids if unit_id not in selected_by_id]
+        if missing:
+            raise ValueError("One or more thematic source units were not found: " + ", ".join(missing))
+        if selected_by_id[selected_ids[0]].source_id != source_id:
+            raise ValueError("source_id must match the first selected unit, used only as the legacy lineage anchor.")
+        # One thematic request produces one composite Artifact, not one duplicate per source.
+        units = [selected_by_id[selected_ids[0]]]
+    else:
+        if any(stage.capability_key == "compose_thematic_artifact" for stage in resolved_recipe.stages):
+            raise ValueError("Thematic product recipe requires thematic_theme and explicit source selection.")
+        units = await _resolve_units(
+            session,
+            source_id,
+            scope,
+            topic_id,
+            knowledge_unit_ids or [],
+        )
     claim = ProductionClaimModel(
         id=uuid4(),
         source_id=source_id,
@@ -695,6 +726,12 @@ class ProductionJobRunner:
                 )).scalar_one_or_none()
                 if job is None:
                     return
+                request_payload_row = None
+                if job.claim_id is not None:
+                    request_payload_row = (await session.execute(
+                        select(ProductionClaimModel.request_payload).where(ProductionClaimModel.id == job.claim_id)
+                    )).scalar_one_or_none()
+                job_request_payload = request_payload_row if isinstance(request_payload_row, dict) else {}
                 resolved_context = None
                 pinned_context_payload = job.resolved_context
                 pinned_prompt_key = job.editorial_prompt_key
@@ -774,7 +811,14 @@ class ProductionJobRunner:
                             pinned_recipe,
                             ProductionExecutionContext(
                                 session=session,
-                                inputs={"knowledge_unit_id": knowledge_unit_id, **provider_operation_context},
+                                inputs={
+                                    "knowledge_unit_id": knowledge_unit_id,
+                                    **provider_operation_context,
+                                    **({
+                                        "thematic_theme": job_request_payload.get("thematic_theme"),
+                                        "thematic_source_knowledge_unit_ids": job_request_payload.get("knowledge_unit_ids", []),
+                                    } if job_request_payload.get("thematic_theme") else {}),
+                                },
                                 configuration={
                                     "editorial_prompt": {
                                         "key": pinned_prompt_key,
