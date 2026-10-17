@@ -77,7 +77,7 @@ def test_arabic_card_renders_png_and_fails_instead_of_truncating():
 
     with pytest.raises(ValueError, match="allows"):
         render_arabic_text_card_png(
-            "هذه جملة طويلة لا بد أن تتجاوز عدد الأسطر المسموح به عند حجم الخط المحدد.",
+            ("هذه جملة طويلة لا بد أن تتجاوز عدد الأسطر المسموح به عند حجم الخط المحدد. " * 8).strip(),
             {"width": 640, "height": 800, "padding": 40, "font_size": 30, "line_spacing": 10, "max_lines": 1},
             font_path=font_path,
         )
