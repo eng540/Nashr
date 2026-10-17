@@ -103,8 +103,11 @@ test("a product can be created in Control Plane and selected in the factory", as
   await page.goto("/control");
   await page.getByRole("button", { name: "جديد" }).click();
   await page.getByLabel("المفتاح").fill("E2E_UI_PRODUCT");
+  await expect(page.getByLabel("المفتاح")).toHaveValue("E2E_UI_PRODUCT");
   await page.getByLabel("الاسم").fill("E2E UI Product");
+  await expect(page.getByLabel("الاسم")).toHaveValue("E2E UI Product");
   await page.getByLabel("الغرض").fill("Product created through the Control Plane UI");
+  await expect(page.getByLabel("الغرض")).toHaveValue("Product created through the Control Plane UI");
   await page.getByLabel("الوصفة المنشورة").selectOption("E2E_PRODUCT_RECIPE");
   await page.getByLabel("السياسة المنشورة").selectOption("E2E_PRODUCT_POLICY");
   await page.getByLabel("عقد المخرج المنشور").selectOption("E2E_PRODUCT_CONTRACT");
