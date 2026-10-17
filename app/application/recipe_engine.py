@@ -763,7 +763,7 @@ class RenderApprovedTextCardCapability:
         ):
             raise ValueError("render_approved_text_card requires a storage-backed image/png output contract.")
 
-        render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines"}
+        render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family"}
         render_configuration = {key: value for key, value in context.stage_configuration.items() if key in render_keys}
         png = render_arabic_text_card_png(source_artifact.content, render_configuration)
         storage = self.storage_factory()
