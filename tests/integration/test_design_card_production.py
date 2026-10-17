@@ -255,6 +255,12 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance():
         assert fallback_artifact.metadata["background_mode"] == "ai_failed_fallback_solid"
         assert fallback_artifact.metadata["background_generation_status"] == "FALLBACK_TO_SOLID"
         assert fallback_artifact.metadata["ai_asset_identity"] is None
+        failure_provenance = fallback_artifact.metadata["background_generation_failure"]
+        assert failure_provenance["operation_id"]
+        assert failure_provenance["provider"] == "fake"
+        assert failure_provenance["model"] == "fake-background-v1"
+        assert failure_provenance["adapter"] == "FakeBackgroundGenerator"
+        assert failure_provenance["status"] == "FALLBACK_TO_SOLID"
         assert fallback_artifact.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
 
 
