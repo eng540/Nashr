@@ -119,7 +119,7 @@ test("approved text can create a card, receive independent visual approval, and 
   await expect(page.getByRole("img", { name: "بطاقة النص المعتمد" })).toBeVisible();
   await expect(page.getByRole("button", { name: "اعتماد المخرج", exact: true })).toBeVisible();
   await page.getByLabel(`ملاحظة مراجعة المخرج ${imageId}`).fill("مراجعة بصرية مستقلة");
-  await page.getByRole("button", { name: "اعتماد المخرج" }).click();
+  await page.getByRole("button", { name: "اعتماد المخرج", exact: true }).click();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
   await expect(page.getByText("IMAGE · image/png")).toBeVisible();
   await expect(page.getByText("TEXT · text/plain")).toBeVisible();
