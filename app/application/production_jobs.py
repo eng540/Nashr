@@ -125,6 +125,7 @@ async def create_production_job(
     request_fingerprint: str | None = None,
     request_payload: dict | None = None,
     thematic_theme: str | None = None,
+    source_artifact_id: UUID | None = None,
 ) -> ProductionJobModel:
     # A claim is durable user intent; the job is a separate execution record.
     # A missing key means an explicit fresh claim, never a settings-based dedupe.
@@ -143,6 +144,7 @@ async def create_production_job(
         "identity_key": identity_key,
         "product_key": product_key,
         "thematic_theme": thematic_theme.strip() if isinstance(thematic_theme, str) else None,
+        "source_artifact_id": str(source_artifact_id) if source_artifact_id is not None else None,
     }
     if request_fingerprint is None:
         request_fingerprint = hashlib.sha256(
@@ -204,6 +206,24 @@ async def create_production_job(
         resolved_identity = await resolver.resolve_identity(session, identity_key) if identity_key is not None else None
         resolved_output_contract = await resolver.resolve_output_contract(session, output_contract_key)
         resolved_policy = await resolver.resolve_policy(session, policy_key)
+
+    has_card_stage = any(stage.capability_key == "render_approved_text_card" for stage in resolved_recipe.stages)
+    if has_card_stage != (source_artifact_id is not None):
+        raise ValueError("Design-card recipes require an explicit approved source_artifact_id, and other recipes cannot accept one.")
+    if source_artifact_id is not None:
+        if scope != ProductionScope.SELECTION or topic_id is not None or len(knowledge_unit_ids or []) != 1:
+            raise ValueError("Design-card production requires selection scope with exactly one lineage anchor.")
+        source_artifact = (await session.execute(
+            select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
+        )).scalar_one_or_none()
+        if source_artifact is None:
+            raise ValueError("The selected source Artifact does not exist.")
+        if source_artifact.kind != ArtifactKind.TEXT.value or source_artifact.review_status != "APPROVED":
+            raise ValueError("Design cards can only be produced from a human-approved TEXT Artifact.")
+        if source_artifact.source_knowledge_unit_id != knowledge_unit_ids[0]:
+            raise ValueError("The selected approved text Artifact must match the selected lineage anchor.")
+        if resolved_output_contract.definition.artifact_kind != ArtifactKind.IMAGE or resolved_output_contract.definition.mime_type != "image/png" or resolved_output_contract.definition.content_mode != "STORAGE_URI":
+            raise ValueError("Design-card product must pin a storage-backed image/png output contract.")
 
     if thematic_theme is not None:
         thematic_theme = thematic_theme.strip()
@@ -819,6 +839,7 @@ class ProductionJobRunner:
                                 session=session,
                                 inputs={
                                     "knowledge_unit_id": knowledge_unit_id,
+                                    **({"source_artifact_id": job_request_payload.get("source_artifact_id")} if job_request_payload.get("source_artifact_id") else {}),
                                     **provider_operation_context,
                                     **({
                                         "thematic_theme": job_request_payload.get("thematic_theme"),
