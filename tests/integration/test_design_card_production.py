@@ -87,6 +87,7 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance(mon
             content="مادة المصدر",
             source_reference="ص. 11",
         ))
+        await session.flush()
         claim_id = uuid4()
         session.add(ProductionClaimModel(
             id=claim_id,
