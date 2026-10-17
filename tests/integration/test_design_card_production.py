@@ -175,6 +175,13 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance():
         assert persisted.resolved_context["output_contract"]["version"] == 1
         assert persisted.mime_type == "image/png"
 
+        object_count_before_retry = len(storage.objects)
+        retried_artifact = await RenderApprovedTextCardCapability(
+            storage_factory=lambda: storage
+        ).execute(context)
+        assert retried_artifact.id == image_artifact.id
+        assert len(storage.objects) == object_count_before_retry
+
         class FakeBackgroundGenerator:
             provider_name = "fake"
 
