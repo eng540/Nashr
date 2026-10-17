@@ -88,3 +88,27 @@ async def test_generic_artifact_review_returns_not_found_for_unknown_ids():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/artifacts/00000000-0000-0000-0000-000000000001")
         assert response.status_code == 404
+
+
+
+@pytest.mark.asyncio
+async def test_card_job_api_rejects_unapproved_text_and_requires_card_product():
+    artifact_id = await _create_text_artifact("source-grounded text for a card")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        draft_request = await client.post("/production-jobs", json={
+            "scope": "SELECTION",
+            "source_artifact_id": str(artifact_id),
+        })
+        assert draft_request.status_code == 400
+        assert "human-approved TEXT Artifact" in draft_request.json()["detail"]
+
+        approved = await client.post(f"/api/artifacts/{artifact_id}/approve", json={})
+        assert approved.status_code == 200, approved.text
+
+        no_product_request = await client.post("/production-jobs", json={
+            "scope": "SELECTION",
+            "source_artifact_id": str(artifact_id),
+        })
+        assert no_product_request.status_code == 400
+        assert "explicit approved source_artifact_id" in no_product_request.json()["detail"]
