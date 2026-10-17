@@ -134,3 +134,11 @@ The matching output contract must declare `artifact_kind=IMAGE`, `mime_type=imag
 - Renderer provenance now records the resolved font family, file name and SHA-256, the renderer version, deterministic solid-background mode, and the absence of an AI asset. The approved TEXT Artifact remains the exact text source; no image model is used for typesetting.
 - A published product/version is seeded through migration 0048 with a pinned recipe, IMAGE_ARTIFACT output contract, policy, prompt, and identity manifest. The recipe configuration is the versioned design specification; no separate Template entity is introduced.
 - This does not establish that the live Railway database has applied migration 0048 or that a production image has been generated and reviewed. Those are deployment/runtime acceptance gates, not inferred from CI.
+
+
+## Design variants and optional backgrounds — 2026-10-17
+
+- Migration 0049 adds three deterministic recipe/product configurations (quote, text with source, poetry/literary RTL) and one explicitly AI-assisted background product. They are versioned through existing Recipe and ProductVersion manifests; there is no separate Template registry.
+- AI-assisted mode sends only the versioned visual background prompt to the existing Gemini/FAL image adapter. The approved text is never sent to the image generator and is typeset afterward by the deterministic Pillow/RAQM renderer.
+- If background generation fails, the renderer falls back to the configured solid background and records the failure metadata. The approved text is still rendered and the IMAGE Artifact remains independently reviewable.
+- These additions are covered by code and CI tests; they do not yet complete multi-card carousel or Publishing handoff.

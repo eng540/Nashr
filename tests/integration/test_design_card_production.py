@@ -1,13 +1,14 @@
 import hashlib
-import os
 from datetime import datetime, timezone
-from pathlib import Path
-from uuid import uuid4
+from io import BytesIO
+from uuid import UUID, uuid4
 
 import pytest
+from PIL import Image
 from sqlalchemy import select
 
 from app.application.artifacts import persist_generic_artifact
+from app.application.image_generation import GeneratedImage
 from app.application.generic_artifact_review import GenericArtifactReviewService
 from app.application.recipe_engine import ProductionExecutionContext, RenderApprovedTextCardCapability
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
@@ -50,18 +51,7 @@ def _pinned_contract(key: str, kind: str, mime_type: str, mode: str, required_fi
 
 
 @pytest.mark.asyncio
-async def test_approved_text_to_card_capability_persists_png_with_provenance(monkeypatch):
-    font_candidates = [
-        os.environ.get("NASHR_CARD_FONT_PATH"),
-        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-    ]
-    font_path = next((path for path in font_candidates if path and Path(path).is_file()), None)
-    if font_path is None:
-        pytest.skip("No Arabic-capable system font is installed in this test environment.")
-    monkeypatch.setenv("NASHR_CARD_FONT_PATH", font_path)
+async def test_approved_text_to_card_capability_persists_png_with_provenance():
 
     storage = MemoryCardStorage()
     source_id, unit_id, run_id = uuid4(), uuid4(), uuid4()
@@ -168,3 +158,101 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance(mon
         assert persisted.review_status == "DRAFT"
         assert persisted.artifact_metadata["source_artifact_id"] == str(saved_text.id)
         assert persisted.mime_type == "image/png"
+
+        class FakeBackgroundGenerator:
+            provider_name = "fake"
+
+            def __init__(self, should_fail: bool = False):
+                self.should_fail = should_fail
+                self.prompts = []
+
+            async def generate(self, prompt, *, aspect_ratio="4:5", image_size="1K"):
+                self.prompts.append(prompt)
+                assert approved_text not in prompt
+                if self.should_fail:
+                    raise RuntimeError("synthetic background provider failure")
+                background = BytesIO()
+                Image.new("RGB", (320, 240), "#334455").save(background, format="PNG")
+                return GeneratedImage(
+                    content=background.getvalue(),
+                    mime_type="image/png",
+                    model="fake-background-v1",
+                    provider="fake",
+                )
+
+        async def create_job_for_background(fingerprint_char: str) -> UUID:
+            next_run_id = uuid4()
+            next_claim_id = uuid4()
+            session.add(ProductionClaimModel(
+                id=next_claim_id,
+                source_id=source_id,
+                scope="SELECTION",
+                request_fingerprint=fingerprint_char * 64,
+                request_payload={"source_id": str(source_id), "background_test": fingerprint_char},
+            ))
+            await session.flush()
+            session.add(ProductionJobModel(
+                id=next_run_id,
+                claim_id=next_claim_id,
+                source_id=source_id,
+                scope="SELECTION",
+                status="RUNNING",
+                total_items=1,
+            ))
+            await session.commit()
+            return next_run_id
+
+        ai_run_id = await create_job_for_background("b")
+        fake_generator = FakeBackgroundGenerator()
+        ai_context = ProductionExecutionContext(
+            session=session,
+            inputs={"knowledge_unit_id": unit_id, "source_artifact_id": saved_text.id},
+            configuration={},
+            run_id=ai_run_id,
+            resolved_context={"output_contract": image_contract},
+            stage_configuration={
+                "width": 640, "height": 800, "padding": 40, "font_size": 30,
+                "line_spacing": 10, "max_lines": 20, "show_title": True,
+                "show_source_attribution": True, "font_family": "naskh",
+                "background_mode": "ai_generated",
+                "background_prompt": "خلفية فنية تجريدية بلا نص أو حروف",
+                "provider": "fal", "model": "fake-background-v1",
+                "aspect_ratio": "4:5", "image_size": "1K",
+            },
+        )
+        ai_artifact = await RenderApprovedTextCardCapability(
+            storage_factory=lambda: storage,
+            image_generator_factory=lambda config: fake_generator,
+        ).execute(ai_context)
+        assert len(fake_generator.prompts) == 1
+        assert ai_artifact.metadata["background_mode"] == "ai_generated"
+        assert ai_artifact.metadata["ai_asset_identity"]["provider"] == "fake"
+        assert ai_artifact.metadata["ai_asset_identity"]["model"] == "fake-background-v1"
+        assert ai_artifact.metadata["ai_asset_identity"]["operation_id"]
+        assert len(ai_artifact.metadata["ai_asset_identity"]["sha256"]) == 64
+        assert ai_artifact.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
+
+        fallback_run_id = await create_job_for_background("c")
+        failing_generator = FakeBackgroundGenerator(should_fail=True)
+        fallback_context = ProductionExecutionContext(
+            session=session,
+            inputs={"knowledge_unit_id": unit_id, "source_artifact_id": saved_text.id},
+            configuration={},
+            run_id=fallback_run_id,
+            resolved_context={"output_contract": image_contract},
+            stage_configuration={
+                "width": 640, "height": 800, "padding": 40, "font_size": 30,
+                "line_spacing": 10, "max_lines": 20, "font_family": "naskh",
+                "background_mode": "ai_generated",
+                "background_prompt": "خلفية فنية تجريدية بلا نص أو حروف",
+                "provider": "fal", "model": "fake-background-v1",
+            },
+        )
+        fallback_artifact = await RenderApprovedTextCardCapability(
+            storage_factory=lambda: storage,
+            image_generator_factory=lambda config: failing_generator,
+        ).execute(fallback_context)
+        assert fallback_artifact.metadata["background_mode"] == "ai_failed_fallback_solid"
+        assert fallback_artifact.metadata["background_generation_status"] == "FALLBACK_TO_SOLID"
+        assert fallback_artifact.metadata["ai_asset_identity"] is None
+        assert fallback_artifact.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()

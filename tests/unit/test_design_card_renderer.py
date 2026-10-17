@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from io import BytesIO
 from PIL import Image
 
 from app.application.design_card_renderer import CardRenderConfig, render_arabic_text_card_png, resolve_card_font_path
@@ -25,7 +26,7 @@ def test_card_configuration_accepts_bounded_product_values():
     })
     assert config.width == 1080
     assert config.background == "#FAF6EE"
-    assert CardRenderConfig.from_mapping({"font_family": "naskh"}).font_family == "naskh"
+    assert CardRenderConfig.from_mapping({"font_family": "naskh", "background_overlay_opacity": 220}).font_family == "naskh"
 
 
 def test_card_configuration_rejects_unknown_and_unsafe_values():
@@ -90,3 +91,47 @@ def test_packaged_naskh_font_is_available_and_licensed():
     assert font_path.is_file()
     assert font_path.name == "NotoNaskhArabic[wght].ttf"
     assert (font_path.parent / "OFL.txt").is_file()
+
+
+def test_card_renderer_composites_ai_background_deterministically():
+    background = BytesIO()
+    Image.new("RGB", (320, 240), "#334455").save(background, format="PNG")
+    font_path = resolve_card_font_path("naskh")
+    configuration = {
+        "width": 640, "height": 800, "padding": 40, "font_size": 30,
+        "line_spacing": 10, "max_lines": 20, "font_family": "naskh",
+        "background_overlay_color": "#F7F2E8", "background_overlay_opacity": 220,
+    }
+    first = render_arabic_text_card_png(
+        "نص عربي ثابت", configuration, font_path=font_path, background_image=background.getvalue()
+    )
+    second = render_arabic_text_card_png(
+        "نص عربي ثابت", configuration, font_path=font_path, background_image=background.getvalue()
+    )
+    assert first == second
+    with Image.open(BytesIO(first)) as image:
+        assert image.format == "PNG"
+        assert image.size == (640, 800)
+
+
+def test_card_recipe_validates_optional_ai_background_configuration():
+    validate_recipe_stage_configuration(RecipeStage(
+        key="render-card-ai",
+        capability_key="render_approved_text_card",
+        capability_version=1,
+        configuration={
+            "background_mode": "ai_generated",
+            "background_prompt": "خلفية فنية تجريدية بلا حروف أو نصوص",
+            "provider": "fal",
+            "model": "fal-ai/flux/schnell",
+            "aspect_ratio": "4:5",
+            "image_size": "1K",
+        },
+    ))
+    with pytest.raises(ValueError, match="background_prompt"):
+        validate_recipe_stage_configuration(RecipeStage(
+            key="render-card-ai-invalid",
+            capability_key="render_approved_text_card",
+            capability_version=1,
+            configuration={"background_mode": "ai_generated"},
+        ))
