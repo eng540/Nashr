@@ -22,6 +22,7 @@ from app.domain.production_jobs import (
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.products import ProductionProductDefinition
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus, validate_production_artifact
+from app.domain.output_contracts import OutputContractDefinition
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST
 from app.application.recipe_engine import (
     ProductionExecutionContext,
@@ -222,7 +223,8 @@ async def create_production_job(
             raise ValueError("Design cards can only be produced from a human-approved TEXT Artifact.")
         if source_artifact.source_knowledge_unit_id != knowledge_unit_ids[0]:
             raise ValueError("The selected approved text Artifact must match the selected lineage anchor.")
-        if resolved_output_contract.definition.artifact_kind != ArtifactKind.IMAGE or resolved_output_contract.definition.mime_type != "image/png" or resolved_output_contract.definition.content_mode != "STORAGE_URI":
+        card_contract = OutputContractDefinition.from_dict(resolved_output_contract.definition)
+        if card_contract.artifact_kind != ArtifactKind.IMAGE or card_contract.mime_type != "image/png" or card_contract.content_mode != "STORAGE_URI":
             raise ValueError("Design-card product must pin a storage-backed image/png output contract.")
 
     if thematic_theme is not None:
