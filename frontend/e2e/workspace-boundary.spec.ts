@@ -126,7 +126,7 @@ test("approved text Artifact can start a card job only through a published card 
 
   await page.goto("/posts/workspace?status=DRAFT");
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
-  await expect(page.getByText("نص معتمد للبطاقة.")).toBeVisible();
+  await expect(page.getByLabel(`منتج البطاقة ${artifactId}`)).toBeVisible();
   await page.getByLabel(`منتج البطاقة ${artifactId}`).selectOption("E2E_CARD_PRODUCT");
   await page.getByRole("button", { name: "إنتاج البطاقة" }).click();
   await expect.poll(() => submittedPayload).not.toBeNull();
