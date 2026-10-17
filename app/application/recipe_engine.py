@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+from pathlib import Path
 from collections.abc import Mapping
 from dataclasses import dataclass, field as dataclass_field, replace
 from datetime import datetime, timezone
@@ -13,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.artifacts import ensure_post_artifact, find_existing_generic_artifact, persist_generic_artifact
-from app.application.design_card_renderer import render_arabic_text_card_png
+from app.application.design_card_renderer import render_arabic_text_card_png, resolve_card_font_path
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
 from app.adapters.image_generation.factory import create_image_generator
@@ -838,11 +839,19 @@ class RenderApprovedTextCardCapability:
         card_title = title_value if isinstance(title_value, str) and title_value.strip() else source_unit.title
         storage = self.storage_factory()
         await storage.ensure_available()
+        selected_font = resolve_card_font_path(str(render_configuration.get("font_family", "default")))
+        font_identity = {
+            "family": str(render_configuration.get("font_family", "default")),
+            "file_name": Path(selected_font).name,
+            "sha256": hashlib.sha256(Path(selected_font).read_bytes()).hexdigest(),
+            "license": "SIL Open Font License 1.1" if "NotoNaskhArabic" in selected_font else "externally configured/system font; verify license before production use",
+        }
         png = render_arabic_text_card_png(
             source_artifact.content,
             render_configuration,
             title=card_title,
             attribution=source_attribution,
+            font_path=selected_font,
         )
         artifact_id = uuid4()
         storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.png"
@@ -867,8 +876,11 @@ class RenderApprovedTextCardCapability:
                 "source_artifact_id": str(source_artifact_id),
                 "source_text_sha256": hashlib.sha256(source_artifact.content.encode("utf-8")).hexdigest(),
                 "renderer": "nashr.deterministic_arabic_card",
-                "renderer_version": 1,
+                "renderer_version": 2,
                 "render_configuration": render_configuration,
+                "font_identity": font_identity,
+                "background_mode": "deterministic_solid",
+                "ai_asset_identity": None,
                 "source_review_status": source_artifact.review_status,
                 "source_name": source_name if len(source_references) == 1 else None,
                 "source_reference": source_reference if len(source_references) == 1 else None,

@@ -36,3 +36,6 @@ markers = [
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["assets/fonts/*.ttf", "assets/fonts/OFL.txt"]

@@ -1,9 +1,8 @@
 # Nashr — approved-output visual derivatives and multi-source composition
 
-**Status:** revised implementation direction; implementation not yet proven complete  
-**Branch:** `feature/design-card-production-line`  
-**Latest verified CI head:** `28879ffd41e37d9bf4aa62fb17b58f18eb2f3c10` — backend tests, migrations, frontend typecheck/unit tests/build, and Browser E2E all passed. Railway production is still running the previously deployed `main` release; no deployment of this branch was performed.
-**Baseline examined:** `main` at `3f6f52b0d0edfd24d8a41b0826f99cbecad469f4`
+**Status:** deterministic card renderer is implemented; this branch makes the Arabic font reproducible and seeds a published deterministic card product. End-to-end Railway rendering, AI-assisted backgrounds, carousel output, and Publishing handoff remain separate acceptance gates.  
+**Implementation branch:** `feature/complete-visual-production-line-20261017`  
+**Baseline:** `main` at `6be4870b384d2fbb8c08dabe5188c511c13a708b`
 
 This record governs implementation direction. Documentation is not feature completion. Every completion claim must be backed by source changes, tests, CI and deployment evidence.
 
@@ -127,3 +126,11 @@ This is a configuration example, not a seeded product and not a production-readi
 ```
 
 The matching output contract must declare `artifact_kind=IMAGE`, `mime_type=image/png`, and `content_mode=STORAGE_URI`. The card button is offered only after the source TEXT Artifact is human-approved. The resulting IMAGE Artifact starts in its own DRAFT review state; approving the text does not approve the image.
+
+
+## Follow-up implementation record — 2026-10-17
+
+- The renderer now resolves the bundled Noto Naskh Arabic font before host-specific fallback paths, and the font is packaged with the Python application under the SIL Open Font License 1.1. This removes the prior dependency on a font being incidentally installed in the Railpack image.
+- Renderer provenance now records the resolved font family, file name and SHA-256, the renderer version, deterministic solid-background mode, and the absence of an AI asset. The approved TEXT Artifact remains the exact text source; no image model is used for typesetting.
+- A published product/version is seeded through migration 0048 with a pinned recipe, IMAGE_ARTIFACT output contract, policy, prompt, and identity manifest. The recipe configuration is the versioned design specification; no separate Template entity is introduced.
+- This does not establish that the live Railway database has applied migration 0048 or that a production image has been generated and reviewed. Those are deployment/runtime acceptance gates, not inferred from CI.

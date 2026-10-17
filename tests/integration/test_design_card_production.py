@@ -152,6 +152,11 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance(mon
         assert image_artifact.mime_type == "image/png"
         assert image_artifact.storage_uri in storage.objects
         assert image_artifact.metadata["source_artifact_id"] == str(saved_text.id)
+        assert image_artifact.metadata["renderer_version"] == 2
+        assert image_artifact.metadata["font_identity"]["file_name"] == "NotoNaskhArabic[wght].ttf"
+        assert len(image_artifact.metadata["font_identity"]["sha256"]) == 64
+        assert image_artifact.metadata["background_mode"] == "deterministic_solid"
+        assert image_artifact.metadata["ai_asset_identity"] is None
         assert image_artifact.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
         assert image_artifact.metadata["source_attribution"] == "المصدر: كتاب الأمثلة — حفظ النص (ص. 11)"
         assert image_artifact.metadata["card_title"] == "النص المعتمد"

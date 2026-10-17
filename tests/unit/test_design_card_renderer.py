@@ -1,10 +1,9 @@
-import os
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
-from app.application.design_card_renderer import CardRenderConfig, render_arabic_text_card_png
+from app.application.design_card_renderer import CardRenderConfig, render_arabic_text_card_png, resolve_card_font_path
 from app.domain.recipes import RecipeStage, SUPPORTED_RECIPE_CAPABILITIES, validate_recipe_stage_configuration
 
 
@@ -57,16 +56,7 @@ def test_card_recipe_capability_is_registered_and_configuration_is_validated():
 
 
 def test_arabic_card_renders_png_and_fails_instead_of_truncating():
-    candidates = [
-        os.environ.get("NASHR_CARD_FONT_PATH"),
-        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-    ]
-    font_path = next((path for path in candidates if path and Path(path).is_file()), None)
-    if font_path is None:
-        pytest.skip("No Arabic-capable system font is installed in this test environment.")
+    font_path = resolve_card_font_path("naskh")
 
     png = render_arabic_text_card_png(
         "إِنَّ اللغةَ العربيةَ جميلةٌ.\n\nوهذه فقرةٌ ثانيةٌ.",
@@ -76,6 +66,13 @@ def test_arabic_card_renders_png_and_fails_instead_of_truncating():
         font_path=font_path,
     )
     assert png.startswith(bytes.fromhex("89504e470d0a1a0a"))
+    assert png == render_arabic_text_card_png(
+        "إِنَّ اللغةَ العربيةَ جميلةٌ.\n\nوهذه فقرةٌ ثانيةٌ.",
+        {"width": 640, "height": 800, "padding": 40, "font_size": 30, "line_spacing": 10, "max_lines": 20, "show_source_attribution": True},
+        title="عنوان تجريبي",
+        attribution="المصدر: كتاب تجريبي",
+        font_path=font_path,
+    )
     with Image.open(__import__("io").BytesIO(png)) as image:
         assert image.format == "PNG"
         assert image.size == (640, 800)
@@ -86,3 +83,10 @@ def test_arabic_card_renders_png_and_fails_instead_of_truncating():
             {"width": 640, "height": 800, "padding": 40, "font_size": 30, "line_spacing": 10, "max_lines": 1},
             font_path=font_path,
         )
+
+
+def test_packaged_naskh_font_is_available_and_licensed():
+    font_path = Path(resolve_card_font_path("naskh"))
+    assert font_path.is_file()
+    assert font_path.name == "NotoNaskhArabic[wght].ttf"
+    assert (font_path.parent / "OFL.txt").is_file()
