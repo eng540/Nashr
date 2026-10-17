@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.artifacts import ensure_post_artifact, find_existing_generic_artifact, persist_generic_artifact
+from app.application.design_card_renderer import render_arabic_text_card_png
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
 from app.adapters.image_generation.factory import create_image_generator
@@ -701,6 +702,111 @@ class ComposeThematicArtifactCapability:
         )
 
 
+class RenderApprovedTextCardCapability:
+    """Render a previously human-approved TEXT Artifact into a deterministic PNG."""
+
+    key = "render_approved_text_card"
+    version = 1
+
+    def __init__(self, storage_factory=None) -> None:
+        self.storage_factory = storage_factory or S3ArtifactStorage.from_environment
+
+    async def execute(
+        self,
+        context: ProductionExecutionContext,
+        previous_output: object | None = None,
+    ) -> Artifact:
+        raw_artifact_id = context.inputs.get("source_artifact_id")
+        knowledge_unit_id = context.inputs.get("knowledge_unit_id")
+        if not isinstance(raw_artifact_id, (str, UUID)):
+            raise ValueError("render_approved_text_card requires a source_artifact_id.")
+        if not isinstance(knowledge_unit_id, UUID):
+            raise ValueError("render_approved_text_card requires the source material lineage anchor.")
+        try:
+            source_artifact_id = raw_artifact_id if isinstance(raw_artifact_id, UUID) else UUID(raw_artifact_id)
+        except ValueError as exc:
+            raise ValueError("source_artifact_id must be a valid UUID.") from exc
+
+        source_result = await context.session.execute(
+            select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
+        )
+        source_artifact = source_result.scalar_one_or_none()
+        if source_artifact is None:
+            raise ValueError("The selected source Artifact does not exist.")
+        if source_artifact.kind != ArtifactKind.TEXT.value or source_artifact.review_status != "APPROVED":
+            raise ValueError("Design cards can only be created from a human-approved TEXT Artifact.")
+        if source_artifact.status != ArtifactStatus.AVAILABLE.value or not source_artifact.content:
+            raise ValueError("The approved source Artifact is unavailable or has no inline text.")
+        if source_artifact.source_knowledge_unit_id != knowledge_unit_id:
+            raise ValueError("The approved text Artifact does not match the production lineage anchor.")
+        if context.resolved_context is None or "output_contract" not in context.resolved_context:
+            raise ValueError("render_approved_text_card requires a pinned output contract.")
+
+        existing = await find_existing_generic_artifact(
+            context.session,
+            production_job_id=context.run_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.IMAGE,
+        )
+        if existing is not None:
+            if (existing.metadata or {}).get("source_artifact_id") == str(source_artifact_id):
+                return existing
+            raise ValueError("An IMAGE Artifact already exists for this job and source anchor.")
+
+        pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
+        contract = OutputContractDefinition.from_dict(pinned_contract.definition)
+        if (
+            contract.artifact_kind != ArtifactKind.IMAGE.value
+            or contract.mime_type != "image/png"
+            or contract.content_mode != "STORAGE_URI"
+        ):
+            raise ValueError("render_approved_text_card requires a storage-backed image/png output contract.")
+
+        render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines"}
+        render_configuration = {key: value for key, value in context.stage_configuration.items() if key in render_keys}
+        png = render_arabic_text_card_png(source_artifact.content, render_configuration)
+        storage = self.storage_factory()
+        await storage.ensure_available()
+        artifact_id = uuid4()
+        storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.png"
+        storage_uri = await storage.put(key=storage_key, content=png, content_type="image/png")
+        now = datetime.now(timezone.utc)
+        artifact = Artifact(
+            id=artifact_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.IMAGE,
+            content=None,
+            status=ArtifactStatus.AVAILABLE.value,
+            created_at=now,
+            updated_at=now,
+            storage_uri=storage_uri,
+            mime_type="image/png",
+            production_job_id=context.run_id,
+            output_contract_key=pinned_contract.key,
+            output_contract_version=pinned_contract.version,
+            resolved_context=dict(context.resolved_context),
+            metadata={
+                "title": (source_artifact.artifact_metadata or {}).get("title", "بطاقة نصية"),
+                "source_artifact_id": str(source_artifact_id),
+                "source_text_sha256": hashlib.sha256(source_artifact.content.encode("utf-8")).hexdigest(),
+                "renderer": "nashr.deterministic_arabic_card",
+                "renderer_version": 1,
+                "render_configuration": render_configuration,
+                "source_review_status": source_artifact.review_status,
+            },
+        )
+        try:
+            return await persist_generic_artifact(
+                context.session, artifact, resolved_context=dict(context.resolved_context)
+            )
+        except Exception:
+            try:
+                await storage.delete(storage_uri)
+            except (AttributeError, ArtifactStorageError, ValueError):
+                pass
+            raise
+
+
 class ProductionRecipeEngine:
     def __init__(self, capabilities: CapabilityRegistry) -> None:
         self.capabilities = capabilities
@@ -740,6 +846,7 @@ def build_production_recipe_engine(
     capabilities.register(ProduceTextArtifactCapability(drafter, resolver))
     capabilities.register(ComposeThematicArtifactCapability(drafter, resolver))
     capabilities.register(ProduceImageArtifactCapability())
+    capabilities.register(RenderApprovedTextCardCapability())
     capabilities.register(ProduceVideoArtifactCapability())
     capabilities.register(ProduceAudioArtifactCapability(drafter, resolver))
     return ProductionRecipeEngine(capabilities=capabilities)
