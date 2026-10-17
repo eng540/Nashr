@@ -703,6 +703,51 @@ class ComposeThematicArtifactCapability:
         )
 
 
+def _build_card_attribution(
+    source_metadata: Mapping[str, object],
+    fallback_title: str,
+    fallback_source_name: str,
+    fallback_reference: str | None,
+) -> tuple[str, list[dict[str, str | None]]]:
+    """Build attribution only from stored provenance; preserve every thematic source."""
+    if source_metadata.get("composition_mode") == "MULTI_SOURCE_THEMATIC":
+        raw_sources = source_metadata.get("sources")
+        if not isinstance(raw_sources, list) or not raw_sources:
+            raise ValueError("Thematic text Artifact has no complete source attribution metadata.")
+        normalized: list[dict[str, str | None]] = []
+        labels: list[str] = []
+        for item in raw_sources:
+            if not isinstance(item, Mapping):
+                raise ValueError("Thematic source attribution metadata is malformed.")
+            title = item.get("title")
+            source_name = item.get("source_name")
+            reference = item.get("source_reference")
+            if not isinstance(title, str) or not title.strip() or not isinstance(source_name, str) or not source_name.strip():
+                raise ValueError("Thematic source attribution is missing a stored source title or name.")
+            if reference is not None and not isinstance(reference, str):
+                raise ValueError("Thematic source reference metadata is malformed.")
+            reference = reference.strip() if isinstance(reference, str) and reference.strip() else None
+            label = f"{source_name.strip()} — {title.strip()}"
+            if reference:
+                label += f" ({reference})"
+            labels.append(label)
+            normalized.append({
+                "source_name": source_name.strip(),
+                "title": title.strip(),
+                "source_reference": reference,
+            })
+        return "المصادر: " + "؛ ".join(labels), normalized
+
+    label = f"{fallback_source_name} — {fallback_title}"
+    if fallback_reference:
+        label += f" ({fallback_reference})"
+    return f"المصدر: {label}", [{
+        "source_name": fallback_source_name,
+        "title": fallback_title,
+        "source_reference": fallback_reference,
+    }]
+
+
 class RenderApprovedTextCardCapability:
     """Render a previously human-approved TEXT Artifact into a deterministic PNG."""
 
@@ -780,9 +825,12 @@ class RenderApprovedTextCardCapability:
                 if source_unit.discovery_page_end in (None, source_unit.discovery_page_start)
                 else f"ص. {source_unit.discovery_page_start}–{source_unit.discovery_page_end}"
             )
-        attribution = f"المصدر: {source_name} — {source_unit.title}"
-        if source_reference:
-            attribution += f" ({source_reference})"
+        source_attribution, source_references = _build_card_attribution(
+            source_artifact.artifact_metadata or {},
+            source_unit.title,
+            source_name,
+            source_reference,
+        )
 
         render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment"}
         render_configuration = {key: value for key, value in context.stage_configuration.items() if key in render_keys}
@@ -794,7 +842,7 @@ class RenderApprovedTextCardCapability:
             source_artifact.content,
             render_configuration,
             title=card_title,
-            attribution=attribution,
+            attribution=source_attribution,
         )
         artifact_id = uuid4()
         storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.png"
@@ -825,7 +873,8 @@ class RenderApprovedTextCardCapability:
                 "source_name": source_name,
                 "source_reference": source_reference,
                 "card_title": card_title,
-                "source_attribution": attribution,
+                "source_attribution": source_attribution,
+                "source_references": source_references,
             },
         )
         try:
