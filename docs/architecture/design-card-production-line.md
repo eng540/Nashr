@@ -79,3 +79,14 @@ Variable design decisions belong in versioned product/component configuration, n
 - Never claim renderer performance, CI success, or Railway behavior without direct evidence.
 - Never run external Telegram publication as a test.
 - Do not stop at this document: implement, test, open a reviewable PR, fix CI failures, and continue through the verified deployment path.
+
+
+## Implementation update — deterministic card capability
+
+The current branch now adds a bounded `render_approved_text_card v1` recipe capability to the existing production engine. Its request names a source Artifact ID, and the API and capability independently enforce that the source is an available, human-approved inline TEXT Artifact whose Knowledge Unit matches the job's lineage anchor. It rejects raw Knowledge Units as card text. The output is a separate storage-backed `image/png` Artifact with the source Artifact ID, source-text SHA-256, renderer version, and effective render configuration recorded in metadata. The generic Artifact review flow remains the review boundary for the image.
+
+The renderer uses Pillow with RAQM layout for Arabic shaping and requires a configured Arabic-capable font. It is deliberately fail-closed: if RAQM or the font is unavailable, generation fails; if the text does not fit, it fails without truncating the text. Product recipe configuration controls canvas size, padding, colors, font size, line spacing, and line-count ceiling. This first version is a single-card layout, not yet a lossless multi-card sequence renderer.
+
+**Deployment prerequisite:** set `NASHR_CARD_FONT_PATH` to a licensed Arabic font file available in the production container, and verify Pillow's RAQM support in that exact runtime before enabling the card product. A green CI run alone does not prove production font availability or correct glyph shaping. Do not publish a card product as operational until the deployment prerequisite and a real visual review are verified.
+
+The review panel exposes card creation only for approved TEXT Artifacts and only when a published product has an active recipe containing `render_approved_text_card v1`. The request goes through the durable production-job API and the product's pinned image output contract; no new job queue or review system is introduced.
