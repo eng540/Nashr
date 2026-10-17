@@ -763,11 +763,39 @@ class RenderApprovedTextCardCapability:
         ):
             raise ValueError("render_approved_text_card requires a storage-backed image/png output contract.")
 
-        render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family"}
+        unit_result = await context.session.execute(
+            select(KnowledgeUnitModel)
+            .options(selectinload(KnowledgeUnitModel.source))
+            .where(KnowledgeUnitModel.id == knowledge_unit_id)
+        )
+        source_unit = unit_result.scalar_one_or_none()
+        if source_unit is None:
+            raise ValueError("The approved text Artifact's source material is unavailable.")
+        source = source_unit.source
+        source_name = (source.book_title or source.filename) if source is not None else "المصدر"
+        source_reference = source_unit.source_reference
+        if not source_reference and source_unit.discovery_page_start is not None:
+            source_reference = (
+                f"ص. {source_unit.discovery_page_start}"
+                if source_unit.discovery_page_end in (None, source_unit.discovery_page_start)
+                else f"ص. {source_unit.discovery_page_start}–{source_unit.discovery_page_end}"
+            )
+        attribution = f"المصدر: {source_name} — {source_unit.title}"
+        if source_reference:
+            attribution += f" ({source_reference})"
+
+        render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment"}
         render_configuration = {key: value for key, value in context.stage_configuration.items() if key in render_keys}
+        title_value = (source_artifact.artifact_metadata or {}).get("title")
+        card_title = title_value if isinstance(title_value, str) and title_value.strip() else source_unit.title
         storage = self.storage_factory()
         await storage.ensure_available()
-        png = render_arabic_text_card_png(source_artifact.content, render_configuration)
+        png = render_arabic_text_card_png(
+            source_artifact.content,
+            render_configuration,
+            title=card_title,
+            attribution=attribution,
+        )
         artifact_id = uuid4()
         storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.png"
         storage_uri = await storage.put(key=storage_key, content=png, content_type="image/png")
@@ -794,6 +822,10 @@ class RenderApprovedTextCardCapability:
                 "renderer_version": 1,
                 "render_configuration": render_configuration,
                 "source_review_status": source_artifact.review_status,
+                "source_name": source_name,
+                "source_reference": source_reference,
+                "card_title": card_title,
+                "source_attribution": attribution,
             },
         )
         try:
