@@ -155,10 +155,18 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
         unknown = set(stage.configuration) - allowed
         if unknown:
             raise ValueError("render_approved_text_card configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
-        from app.application.design_card_renderer import CardRenderConfig
-        CardRenderConfig.from_mapping(stage.configuration)
-
-
+        integer_ranges = {
+            "width": (320, 2400), "height": (320, 3200), "padding": (16, 1000),
+            "font_size": (16, 120), "line_spacing": (0, 80), "max_lines": (1, 100),
+        }
+        for key, (minimum, maximum) in integer_ranges.items():
+            value = stage.configuration.get(key)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum):
+                raise ValueError(f"render_approved_text_card {key} is outside supported bounds.")
+        for key in ("background", "foreground"):
+            value = stage.configuration.get(key)
+            if value is not None and (not isinstance(value, str) or len(value) not in {4, 7} or not value.startswith("#")):
+                raise ValueError(f"render_approved_text_card {key} must be a hex color.")
     if stage.capability_key == "produce_image_artifact" and stage.capability_version == 1:
         unknown = set(stage.configuration) - {"style_instructions", "aspect_ratio", "image_size", "generation_prompt"}
         if unknown:
