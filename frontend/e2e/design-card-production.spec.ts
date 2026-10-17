@@ -78,12 +78,12 @@ test("approved text can create a card, receive independent visual approval, and 
     imageStatus = "REJECTED";
     await route.fulfill({ json: imageArtifact() });
   });
-  await page.route(/\\/production-jobs\\/visual-card-job-e2e$/, (route) => route.fulfill({ json: {
+  await page.route("**/production-jobs/visual-card-job-e2e", (route) => route.fulfill({ json: {
     job_id: "visual-card-job-e2e", status: "COMPLETED", progress_percent: 100,
     total_items: 1, completed_items: 1, failed_items: 0, pending_items: 0, running_items: 0,
     error_message: null, error_code: null,
   } }));
-  await page.route(/\\/(?:api\\/)?production-jobs(?:\\?.*)?$/, async (route) => {
+  await page.route("**/production-jobs", async (route) => {
     if (route.request().method() !== "POST") return route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } });
     submittedJob = route.request().postDataJSON() as Record<string, unknown>;
     imageCreated = true;
