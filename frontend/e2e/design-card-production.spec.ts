@@ -115,6 +115,16 @@ test("approved text can create a card, receive independent visual approval, and 
     recipe_key: "APPROVED_TEXT_TO_DESIGN_CARD",
   });
 
+  await page.getByLabel("المنشور المصدر للتصميم").selectOption(postId);
+  await page.getByLabel("منتج التصميم من المنشور").selectOption("ARABIC_LITERATURE_DESIGN_CARD");
+  await page.getByRole("button", { name: "إنتاج تصميم للمنشور" }).click();
+  await expect(page.getByText("أُنشئت مهمة التصميم: visual-card-job-e2e")).toBeVisible();
+  expect(submittedJob).toMatchObject({
+    source_post_id: postId,
+    product_key: "ARABIC_LITERATURE_DESIGN_CARD",
+    recipe_key: "APPROVED_TEXT_TO_DESIGN_CARD",
+  });
+
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("DRAFT");
   await expect(page.getByRole("img", { name: "بطاقة النص المعتمد" })).toBeVisible();
   await expect(page.getByRole("button", { name: "اعتماد المخرج", exact: true })).toBeVisible();
