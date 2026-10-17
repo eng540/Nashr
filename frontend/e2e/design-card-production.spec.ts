@@ -78,11 +78,20 @@ test("approved text can create a card, receive independent visual approval, and 
     imageStatus = "REJECTED";
     await route.fulfill({ json: imageArtifact() });
   });
-  await page.route(/\/(?:api\/)?production-jobs(?:\?.*)?$/, async (route) => {
+  await page.route(/\\/production-jobs\\/visual-card-job-e2e$/, (route) => route.fulfill({ json: {
+    job_id: "visual-card-job-e2e", status: "COMPLETED", progress_percent: 100,
+    total_items: 1, completed_items: 1, failed_items: 0, pending_items: 0, running_items: 0,
+    error_message: null, error_code: null,
+  } }));
+  await page.route(/\\/(?:api\\/)?production-jobs(?:\\?.*)?$/, async (route) => {
     if (route.request().method() !== "POST") return route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } });
     submittedJob = route.request().postDataJSON() as Record<string, unknown>;
     imageCreated = true;
-    await route.fulfill({ status: 202, json: { job_id: "visual-card-job-e2e" } });
+    await route.fulfill({ status: 202, json: {
+      job_id: "visual-card-job-e2e", status: "QUEUED", progress_percent: 0,
+      total_items: 1, completed_items: 0, failed_items: 0, pending_items: 1, running_items: 0,
+      error_message: null, error_code: null,
+    } });
   });
   await page.route(/\/posts\?/, (route) => route.fulfill({
     json: { items: [post()], total: 1, limit: 20, offset: 0 },
@@ -108,22 +117,24 @@ test("approved text can create a card, receive independent visual approval, and 
   await expect(page.getByLabel(`منتج البطاقة ${textId}`)).toBeVisible();
   await page.getByLabel(`منتج البطاقة ${textId}`).selectOption("ARABIC_LITERATURE_DESIGN_CARD");
   await page.getByRole("button", { name: "إنتاج البطاقة" }).click();
-  await expect(page.getByText("أُنشئت مهمة إنتاج البطاقة: visual-card-job-e2e")).toBeVisible();
+  await expect(page.getByText(/اكتمل الإنتاج/)).toBeVisible();
   expect(submittedJob).toMatchObject({
     source_artifact_id: textId,
     product_key: "ARABIC_LITERATURE_DESIGN_CARD",
     recipe_key: "APPROVED_TEXT_TO_DESIGN_CARD",
   });
+  expect(String(submittedJob?.idempotency_key).length).toBeLessThanOrEqual(100);
 
   await page.getByLabel("المنشور المصدر للتصميم").selectOption(postId);
   await page.getByLabel("منتج التصميم من المنشور").selectOption("ARABIC_LITERATURE_DESIGN_CARD");
   await page.getByRole("button", { name: "إنتاج تصميم للمنشور" }).click();
-  await expect(page.getByText("أُنشئت مهمة التصميم: visual-card-job-e2e")).toBeVisible();
+  await expect(page.getByText(/اكتمل الإنتاج/)).toBeVisible();
   expect(submittedJob).toMatchObject({
     source_post_id: postId,
     product_key: "ARABIC_LITERATURE_DESIGN_CARD",
     recipe_key: "APPROVED_TEXT_TO_DESIGN_CARD",
   });
+  expect(String(submittedJob?.idempotency_key).length).toBeLessThanOrEqual(100);
 
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("DRAFT");
   await expect(page.getByRole("img", { name: "بطاقة النص المعتمد" })).toBeVisible();
