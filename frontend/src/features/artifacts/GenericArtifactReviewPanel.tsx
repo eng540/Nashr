@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
@@ -40,10 +40,9 @@ export function GenericArtifactReviewPanel() {
   const [status, setStatus] = useState<GenericArtifactReviewStatus>("DRAFT");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
-  const [cardJobs, setCardJobs] = useState<Record<string, string>>({});
   const [selectedPostId, setSelectedPostId] = useState("");
   const [postProductKey, setPostProductKey] = useState("");
-  const [postCardJob, setPostCardJob] = useState("");
+  const [activeCardJob, setActiveCardJob] = useState("");
   const approvedPosts = useQuery({ queryKey: ["approved-posts-for-design-cards"], queryFn: () => postsApi.list({ status: "APPROVED", limit: 100 }) });
   const products = useQuery({ queryKey: ["design-card-products"], queryFn: () => productionJobsApi.products() });
   const recipes = useQuery({ queryKey: ["design-card-recipes"], queryFn: () => productionJobsApi.recipes() });
@@ -59,6 +58,20 @@ export function GenericArtifactReviewPanel() {
     queryKey: ["generic-artifacts", status],
     queryFn: () => genericArtifactsApi.list(status),
   });
+  const activeJob = useQuery({
+    queryKey: ["design-card-production-job", activeCardJob],
+    queryFn: () => productionJobsApi.get(activeCardJob),
+    enabled: Boolean(activeCardJob),
+    refetchInterval: (query) => {
+      const jobStatus = query.state.data?.status;
+      return jobStatus === "COMPLETED" || jobStatus === "FAILED" ? false : 1500;
+    },
+  });
+  useEffect(() => {
+    if (activeJob.data?.status === "COMPLETED" || activeJob.data?.status === "FAILED") {
+      queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
+    }
+  }, [activeJob.data?.status, queryClient]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
   const save = useMutation({
     mutationFn: (id: string) => genericArtifactsApi.update(id, { content: drafts[id]?.content }),
@@ -84,15 +97,13 @@ export function GenericArtifactReviewPanel() {
         ...(artifact ? { source_artifact_id: artifact.id } : { source_post_id: postId }),
         product_key: product.key,
         recipe_key: version.definition.recipe_key,
-        idempotency_key: `design-card:${sourceId}:${product.key}:v${version.version}:${crypto.randomUUID()}`,
+        idempotency_key: `design-card:${crypto.randomUUID()}`,
       });
       return { sourceId, postSource: Boolean(postId), job };
     },
-    onSuccess: ({ sourceId, postSource, job }) => {
-      if (postSource) setPostCardJob(job.job_id);
-      else setCardJobs((current) => ({ ...current, [sourceId]: job.job_id }));
+    onSuccess: ({ job }) => {
+      setActiveCardJob(job.job_id);
       queryClient.invalidateQueries({ queryKey: ["production-jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
     },
   });
 
@@ -127,10 +138,13 @@ export function GenericArtifactReviewPanel() {
           </select>
         </label>
       </div>
-      {selectedPostId ? <p className="text-xs text-slate-600">حالة المصدر: {(approvedPosts.data?.items ?? []).find((post) => post.post_id === selectedPostId)?.status === "APPROVED" ? "معتمد" : "غير معتمد"} · سيُتحقق الخادم من الحالة والنص قبل الإنتاج.</p> : null}
-      <button type="button" onClick={() => createCard.mutate({ postId: selectedPostId, productKey: postProductKey })} disabled={!selectedPostId || !postProductKey || createCard.isPending} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">إنتاج تصميم للمنشور</button>
+      {selectedPostId ? <div className="rounded-lg bg-white p-3 text-sm leading-7 text-slate-700" dir="auto">{(approvedPosts.data?.items ?? []).find((post) => post.post_id === selectedPostId)?.content ?? "تعذر تحميل نص المنشور المحدد."}</div> : null}
+      {products.isLoading || recipes.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل منتجات التصميم المنشورة...</p> : null}
+      {products.isError || recipes.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل منتجات التصميم أو وصفاته: {(products.error ?? recipes.error)?.message}</p> : null}
+      {!products.isLoading && !recipes.isLoading && !products.isError && !recipes.isError && eligibleCardProducts.length === 0 ? <p role="status" className="text-sm text-amber-800">لا يوجد حاليًا منتج تصميم منشور مرتبط بوصفة تدعم إنتاج البطاقات.</p> : null}
+      <button type="button" onClick={() => createCard.mutate({ postId: selectedPostId, productKey: postProductKey })} disabled={!selectedPostId || !postProductKey || createCard.isPending || products.isLoading || recipes.isLoading} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">{createCard.isPending ? "جارٍ بدء الإنتاج..." : "إنتاج تصميم للمنشور"}</button>
+      {approvedPosts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المنشورات المعتمدة...</p> : null}
       {approvedPosts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المنشورات المعتمدة: {approvedPosts.error.message}</p> : null}
-      {postCardJob ? <p role="status" className="text-sm text-emerald-700">أُنشئت مهمة التصميم: {postCardJob}</p> : null}
     </div>
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
@@ -178,7 +192,6 @@ export function GenericArtifactReviewPanel() {
           <button type="button" onClick={() => createCard.mutate({ artifact, productKey: cardProducts[artifact.id] ?? "" })} disabled={!cardProducts[artifact.id] || createCard.isPending} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">إنتاج البطاقة</button>
           {products.isLoading || recipes.isLoading ? <span className="text-xs">تحميل منتجات البطاقات...</span> : null}
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
-          {cardJobs[artifact.id] ? <p role="status" className="w-full text-sm text-emerald-700">أُنشئت مهمة إنتاج البطاقة: {cardJobs[artifact.id]}</p> : null}
         </div> : null}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {Object.keys(artifact.metadata).length > 0 ? <pre className="overflow-x-auto rounded-lg bg-slate-50 p-3 text-xs">{JSON.stringify(artifact.metadata, null, 2)}</pre> : null}
@@ -190,6 +203,14 @@ export function GenericArtifactReviewPanel() {
         </div> : null}
       </article>)}
     </div>
+    {activeCardJob ? <div role="status" className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm">
+      <p className="font-semibold">مهمة إنتاج التصميم · {activeCardJob}</p>
+      {activeJob.isLoading ? <p>جارٍ تحميل حالة المهمة...</p> : null}
+      {activeJob.isError ? <p className="text-rose-700">تعذر تحديث حالة الإنتاج: {activeJob.error.message}</p> : null}
+      {activeJob.data?.status === "QUEUED" || activeJob.data?.status === "RUNNING" ? <p>الإنتاج جارٍ · التقدم {activeJob.data.progress_percent ?? 0}% · اكتمل {activeJob.data.completed_items ?? 0} من {activeJob.data.total_items ?? 1}</p> : null}
+      {activeJob.data?.status === "COMPLETED" ? <p className="text-emerald-800">اكتمل الإنتاج. حُدثت قائمة المخرجات؛ انتقل إلى حالة «قيد المراجعة» لمعاينة التصميم.</p> : null}
+      {activeJob.data?.status === "FAILED" ? <p className="text-rose-700">فشل الإنتاج: {activeJob.data.error_message ?? "لم يُرجع النظام تفاصيل إضافية."}</p> : null}
+    </div> : null}
     {(save.isError || approve.isError || reject.isError || createCard.isError) ? <p role="alert" className="text-sm text-rose-700">{(save.error ?? approve.error ?? reject.error ?? createCard.error)?.message}</p> : null}
   </section>;
 }
