@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 test("approved text can create a card, receive independent visual approval, and enter current Publishing", async ({ page }) => {
+  page.on("pageerror", (error) => console.log(`[design-card-e2e pageerror] ${error.stack ?? error.message}`));
+  page.on("console", (message) => { if (message.type() === "error") console.log(`[design-card-e2e console] ${message.text()}`); });
   const sourceUnitId = "unit-visual-line-e2e";
   const textId = "text-visual-line-e2e";
   const imageId = "image-visual-line-e2e";
