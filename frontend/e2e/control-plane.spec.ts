@@ -86,10 +86,14 @@ test("a product can be created in Control Plane and selected in the factory", as
   await page.getByLabel("السياسة المنشورة").selectOption("E2E_PRODUCT_POLICY");
   await page.getByLabel("عقد المخرج المنشور").selectOption("E2E_PRODUCT_CONTRACT");
   await page.getByLabel("التعليمات المنشورة").selectOption(promptKey);
+  await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(promptKey);
   await page.getByLabel("الهوية التحريرية المنشورة").selectOption("E2E_PRODUCT_IDENTITY");
+  await expect(page.getByLabel("الهوية التحريرية المنشورة")).toHaveValue("E2E_PRODUCT_IDENTITY");
   await page.getByLabel("الجمهور").fill("E2E audience");
   await page.getByLabel("تجربة المنتج").fill("E2E product experience");
-  await page.getByRole("button", { name: "إنشاء ومسودة أولى" }).click();
+  const createProductButton = page.getByRole("button", { name: "إنشاء ومسودة أولى" });
+  await expect(createProductButton).toBeEnabled();
+  await createProductButton.click();
   await page.getByRole("button", { name: "نشر الإصدار" }).click();
   await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
 
