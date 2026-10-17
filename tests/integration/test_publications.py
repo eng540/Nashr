@@ -1,4 +1,5 @@
 from io import BytesIO
+import hashlib
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -201,6 +202,22 @@ async def test_approved_visual_artifact_flows_through_existing_publication_bound
         post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_id))).scalar_one()
         await ReviewPost().approve(session, post.id, "approved post")
 
+        text_artifact_id = uuid4()
+        source_text_hash = hashlib.sha256(post.content.encode("utf-8")).hexdigest()
+        session.add(ArtifactModel(
+            id=text_artifact_id,
+            source_knowledge_unit_id=unit_id,
+            kind="TEXT",
+            status="AVAILABLE",
+            content=post.content,
+            mime_type="text/plain",
+            output_contract_key="TEXT_ARTIFACT",
+            output_contract_version=1,
+            resolved_context={},
+            artifact_metadata={},
+            review_status="APPROVED",
+        ))
+        await session.flush()
         visual_id = uuid4()
         session.add(ArtifactModel(
             id=visual_id,
@@ -212,7 +229,7 @@ async def test_approved_visual_artifact_flows_through_existing_publication_bound
             output_contract_key="IMAGE_ARTIFACT",
             output_contract_version=1,
             resolved_context={},
-            artifact_metadata={"source_artifact_id": str(uuid4()), "source_text_sha256": "a" * 64},
+            artifact_metadata={"source_artifact_id": str(text_artifact_id), "source_text_sha256": source_text_hash},
             review_status="APPROVED",
             review_note="approved visual",
         ))
@@ -235,6 +252,22 @@ async def test_unapproved_visual_artifact_blocks_publication_without_publishing_
         post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_id))).scalar_one()
         await ReviewPost().approve(session, post.id, "approved post")
 
+        text_artifact_id = uuid4()
+        source_text_hash = hashlib.sha256(post.content.encode("utf-8")).hexdigest()
+        session.add(ArtifactModel(
+            id=text_artifact_id,
+            source_knowledge_unit_id=unit_id,
+            kind="TEXT",
+            status="AVAILABLE",
+            content=post.content,
+            mime_type="text/plain",
+            output_contract_key="TEXT_ARTIFACT",
+            output_contract_version=1,
+            resolved_context={},
+            artifact_metadata={},
+            review_status="APPROVED",
+        ))
+        await session.flush()
         visual_id = uuid4()
         session.add(ArtifactModel(
             id=visual_id,
@@ -246,7 +279,7 @@ async def test_unapproved_visual_artifact_blocks_publication_without_publishing_
             output_contract_key="IMAGE_ARTIFACT",
             output_contract_version=1,
             resolved_context={},
-            artifact_metadata={"source_artifact_id": str(uuid4()), "source_text_sha256": "a" * 64},
+            artifact_metadata={"source_artifact_id": str(text_artifact_id), "source_text_sha256": source_text_hash},
             review_status="DRAFT",
         ))
         await session.flush()

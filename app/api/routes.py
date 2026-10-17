@@ -1439,7 +1439,7 @@ async def post_filter_options(
     if publication_state == "ELIGIBLE":
         published_exists = select(PublicationModel.id).where(
             PublicationModel.post_id == PostModel.id,
-            PublicationModel.status == "PUBLISHED",
+            PublicationModel.status != "DRAFT",
         ).exists()
         scheduled_exists = select(ScheduleItemModel.id).join(
             ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id
@@ -1610,7 +1610,7 @@ async def attach_visual_artifact_to_post(
     published = (await session.execute(
         select(PublicationModel.id).where(
             PublicationModel.post_id == post_id,
-            PublicationModel.status == "PUBLISHED",
+            PublicationModel.status != "DRAFT",
         ).limit(1)
     )).scalar_one_or_none()
     scheduled = (await session.execute(
@@ -1638,6 +1638,27 @@ async def attach_visual_artifact_to_post(
         raise HTTPException(status_code=409, detail="Only an available, human-approved, storage-backed image can be attached.")
     if visual.source_knowledge_unit_id != post.knowledge_unit_id:
         raise HTTPException(status_code=409, detail="The approved visual Artifact must share the Post's source-material lineage.")
+    visual_metadata = visual.artifact_metadata or {}
+    source_artifact_value = visual_metadata.get("source_artifact_id")
+    source_text_hash = visual_metadata.get("source_text_sha256")
+    try:
+        source_artifact_id = UUID(str(source_artifact_value))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail="The visual Artifact is missing valid approved-text provenance.") from exc
+    source_text = (await session.execute(
+        select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
+    )).scalar_one_or_none()
+    if (
+        source_text is None
+        or source_text.kind != "TEXT"
+        or source_text.status != "AVAILABLE"
+        or source_text.review_status != "APPROVED"
+        or source_text.content is None
+        or source_text.source_knowledge_unit_id != post.knowledge_unit_id
+        or source_text.content != post.content
+        or source_text_hash != hashlib.sha256(source_text.content.encode("utf-8")).hexdigest()
+    ):
+        raise HTTPException(status_code=409, detail="The Post text must exactly match the approved TEXT Artifact used to create this visual.")
     already_linked = (await session.execute(
         select(PostModel.id).where(
             PostModel.visual_artifact_id == visual.id,
@@ -1670,7 +1691,7 @@ async def detach_visual_artifact_from_post(
     published = (await session.execute(
         select(PublicationModel.id).where(
             PublicationModel.post_id == post_id,
-            PublicationModel.status == "PUBLISHED",
+            PublicationModel.status != "DRAFT",
         ).limit(1)
     )).scalar_one_or_none()
     scheduled = (await session.execute(
@@ -2777,7 +2798,7 @@ async def list_posts(
         filters.append(KnowledgeUnitModel.kind == kind)
     published_exists = select(PublicationModel.id).where(
         PublicationModel.post_id == PostModel.id,
-        PublicationModel.status == "PUBLISHED",
+        PublicationModel.status != "DRAFT",
     ).exists()
     scheduled_exists = select(ScheduleItemModel.id).join(
         ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id
@@ -2908,7 +2929,7 @@ async def post_filter_options(
     if publication_state == "ELIGIBLE":
         published_exists = select(PublicationModel.id).where(
             PublicationModel.post_id == PostModel.id,
-            PublicationModel.status == "PUBLISHED",
+            PublicationModel.status != "DRAFT",
         ).exists()
         scheduled_exists = select(ScheduleItemModel.id).join(
             ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id

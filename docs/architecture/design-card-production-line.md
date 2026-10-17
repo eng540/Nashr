@@ -142,3 +142,5 @@ The matching output contract must declare `artifact_kind=IMAGE`, `mime_type=imag
 - AI-assisted mode sends only the versioned visual background prompt to the existing Gemini/FAL image adapter. The approved text is never sent to the image generator and is typeset afterward by the deterministic Pillow/RAQM renderer.
 - If background generation fails, the renderer falls back to the configured solid background and records the failure metadata. The approved text is still rendered and the IMAGE Artifact remains independently reviewable.
 - These additions are covered by code and CI tests; they do not yet complete multi-card carousel or Publishing handoff.
+
+- Visual attachment and publication execution both verify that the IMAGE Artifact points to an available, human-approved TEXT Artifact whose exact content and SHA-256 still match the Post. This prevents attaching or publishing a card whose embedded text differs from the caption text.

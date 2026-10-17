@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -170,6 +171,8 @@ class ApproveAndPublish:
             raise ValueError("Publication not found.")
         if current_row.post_id != artifact.id:
             raise ValueError("Publication does not belong to the supplied Artifact.")
+        if current_row.status != PublicationStatus.DRAFT.value:
+            raise ValueError("Publication is not a DRAFT.")
 
         media_bytes = None
         media_mime_type = None
@@ -190,6 +193,28 @@ class ApproveAndPublish:
                 or visual.source_knowledge_unit_id != post_row.knowledge_unit_id
             ):
                 raise ValueError("The attached visual Artifact is no longer approved or available for Publishing.")
+            visual_metadata = visual.artifact_metadata or {}
+            source_artifact_value = visual_metadata.get("source_artifact_id")
+            source_text_hash = visual_metadata.get("source_text_sha256")
+            try:
+                source_artifact_id = UUID(str(source_artifact_value))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("The attached visual Artifact has invalid approved-text provenance.") from exc
+            source_text_result = await session.execute(
+                select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
+            )
+            source_text = source_text_result.scalar_one_or_none()
+            if (
+                source_text is None
+                or source_text.kind != "TEXT"
+                or source_text.status != "AVAILABLE"
+                or source_text.review_status != "APPROVED"
+                or source_text.content is None
+                or source_text.source_knowledge_unit_id != post_row.knowledge_unit_id
+                or source_text.content != post_row.content
+                or source_text_hash != hashlib.sha256(source_text.content.encode("utf-8")).hexdigest()
+            ):
+                raise ValueError("The Post text no longer matches the approved TEXT Artifact used to create the visual.")
             try:
                 media_bytes = await S3ArtifactStorage.from_environment().get_bytes(visual.storage_uri)
             except (ArtifactStorageError, ValueError) as exc:
