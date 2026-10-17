@@ -70,7 +70,7 @@ def test_arabic_card_renders_png_and_fails_instead_of_truncating():
         {"width": 640, "height": 800, "padding": 40, "font_size": 30, "line_spacing": 10, "max_lines": 20},
         font_path=font_path,
     )
-    assert png.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+    assert png.startswith(bytes.fromhex("89504e470d0a1a0a"))
     with Image.open(__import__("io").BytesIO(png)) as image:
         assert image.format == "PNG"
         assert image.size == (640, 800)
