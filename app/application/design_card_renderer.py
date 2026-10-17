@@ -26,10 +26,15 @@ class CardRenderConfig:
     line_spacing: int = 18
     max_lines: int = 22
     font_family: str = "default"
+    show_title: bool = True
+    show_source_attribution: bool = False
+    title_font_size: int = 34
+    attribution_font_size: int = 22
+    text_alignment: str = "right"
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "CardRenderConfig":
-        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family"}
+        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment"}
         unknown = set(value) - allowed
         if unknown:
             raise ValueError("Unsupported card render configuration: " + ", ".join(sorted(unknown)))
@@ -47,6 +52,12 @@ class CardRenderConfig:
             raise ValueError("Card max_lines must be between 1 and 100.")
         if not isinstance(config.font_family, str) or config.font_family not in {"default", "naskh", "sans"}:
             raise ValueError("Card font_family must be default, naskh, or sans.")
+        if not isinstance(config.show_title, bool) or not isinstance(config.show_source_attribution, bool):
+            raise ValueError("Card title and source-attribution toggles must be booleans.")
+        if any(isinstance(size, bool) or not isinstance(size, int) or not 12 <= size <= 100 for size in (config.title_font_size, config.attribution_font_size)):
+            raise ValueError("Card title and attribution font sizes must be between 12 and 100.")
+        if not isinstance(config.text_alignment, str) or config.text_alignment not in {"right", "center"}:
+            raise ValueError("Card text_alignment must be right or center.")
         for color in (config.background, config.foreground):
             if not isinstance(color, str) or len(color) not in {4, 7} or not color.startswith("#"):
                 raise ValueError("Card colors must be hex color values.")
@@ -99,6 +110,8 @@ def render_arabic_text_card_png(
     approved_text: str,
     configuration: Mapping[str, Any] | None = None,
     *,
+    title: str | None = None,
+    attribution: str | None = None,
     font_path: str | None = None,
 ) -> bytes:
     """Render approved text deterministically; never call a generative model."""
@@ -147,6 +160,20 @@ def render_arabic_text_card_png(
     image = Image.new("RGB", (config.width, config.height), config.background)
     draw = ImageDraw.Draw(image)
     max_width = config.width - (2 * config.padding)
+    title_font = ImageFont.truetype(selected_font, config.title_font_size, layout_engine=ImageFont.Layout.RAQM)
+    attribution_font = ImageFont.truetype(selected_font, config.attribution_font_size, layout_engine=ImageFont.Layout.RAQM)
+
+    title_lines: list[str] = []
+    if config.show_title and isinstance(title, str) and title.strip():
+        title_lines = _wrap_paragraph(draw, title.strip(), title_font, max_width)
+        if len(title_lines) > 3:
+            raise ValueError("Card title exceeds three lines; shorten the title or increase the canvas.")
+    attribution_lines: list[str] = []
+    if config.show_source_attribution and isinstance(attribution, str) and attribution.strip():
+        attribution_lines = _wrap_paragraph(draw, attribution.strip(), attribution_font, max_width)
+        if len(attribution_lines) > 2:
+            raise ValueError("Source attribution exceeds two lines; shorten the attribution or increase the canvas.")
+
     lines: list[str] = []
     for paragraph in approved_text.splitlines():
         lines.extend(_wrap_paragraph(draw, paragraph, font, max_width))
@@ -156,26 +183,40 @@ def render_arabic_text_card_png(
             "increase the card size, reduce font size, or split the content explicitly."
         )
 
-    line_heights = [
-        max(1, draw.textbbox((0, 0), line or " ", font=font, direction="rtl", language="ar")[3]
-            - draw.textbbox((0, 0), line or " ", font=font, direction="rtl", language="ar")[1])
-        for line in lines
-    ]
-    total_height = sum(line_heights) + max(0, len(lines) - 1) * config.line_spacing
-    y = (config.height - total_height) // 2
-    if y < config.padding or y + total_height > config.height - config.padding:
-        raise ValueError("Approved text does not fit vertically; no text was truncated.")
+    def heights_for(values: list[str], selected_font: ImageFont.FreeTypeFont) -> list[int]:
+        heights = []
+        for value in values:
+            bbox = draw.textbbox((0, 0), value or " ", font=selected_font, direction="rtl", language="ar")
+            heights.append(max(1, bbox[3] - bbox[1]))
+        return heights
 
-    for line, line_height in zip(lines, line_heights):
-        draw.text(
-            (config.width - config.padding, y),
-            line,
-            fill=config.foreground,
-            font=font,
-            anchor="ra",
-            direction="rtl",
-            language="ar",
-        )
+    title_heights = heights_for(title_lines, title_font)
+    body_heights = heights_for(lines, font)
+    attribution_heights = heights_for(attribution_lines, attribution_font)
+    title_total = sum(title_heights) + max(0, len(title_lines) - 1) * config.line_spacing
+    attribution_total = sum(attribution_heights) + max(0, len(attribution_lines) - 1) * config.line_spacing
+    top = config.padding
+    if title_lines:
+        for line, line_height in zip(title_lines, title_heights):
+            draw.text((config.width - config.padding, top), line, fill=config.foreground, font=title_font, anchor="ra", direction="rtl", language="ar")
+            top += line_height + config.line_spacing
+        top += config.line_spacing
+    bottom = config.height - config.padding
+    if attribution_lines:
+        bottom -= attribution_total
+        y_attribution = bottom
+        for line, line_height in zip(attribution_lines, attribution_heights):
+            draw.text((config.width - config.padding, y_attribution), line, fill=config.foreground, font=attribution_font, anchor="ra", direction="rtl", language="ar")
+            y_attribution += line_height + config.line_spacing
+        bottom -= config.line_spacing
+    body_total = sum(body_heights) + max(0, len(lines) - 1) * config.line_spacing
+    if top + body_total > bottom:
+        raise ValueError("Approved text, title, and attribution do not fit vertically; no text was truncated.")
+    y = top + max(0, (bottom - top - body_total) // 2)
+    body_x = config.width - config.padding if config.text_alignment == "right" else config.width // 2
+    body_anchor = "ra" if config.text_alignment == "right" else "ma"
+    for line, line_height in zip(lines, body_heights):
+        draw.text((body_x, y), line, fill=config.foreground, font=font, anchor=body_anchor, direction="rtl", language="ar")
         y += line_height + config.line_spacing
 
     output = io.BytesIO()
