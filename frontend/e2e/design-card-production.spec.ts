@@ -101,6 +101,8 @@ test("approved text can create a card, receive independent visual approval, and 
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
 
   await page.goto("/posts/workspace?status=DRAFT");
+  // Explicitly select the review workspace instead of relying only on deep-link initialization.
+  await page.getByRole("button", { name: /بنك المحتوى والمراجعة/ }).click();
   await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
   await expect(page.getByLabel(`منتج البطاقة ${textId}`)).toBeVisible();
