@@ -45,8 +45,9 @@ export function GenericArtifactReviewPanel() {
     const version = product.versions.find((item) => item.version === product.active_version);
     if (!version) return false;
     const recipe = recipes.data?.find((item: ProductionRecipeOption) => item.key === version.definition.recipe_key);
-    const recipeVersion = recipe?.versions.find((item) => item.version === recipe.active_version);
-    return recipeVersion?.status === "PUBLISHED" && recipeVersion.stages.some((stage) => stage.capability_key === "render_approved_text_card" && stage.capability_version === 1);
+    const pinnedRecipeVersion = version.definition.component_versions?.recipe.version;
+    const recipeVersion = recipe?.versions.find((item) => item.version === (pinnedRecipeVersion ?? recipe.active_version));
+    return ["PUBLISHED", "ARCHIVED"].includes(recipeVersion?.status ?? "") && Boolean(recipeVersion?.stages.some((stage) => stage.capability_key === "render_approved_text_card" && stage.capability_version === 1));
   });
   const artifacts = useQuery({
     queryKey: ["generic-artifacts", status],
