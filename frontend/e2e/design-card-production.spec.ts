@@ -96,8 +96,8 @@ test("approved text can create a card, receive independent visual approval, and 
     attached = false;
     await route.fulfill({ json: post() });
   });
-  await page.route(/\/(?:api\/)?schedules(?:\?.*)?$/, (route) => route.fulfill({ json: { items: [], total: 0 } }));
-  await page.route(/\/(?:api\/)?sources(?:\?.*)?$/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/(?:api\/)?schedules(?:\/[^?]*)?(?:\?.*)?$/, (route) => route.fulfill({ json: { items: [], total: 0 } }));
+  await page.route(/\/(?:api\/)?sources(?:\/[^?]*)?(?:\?.*)?$/, (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
 
   await page.goto("/posts/workspace?status=DRAFT");
@@ -117,7 +117,7 @@ test("approved text can create a card, receive independent visual approval, and 
 
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("DRAFT");
   await expect(page.getByRole("img", { name: "بطاقة النص المعتمد" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "اعتماد المخرج" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "اعتماد المخرج", exact: true })).toBeVisible();
   await page.getByLabel(`ملاحظة مراجعة المخرج ${imageId}`).fill("مراجعة بصرية مستقلة");
   await page.getByRole("button", { name: "اعتماد المخرج" }).click();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
