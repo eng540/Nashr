@@ -29,8 +29,8 @@ test("Control Plane can publish the approved-text card recipe capability", async
   await page.getByLabel("المفتاح").fill("E2E_APPROVED_TEXT_CARD_RECIPE");
   await page.getByLabel("الاسم").fill("E2E Approved Text Card Recipe");
   await page.getByLabel("الغرض").fill("Verify card capability is configurable through Control Plane");
-  await page.getByLabel("القدرة").selectOption("render_approved_text_card");
-  await expect(page.getByLabel("القدرة")).toHaveValue("render_approved_text_card");
+  await page.getByLabel("القدرة").first().selectOption("render_approved_text_card");
+  await expect(page.getByLabel("القدرة").first()).toHaveValue("render_approved_text_card");
   await page.getByRole("button", { name: "إنشاء ومسودة أولى" }).click();
   await expect(page.getByText("تم إنشاء العنصر ومسودته الأولى.")).toBeVisible();
   await page.getByRole("button", { name: "نشر الإصدار" }).click();
