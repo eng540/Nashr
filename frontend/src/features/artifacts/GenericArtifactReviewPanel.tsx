@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
 import { productionJobsApi, type ProductionProductOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
+import { postsApi } from "../../shared/api/postsApi";
 
 function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
   const media = useQuery({
@@ -40,6 +41,10 @@ export function GenericArtifactReviewPanel() {
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
   const [cardJobs, setCardJobs] = useState<Record<string, string>>({});
+  const [selectedPostId, setSelectedPostId] = useState("");
+  const [postProductKey, setPostProductKey] = useState("");
+  const [postCardJob, setPostCardJob] = useState("");
+  const approvedPosts = useQuery({ queryKey: ["approved-posts-for-design-cards"], queryFn: () => postsApi.list({ status: "APPROVED", limit: 100 }) });
   const products = useQuery({ queryKey: ["design-card-products"], queryFn: () => productionJobsApi.products() });
   const recipes = useQuery({ queryKey: ["design-card-recipes"], queryFn: () => productionJobsApi.recipes() });
   const eligibleCardProducts = (products.data ?? []).filter((product: ProductionProductOption) => {
@@ -68,21 +73,24 @@ export function GenericArtifactReviewPanel() {
     onSuccess: refresh,
   });
   const createCard = useMutation({
-    mutationFn: async ({ artifact, productKey }: { artifact: GenericReviewableArtifact; productKey: string }) => {
+    mutationFn: async ({ artifact, postId, productKey }: { artifact?: GenericReviewableArtifact; postId?: string; productKey: string }) => {
+      if (Boolean(artifact) === Boolean(postId)) throw new Error("اختر مصدرًا واحدًا للتصميم.");
       const product = eligibleCardProducts.find((item) => item.key === productKey);
       const version = product?.versions.find((item) => item.version === product.active_version);
       if (!product || !version) throw new Error("تعذر العثور على إصدار منتج البطاقات المنشور.");
+      const sourceId = artifact?.id ?? postId!;
       const job = await productionJobsApi.create({
         scope: "SELECTION",
-        source_artifact_id: artifact.id,
+        ...(artifact ? { source_artifact_id: artifact.id } : { source_post_id: postId }),
         product_key: product.key,
         recipe_key: version.definition.recipe_key,
-        idempotency_key: `design-card:${artifact.id}:${product.key}:v${version.version}`,
+        idempotency_key: `design-card:${sourceId}:${product.key}:v${version.version}:${crypto.randomUUID()}`,
       });
-      return { artifactId: artifact.id, job };
+      return { sourceId, postSource: Boolean(postId), job };
     },
-    onSuccess: ({ artifactId, job }) => {
-      setCardJobs((current) => ({ ...current, [artifactId]: job.job_id }));
+    onSuccess: ({ sourceId, postSource, job }) => {
+      if (postSource) setPostCardJob(job.job_id);
+      else setCardJobs((current) => ({ ...current, [sourceId]: job.job_id }));
       queryClient.invalidateQueries({ queryKey: ["production-jobs"] });
       queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
     },
@@ -101,6 +109,28 @@ export function GenericArtifactReviewPanel() {
           <option value="REJECTED">مرفوض</option>
         </select>
       </label>
+    </div>
+    <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-3">
+      <h3 className="font-bold">إنتاج تصميم من منشور معتمد</h3>
+      <p className="text-sm text-slate-600">يُستخدم نص Post المعتمد مباشرةً دون إنشاء TEXT Artifact وسيط. يظل اعتماد الصورة ومراجعتها مستقلًا.</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm font-semibold">المنشور المصدر
+          <select aria-label="المنشور المصدر للتصميم" value={selectedPostId} onChange={(event) => setSelectedPostId(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal">
+            <option value="">اختر منشورًا معتمدًا</option>
+            {(approvedPosts.data?.items ?? []).filter((post) => post.status === "APPROVED" && post.content.trim()).map((post) => <option key={post.post_id} value={post.post_id}>{post.title} · {post.post_id.slice(0, 8)}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-semibold">منتج التصميم المنشور
+          <select aria-label="منتج التصميم من المنشور" value={postProductKey} onChange={(event) => setPostProductKey(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal">
+            <option value="">اختر منتجًا</option>
+            {eligibleCardProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · {product.key}</option>)}
+          </select>
+        </label>
+      </div>
+      {selectedPostId ? <p className="text-xs text-slate-600">حالة المصدر: {(approvedPosts.data?.items ?? []).find((post) => post.post_id === selectedPostId)?.status === "APPROVED" ? "معتمد" : "غير معتمد"} · سيُتحقق الخادم من الحالة والنص قبل الإنتاج.</p> : null}
+      <button type="button" onClick={() => createCard.mutate({ postId: selectedPostId, productKey: postProductKey })} disabled={!selectedPostId || !postProductKey || createCard.isPending} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">إنتاج تصميم للمنشور</button>
+      {approvedPosts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المنشورات المعتمدة: {approvedPosts.error.message}</p> : null}
+      {postCardJob ? <p role="status" className="text-sm text-emerald-700">أُنشئت مهمة التصميم: {postCardJob}</p> : null}
     </div>
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
