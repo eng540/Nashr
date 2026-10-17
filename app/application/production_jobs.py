@@ -127,12 +127,17 @@ async def create_production_job(
 ) -> ProductionJobModel:
     # A claim is durable user intent; the job is a separate execution record.
     # A missing key means an explicit fresh claim, never a settings-based dedupe.
-    normalized_units = sorted(str(unit_id) for unit_id in (knowledge_unit_ids or []))
+    ordered_units = [str(unit_id) for unit_id in (knowledge_unit_ids or [])]
+    normalized_units = sorted(ordered_units)
+    # Thematic composition treats the user's selection order as editorial input.
+    # Keep that order in the durable request payload and fingerprint; ordinary
+    # production selections retain their historical order-independent dedupe.
+    request_units = ordered_units if thematic_theme is not None else normalized_units
     canonical_request_payload = {
         "source_id": str(source_id),
         "scope": scope.value,
         "topic_id": str(topic_id) if topic_id is not None else None,
-        "knowledge_unit_ids": normalized_units,
+        "knowledge_unit_ids": request_units,
         "recipe_key": recipe_key,
         "identity_key": identity_key,
         "product_key": product_key,
