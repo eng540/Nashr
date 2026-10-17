@@ -9,6 +9,7 @@ from app.application.recipe_engine import (
     ProductionExecutionContext,
     ProductionRecipeEngine,
     RenderApprovedTextCardCapability,
+    _build_card_attribution,
 )
 from app.domain.artifacts import Artifact, ArtifactKind
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe, RecipeStage, SUPPORTED_RECIPE_CAPABILITIES, validate_recipe_stage_configuration
@@ -197,3 +198,33 @@ async def test_card_capability_rejects_unapproved_text_before_render_or_storage(
     )
     with pytest.raises(ValueError, match="human-approved"):
         await RenderApprovedTextCardCapability(storage_factory=lambda: pytest.fail("Storage must not be touched")).execute(context)
+
+
+
+def test_thematic_card_attribution_preserves_every_stored_source_reference():
+    attribution, references = _build_card_attribution(
+        {
+            "composition_mode": "MULTI_SOURCE_THEMATIC",
+            "sources": [
+                {"source_name": "كتاب أ", "title": "المادة الأولى", "source_reference": "ص. 12"},
+                {"source_name": "كتاب ب", "title": "المادة الثانية", "source_reference": None},
+            ],
+        },
+        "عنوان التركيب",
+        "كتاب أ",
+        "ص. 12",
+    )
+    assert attribution == "المصادر: كتاب أ — المادة الأولى (ص. 12)؛ كتاب ب — المادة الثانية"
+    assert len(references) == 2
+    assert references[0]["source_reference"] == "ص. 12"
+    assert references[1]["source_reference"] is None
+
+
+def test_thematic_card_attribution_fails_closed_when_provenance_is_missing():
+    with pytest.raises(ValueError, match="complete source attribution"):
+        _build_card_attribution(
+            {"composition_mode": "MULTI_SOURCE_THEMATIC", "sources": []},
+            "عنوان التركيب",
+            "كتاب",
+            None,
+        )
