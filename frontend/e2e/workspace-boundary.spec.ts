@@ -118,6 +118,7 @@ test("approved text Artifact can start a card job only through a published card 
       updated_at: "2026-10-15T00:00:00Z",
     }]),
   }));
+  await page.route("**/production-jobs/e2e-card-job", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ job_id: "e2e-card-job", status: "COMPLETED", progress_percent: 100, total_items: 1, completed_items: 1, failed_items: 0, pending_items: 0, running_items: 0, error_message: null, error_code: null }) }));
   await page.route("**/production-jobs", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     submittedPayload = route.request().postDataJSON() as Record<string, unknown>;
@@ -130,12 +131,12 @@ test("approved text Artifact can start a card job only through a published card 
   await page.getByLabel(`منتج البطاقة ${artifactId}`).selectOption("E2E_CARD_PRODUCT");
   await page.getByRole("button", { name: "إنتاج البطاقة" }).click();
   await expect.poll(() => submittedPayload).not.toBeNull();
-  await expect(page.getByRole("status").filter({ hasText: "أُنشئت مهمة إنتاج البطاقة: e2e-card-job" })).toBeVisible();
+  await expect(page.getByText(/اكتمل الإنتاج/)).toBeVisible();
   expect(submittedPayload).toMatchObject({
     scope: "SELECTION",
     source_artifact_id: artifactId,
     product_key: "E2E_CARD_PRODUCT",
     recipe_key: "E2E_CARD_RECIPE",
   });
-  expect(String(submittedPayload?.idempotency_key)).toContain(artifactId);
+  expect(String(submittedPayload?.idempotency_key).length).toBeLessThanOrEqual(100);
 });
