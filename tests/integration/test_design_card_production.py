@@ -117,12 +117,19 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance():
         await GenericArtifactReviewService(session).approve(saved_text.id, "Human-approved for card rendering")
 
         image_contract = _pinned_contract("CARD_IMAGE_PNG", "IMAGE", "image/png", "STORAGE_URI", ["source_artifact_id"])
+        pinned_product = {"key": "ARABIC_LITERATURE_DESIGN_CARD", "version": 1, "version_id": str(uuid4())}
+        pinned_recipe = {"key": "APPROVED_TEXT_TO_DESIGN_CARD", "version": 1, "version_id": str(uuid4())}
+        image_resolved_context = {
+            "product": pinned_product,
+            "recipe": pinned_recipe,
+            "output_contract": image_contract,
+        }
         context = ProductionExecutionContext(
             session=session,
             inputs={"knowledge_unit_id": unit_id, "source_artifact_id": saved_text.id},
             configuration={},
             run_id=run_id,
-            resolved_context={"output_contract": image_contract},
+            resolved_context=image_resolved_context,
             stage_configuration={
                 "width": 640,
                 "height": 800,
@@ -149,6 +156,10 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance():
         assert image_artifact.metadata["background_mode"] == "deterministic_solid"
         assert image_artifact.metadata["ai_asset_identity"] is None
         assert image_artifact.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
+        assert image_artifact.resolved_context["product"] == pinned_product
+        assert image_artifact.resolved_context["recipe"] == pinned_recipe
+        assert image_artifact.resolved_context["output_contract"]["key"] == "CARD_IMAGE_PNG"
+        assert image_artifact.resolved_context["output_contract"]["version"] == 1
         assert image_artifact.metadata["source_attribution"] == "المصدر: كتاب الأمثلة — حفظ النص (ص. 11)"
         assert image_artifact.metadata["card_title"] == "النص المعتمد"
 
@@ -157,6 +168,9 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance():
         )).scalar_one()
         assert persisted.review_status == "DRAFT"
         assert persisted.artifact_metadata["source_artifact_id"] == str(saved_text.id)
+        assert persisted.resolved_context["product"] == pinned_product
+        assert persisted.resolved_context["recipe"] == pinned_recipe
+        assert persisted.resolved_context["output_contract"]["version"] == 1
         assert persisted.mime_type == "image/png"
 
         class FakeBackgroundGenerator:
@@ -262,6 +276,35 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance():
         assert failure_provenance["adapter"] == "FakeBackgroundGenerator"
         assert failure_provenance["status"] == "FALLBACK_TO_SOLID"
         assert fallback_artifact.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
+
+        factory_failure_run_id = await create_job_for_background("d")
+        def fail_background_factory(_configuration):
+            raise RuntimeError("synthetic adapter initialization failure")
+
+        factory_failure_context = ProductionExecutionContext(
+            session=session,
+            inputs={"knowledge_unit_id": unit_id, "source_artifact_id": saved_text.id},
+            configuration={},
+            run_id=factory_failure_run_id,
+            resolved_context=image_resolved_context,
+            stage_configuration={
+                "width": 640, "height": 800, "padding": 40, "font_size": 30,
+                "line_spacing": 10, "max_lines": 20, "font_family": "naskh",
+                "background_mode": "ai_generated",
+                "background_prompt": "خلفية فنية تجريدية بلا نص أو حروف",
+                "provider": "fal", "model": "fake-background-v1",
+            },
+        )
+        factory_failure_artifact = await RenderApprovedTextCardCapability(
+            storage_factory=lambda: storage,
+            image_generator_factory=fail_background_factory,
+        ).execute(factory_failure_context)
+        factory_failure = factory_failure_artifact.metadata["background_generation_failure"]
+        assert factory_failure["provider"] == "fal"
+        assert factory_failure["model"] == "fake-background-v1"
+        assert factory_failure["adapter"] is None
+        assert factory_failure["operation_id"]
+        assert factory_failure_artifact.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
 
 
 @pytest.mark.asyncio
