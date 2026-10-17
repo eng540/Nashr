@@ -1,5 +1,6 @@
 import hashlib
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -88,12 +89,15 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance(mon
         ))
         await session.commit()
 
+        now = datetime.now(timezone.utc)
         text_artifact = Artifact(
             id=uuid4(),
             source_knowledge_unit_id=unit_id,
             kind=ArtifactKind.TEXT,
             content=approved_text,
             status=ArtifactStatus.AVAILABLE.value,
+            created_at=now,
+            updated_at=now,
             mime_type="text/plain",
             output_contract_key="CARD_SOURCE_TEXT",
             output_contract_version=1,
