@@ -8,6 +8,7 @@ from app.application.recipe_engine import (
     ComposeThematicArtifactCapability,
     ProductionExecutionContext,
     ProductionRecipeEngine,
+    RenderApprovedTextCardCapability,
 )
 from app.domain.artifacts import Artifact, ArtifactKind
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe, RecipeStage, SUPPORTED_RECIPE_CAPABILITIES, validate_recipe_stage_configuration
@@ -153,3 +154,46 @@ async def test_thematic_capability_requires_explicit_theme_and_source_ids_before
     )
     with pytest.raises(ValueError, match="thematic_theme"):
         await capability.execute(context)
+
+
+
+class _ArtifactQueryResult:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+class _ArtifactLookupSession:
+    def __init__(self, artifact):
+        self.artifact = artifact
+
+    async def execute(self, _statement):
+        return _ArtifactQueryResult(self.artifact)
+
+
+@pytest.mark.asyncio
+async def test_card_capability_rejects_unapproved_text_before_render_or_storage():
+    from types import SimpleNamespace
+
+    source_id = uuid4()
+    artifact_id = uuid4()
+    source_artifact = SimpleNamespace(
+        id=artifact_id,
+        kind="TEXT",
+        review_status="DRAFT",
+        status="AVAILABLE",
+        content="هذا النص لم يعتمد بعد.",
+        source_knowledge_unit_id=source_id,
+        artifact_metadata={"title": "نص تجريبي"},
+    )
+    context = ProductionExecutionContext(
+        session=_ArtifactLookupSession(source_artifact),
+        inputs={"source_artifact_id": artifact_id, "knowledge_unit_id": source_id},
+        configuration={},
+        run_id=uuid4(),
+        resolved_context={},
+    )
+    with pytest.raises(ValueError, match="human-approved"):
+        await RenderApprovedTextCardCapability(storage_factory=lambda: pytest.fail("Storage must not be touched")).execute(context)
