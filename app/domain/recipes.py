@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.domain.prompt_templates import validate_template_variables
 
-SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("compose_thematic_artifact", 1), ("produce_image_artifact", 1), ("produce_video_artifact", 1), ("produce_audio_artifact", 1)})
+SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("compose_thematic_artifact", 1), ("produce_image_artifact", 1), ("render_approved_text_card", 1), ("produce_video_artifact", 1), ("produce_audio_artifact", 1)})
 
 
 @dataclass(frozen=True)
@@ -148,6 +148,15 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
             not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
         ):
             raise ValueError(f"{stage.capability_key} style_instructions must be a non-empty string up to 2000 characters.")
+
+
+    if stage.capability_key == "render_approved_text_card" and stage.capability_version == 1:
+        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines"}
+        unknown = set(stage.configuration) - allowed
+        if unknown:
+            raise ValueError("render_approved_text_card configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
+        from app.application.design_card_renderer import CardRenderConfig
+        CardRenderConfig.from_mapping(stage.configuration)
 
 
     if stage.capability_key == "produce_image_artifact" and stage.capability_version == 1:
