@@ -6,6 +6,7 @@
   "buildAptPackages": [
     "...",
     "build-essential",
+    "pkg-config",
     "libraqm-dev",
     "libharfbuzz-dev",
     "libfribidi-dev",
