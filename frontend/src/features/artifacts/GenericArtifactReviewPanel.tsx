@@ -39,6 +39,7 @@ export function GenericArtifactReviewPanel() {
   const [status, setStatus] = useState<GenericArtifactReviewStatus>("DRAFT");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
+  const [cardJobs, setCardJobs] = useState<Record<string, string>>({});
   const products = useQuery({ queryKey: ["design-card-products"], queryFn: () => productionJobsApi.products() });
   const recipes = useQuery({ queryKey: ["design-card-recipes"], queryFn: () => productionJobsApi.recipes() });
   const eligibleCardProducts = (products.data ?? []).filter((product: ProductionProductOption) => {
@@ -71,15 +72,17 @@ export function GenericArtifactReviewPanel() {
       const product = eligibleCardProducts.find((item) => item.key === productKey);
       const version = product?.versions.find((item) => item.version === product.active_version);
       if (!product || !version) throw new Error("تعذر العثور على إصدار منتج البطاقات المنشور.");
-      return productionJobsApi.create({
+      const job = await productionJobsApi.create({
         scope: "SELECTION",
         source_artifact_id: artifact.id,
         product_key: product.key,
         recipe_key: version.definition.recipe_key,
         idempotency_key: `design-card:${artifact.id}:${product.key}:v${version.version}`,
       });
+      return { artifactId: artifact.id, job };
     },
-    onSuccess: () => {
+    onSuccess: ({ artifactId, job }) => {
+      setCardJobs((current) => ({ ...current, [artifactId]: job.job_id }));
       queryClient.invalidateQueries({ queryKey: ["production-jobs"] });
       queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
     },
@@ -145,6 +148,7 @@ export function GenericArtifactReviewPanel() {
           <button type="button" onClick={() => createCard.mutate({ artifact, productKey: cardProducts[artifact.id] ?? "" })} disabled={!cardProducts[artifact.id] || createCard.isPending} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">إنتاج البطاقة</button>
           {products.isLoading || recipes.isLoading ? <span className="text-xs">تحميل منتجات البطاقات...</span> : null}
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
+          {cardJobs[artifact.id] ? <p role="status" className="w-full text-sm text-emerald-700">أُنشئت مهمة إنتاج البطاقة: {cardJobs[artifact.id]}</p> : null}
         </div> : null}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {Object.keys(artifact.metadata).length > 0 ? <pre className="overflow-x-auto rounded-lg bg-slate-50 p-3 text-xs">{JSON.stringify(artifact.metadata, null, 2)}</pre> : null}
