@@ -137,7 +137,9 @@ def telegram_html_to_visible_text(content: str) -> str:
     """
     if not isinstance(content, str) or not content.strip():
         raise ValueError("Telegram message content cannot be empty.")
-    if not _RICH_TAG_RE.search(content):
+    # Route any HTML-like tag through the same validator, including unsupported tags.
+    # Otherwise an unsupported tag such as <div> could be mistaken for ordinary text.
+    if not re.search(r"</?[A-Za-z][^>]*>", content):
         return content
     parser = _TelegramHTMLSerializer()
     try:
