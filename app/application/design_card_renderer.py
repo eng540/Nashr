@@ -62,7 +62,7 @@ def _text_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFo
 def _wrap_paragraph(draw: ImageDraw.ImageDraw, paragraph: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
     if not paragraph:
         return [""]
-    tokens = re.findall(r"\\s+|\\S+", paragraph)
+    tokens = re.findall(r"\s+|\S+", paragraph)
     lines: list[str] = []
     current = ""
     for token in tokens:
