@@ -151,7 +151,7 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
 
 
     if stage.capability_key == "render_approved_text_card" and stage.capability_version == 1:
-        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines"}
+        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family"}
         unknown = set(stage.configuration) - allowed
         if unknown:
             raise ValueError("render_approved_text_card configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
@@ -163,6 +163,9 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
             value = stage.configuration.get(key)
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum):
                 raise ValueError(f"render_approved_text_card {key} is outside supported bounds.")
+        font_family = stage.configuration.get("font_family")
+        if font_family is not None and font_family not in {"default", "naskh", "sans"}:
+            raise ValueError("render_approved_text_card font_family must be default, naskh, or sans.")
         for key in ("background", "foreground"):
             value = stage.configuration.get(key)
             if value is not None and (not isinstance(value, str) or len(value) not in {4, 7} or not value.startswith("#")):
