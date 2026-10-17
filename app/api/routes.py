@@ -69,6 +69,7 @@ class ProductionJobRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
     thematic_theme: str | None = Field(default=None, min_length=1, max_length=500)
     source_artifact_id: UUID | None = None
+    source_post_id: UUID | None = None
 
 
 class ProductionJobResumeRequest(BaseModel):
@@ -696,6 +697,22 @@ async def create_production_job_route(
     try:
         source_id = payload.source_id
         knowledge_unit_ids = list(payload.knowledge_unit_ids)
+        if payload.source_artifact_id is not None and payload.source_post_id is not None:
+            raise ValueError("Choose either an approved TEXT Artifact or an approved Post as the design source, not both.")
+        if payload.source_post_id is not None:
+            source_post = (await session.execute(select(PostModel).where(PostModel.id == payload.source_post_id))).scalar_one_or_none()
+            if source_post is None:
+                raise ValueError("The selected source Post does not exist.")
+            if source_post.status != "APPROVED" or not source_post.content.strip():
+                raise ValueError("Design cards can only be started from a human-approved Post with non-empty text.")
+            unit = (await session.execute(select(KnowledgeUnitModel).where(KnowledgeUnitModel.id == source_post.knowledge_unit_id))).scalar_one_or_none()
+            if unit is None:
+                raise ValueError("The approved Post's source material is unavailable.")
+            if source_id is not None and source_id != unit.source_id:
+                raise ValueError("source_id does not match the approved Post's source.")
+            source_id = unit.source_id
+            if not knowledge_unit_ids:
+                knowledge_unit_ids = [unit.id]
         if payload.source_artifact_id is not None:
             source_artifact = (await session.execute(
                 select(ArtifactModel).where(ArtifactModel.id == payload.source_artifact_id)
@@ -713,7 +730,7 @@ async def create_production_job_route(
             if not knowledge_unit_ids:
                 knowledge_unit_ids = [unit.id]
         if source_id is None:
-            raise ValueError("source_id is required unless source_artifact_id identifies an approved text Artifact.")
+            raise ValueError("source_id is required unless source_artifact_id or source_post_id identifies an approved design source.")
         request_payload = payload.model_dump(mode="json", exclude={"idempotency_key"})
         request_payload["source_id"] = str(source_id)
         request_payload["knowledge_unit_ids"] = [str(value) for value in knowledge_unit_ids]
@@ -1643,26 +1660,30 @@ async def attach_visual_artifact_to_post(
     if visual.source_knowledge_unit_id != post.knowledge_unit_id:
         raise HTTPException(status_code=409, detail="The approved visual Artifact must share the Post's source-material lineage.")
     visual_metadata = visual.artifact_metadata or {}
-    source_artifact_value = visual_metadata.get("source_artifact_id")
+    source_type = visual_metadata.get("source_type", "TEXT_ARTIFACT")
     source_text_hash = visual_metadata.get("source_text_sha256")
-    try:
-        source_artifact_id = UUID(str(source_artifact_value))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=409, detail="The visual Artifact is missing valid approved-text provenance.") from exc
-    source_text = (await session.execute(
-        select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
-    )).scalar_one_or_none()
-    if (
-        source_text is None
-        or source_text.kind != "TEXT"
-        or source_text.status != "AVAILABLE"
-        or source_text.review_status != "APPROVED"
-        or source_text.content is None
-        or source_text.source_knowledge_unit_id != post.knowledge_unit_id
-        or source_text.content != post.content
-        or source_text_hash != hashlib.sha256(source_text.content.encode("utf-8")).hexdigest()
-    ):
-        raise HTTPException(status_code=409, detail="The Post text must exactly match the approved TEXT Artifact used to create this visual.")
+    if source_type == "POST":
+        if visual_metadata.get("source_post_id") != str(post_id) or visual_metadata.get("source_id") != str(post_id):
+            raise HTTPException(status_code=409, detail="This design was not produced from the Post you are attaching it to.")
+        if post.content is None or source_text_hash != hashlib.sha256(post.content.encode("utf-8")).hexdigest():
+            raise HTTPException(status_code=409, detail="The Post text changed after this design was produced. Reproduce the design from the current approved Post.")
+    elif source_type == "TEXT_ARTIFACT":
+        source_artifact_value = visual_metadata.get("source_artifact_id")
+        try:
+            source_artifact_id = UUID(str(source_artifact_value))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail="The visual Artifact is missing valid approved-text provenance.") from exc
+        source_text = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == source_artifact_id))).scalar_one_or_none()
+        if (
+            source_text is None or source_text.kind != "TEXT" or source_text.status != "AVAILABLE"
+            or source_text.review_status != "APPROVED" or source_text.content is None
+            or source_text.source_knowledge_unit_id != post.knowledge_unit_id
+            or source_text.content != post.content
+            or source_text_hash != hashlib.sha256(source_text.content.encode("utf-8")).hexdigest()
+        ):
+            raise HTTPException(status_code=409, detail="The Post text must exactly match the approved TEXT Artifact used to create this visual.")
+    else:
+        raise HTTPException(status_code=409, detail="The visual Artifact has missing or unsupported source provenance.")
     already_linked = (await session.execute(
         select(PostModel.id).where(
             PostModel.visual_artifact_id == visual.id,
