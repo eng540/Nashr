@@ -11,7 +11,7 @@ from app.application.artifacts import persist_generic_artifact
 from app.application.generic_artifact_review import GenericArtifactReviewService
 from app.application.recipe_engine import ProductionExecutionContext, RenderApprovedTextCardCapability
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, ProductionClaimModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -86,6 +86,22 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance(mon
             title="حفظ النص",
             content="مادة المصدر",
             source_reference="ص. 11",
+        ))
+        claim_id = uuid4()
+        session.add(ProductionClaimModel(
+            id=claim_id,
+            source_id=source_id,
+            scope="SELECTION",
+            request_fingerprint="a" * 64,
+            request_payload={"source_id": str(source_id)},
+        ))
+        session.add(ProductionJobModel(
+            id=run_id,
+            claim_id=claim_id,
+            source_id=source_id,
+            scope="SELECTION",
+            status="RUNNING",
+            total_items=1,
         ))
         await session.commit()
 
