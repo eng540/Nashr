@@ -828,7 +828,16 @@ class RenderApprovedTextCardCapability:
         )
         if existing is not None:
             existing_metadata = existing.metadata or {}
-            if existing_metadata.get("source_type") == source_type and existing_metadata.get("source_id") == source_id_value and existing_metadata.get("source_text_sha256") == hashlib.sha256(source_text.encode("utf-8")).hexdigest():
+            same_explicit_source = (
+                existing_metadata.get("source_type") == source_type
+                and existing_metadata.get("source_id") == source_id_value
+            )
+            legacy_text_retry = (
+                source_type == "TEXT_ARTIFACT"
+                and existing_metadata.get("source_type") is None
+                and existing_metadata.get("source_artifact_id") == source_id_value
+            )
+            if (same_explicit_source or legacy_text_retry) and existing_metadata.get("source_text_sha256") == hashlib.sha256(source_text.encode("utf-8")).hexdigest():
                 return existing
             raise ValueError("An IMAGE Artifact already exists for this job and source anchor.")
 
