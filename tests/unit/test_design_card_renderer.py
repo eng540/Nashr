@@ -26,6 +26,7 @@ def test_card_configuration_accepts_bounded_product_values():
     })
     assert config.width == 1080
     assert config.background == "#FAF6EE"
+    assert CardRenderConfig.from_mapping({"font_family": "naskh"}).font_family == "naskh"
 
 
 def test_card_configuration_rejects_unknown_and_unsafe_values():
