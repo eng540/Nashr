@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -60,23 +61,33 @@ def _text_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFo
 def _wrap_paragraph(draw: ImageDraw.ImageDraw, paragraph: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
     if not paragraph:
         return [""]
-    words = paragraph.split()
-    if not words:
-        return [""]
+    tokens = re.findall(r"\\s+|\\S+", paragraph)
     lines: list[str] = []
-    current = words[0]
-    if _text_width(draw, current, font) > max_width:
-        raise ValueError("A word cannot fit within the configured card width at this font size.")
-    for word in words[1:]:
-        candidate = f"{current} {word}"
+    current = ""
+    for token in tokens:
+        candidate = current + token
         if _text_width(draw, candidate, font) <= max_width:
             current = candidate
             continue
-        lines.append(current)
-        current = word
+        if token.isspace():
+            # Preserve every source character; if a whitespace run itself
+            # overflows, keep it with the current line rather than deleting it.
+            if current:
+                lines.append(current)
+            current = token
+            continue
+        if current and current.strip():
+            lines.append(current)
+            current = token
+        elif current:
+            lines.append(current)
+            current = token
+        else:
+            current = token
         if _text_width(draw, current, font) > max_width:
             raise ValueError("A word cannot fit within the configured card width at this font size.")
-    lines.append(current)
+    if current or not lines:
+        lines.append(current)
     return lines
 
 
@@ -92,8 +103,16 @@ def render_arabic_text_card_png(
     if not features.check("raqm"):
         raise RuntimeError("Arabic card rendering requires Pillow built with libraqm support.")
     selected_font = font_path or os.environ.get("NASHR_CARD_FONT_PATH")
+    if not selected_font:
+        candidates = (
+            "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        )
+        selected_font = next((candidate for candidate in candidates if Path(candidate).is_file()), None)
     if not selected_font or not Path(selected_font).is_file():
-        raise RuntimeError("Set NASHR_CARD_FONT_PATH to an installed Arabic-capable font file.")
+        raise RuntimeError("Set NASHR_CARD_FONT_PATH to an installed, licensed Arabic-capable font file.")
     config = CardRenderConfig.from_mapping(configuration or {})
     try:
         font = ImageFont.truetype(selected_font, config.font_size, layout_engine=ImageFont.Layout.RAQM)
