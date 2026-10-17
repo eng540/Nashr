@@ -140,3 +140,29 @@ def test_card_recipe_validates_optional_ai_background_configuration():
 def test_invalid_ai_background_is_rejected_before_text_composition():
     with pytest.raises(ValueError, match="valid supported image"):
         validate_background_image_bytes(b"not-an-image")
+
+
+def test_renderer_handles_mixed_arabic_latin_diacritics_and_punctuation():
+    font_path = resolve_card_font_path("naskh")
+    png = render_arabic_text_card_png(
+        'إِنَّ Nashr 2026 — «العربية»؟ نعم، مع علامات الترقيم.',
+        {"width": 640, "height": 800, "padding": 40, "font_size": 30, "line_spacing": 10, "max_lines": 20, "font_family": "naskh"},
+        font_path=font_path,
+    )
+    assert png.startswith(bytes.fromhex("89504e470d0a1a0a"))
+    with Image.open(BytesIO(png)) as image:
+        assert image.format == "PNG"
+        assert image.size == (640, 800)
+
+
+def test_renderer_fails_closed_when_raqm_is_unavailable(monkeypatch):
+    monkeypatch.setattr("app.application.design_card_renderer.features.check", lambda _feature: False)
+    with pytest.raises(RuntimeError, match="libraqm"):
+        render_arabic_text_card_png("نص عربي")
+
+
+def test_renderer_fails_closed_when_configured_font_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.application.design_card_renderer.features.check", lambda _feature: True)
+    monkeypatch.setenv("NASHR_CARD_FONT_NASKH_PATH", str(tmp_path / "missing-arabic-font.ttf"))
+    with pytest.raises(RuntimeError, match="not an installed font file"):
+        render_arabic_text_card_png("نص عربي", {"font_family": "naskh"})
