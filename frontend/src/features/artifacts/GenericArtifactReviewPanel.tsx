@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
+import { productionJobsApi, type ProductionProductOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
 
 function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
   const media = useQuery({
@@ -37,6 +38,16 @@ export function GenericArtifactReviewPanel() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<GenericArtifactReviewStatus>("DRAFT");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
+  const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
+  const products = useQuery({ queryKey: ["design-card-products"], queryFn: () => productionJobsApi.products() });
+  const recipes = useQuery({ queryKey: ["design-card-recipes"], queryFn: () => productionJobsApi.recipes() });
+  const eligibleCardProducts = (products.data ?? []).filter((product: ProductionProductOption) => {
+    const version = product.versions.find((item) => item.version === product.active_version);
+    if (!version) return false;
+    const recipe = recipes.data?.find((item: ProductionRecipeOption) => item.key === version.definition.recipe_key);
+    const recipeVersion = recipe?.versions.find((item) => item.version === recipe.active_version);
+    return recipeVersion?.status === "PUBLISHED" && recipeVersion.stages.some((stage) => stage.capability_key === "render_approved_text_card" && stage.capability_version === 1);
+  });
   const artifacts = useQuery({
     queryKey: ["generic-artifacts", status],
     queryFn: () => genericArtifactsApi.list(status),
@@ -53,6 +64,24 @@ export function GenericArtifactReviewPanel() {
   const reject = useMutation({
     mutationFn: (id: string) => genericArtifactsApi.reject(id, drafts[id]?.review_note ?? ""),
     onSuccess: refresh,
+  });
+  const createCard = useMutation({
+    mutationFn: async ({ artifact, productKey }: { artifact: GenericReviewableArtifact; productKey: string }) => {
+      const product = eligibleCardProducts.find((item) => item.key === productKey);
+      const version = product?.versions.find((item) => item.version === product.active_version);
+      if (!product || !version) throw new Error("تعذر العثور على إصدار منتج البطاقات المنشور.");
+      return productionJobsApi.create({
+        scope: "SELECTION",
+        source_artifact_id: artifact.id,
+        product_key: product.key,
+        recipe_key: version.definition.recipe_key,
+        idempotency_key: `design-card:${artifact.id}:${product.key}:v${version.version}`,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["production-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
+    },
   });
 
   return <section className="space-y-3 rounded-2xl border bg-white p-5 shadow-sm" aria-label="مراجعة المخرجات العامة">
@@ -105,6 +134,17 @@ export function GenericArtifactReviewPanel() {
             <p className="text-xs leading-5 text-slate-500">تحافظ المعاينة على فواصل الأسطر والفقرات كما هي في النص. وهي معاينة للنص العادي، وليست محاكاة كاملة لتنسيقات القناة المستهدفة.</p>
           </section>
         </div> : <GenericArtifactMediaPreview artifact={artifact} />}
+        {status === "APPROVED" && artifact.kind === "TEXT" && artifact.content ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+          <label className="text-sm font-semibold">إنشاء بطاقة من هذا النص المعتمد
+            <select aria-label={`منتج البطاقة ${artifact.id}`} value={cardProducts[artifact.id] ?? ""} onChange={(event) => setCardProducts((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mr-2 rounded-lg border bg-white p-2 font-normal">
+              <option value="">اختر منتج بطاقات منشورًا</option>
+              {eligibleCardProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · {product.key}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={() => createCard.mutate({ artifact, productKey: cardProducts[artifact.id] ?? "" })} disabled={!cardProducts[artifact.id] || createCard.isPending} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">إنتاج البطاقة</button>
+          {products.isLoading || recipes.isLoading ? <span className="text-xs">تحميل منتجات البطاقات...</span> : null}
+          {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
+        </div> : null}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {Object.keys(artifact.metadata).length > 0 ? <pre className="overflow-x-auto rounded-lg bg-slate-50 p-3 text-xs">{JSON.stringify(artifact.metadata, null, 2)}</pre> : null}
         <input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>
@@ -115,6 +155,6 @@ export function GenericArtifactReviewPanel() {
         </div> : null}
       </article>)}
     </div>
-    {(save.isError || approve.isError || reject.isError) ? <p role="alert" className="text-sm text-rose-700">{(save.error ?? approve.error ?? reject.error)?.message}</p> : null}
+    {(save.isError || approve.isError || reject.isError || createCard.isError) ? <p role="alert" className="text-sm text-rose-700">{(save.error ?? approve.error ?? reject.error ?? createCard.error)?.message}</p> : null}
   </section>;
 }
