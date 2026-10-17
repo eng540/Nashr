@@ -854,6 +854,7 @@ class RenderApprovedTextCardCapability:
             if not isinstance(background_prompt, str) or not background_prompt.strip():
                 raise ValueError("AI-generated card backgrounds require a recipe-pinned background_prompt.")
             background_operation_id = str(uuid4())
+            generator = None
             try:
                 generator = self.image_generator_factory(context.stage_configuration)
                 generated_background = await generator.generate(
