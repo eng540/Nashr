@@ -34,6 +34,8 @@ def test_card_configuration_rejects_unknown_and_unsafe_values():
         CardRenderConfig.from_mapping({"arbitrary_html": "<script>"})
     with pytest.raises(ValueError, match="dimensions"):
         CardRenderConfig.from_mapping({"width": 10})
+    with pytest.raises(ValueError, match="font_family"):
+        CardRenderConfig.from_mapping({"font_family": []})
 
 
 def test_card_recipe_capability_is_registered_and_configuration_is_validated():
