@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.application.artifacts import persist_generic_artifact
 from app.application.image_generation import GeneratedImage
@@ -256,3 +256,43 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance():
         assert fallback_artifact.metadata["background_generation_status"] == "FALLBACK_TO_SOLID"
         assert fallback_artifact.metadata["ai_asset_identity"] is None
         assert fallback_artifact.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_migrations_seed_four_published_versioned_design_card_products():
+    expected_keys = {
+        "ARABIC_QUOTE_CARD",
+        "ARABIC_TEXT_SOURCE_CARD",
+        "ARABIC_POETRY_CARD",
+        "ARABIC_ARTISTIC_CARD",
+    }
+    async with SessionFactory() as session:
+        rows = (await session.execute(text("""
+            SELECT p.key, pv.definition
+            FROM production_products AS p
+            JOIN production_product_versions AS pv ON pv.product_id = p.id
+            WHERE pv.status = 'PUBLISHED' AND p.key IN (
+                'ARABIC_QUOTE_CARD',
+                'ARABIC_TEXT_SOURCE_CARD',
+                'ARABIC_POETRY_CARD',
+                'ARABIC_ARTISTIC_CARD'
+            )
+        """))).all()
+        assert {row.key for row in rows} == expected_keys
+        for row in rows:
+            definition = row.definition
+            assert definition["component_versions"]["output_contract"]["key"] == "IMAGE_ARTIFACT"
+            recipe_component = definition["component_versions"]["recipe"]
+            recipe_row = (await session.execute(text("""
+                SELECT rv.status, rv.definition
+                FROM production_recipe_versions AS rv
+                WHERE rv.id = :version_id
+            """), {"version_id": UUID(recipe_component["version_id"])})).one()
+            assert recipe_row.status == "PUBLISHED"
+            stage = recipe_row.definition["stages"][0]
+            assert stage["capability_key"] == "render_approved_text_card"
+            assert stage["capability_version"] == 1
+            if row.key == "ARABIC_ARTISTIC_CARD":
+                assert stage["configuration"]["background_mode"] == "ai_generated"
+                assert stage["configuration"]["provider"] == "fal"
+                assert stage["configuration"]["model"] == "fal-ai/flux/schnell"

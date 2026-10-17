@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.artifacts import ensure_post_artifact, find_existing_generic_artifact, persist_generic_artifact
-from app.application.design_card_renderer import render_arabic_text_card_png, resolve_card_font_path
+from app.application.design_card_renderer import render_arabic_text_card_png, resolve_card_font_path, validate_background_image_bytes
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
 from app.adapters.image_generation.factory import create_image_generator
@@ -854,8 +854,8 @@ class RenderApprovedTextCardCapability:
             if not isinstance(background_prompt, str) or not background_prompt.strip():
                 raise ValueError("AI-generated card backgrounds require a recipe-pinned background_prompt.")
             background_operation_id = str(uuid4())
-            generator = self.image_generator_factory(context.stage_configuration)
             try:
+                generator = self.image_generator_factory(context.stage_configuration)
                 generated_background = await generator.generate(
                     background_prompt.strip()
                     + "\n\nGenerate a background image only. Do not include text, letters, captions, logos, or watermarks.",
@@ -864,12 +864,14 @@ class RenderApprovedTextCardCapability:
                 )
                 if generated_background.mime_type not in {"image/png", "image/jpeg", "image/webp"}:
                     raise ValueError("The configured image provider returned an unsupported background MIME type.")
+                validate_background_image_bytes(generated_background.content)
                 background_image = generated_background.content
                 background_identity = {
                     "operation_id": background_operation_id,
                     "provider": generated_background.provider,
                     "model": generated_background.model,
                     "adapter": type(generator).__name__,
+                    "adapter_version": 1,
                     "mime_type": generated_background.mime_type,
                     "sha256": hashlib.sha256(generated_background.content).hexdigest(),
                 }

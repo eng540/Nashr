@@ -157,6 +157,17 @@ def resolve_card_font_path(font_family: str = "default", font_path: str | None =
     return str(selected.resolve())
 
 
+def validate_background_image_bytes(background_image: bytes) -> None:
+    """Validate provider output before composing any approved text over it."""
+    try:
+        with Image.open(io.BytesIO(background_image)) as source:
+            if source.format not in {"PNG", "JPEG", "WEBP"}:
+                raise ValueError("AI background format must be PNG, JPEG, or WEBP.")
+            source.verify()
+    except (OSError, ValueError) as exc:
+        raise ValueError("AI background is not a valid supported image.") from exc
+
+
 def render_arabic_text_card_png(
     approved_text: str,
     configuration: Mapping[str, Any] | None = None,

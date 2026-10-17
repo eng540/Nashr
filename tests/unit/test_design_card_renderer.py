@@ -4,7 +4,7 @@ import pytest
 from io import BytesIO
 from PIL import Image
 
-from app.application.design_card_renderer import CardRenderConfig, render_arabic_text_card_png, resolve_card_font_path
+from app.application.design_card_renderer import CardRenderConfig, render_arabic_text_card_png, resolve_card_font_path, validate_background_image_bytes
 from app.domain.recipes import RecipeStage, SUPPORTED_RECIPE_CAPABILITIES, validate_recipe_stage_configuration
 
 
@@ -135,3 +135,8 @@ def test_card_recipe_validates_optional_ai_background_configuration():
             capability_version=1,
             configuration={"background_mode": "ai_generated"},
         ))
+
+
+def test_invalid_ai_background_is_rejected_before_text_composition():
+    with pytest.raises(ValueError, match="valid supported image"):
+        validate_background_image_bytes(b"not-an-image")
