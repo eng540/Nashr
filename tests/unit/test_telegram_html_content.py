@@ -33,3 +33,9 @@ def test_message_limit_counts_visible_text_not_markup() -> None:
     assert len(telegram_html_content("<b>" + "x" * 4096 + "</b>")) > 4096
     with pytest.raises(ValueError, match="4096"):
         telegram_html_content("<b>" + "x" * 4097 + "</b>")
+
+
+def test_caption_limit_can_be_set_for_photo_publications():
+    assert len(telegram_html_content("x" * 1024, max_visible_characters=1024)) == 1024
+    with pytest.raises(ValueError, match="1024"):
+        telegram_html_content("x" * 1025, max_visible_characters=1024)

@@ -101,6 +101,32 @@ class S3ArtifactStorage:
             raise ArtifactStorageError("Unable to store Artifact media.") from exc
         return f"s3://{self.bucket}/{safe_key}"
 
+    async def get_bytes(self, storage_uri: str) -> bytes:
+        """Read private Artifact bytes for a trusted publishing adapter."""
+        bucket, key = self._parse_uri(storage_uri)
+        if bucket != self.bucket:
+            raise ValueError("Artifact storage URI points to an unexpected bucket.")
+
+        def download() -> bytes:
+            response = self.client.get_object(Bucket=self.bucket, Key=key)
+            body = response["Body"]
+            try:
+                content = body.read()
+            finally:
+                close = getattr(body, "close", None)
+                if callable(close):
+                    close()
+            if not isinstance(content, bytes) or not content:
+                raise ArtifactStorageError("Stored Artifact media is empty.")
+            return content
+
+        try:
+            return await asyncio.to_thread(download)
+        except ArtifactStorageError:
+            raise
+        except Exception as exc:
+            raise ArtifactStorageError("Unable to read an Artifact media object.") from exc
+
     async def presign_get(self, storage_uri: str, *, expires_seconds: int = 300) -> str:
         bucket, key = self._parse_uri(storage_uri)
         if bucket != self.bucket:

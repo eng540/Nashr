@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from PIL import Image, ImageDraw, ImageFont, features
+from PIL import Image, ImageDraw, ImageFont, ImageOps, features
 
 
 @dataclass(frozen=True)
@@ -31,10 +31,12 @@ class CardRenderConfig:
     title_font_size: int = 34
     attribution_font_size: int = 22
     text_alignment: str = "right"
+    background_overlay_color: str = "#F7F2E8"
+    background_overlay_opacity: int = 225
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "CardRenderConfig":
-        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment"}
+        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment", "background_overlay_color", "background_overlay_opacity"}
         unknown = set(value) - allowed
         if unknown:
             raise ValueError("Unsupported card render configuration: " + ", ".join(sorted(unknown)))
@@ -58,13 +60,15 @@ class CardRenderConfig:
             raise ValueError("Card title and attribution font sizes must be between 12 and 100.")
         if not isinstance(config.text_alignment, str) or config.text_alignment not in {"right", "center"}:
             raise ValueError("Card text_alignment must be right or center.")
-        for color in (config.background, config.foreground):
+        for color in (config.background, config.foreground, config.background_overlay_color):
             if not isinstance(color, str) or len(color) not in {4, 7} or not color.startswith("#"):
                 raise ValueError("Card colors must be hex color values.")
             try:
                 int(color[1:], 16)
             except ValueError as exc:
                 raise ValueError("Card colors must be hex color values.") from exc
+        if isinstance(config.background_overlay_opacity, bool) or not isinstance(config.background_overlay_opacity, int) or not 0 <= config.background_overlay_opacity <= 255:
+            raise ValueError("background_overlay_opacity must be an integer between 0 and 255.")
         return config
 
 
@@ -106,6 +110,64 @@ def _wrap_paragraph(draw: ImageDraw.ImageDraw, paragraph: str, font: ImageFont.F
     return lines
 
 
+def resolve_card_font_path(font_family: str = "default", font_path: str | None = None) -> str:
+    """Resolve a deterministic, licensed Arabic-capable font for this renderer.
+
+    The packaged Noto Naskh Arabic font is the production-safe default. An
+    explicit path or family-specific environment variable takes precedence,
+    but an invalid explicit choice fails closed instead of silently changing
+    typography.
+    """
+    if font_family not in {"default", "naskh", "sans"}:
+        raise ValueError("font_family must be default, naskh, or sans.")
+    environment_key = {
+        "default": "NASHR_CARD_FONT_PATH",
+        "naskh": "NASHR_CARD_FONT_NASKH_PATH",
+        "sans": "NASHR_CARD_FONT_SANS_PATH",
+    }[font_family]
+    selected_font = font_path or os.environ.get(environment_key)
+    if selected_font:
+        if not Path(selected_font).is_file():
+            raise RuntimeError(f"The configured card font at {environment_key} is not an installed font file.")
+        return str(Path(selected_font).resolve())
+
+    packaged_naskh = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoNaskhArabic[wght].ttf"
+    candidates_by_family = {
+        "default": (
+            packaged_naskh,
+            Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/freefont/FreeSans.ttf"),
+        ),
+        "naskh": (
+            packaged_naskh,
+            Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/freefont/FreeSerif.ttf"),
+        ),
+        "sans": (
+            Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/freefont/FreeSans.ttf"),
+        ),
+    }
+    selected = next((candidate for candidate in candidates_by_family[font_family] if candidate.is_file()), None)
+    if selected is None:
+        raise RuntimeError(f"Set {environment_key} to an installed, licensed Arabic-capable font file.")
+    return str(selected.resolve())
+
+
+def validate_background_image_bytes(background_image: bytes) -> None:
+    """Validate provider output before composing any approved text over it."""
+    try:
+        with Image.open(io.BytesIO(background_image)) as source:
+            if source.format not in {"PNG", "JPEG", "WEBP"}:
+                raise ValueError("AI background format must be PNG, JPEG, or WEBP.")
+            source.verify()
+    except (OSError, ValueError) as exc:
+        raise ValueError("AI background is not a valid supported image.") from exc
+
+
 def render_arabic_text_card_png(
     approved_text: str,
     configuration: Mapping[str, Any] | None = None,
@@ -113,6 +175,7 @@ def render_arabic_text_card_png(
     title: str | None = None,
     attribution: str | None = None,
     font_path: str | None = None,
+    background_image: bytes | None = None,
 ) -> bytes:
     """Render approved text deterministically; never call a generative model."""
     if not isinstance(approved_text, str) or not approved_text.strip():
@@ -120,44 +183,38 @@ def render_arabic_text_card_png(
     if not features.check("raqm"):
         raise RuntimeError("Arabic card rendering requires Pillow built with libraqm support.")
     config = CardRenderConfig.from_mapping(configuration or {})
-    environment_key = {
-        "default": "NASHR_CARD_FONT_PATH",
-        "naskh": "NASHR_CARD_FONT_NASKH_PATH",
-        "sans": "NASHR_CARD_FONT_SANS_PATH",
-    }[config.font_family]
-    selected_font = font_path or os.environ.get(environment_key)
-    if not selected_font and config.font_family == "default":
-        selected_font = os.environ.get("NASHR_CARD_FONT_PATH")
-    if not selected_font:
-        candidates_by_family = {
-            "default": (
-                "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-                "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            ),
-            "naskh": (
-                "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-                "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
-            ),
-            "sans": (
-                "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            ),
-        }
-        selected_font = next(
-            (candidate for candidate in candidates_by_family[config.font_family] if Path(candidate).is_file()),
-            None,
-        )
-    if not selected_font or not Path(selected_font).is_file():
-        raise RuntimeError(f"Set {environment_key} to an installed, licensed Arabic-capable font file.")
+    selected_font = resolve_card_font_path(config.font_family, font_path)
     try:
         font = ImageFont.truetype(selected_font, config.font_size, layout_engine=ImageFont.Layout.RAQM)
     except (OSError, ValueError) as exc:
         raise RuntimeError("The configured card font could not be loaded with Arabic text layout support.") from exc
 
-    image = Image.new("RGB", (config.width, config.height), config.background)
+    if background_image is None:
+        image = Image.new("RGB", (config.width, config.height), config.background)
+    else:
+        try:
+            with Image.open(io.BytesIO(background_image)) as source_background:
+                image = ImageOps.fit(
+                    source_background.convert("RGB"),
+                    (config.width, config.height),
+                    method=Image.Resampling.LANCZOS,
+                )
+        except (OSError, ValueError) as exc:
+            raise ValueError("AI background is not a valid supported image.") from exc
+        if config.background_overlay_opacity:
+            overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_color = tuple(
+                int(config.background_overlay_color[index:index + 2], 16)
+                for index in (1, 3, 5)
+            ) + (config.background_overlay_opacity,)
+            margin = min(config.padding, min(config.width, config.height) // 3)
+            overlay_draw.rounded_rectangle(
+                (margin, margin, config.width - margin, config.height - margin),
+                radius=min(32, margin),
+                fill=overlay_color,
+            )
+            image = Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
     draw = ImageDraw.Draw(image)
     max_width = config.width - (2 * config.padding)
     title_font = ImageFont.truetype(selected_font, config.title_font_size, layout_engine=ImageFont.Layout.RAQM)

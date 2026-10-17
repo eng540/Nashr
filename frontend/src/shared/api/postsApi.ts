@@ -62,6 +62,12 @@ export const postsApi = {
   reject(postId: string, reason: string): Promise<Post> {
     return post<Post>(`/posts/${postId}/reject`, { reason });
   },
+  attachVisualArtifact(postId: string, artifactId: string): Promise<Post> {
+    return post<Post>(`/posts/${postId}/visual-artifact`, { artifact_id: artifactId });
+  },
+  detachVisualArtifact(postId: string): Promise<Post> {
+    return post<Post>(`/posts/${postId}/visual-artifact/detach`);
+  },
   bulkApprove(postIds: string[], note = ""): Promise<BulkApproveResult> {
     return post<BulkApproveResult>("/posts/bulk-approve", {
       post_ids: postIds,

@@ -2,6 +2,8 @@
 import asyncio
 import hashlib
 import json
+import logging
+from pathlib import Path
 from collections.abc import Mapping
 from dataclasses import dataclass, field as dataclass_field, replace
 from datetime import datetime, timezone
@@ -13,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.artifacts import ensure_post_artifact, find_existing_generic_artifact, persist_generic_artifact
-from app.application.design_card_renderer import render_arabic_text_card_png
+from app.application.design_card_renderer import render_arabic_text_card_png, resolve_card_font_path, validate_background_image_bytes
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
 from app.adapters.image_generation.factory import create_image_generator
@@ -27,6 +29,8 @@ from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configura
 from app.infrastructure.artifact_storage import ArtifactStorageError, S3ArtifactStorage
 from app.application.provider_operations import record_provider_operation, update_provider_operation_status
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -754,8 +758,9 @@ class RenderApprovedTextCardCapability:
     key = "render_approved_text_card"
     version = 1
 
-    def __init__(self, storage_factory=None) -> None:
+    def __init__(self, storage_factory=None, image_generator_factory=None) -> None:
         self.storage_factory = storage_factory or S3ArtifactStorage.from_environment
+        self.image_generator_factory = image_generator_factory or create_image_generator
 
     async def execute(
         self,
@@ -832,17 +837,79 @@ class RenderApprovedTextCardCapability:
             source_reference,
         )
 
-        render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment"}
+        render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment", "background_overlay_color", "background_overlay_opacity"}
         render_configuration = {key: value for key, value in context.stage_configuration.items() if key in render_keys}
         title_value = (source_artifact.artifact_metadata or {}).get("title")
         card_title = title_value if isinstance(title_value, str) and title_value.strip() else source_unit.title
         storage = self.storage_factory()
         await storage.ensure_available()
+        background_mode = str(context.stage_configuration.get("background_mode", "solid"))
+        background_image = None
+        background_identity = None
+        background_failure = None
+        background_generation_status = "NOT_REQUESTED"
+        background_operation_id = None
+        background_prompt = context.stage_configuration.get("background_prompt")
+        if background_mode == "ai_generated":
+            if not isinstance(background_prompt, str) or not background_prompt.strip():
+                raise ValueError("AI-generated card backgrounds require a recipe-pinned background_prompt.")
+            background_operation_id = str(uuid4())
+            generator = None
+            try:
+                generator = self.image_generator_factory(context.stage_configuration)
+                generated_background = await generator.generate(
+                    background_prompt.strip()
+                    + "\n\nGenerate a background image only. Do not include text, letters, captions, logos, or watermarks.",
+                    aspect_ratio=str(context.stage_configuration.get("aspect_ratio", "4:5")),
+                    image_size=str(context.stage_configuration.get("image_size", "1K")),
+                )
+                if generated_background.mime_type not in {"image/png", "image/jpeg", "image/webp"}:
+                    raise ValueError("The configured image provider returned an unsupported background MIME type.")
+                validate_background_image_bytes(generated_background.content)
+                background_image = generated_background.content
+                background_identity = {
+                    "operation_id": background_operation_id,
+                    "provider": generated_background.provider,
+                    "model": generated_background.model,
+                    "adapter": type(generator).__name__,
+                    "adapter_version": 1,
+                    "mime_type": generated_background.mime_type,
+                    "sha256": hashlib.sha256(generated_background.content).hexdigest(),
+                }
+                background_generation_status = "GENERATED"
+            except Exception as exc:
+                # Record the attempted provider/model even when no image bytes
+                # were returned, so a fallback is traceable rather than opaque.
+                background_failure = {
+                    "operation_id": background_operation_id,
+                    "status": "FALLBACK_TO_SOLID",
+                    "provider": getattr(generator, "provider_name", context.stage_configuration.get("provider")),
+                    "model": getattr(generator, "model", context.stage_configuration.get("model")),
+                    "adapter": type(generator).__name__ if generator is not None else None,
+                    "adapter_version": 1 if generator is not None else None,
+                    "error_type": type(exc).__name__,
+                }
+                background_generation_status = "FALLBACK_TO_SOLID"
+                logger.warning(
+                    "Design-card background generation failed; continuing with a solid background.",
+                    extra={"production_job_id": str(context.run_id) if context.run_id else None, "error_type": type(exc).__name__},
+                )
+        elif background_mode != "solid":
+            raise ValueError("Unsupported design-card background mode.")
+        selected_font = resolve_card_font_path(str(render_configuration.get("font_family", "default")))
+        font_identity = {
+            "family": str(render_configuration.get("font_family", "default")),
+            "file_name": Path(selected_font).name,
+            "sha256": hashlib.sha256(Path(selected_font).read_bytes()).hexdigest(),
+            "license": "SIL Open Font License 1.1 (bundled Noto Naskh Arabic)" if Path(selected_font).resolve() == (Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoNaskhArabic[wght].ttf").resolve() else "not asserted for externally configured/system font",
+        }
         png = render_arabic_text_card_png(
             source_artifact.content,
             render_configuration,
             title=card_title,
             attribution=source_attribution,
+            font_path=selected_font,
+            background_image=background_image,
         )
         artifact_id = uuid4()
         storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.png"
@@ -867,8 +934,14 @@ class RenderApprovedTextCardCapability:
                 "source_artifact_id": str(source_artifact_id),
                 "source_text_sha256": hashlib.sha256(source_artifact.content.encode("utf-8")).hexdigest(),
                 "renderer": "nashr.deterministic_arabic_card",
-                "renderer_version": 1,
+                "renderer_version": 2,
                 "render_configuration": render_configuration,
+                "font_identity": font_identity,
+                "background_mode": "ai_generated" if background_image is not None else ("ai_failed_fallback_solid" if background_mode == "ai_generated" else "deterministic_solid"),
+                "background_generation_status": background_generation_status,
+                "background_generation_failure": background_failure,
+                "background_prompt_sha256": hashlib.sha256(background_prompt.encode("utf-8")).hexdigest() if isinstance(background_prompt, str) and background_prompt.strip() else None,
+                "ai_asset_identity": background_identity,
                 "source_review_status": source_artifact.review_status,
                 "source_name": source_name if len(source_references) == 1 else None,
                 "source_reference": source_reference if len(source_references) == 1 else None,

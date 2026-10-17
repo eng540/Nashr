@@ -263,23 +263,43 @@ async def test_bulk_approve_is_server_side_partial_and_idempotent() -> None:
 
 @pytest.mark.asyncio
 async def test_post_bank_exposes_publication_state_filters() -> None:
-    source_a, _, _, _, _, units, post_by_unit = await _fixture()
+    source_a, source_b, _, _, _, units, post_by_unit = await _fixture()
     published_id = post_by_unit[units[0]]
+    failed_id = post_by_unit[units[1]]
+    untouched_id = post_by_unit[units[2]]
     async with SessionFactory() as session:
-        session.add(PublicationModel(
-            id=uuid4(), knowledge_unit_id=units[0], post_id=published_id,
-            platform="telegram", destination="@test", content="published",
-            status="PUBLISHED", external_id="published-filter",
-        ))
+        for post_id in (published_id, failed_id, untouched_id):
+            post = (await session.execute(select(PostModel).where(PostModel.id == post_id))).scalar_one()
+            post.status = "APPROVED"
+        session.add_all([
+            PublicationModel(
+                id=uuid4(), knowledge_unit_id=units[0], post_id=published_id,
+                platform="telegram", destination="@test", content="published",
+                status="PUBLISHED", external_id="published-filter",
+            ),
+            PublicationModel(
+                id=uuid4(), knowledge_unit_id=units[1], post_id=failed_id,
+                platform="telegram", destination="@test", content="failed",
+                status="FAILED", error_message="provider outcome needs review",
+            ),
+        ])
         await session.commit()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         published = await client.get(f"/posts?source_id={source_a}&publication_state=PUBLISHED")
         unpublished = await client.get(f"/posts?source_id={source_a}&publication_state=UNPUBLISHED")
-        eligible = await client.get(f"/posts?source_id={source_a}&publication_state=ELIGIBLE")
+        eligible = await client.get(f"/posts?publication_state=ELIGIBLE")
+        eligible_options = await client.get("/posts/filter-options?publication_state=ELIGIBLE")
     assert published.status_code == 200
     assert unpublished.status_code == 200
     assert eligible.status_code == 200
+    assert eligible_options.status_code == 200
     assert [row["post_id"] for row in published.json()["items"]] == [str(published_id)]
     assert str(published_id) not in {row["post_id"] for row in unpublished.json()["items"]}
+    assert str(failed_id) in {row["post_id"] for row in unpublished.json()["items"]}
     assert str(published_id) not in {row["post_id"] for row in eligible.json()["items"]}
+    assert str(failed_id) not in {row["post_id"] for row in eligible.json()["items"]}
+    assert str(untouched_id) in {row["post_id"] for row in eligible.json()["items"]}
+    eligible_source_ids = {row["id"] for row in eligible_options.json()["sources"]}
+    assert str(source_a) not in eligible_source_ids
+    assert str(source_b) in eligible_source_ids

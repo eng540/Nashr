@@ -151,7 +151,7 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
 
 
     if stage.capability_key == "render_approved_text_card" and stage.capability_version == 1:
-        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment"}
+        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment", "background_overlay_color", "background_overlay_opacity", "background_mode", "background_prompt", "provider", "model", "aspect_ratio", "image_size"}
         unknown = set(stage.configuration) - allowed
         if unknown:
             raise ValueError("render_approved_text_card configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
@@ -177,6 +177,29 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
         alignment = stage.configuration.get("text_alignment")
         if alignment is not None and (not isinstance(alignment, str) or alignment not in {"right", "center"}):
             raise ValueError("render_approved_text_card text_alignment must be right or center.")
+        overlay_opacity = stage.configuration.get("background_overlay_opacity")
+        if overlay_opacity is not None and (isinstance(overlay_opacity, bool) or not isinstance(overlay_opacity, int) or not 0 <= overlay_opacity <= 255):
+            raise ValueError("render_approved_text_card background_overlay_opacity must be between 0 and 255.")
+        background_mode = stage.configuration.get("background_mode", "solid")
+        if not isinstance(background_mode, str) or background_mode not in {"solid", "ai_generated"}:
+            raise ValueError("render_approved_text_card background_mode must be solid or ai_generated.")
+        background_prompt = stage.configuration.get("background_prompt")
+        if background_prompt is not None and (not isinstance(background_prompt, str) or not background_prompt.strip() or len(background_prompt) > 2000):
+            raise ValueError("render_approved_text_card background_prompt must be non-empty and at most 2000 characters.")
+        if background_mode == "ai_generated" and not isinstance(background_prompt, str):
+            raise ValueError("AI-generated card backgrounds require a recipe-pinned background_prompt.")
+        provider = stage.configuration.get("provider")
+        if provider is not None and (not isinstance(provider, str) or provider not in {"gemini", "fal"}):
+            raise ValueError("render_approved_text_card provider must be gemini or fal.")
+        model = stage.configuration.get("model")
+        if model is not None and (not isinstance(model, str) or not model.strip() or len(model) > 200):
+            raise ValueError("render_approved_text_card model must be a non-empty string up to 200 characters.")
+        aspect_ratio = stage.configuration.get("aspect_ratio")
+        if aspect_ratio is not None and aspect_ratio not in {"1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"}:
+            raise ValueError("render_approved_text_card aspect_ratio is unsupported.")
+        image_size = stage.configuration.get("image_size")
+        if image_size is not None and image_size not in {"1K", "2K", "4K"}:
+            raise ValueError("render_approved_text_card image_size must be 1K, 2K, or 4K.")
         for key in ("background", "foreground"):
             value = stage.configuration.get(key)
             if value is not None and (not isinstance(value, str) or len(value) not in {4, 7} or not value.startswith("#")):

@@ -1,3 +1,5 @@
+import io
+
 import pytest
 
 from app.infrastructure.artifact_storage import (
@@ -10,9 +12,14 @@ class FakeS3Client:
     def __init__(self):
         self.put_calls = []
         self.presign_calls = []
+        self.get_calls = []
 
     def put_object(self, **kwargs):
         self.put_calls.append(kwargs)
+
+    def get_object(self, **kwargs):
+        self.get_calls.append(kwargs)
+        return {"Body": io.BytesIO(b"stored-image-bytes")}
 
     def generate_presigned_url(self, operation, *, Params, ExpiresIn):
         self.presign_calls.append((operation, Params, ExpiresIn))
@@ -84,3 +91,14 @@ def test_from_environment_fails_closed_when_storage_is_not_configured(monkeypatc
 
     with pytest.raises(ArtifactStorageConfigurationError, match="not configured"):
         S3ArtifactStorage.from_environment()
+
+
+@pytest.mark.asyncio
+async def test_get_bytes_reads_private_artifact_content_from_configured_bucket():
+    client = FakeS3Client()
+    storage = S3ArtifactStorage(client=client, bucket="nashr-media")
+    content = await storage.get_bytes("s3://nashr-media/artifacts/source-1/job-2/image.png")
+    assert content == b"stored-image-bytes"
+    assert client.get_calls == [{"Bucket": "nashr-media", "Key": "artifacts/source-1/job-2/image.png"}]
+    with pytest.raises(ValueError, match="unexpected bucket"):
+        await storage.get_bytes("s3://another-bucket/artifacts/source-1/image.png")

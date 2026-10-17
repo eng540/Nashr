@@ -16,6 +16,7 @@ export interface Post {
   reviewed_at: string | null;
   review_note: string | null;
   published: boolean;
+  visual_artifact_id?: string | null;
 }
 
 export interface PostListResponse {

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import io
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
-from typing import TYPE_CHECKING
 
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import select, update
@@ -18,10 +18,8 @@ from app.domain.artifacts import Artifact
 from app.application.posts import ProducePost
 from app.application.artifacts import load_post_model_to_artifact, post_model_to_artifact, post_to_artifact
 from app.application.editorial_context import slice_pdf_pages_as_bytes
-from app.infrastructure.database.models import KnowledgeUnitModel, PublicationModel
-
-if TYPE_CHECKING:
-    from app.infrastructure.database.models import PostModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, PublicationModel
+from app.infrastructure.artifact_storage import ArtifactStorageError, S3ArtifactStorage
 
 
 def _to_domain(row: PublicationModel) -> Publication:
@@ -173,6 +171,56 @@ class ApproveAndPublish:
             raise ValueError("Publication not found.")
         if current_row.post_id != artifact.id:
             raise ValueError("Publication does not belong to the supplied Artifact.")
+        if current_row.status != PublicationStatus.DRAFT.value:
+            raise ValueError("Publication is not a DRAFT.")
+
+        media_bytes = None
+        media_mime_type = None
+        post_result = await session.execute(select(PostModel).where(PostModel.id == artifact.id))
+        post_row = post_result.scalar_one_or_none()
+        if post_row is not None and post_row.visual_artifact_id is not None:
+            visual_result = await session.execute(
+                select(ArtifactModel).where(ArtifactModel.id == post_row.visual_artifact_id)
+            )
+            visual = visual_result.scalar_one_or_none()
+            if (
+                visual is None
+                or visual.kind != "IMAGE"
+                or visual.status != "AVAILABLE"
+                or visual.review_status != "APPROVED"
+                or not visual.storage_uri
+                or visual.mime_type not in {"image/png", "image/jpeg", "image/webp"}
+                or visual.source_knowledge_unit_id != post_row.knowledge_unit_id
+            ):
+                raise ValueError("The attached visual Artifact is no longer approved or available for Publishing.")
+            visual_metadata = visual.artifact_metadata or {}
+            source_artifact_value = visual_metadata.get("source_artifact_id")
+            source_text_hash = visual_metadata.get("source_text_sha256")
+            try:
+                source_artifact_id = UUID(str(source_artifact_value))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("The attached visual Artifact has invalid approved-text provenance.") from exc
+            source_text_result = await session.execute(
+                select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
+            )
+            source_text = source_text_result.scalar_one_or_none()
+            if (
+                source_text is None
+                or source_text.kind != "TEXT"
+                or source_text.status != "AVAILABLE"
+                or source_text.review_status != "APPROVED"
+                or source_text.content is None
+                or source_text.source_knowledge_unit_id != post_row.knowledge_unit_id
+                or source_text.content != post_row.content
+                or source_text_hash != hashlib.sha256(source_text.content.encode("utf-8")).hexdigest()
+            ):
+                raise ValueError("The Post text no longer matches the approved TEXT Artifact used to create the visual.")
+            try:
+                media_bytes = await S3ArtifactStorage.from_environment().get_bytes(visual.storage_uri)
+            except (ArtifactStorageError, ValueError) as exc:
+                raise ValueError("The approved visual Artifact could not be read from private storage.") from exc
+            media_mime_type = visual.mime_type
+
         if content is None:
             current_row.content = artifact.content
             await session.commit()
@@ -200,7 +248,15 @@ class ApproveAndPublish:
         # The provider call must never hold an open database transaction.
         await session.commit()
         try:
-            published = await self.publisher.publish(destination=row.destination, content=row.content)
+            if media_bytes is None:
+                published = await self.publisher.publish(destination=row.destination, content=row.content)
+            else:
+                published = await self.publisher.publish(
+                    destination=row.destination,
+                    content=row.content,
+                    media=media_bytes,
+                    media_mime_type=media_mime_type,
+                )
         except Exception as exc:
             await session.execute(
                 update(PublicationModel)
