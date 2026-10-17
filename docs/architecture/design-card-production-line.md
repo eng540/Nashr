@@ -90,3 +90,39 @@ The renderer uses Pillow with RAQM layout for Arabic shaping and requires a conf
 **Deployment prerequisite:** set `NASHR_CARD_FONT_PATH` to a licensed Arabic font file available in the production container, and verify Pillow's RAQM support in that exact runtime before enabling the card product. A green CI run alone does not prove production font availability or correct glyph shaping. Do not publish a card product as operational until the deployment prerequisite and a real visual review are verified.
 
 The review panel exposes card creation only for approved TEXT Artifacts and only when a published product has an active recipe containing `render_approved_text_card v1`. The request goes through the durable production-job API and the product's pinned image output contract; no new job queue or review system is introduced.
+
+
+### Example recipe contract for an operator-created card product
+
+This is a configuration example, not a seeded product and not a production-readiness claim. Publish it only after selecting the product's other required pinned components and a compatible IMAGE output contract.
+
+```json
+{
+  "key": "ARABIC_APPROVED_TEXT_CARD",
+  "stages": [
+    {
+      "key": "render-card",
+      "capability_key": "render_approved_text_card",
+      "capability_version": 1,
+      "configuration": {
+        "width": 1080,
+        "height": 1350,
+        "padding": 88,
+        "background": "#F7F2E8",
+        "foreground": "#24211D",
+        "font_family": "naskh",
+        "font_size": 42,
+        "line_spacing": 18,
+        "max_lines": 22,
+        "show_title": true,
+        "show_source_attribution": true,
+        "title_font_size": 34,
+        "attribution_font_size": 22,
+        "text_alignment": "right"
+      }
+    }
+  ]
+}
+```
+
+The matching output contract must declare `artifact_kind=IMAGE`, `mime_type=image/png`, and `content_mode=STORAGE_URI`. The card button is offered only after the source TEXT Artifact is human-approved. The resulting IMAGE Artifact starts in its own DRAFT review state; approving the text does not approve the image.
