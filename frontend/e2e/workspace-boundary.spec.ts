@@ -130,6 +130,7 @@ test("approved text Artifact can start a card job only through a published card 
   await page.getByLabel(`منتج البطاقة ${artifactId}`).selectOption("E2E_CARD_PRODUCT");
   await page.getByRole("button", { name: "إنتاج البطاقة" }).click();
   await expect.poll(() => submittedPayload).not.toBeNull();
+  await expect(page.getByRole("status").filter({ hasText: "أُنشئت مهمة إنتاج البطاقة: e2e-card-job" })).toBeVisible();
   expect(submittedPayload).toMatchObject({
     scope: "SELECTION",
     source_artifact_id: artifactId,
