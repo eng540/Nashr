@@ -11,6 +11,23 @@ class FakeResponse:
         return {"ok": True, "result": {"message_id": 4321}}
 
 
+
+def test_telegram_html_to_visible_text_preserves_arabic_paragraphs_and_entities():
+    from app.adapters.publishing.telegram import telegram_html_to_visible_text
+
+    content = "<b>العنوان</b>\nالسطر الأول &amp; الثاني<br/>\n<i>المصدر</i>"
+    assert telegram_html_to_visible_text(content) == "العنوان\nالسطر الأول & الثاني\n\nالمصدر"
+
+
+def test_telegram_html_to_visible_text_rejects_malformed_or_unsupported_markup():
+    from app.adapters.publishing.telegram import telegram_html_to_visible_text
+
+    with pytest.raises(ValueError, match="unclosed"):
+        telegram_html_to_visible_text("<b>عنوان")
+    with pytest.raises(ValueError, match="Unsupported Telegram HTML tag"):
+        telegram_html_to_visible_text("<div>عنوان</div>")
+
+
 class FakeAsyncClient:
     calls = []
 

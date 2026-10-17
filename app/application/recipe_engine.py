@@ -19,6 +19,7 @@ from app.application.design_card_renderer import render_arabic_text_card_png, re
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
 from app.adapters.image_generation.factory import create_image_generator
+from app.adapters.publishing.telegram import telegram_html_to_visible_text
 from app.adapters.audio_generation.gemini_tts import GeminiAudioGenerator
 from app.adapters.video_generation.veo import VeoVideoGenerator
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
@@ -811,7 +812,11 @@ class RenderApprovedTextCardCapability:
                 raise ValueError("Design cards can only be created from a human-approved Post with non-empty text.")
             if source_post.knowledge_unit_id != knowledge_unit_id:
                 raise ValueError("The approved Post does not match the production lineage anchor.")
-            source_text = source_post.content
+            # Posts retain Telegram HTML as their canonical delivery representation.
+            # Cards use the publisher's shared parser to render the visible text, not raw tags.
+            source_text = telegram_html_to_visible_text(source_post.content)
+            if not source_text.strip():
+                raise ValueError("The approved Post has no visible text after Telegram formatting is interpreted.")
             source_metadata = {}
             source_review_status = source_post.status
             source_type = "POST"
