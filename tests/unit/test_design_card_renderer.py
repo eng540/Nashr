@@ -70,7 +70,9 @@ def test_arabic_card_renders_png_and_fails_instead_of_truncating():
 
     png = render_arabic_text_card_png(
         "إِنَّ اللغةَ العربيةَ جميلةٌ.\n\nوهذه فقرةٌ ثانيةٌ.",
-        {"width": 640, "height": 800, "padding": 40, "font_size": 30, "line_spacing": 10, "max_lines": 20},
+        {"width": 640, "height": 800, "padding": 40, "font_size": 30, "line_spacing": 10, "max_lines": 20, "show_source_attribution": True},
+        title="عنوان تجريبي",
+        attribution="المصدر: كتاب تجريبي",
         font_path=font_path,
     )
     assert png.startswith(bytes.fromhex("89504e470d0a1a0a"))
