@@ -2,6 +2,7 @@
 
 **Status:** revised implementation direction; implementation not yet proven complete  
 **Branch:** `feature/design-card-production-line`  
+**Latest verified CI head:** `28879ffd41e37d9bf4aa62fb17b58f18eb2f3c10` — backend tests, migrations, frontend typecheck/unit tests/build, and Browser E2E all passed. Railway production is still running the previously deployed `main` release; no deployment of this branch was performed.
 **Baseline examined:** `main` at `3f6f52b0d0edfd24d8a41b0826f99cbecad469f4`
 
 This record governs implementation direction. Documentation is not feature completion. Every completion claim must be backed by source changes, tests, CI and deployment evidence.
@@ -58,11 +59,11 @@ Variable design decisions belong in versioned product/component configuration, n
 | Stage | Deliverable | Evidence required | Status |
 |---|---|---|---|
 | 0 | Verify current main, call paths, model contracts, existing tests, dependency/runtime constraints | GitHub source and CI evidence | Inspected in part; continue verification |
-| 1 | Multi-source input contract in the existing production engine | Backward-compatibility tests; selected units and provenance retained | Implemented in PR #146; CI validation pending for the current head |
-| 2 | Thematic composition using multiple explicit Knowledge Units | Explicit multi-book selection, one durable production job item, pinned product prompt/contract, all-source provenance metadata, idempotent Artifact reuse, generic review boundary | Backend capability and workspace/API wiring implemented in PR #146; full CI and end-to-end review verification pending |
-| 3 | Lightweight deterministic renderer proof | CI fixtures for Arabic/RTL and measured runtime/resource behavior in the target environment | Pending |
-| 4 | Versioned visual product/template configuration and pinned provenance | API/schema tests; old products and artifacts unchanged | Pending |
-| 5 | Approved-output library selection and derivatives from approved text only | Tests reject raw/unapproved inputs and preserve exact source text | Pending |
+| 1 | Multi-source input contract in the existing production engine | Backward-compatibility tests; selected units and provenance retained | Implemented; current-head CI passed (backend, frontend, Playwright) on `28879ffd41e37d9bf4aa62fb17b58f18eb2f3c10` |
+| 2 | Thematic composition using multiple explicit Knowledge Units | Explicit multi-book selection, one durable production job item, pinned product prompt/contract, all-source provenance metadata, idempotent Artifact reuse, generic review boundary | Backend capability and workspace/API wiring implemented; current-head CI and browser E2E passed. Production deployment and real Artifact review remain unverified. |
+| 3 | Lightweight deterministic renderer proof | CI fixtures for Arabic/RTL and measured runtime/resource behavior in the target environment | Renderer fixtures and overflow checks pass in CI; runtime/resource benchmark and Arabic font/RAQM verification in the production container remain pending. |
+| 4 | Versioned visual product/template configuration and pinned provenance | API/schema tests; old products and artifacts unchanged | Recipe-level visual settings, provenance metadata, and Control Plane capability configuration are implemented and CI-tested; production verification remains pending. |
+| 5 | Approved-output library selection and derivatives from approved text only | Tests reject raw/unapproved inputs and preserve exact source text | Approved TEXT Artifact → separate PNG derivative is implemented and integration-tested; broader reusable approved-output library selection remains pending. |
 | 6 | Configurable multi-format bundle / carousel with per-item results | Tests for partial failures, idempotency, retries, and intentional variants | Pending |
 | 7 | Preview and human review of the actual stored image | UI/browser checks show the exact persisted image; review remains distinct from editorial approval | Pending |
 | 8 | Safe handoff to existing publication workflow | Integration tests; no parallel scheduler; no external publish during tests | Pending |
