@@ -751,6 +751,7 @@ async def create_production_job_route(
             request_payload=request_payload,
             thematic_theme=payload.thematic_theme,
             source_artifact_id=payload.source_artifact_id,
+            source_post_id=payload.source_post_id,
         )
         background_tasks.add_task(run_production_job, job.id)
         return await _load_production_job_payload(session, job)
