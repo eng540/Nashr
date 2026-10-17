@@ -55,7 +55,8 @@ class CardRenderConfig:
 
 
 def _text_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -> int:
-    return draw.textbbox((0, 0), text or " ", font=font, direction="rtl", language="ar")[2]
+    bbox = draw.textbbox((0, 0), text or " ", font=font, direction="rtl", language="ar")
+    return bbox[2] - bbox[0]
 
 
 def _wrap_paragraph(draw: ImageDraw.ImageDraw, paragraph: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
