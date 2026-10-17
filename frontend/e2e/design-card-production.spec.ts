@@ -100,8 +100,8 @@ test("approved text can create a card, receive independent visual approval, and 
   await page.route("**/sources**", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
 
-  await page.goto("/posts/workspace");
-  await expect(page.getByRole("heading", { name: "مراجعة المخرجات العامة" })).toBeVisible();
+  await page.goto("/posts/workspace?status=DRAFT");
+  await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
   await expect(page.getByLabel(`منتج البطاقة ${textId}`)).toBeVisible();
   await page.getByLabel(`منتج البطاقة ${textId}`).selectOption("ARABIC_LITERATURE_DESIGN_CARD");
