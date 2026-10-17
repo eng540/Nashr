@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { postsApi } from "../../shared/api/postsApi";
@@ -10,7 +10,7 @@ const PAGE_SIZE = 30;
 const ALL_SOURCES = "ALL";
 const PENDING_CLAIM_STORAGE_KEY = "nashr.pending-production-claim.v1";
 type PendingClaim = { key: string; payload: string };
-type CreateProductionRequest = { source_id: string; scope: ProductionScope; topic_id?: string; knowledge_unit_ids?: string[]; identity_key?: string; product_key?: string; idempotency_key: string };
+type CreateProductionRequest = { source_id: string; scope: ProductionScope; topic_id?: string; knowledge_unit_ids?: string[]; thematic_theme?: string; identity_key?: string; product_key?: string; idempotency_key: string };
 
 function productionLineFilter(products: ProductionProductOption[] | undefined, identities: EditorialIdentityOption[] | undefined, recipes: ProductionRecipeOption[] | undefined, productKey: string, identityKey: string): ProductionLineFilter {
   const product = products?.find((item) => item.key === productKey);
@@ -164,6 +164,7 @@ export function PostBankPage() {
   const [identityKey, setIdentityKey] = useState(() => pendingRequestFromStorage()?.identity_key ?? "");
   const [productKey, setProductKey] = useState(() => pendingRequestFromStorage()?.product_key ?? "ARABIC_LITERATURE_TELEGRAM_POST");
   const [productionMode, setProductionMode] = useState<"ALL" | "NEEDS" | "DONE">(() => pendingRequestFromStorage() ? "ALL" : "NEEDS");
+  const [thematicTheme, setThematicTheme] = useState(() => pendingRequestFromStorage()?.thematic_theme ?? "");
   const [productionKind, setProductionKind] = useState("");
   const [productionMaterialQuery, setProductionMaterialQuery] = useState("");
   const [productionMaterialPage, setProductionMaterialPage] = useState(0);
@@ -179,9 +180,21 @@ export function PostBankPage() {
   const products = useQuery({ queryKey: ["control-plane", "products"], queryFn: productionJobsApi.products });
   const recipes = useQuery({ queryKey: ["control-plane", "recipes"], queryFn: productionJobsApi.recipes });
   const lineFilter = productionLineFilter(products.data, identities.data, recipes.data, productKey, identityKey);
+  const queryProduct = products.data?.find((product) => product.key === productKey);
+  const queryProductVersion = queryProduct?.versions.find((version) => version.version === queryProduct.active_version);
+  const queryRecipe = recipes.data?.find((recipe) => recipe.key === queryProductVersion?.definition.recipe_key);
+  const queryRecipeVersion = queryRecipe?.versions.find((version) => version.version === queryProductVersion?.definition.component_versions?.recipe.version);
+  const isThematicProduct = Boolean(queryRecipeVersion?.stages.some((stage) => stage.capability_key === "compose_thematic_artifact"));
   const sources = useQuery({
     queryKey: ["production", "sources", lineFilter.product_key, lineFilter.product_version, lineFilter.identity_key, lineFilter.identity_version, lineFilter.recipe_key, lineFilter.recipe_version],
     queryFn: () => productionJobsApi.sources(lineFilter),
+  });
+  const thematicSourceList = (sources.data ?? []).filter((source) => source.material_count > 0);
+  const thematicBookMaps = useQueries({
+    queries: isThematicProduct ? thematicSourceList.map((source) => ({
+      queryKey: ["production", "thematic-book-map", source.id, lineFilter.product_key, lineFilter.product_version, lineFilter.recipe_key, lineFilter.recipe_version],
+      queryFn: () => productionJobsApi.bookMap(source.id, lineFilter),
+    })) : [],
   });
   const filterOptions = useQuery({
     queryKey: ["post-bank", "filter-options", filterSourceId],
@@ -215,6 +228,8 @@ export function PostBankPage() {
   useEffect(() => {
     if (sources.data?.length === 1 && !productionSourceId) setProductionSourceId(sources.data[0].id);
   }, [sources.data, productionSourceId]);
+  useEffect(() => { if (isThematicProduct && scope !== "SELECTION") { setScope("SELECTION"); setProductionTopicId(""); setMaterialIds([]); } }, [isThematicProduct, scope]);
+
   useEffect(() => {
     if (!products.data) return;
     const available = products.data.filter((product) => {
@@ -264,6 +279,12 @@ export function PostBankPage() {
   const approvedSelected = useMemo(() => items.filter((p) => selected.includes(p.post_id) && p.status === "APPROVED"), [items, selected]);
   const topics = bookMap.data?.topics ?? [];
   const sourceMaterials = bookMap.data?.materials ?? topics.flatMap((topic) => topic.materials);
+  const thematicMaterials = thematicBookMaps.flatMap((result, index) => {
+    const source = thematicSourceList[index];
+    if (!source || !result.data) return [];
+    const bookMaterials = result.data.materials ?? result.data.topics.flatMap((topic) => topic.materials);
+    return bookMaterials.map((material) => ({ ...material, source_id: source.id, source_title: source.book_title || source.filename }));
+  });
   const availableIdentities = (identities.data ?? []).filter((identity) => identity.active_version !== null);
   const availableProducts = (products.data ?? []).filter((product) => {
     if (product.active_version === null) return false;
@@ -280,7 +301,7 @@ export function PostBankPage() {
   const visibleTopics = topics.filter((topic) => !isPostProduct
     ? topic.materials.length > 0
     : productionMode === "ALL" || productionMode === "NEEDS" && topic.materials.some((material) => !material.has_post) || productionMode === "DONE" && topic.materials.length > 0 && topic.materials.every((material) => material.has_post));
-  const allProductionMaterials = scope === "SELECTION"
+  const allProductionMaterials = isThematicProduct ? thematicMaterials : scope === "SELECTION"
     ? sourceMaterials
     : scope === "TOPIC"
       ? visibleTopics.find((t) => t.id === productionTopicId)?.materials ?? []
@@ -291,21 +312,28 @@ export function PostBankPage() {
   const currentMaterialPageIds = materialPageItems.map((material) => material.id);
   const allCurrentMaterialPageSelected = currentMaterialPageIds.length > 0 && currentMaterialPageIds.every((id) => materialIds.includes(id));
   const selectedTopic = topics.find((topic) => topic.id === productionTopicId);
-  const scopeMaterialCount = scope === "SOURCE" ? sourceMaterials.length : scope === "TOPIC" ? (selectedTopic?.materials.length ?? 0) : materialIds.filter((id) => sourceMaterials.some((material) => material.id === id)).length;
+  const scopeMaterialCount = isThematicProduct ? materialIds.filter((id) => thematicMaterials.some((material) => material.id === id)).length : scope === "SOURCE" ? sourceMaterials.length : scope === "TOPIC" ? (selectedTopic?.materials.length ?? 0) : materialIds.filter((id) => sourceMaterials.some((material) => material.id === id)).length;
   const productionKinds = Array.from(new Set(allProductionMaterials.map((material) => material.kind).filter((kind): kind is string => Boolean(kind)))).sort();
   const selectedSource = productionSources.find((source) => source.id === productionSourceId);
+  const selectedThematicMaterials = materialIds.map((id) => thematicMaterials.find((material) => material.id === id)).filter((material): material is (typeof thematicMaterials)[number] => Boolean(material));
+  const thematicAnchorSourceId = selectedThematicMaterials[0]?.source_id;
+  const thematicAnchorSource = productionSources.find((source) => source.id === thematicAnchorSourceId);
   const productReady = products.isSuccess && availableProducts.some((product) => product.key === productKey);
   const identityReady = identities.isSuccess && Boolean(pinnedIdentity && identityKey === pinnedIdentity.key && identities.data?.some((identity) => identity.key === pinnedIdentity.key));
   const selectedRecipeKey = activeProductVersion?.definition.recipe_key;
   const recipeReady = recipes.isSuccess && Boolean(selectedRecipeKey && recipes.data.some((recipe) => recipe.key === selectedRecipeKey && recipe.active_version !== null));
   const lineReady = productReady && identityReady && recipeReady;
-  const sourceReady = Boolean(selectedSource && sources.isSuccess);
+  const sourceReady = isThematicProduct
+    ? Boolean(thematicAnchorSourceId && sources.isSuccess && thematicBookMaps.length > 0 && thematicBookMaps.every((result) => result.isSuccess))
+    : Boolean(selectedSource && sources.isSuccess);
   const topicReady = scope === "TOPIC" && bookMap.isSuccess && Boolean(selectedTopic && topics.some((topic) => topic.id === productionTopicId) && selectedTopic.materials.length > 0);
-  const selectedMaterialIds = materialIds.filter((id) => sourceMaterials.some((material) => material.id === id));
-  const scopeReady = Boolean(sourceReady && bookMap.isSuccess && scopeMaterialCount > 0
-    && (scope !== "TOPIC" || topicReady)
-    && (scope !== "SELECTION" || selectedMaterialIds.length > 0 && selectedMaterialIds.length === materialIds.length));
-  const canReviewProduction = Boolean(lineReady && scopeReady && !products.isFetching && !identities.isFetching && !recipes.isFetching && !sources.isFetching && !bookMap.isFetching);
+  const selectedMaterialIds = materialIds.filter((id) => allProductionMaterials.some((material) => material.id === id));
+  const scopeReady = isThematicProduct
+    ? Boolean(sourceReady && thematicTheme.trim() && selectedMaterialIds.length >= 2 && selectedMaterialIds.length === materialIds.length)
+    : Boolean(sourceReady && bookMap.isSuccess && scopeMaterialCount > 0
+      && (scope !== "TOPIC" || topicReady)
+      && (scope !== "SELECTION" || selectedMaterialIds.length > 0 && selectedMaterialIds.length === materialIds.length));
+  const canReviewProduction = Boolean(lineReady && scopeReady && !products.isFetching && !identities.isFetching && !recipes.isFetching && !sources.isFetching && !bookMap.isFetching && !thematicBookMaps.some((result) => result.isFetching));
 
   const filterTopics = filterOptions.data?.topics ?? [];
 
@@ -358,10 +386,11 @@ export function PostBankPage() {
       <p className="mt-3 text-sm text-slate-600">{productionStep === 1 ? "اختر منتجًا منشورًا يثبت تعليماته وهويته التحريرية. لا يمكن تجاوز هوية المنتج من تشغيل عابر." : productionStep === 2 ? "اختر الكتاب ونطاق الإنتاج، ثم أكمل اختيار المحور أو المواد هنا قبل مراجعة الإعدادات." : "راجع إعداد الإنتاج النهائي. يعكس الملخص الطلب الذي سترسله الواجهة إلى API؛ يمكنك الرجوع لتعديل المصدر أو النطاق قبل البدء."}</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         {productionStep === 2 && isPostProduct && <label className="text-sm font-semibold">حالة الإنتاج<select aria-label="حالة إنتاج الكتب" value={productionMode} onChange={(e) => { setProductionMode(e.target.value as typeof productionMode); setProductionKind(""); setProductionTopicId(""); setMaterialIds([]); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="NEEDS">يحتاج إنتاجًا</option><option value="ALL">كل الكتب</option><option value="DONE">اكتمل إنتاجه</option></select></label>}
-        {productionStep === 2 && <label className="text-sm font-semibold">الكتاب للإنتاج<select aria-label="الكتاب للإنتاج" value={productionSourceId} onChange={(e) => { setProductionSourceId(e.target.value); setProductionTopicId(""); setMaterialIds([]); setProductionKind(""); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} disabled={!sources.isSuccess || sources.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">اختر كتابًا...</option>{productionSources.map((source) => <option key={source.id} value={source.id}>{source.book_title || source.filename} — {isPostProduct ? `${source.pending_count} متبقٍ` : `${source.material_count} مادة`}</option>)}</select></label>}
-        {productionStep === 2 && <label className="text-sm font-semibold">نطاق الإنتاج<select aria-label="نطاق الإنتاج" value={scope} onChange={(e) => { setScope(e.target.value as ProductionScope); setProductionTopicId(""); setMaterialIds([]); setProductionKind(""); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} disabled={!sourceReady || !bookMap.isSuccess || bookMap.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="SOURCE">الكتاب كاملًا</option><option value="TOPIC">محور محدد</option><option value="SELECTION">مواد أحددها بنفسي</option></select></label>}
+        {productionStep === 2 && !isThematicProduct && <label className="text-sm font-semibold">الكتاب للإنتاج<select aria-label="الكتاب للإنتاج" value={productionSourceId} onChange={(e) => { setProductionSourceId(e.target.value); setProductionTopicId(""); setMaterialIds([]); setProductionKind(""); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} disabled={!sources.isSuccess || sources.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">اختر كتابًا...</option>{productionSources.map((source) => <option key={source.id} value={source.id}>{source.book_title || source.filename} — {isPostProduct ? `${source.pending_count} متبقٍ` : `${source.material_count} مادة`}</option>)}</select></label>}
+        {productionStep === 2 && <label className="text-sm font-semibold">نطاق الإنتاج<select aria-label="نطاق الإنتاج" value={scope} onChange={(e) => { setScope(e.target.value as ProductionScope); setProductionTopicId(""); setMaterialIds([]); setProductionKind(""); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} disabled={!sourceReady || !bookMap.isSuccess || bookMap.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100">{isThematicProduct ? <option value="SELECTION">تركيب موضوعي من مواد متعددة الكتب</option> : <><option value="SOURCE">الكتاب كاملًا</option><option value="TOPIC">محور محدد</option><option value="SELECTION">مواد أحددها بنفسي</option></>}</select></label>}
+        {productionStep === 2 && isThematicProduct && <label className="text-sm font-semibold md:col-span-2">الثيمة الموضوعية<input aria-label="الثيمة الموضوعية" value={thematicTheme} onChange={(e) => setThematicTheme(e.target.value)} maxLength={500} placeholder="مثال: معنى الصبر والحلم في التراث العربي" className="mt-2 w-full rounded-xl border p-3 font-normal" /><span className="mt-1 block text-xs font-normal text-slate-500">اختر مادتين على الأقل من كتابين أو أكثر. سينتج الطلب مخرجًا نصيًا واحدًا مع حفظ إحالات جميع المصادر.</span></label>}
         {productionStep === 2 && scope === "TOPIC" && <label className="text-sm font-semibold">المحور للإنتاج<select aria-label="المحور للإنتاج" value={productionTopicId} onChange={(e) => { setProductionTopicId(e.target.value); setMaterialIds([]); setProductionMaterialQuery(""); setProductionMaterialPage(0); }} disabled={!bookMap.isSuccess || bookMap.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">اختر محورًا...</option>{visibleTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.position}. {topic.title} — {isPostProduct ? `${topic.materials.filter((material) => !material.has_post).length} متبقٍ` : `${topic.materials.length} مادة`}</option>)}</select></label>}
-        {productionStep === 1 && <label className="text-sm font-semibold">المنتج<select aria-label="المنتج" value={productKey} onChange={(e) => { setProductKey(e.target.value); setProductionSourceId(""); setProductionTopicId(""); setMaterialIds([]); }} disabled={!products.isSuccess || products.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">اختر منتجًا...</option>{availableProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · v{product.active_version}</option>)}</select></label>}
+        {productionStep === 1 && <label className="text-sm font-semibold">المنتج<select aria-label="المنتج" value={productKey} onChange={(e) => { setProductKey(e.target.value); setProductionSourceId(""); setProductionTopicId(""); setMaterialIds([]); setThematicTheme(""); }} disabled={!products.isSuccess || products.isFetching} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">اختر منتجًا...</option>{availableProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · v{product.active_version}</option>)}</select></label>}
         {productionStep === 1 && <label className="text-sm font-semibold">الهوية التحريرية المحددة بالمنتج<select aria-label="الهوية التحريرية للإنتاج" value={pinnedIdentity?.key ?? ""} disabled={!identities.isSuccess || identities.isFetching || Boolean(pinnedIdentity)} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">{pinnedIdentity ? "تعذر قراءة الهوية المثبتة" : "اختر منتجًا يحدد هويته التحريرية"}</option>{pinnedIdentity && <option value={pinnedIdentity.key}>{identities.data?.find((identity) => identity.key === pinnedIdentity.key)?.name ?? pinnedIdentity.key} · v{pinnedIdentity.version} (مثبتة في المنتج)</option>}{!pinnedIdentity && availableIdentities.map((identity) => <option key={identity.key} value={identity.key}>{identity.name} · v{identity.active_version}</option>)}</select></label>}
       </div>
       {productionStep === 1 && (products.isLoading || identities.isLoading || recipes.isLoading) && <p role="status" className="mt-3 text-sm text-slate-500">جارٍ تحميل المنتجات والهويات والوصفات والتحقق من توافقها...</p>}
@@ -371,8 +400,8 @@ export function PostBankPage() {
       {productionStep === 2 && sources.isLoading && <p role="status" className="mt-3 text-sm text-slate-500">جارٍ تحميل الكتب المتاحة لهذا المنتج والهوية...</p>}
       {productionStep === 2 && sources.isError && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">تعذر تحميل الكتب المتاحة. تحقق من الاتصال ثم أعد المحاولة.<button type="button" onClick={() => void sources.refetch()} className="mr-2 rounded-lg border bg-white px-3 py-1.5">إعادة تحميل الكتب</button></div>}
       {productionStep === 2 && sources.isSuccess && productionSources.length === 0 && <p role="status" className="mt-3 rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">لا توجد كتب بمواد متاحة لهذا المنتج وحالة الإنتاج المحددة.</p>}
-      {productionStep === 2 && productionSourceId && bookMap.isLoading && <p role="status" className="mt-3 text-sm text-slate-500">جارٍ تحميل محاور ومواد الكتاب...</p>}
-      {productionStep === 2 && productionSourceId && bookMap.isError && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">تعذر تحميل محاور ومواد الكتاب. تحقق من الاتصال ثم أعد المحاولة.<button type="button" onClick={() => void bookMap.refetch()} className="mr-2 rounded-lg border bg-white px-3 py-1.5">إعادة تحميل مواد الكتاب</button></div>}
+      {productionStep === 2 && (isThematicProduct ? thematicBookMaps.some((result) => result.isLoading) : productionSourceId && bookMap.isLoading) && <p role="status" className="mt-3 text-sm text-slate-500">{isThematicProduct ? "جارٍ تحميل مواد الكتب المتاحة للتركيب الموضوعي..." : "جارٍ تحميل محاور ومواد الكتاب..."}</p>}
+      {productionStep === 2 && (isThematicProduct ? thematicBookMaps.some((result) => result.isError) : productionSourceId && bookMap.isError) && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{isThematicProduct ? "تعذر تحميل مواد أحد الكتب؛ لن يبدأ التركيب قبل اكتمال تحميل جميع المصادر." : "تعذر تحميل محاور ومواد الكتاب. تحقق من الاتصال ثم أعد المحاولة."}<button type="button" onClick={() => { if (isThematicProduct) void Promise.all(thematicBookMaps.map((result) => result.refetch())); else void bookMap.refetch(); }} className="mr-2 rounded-lg border bg-white px-3 py-1.5">إعادة تحميل المواد</button></div>}
       {productionStep === 2 && scope === "SOURCE" && bookMap.isSuccess && scopeMaterialCount === 0 && <p role="status" className="mt-3 rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">لا توجد مواد ضمن هذا النطاق؛ اختر مصدرًا أو نطاقًا آخر قبل المتابعة.</p>}
       {productionStep === 2 && scope === "TOPIC" && bookMap.isSuccess && visibleTopics.length === 0 && <p role="status" className="mt-3 rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">{topics.length === 0 ? "لم تُكتشف محاور لهذا الكتاب بعد. يمكنك اختيار المواد المتاحة يدويًا، أو إكمال اكتشاف الكتاب أولًا." : "لا توجد محاور تطابق حالة الإنتاج الحالية. غيّر حالة الإنتاج إلى «كل الكتب» لعرض جميع المحاور."}</p>}
       {productionStep === 2 && scope === "TOPIC" && bookMap.isSuccess && visibleTopics.length > 0 && !topicReady && <p role="status" className="mt-3 text-sm text-amber-800">اختر محورًا صالحًا من هذا الكتاب قبل الانتقال إلى مراجعة إعداد الإنتاج.</p>}
@@ -390,30 +419,32 @@ export function PostBankPage() {
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 p-3">
           <span className="text-sm font-semibold">{selectedMaterialIds.length} مادة محددة{selectedMaterialIds.some((id) => !materials.some((material) => material.id === id)) ? " · توجد اختيارات محفوظة خارج الفلتر الحالي" : ""}</span>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => toggleMaterialPageSelection(!allCurrentMaterialPageSelected)} disabled={!materialPageItems.length || bookMap.isFetching} className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40">{allCurrentMaterialPageSelected ? "إلغاء تحديد الصفحة" : "تحديد الصفحة"}</button>
+            <button type="button" onClick={() => toggleMaterialPageSelection(!allCurrentMaterialPageSelected)} disabled={!materialPageItems.length || bookMap.isFetching || thematicBookMaps.some((result) => result.isFetching)} className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40">{allCurrentMaterialPageSelected ? "إلغاء تحديد الصفحة" : "تحديد الصفحة"}</button>
             <button type="button" onClick={() => setMaterialIds([])} disabled={!materialIds.length} className="rounded-lg border bg-white px-3 py-2 text-sm disabled:opacity-40">مسح التحديد</button>
           </div>
         </div>
         <div className="max-h-80 overflow-auto rounded-xl border">
-          {bookMap.isLoading ? <p role="status" className="p-3 text-sm text-slate-500">جارٍ تحميل مواد الكتاب...</p> : bookMap.isError ? <p role="alert" className="p-3 text-sm text-rose-700">تعذر تحميل مواد الكتاب.</p> : materialPageItems.length ? materialPageItems.map((material) => <label key={material.id} className="flex gap-3 border-b p-3">
+          {(isThematicProduct ? thematicBookMaps.some((result) => result.isLoading) : bookMap.isLoading) ? <p role="status" className="p-3 text-sm text-slate-500">جارٍ تحميل المواد...</p> : (isThematicProduct ? thematicBookMaps.some((result) => result.isError) : bookMap.isError) ? <p role="alert" className="p-3 text-sm text-rose-700">تعذر تحميل المواد.</p> : materialPageItems.length ? materialPageItems.map((material) => <label key={material.id} className="flex gap-3 border-b p-3">
             <input type="checkbox" checked={materialIds.includes(material.id)} onChange={(e) => setMaterialIds(toggleSelection(materialIds, material.id, e.target.checked))}/>
-            <span><strong>{material.title}</strong><span className="block text-xs text-slate-500">{material.kind || "بدون نوع"}{material.topic_id ? " · ضمن محور" : " · غير مصنّفة ضمن محور"}</span></span>
+            <span><strong>{material.title}</strong><span className="block text-xs text-slate-500">{("source_title" in material ? material.source_title + " · " : "")}{material.kind || "بدون نوع"}{material.topic_id ? " · ضمن محور" : " · غير مصنّفة ضمن محور"}</span></span>
           </label>) : <p className="p-3 text-sm text-slate-500">{materials.length ? "لا توجد مواد في هذه الصفحة." : "لا توجد مواد تطابق البحث والفلاتر الحالية."}</p>}
         </div>
         {materials.length > 20 && <nav aria-label="صفحات مواد الإنتاج" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
-          <button type="button" onClick={() => setProductionMaterialPage((page) => Math.max(0, page - 1))} disabled={productionMaterialPage === 0 || bookMap.isFetching} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">السابق</button>
+          <button type="button" onClick={() => setProductionMaterialPage((page) => Math.max(0, page - 1))} disabled={productionMaterialPage === 0 || bookMap.isFetching || thematicBookMaps.some((result) => result.isFetching)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">السابق</button>
           <span className="text-sm font-semibold">صفحة {productionMaterialPage + 1} من {materialPageCount} · {materials.length} مادة مطابقة</span>
-          <button type="button" onClick={() => setProductionMaterialPage((page) => Math.min(materialPageCount - 1, page + 1))} disabled={productionMaterialPage >= materialPageCount - 1 || bookMap.isFetching} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">التالي</button>
+          <button type="button" onClick={() => setProductionMaterialPage((page) => Math.min(materialPageCount - 1, page + 1))} disabled={productionMaterialPage >= materialPageCount - 1 || bookMap.isFetching || thematicBookMaps.some((result) => result.isFetching)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">التالي</button>
         </nav>}
       </div>}
       {productionStep < 3 && <div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={() => setProductionStep((step) => step === 1 ? 2 : 3)} disabled={productionStep === 1 ? !lineReady || products.isFetching || identities.isFetching || recipes.isFetching : !canReviewProduction} className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-40">{productionStep === 1 ? "متابعة إلى اختيار المصدر" : "متابعة إلى مراجعة إعداد الإنتاج"}</button>{productionStep === 2 && <button type="button" onClick={() => setProductionStep(1)} className="rounded-xl border px-4 py-3 text-sm font-semibold">رجوع إلى المنتج والهوية</button>}</div>}
-      {productionStep === 3 && <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4" data-testid="production-summary"><h4 className="font-bold">مراجعة إعداد الإنتاج</h4><dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">المنتج</dt><dd className="mt-1 font-semibold">{selectedProduct?.name ?? productKey}</dd></div><div><dt className="text-slate-500">الهوية التحريرية</dt><dd className="mt-1 font-semibold">{identityKey ? availableIdentities.find((identity) => identity.key === identityKey)?.name ?? identityKey : "إعدادات القالب الحالية"}</dd></div><div><dt className="text-slate-500">الكتاب</dt><dd className="mt-1 font-semibold">{selectedSource?.book_title || selectedSource?.filename || "—"}</dd></div><div><dt className="text-slate-500">النطاق</dt><dd className="mt-1 font-semibold">{scope === "SOURCE" ? "الكتاب كاملًا" : scope === "TOPIC" ? `محور: ${selectedTopic?.title ?? "غير محدد"}` : "مواد محددة"}</dd></div><div><dt className="text-slate-500">المواد الداخلة في الطلب</dt><dd className="mt-1 font-semibold">{!bookMap.isSuccess ? "لم يكتمل تحميل العدد" : scopeMaterialCount}</dd></div>{scope === "SELECTION" && <div><dt className="text-slate-500">معرّفات المواد المحددة</dt><dd className="mt-1 break-all font-mono text-xs">{selectedMaterialIds.join(", ")}</dd></div>}</dl><p className="mt-3 text-xs leading-6 text-slate-600">{scope === "SOURCE" ? "سيشمل الطلب جميع المواد المرتبطة بهذا الكتاب وفق نطاق المصدر في الخادم، وليس المواد الظاهرة فقط بعد مرشحات الواجهة." : scope === "TOPIC" ? "سيشمل الطلب المواد المرتبطة بالمحور المختار من هذا الكتاب." : "سيشمل الطلب المواد المحددة صراحةً فقط، بمعرّفاتها المعروضة أعلاه."} لن يبدأ أي إنتاج حتى تضغط زر البدء أدناه.</p><button type="button" onClick={() => setProductionStep(2)} className="mt-3 rounded-lg border bg-white px-3 py-2 text-sm font-semibold">تعديل المصدر والنطاق</button></div>}
+      {productionStep === 3 && <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4" data-testid="production-summary"><h4 className="font-bold">مراجعة إعداد الإنتاج</h4><dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">المنتج</dt><dd className="mt-1 font-semibold">{selectedProduct?.name ?? productKey}</dd></div><div><dt className="text-slate-500">الهوية التحريرية</dt><dd className="mt-1 font-semibold">{identityKey ? availableIdentities.find((identity) => identity.key === identityKey)?.name ?? identityKey : "إعدادات القالب الحالية"}</dd></div><div><dt className="text-slate-500">الكتاب</dt><dd className="mt-1 font-semibold">{(isThematicProduct ? thematicAnchorSource : selectedSource)?.book_title || (isThematicProduct ? thematicAnchorSource : selectedSource)?.filename || (isThematicProduct ? "يُحدد من أول مادة مختارة" : "—")}</dd></div><div><dt className="text-slate-500">النطاق</dt><dd className="mt-1 font-semibold">{scope === "SOURCE" ? "الكتاب كاملًا" : scope === "TOPIC" ? `محور: ${selectedTopic?.title ?? "غير محدد"}` : "مواد محددة"}</dd></div><div><dt className="text-slate-500">المواد الداخلة في الطلب</dt><dd className="mt-1 font-semibold">{isThematicProduct ? `${selectedMaterialIds.length} مادة من ${new Set(selectedThematicMaterials.map((material) => material.source_id)).size} كتاب` : !bookMap.isSuccess ? "لم يكتمل تحميل العدد" : scopeMaterialCount}</dd></div>{scope === "SELECTION" && <div><dt className="text-slate-500">معرّفات المواد المحددة</dt><dd className="mt-1 break-all font-mono text-xs">{selectedMaterialIds.join(", ")}</dd></div>}</dl><p className="mt-3 text-xs leading-6 text-slate-600">{scope === "SOURCE" ? "سيشمل الطلب جميع المواد المرتبطة بهذا الكتاب وفق نطاق المصدر في الخادم، وليس المواد الظاهرة فقط بعد مرشحات الواجهة." : scope === "TOPIC" ? "سيشمل الطلب المواد المرتبطة بالمحور المختار من هذا الكتاب." : "سيشمل الطلب المواد المحددة صراحةً فقط، بمعرّفاتها المعروضة أعلاه."} لن يبدأ أي إنتاج حتى تضغط زر البدء أدناه.</p><button type="button" onClick={() => setProductionStep(2)} className="mt-3 rounded-lg border bg-white px-3 py-2 text-sm font-semibold">تعديل المصدر والنطاق</button></div>}
       {productionStep === 3 && <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="start-production" type="button" onClick={() => {
         try {
           if (!canReviewProduction || !selectedProduct) throw new Error("تحقق من المنتج والهوية والمصدر والنطاق قبل البدء.");
           if (scope === "TOPIC" && !topicReady) throw new Error("اختر محورًا صالحًا أولًا.");
-          if (scope === "SELECTION" && selectedMaterialIds.length === 0) throw new Error("اختر مادة واحدة على الأقل من هذا الكتاب.");
-          const request: Omit<CreateProductionRequest, "idempotency_key"> = { source_id: productionSourceId, scope, product_key: productKey, ...(scope === "TOPIC" ? { topic_id: productionTopicId } : {}), ...(scope === "SELECTION" ? { knowledge_unit_ids: [...selectedMaterialIds].sort() } : {}), ...(identityKey ? { identity_key: identityKey } : {}) };
+          if (scope === "SELECTION" && selectedMaterialIds.length === 0) throw new Error("اختر مادة واحدة على الأقل.");
+          if (isThematicProduct && !thematicTheme.trim()) throw new Error("اكتب الثيمة الموضوعية أولًا.");
+          if (isThematicProduct && selectedMaterialIds.length < 2) throw new Error("اختر مادتين على الأقل للتركيب الموضوعي.");
+          const request: Omit<CreateProductionRequest, "idempotency_key"> = { source_id: isThematicProduct ? (thematicAnchorSourceId ?? "") : productionSourceId, scope, product_key: productKey, ...(scope === "TOPIC" ? { topic_id: productionTopicId } : {}), ...(scope === "SELECTION" ? { knowledge_unit_ids: isThematicProduct ? [...selectedMaterialIds] : [...selectedMaterialIds].sort() } : {}), ...(isThematicProduct ? { thematic_theme: thematicTheme.trim() } : {}), ...(identityKey ? { identity_key: identityKey } : {}) };
           const claim = pendingClaimFor(JSON.stringify(request));
           createProduction.mutate({ ...request, idempotency_key: claim.key });
         } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر بدء المطالبة."); }

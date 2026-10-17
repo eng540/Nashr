@@ -5,11 +5,14 @@ import pytest
 
 from app.application.recipe_engine import (
     CapabilityRegistry,
+    ComposeThematicArtifactCapability,
     ProductionExecutionContext,
     ProductionRecipeEngine,
+    RenderApprovedTextCardCapability,
+    _build_card_attribution,
 )
 from app.domain.artifacts import Artifact, ArtifactKind
-from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe, RecipeStage
+from app.domain.recipes import BOOK_TO_TELEGRAM_POST, ProductionRecipe, RecipeStage, SUPPORTED_RECIPE_CAPABILITIES, validate_recipe_stage_configuration
 
 
 class RecordingCapability:
@@ -127,3 +130,101 @@ async def test_recipe_engine_passes_stage_configuration_to_registered_capability
     )
     assert result.content == "draft"
     assert capability.configurations == [{"style_instructions": "Be concise"}]
+
+
+
+def test_thematic_composition_is_a_registered_recipe_contract():
+    assert ("compose_thematic_artifact", 1) in SUPPORTED_RECIPE_CAPABILITIES
+    validate_recipe_stage_configuration(
+        RecipeStage("compose", "compose_thematic_artifact", 1, {"style_instructions": "Preserve source fidelity"})
+    )
+    with pytest.raises(ValueError, match="unsupported fields"):
+        validate_recipe_stage_configuration(
+            RecipeStage("compose", "compose_thematic_artifact", 1, {"hidden_prompt": "hard-coded"})
+        )
+
+
+@pytest.mark.asyncio
+async def test_thematic_capability_requires_explicit_theme_and_source_ids_before_database_access():
+    capability = ComposeThematicArtifactCapability(drafter=object())
+    context = ProductionExecutionContext(
+        session=None,
+        inputs={"knowledge_unit_id": uuid4()},
+        configuration={"editorial_prompt": {"body": "pinned"}},
+        resolved_context={"output_contract": {}},
+    )
+    with pytest.raises(ValueError, match="thematic_theme"):
+        await capability.execute(context)
+
+
+
+class _ArtifactQueryResult:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+class _ArtifactLookupSession:
+    def __init__(self, artifact):
+        self.artifact = artifact
+
+    async def execute(self, _statement):
+        return _ArtifactQueryResult(self.artifact)
+
+
+@pytest.mark.asyncio
+async def test_card_capability_rejects_unapproved_text_before_render_or_storage():
+    from types import SimpleNamespace
+
+    source_id = uuid4()
+    artifact_id = uuid4()
+    source_artifact = SimpleNamespace(
+        id=artifact_id,
+        kind="TEXT",
+        review_status="DRAFT",
+        status="AVAILABLE",
+        content="هذا النص لم يعتمد بعد.",
+        source_knowledge_unit_id=source_id,
+        artifact_metadata={"title": "نص تجريبي"},
+    )
+    context = ProductionExecutionContext(
+        session=_ArtifactLookupSession(source_artifact),
+        inputs={"source_artifact_id": artifact_id, "knowledge_unit_id": source_id},
+        configuration={},
+        run_id=uuid4(),
+        resolved_context={},
+    )
+    with pytest.raises(ValueError, match="human-approved"):
+        await RenderApprovedTextCardCapability(storage_factory=lambda: pytest.fail("Storage must not be touched")).execute(context)
+
+
+
+def test_thematic_card_attribution_preserves_every_stored_source_reference():
+    attribution, references = _build_card_attribution(
+        {
+            "composition_mode": "MULTI_SOURCE_THEMATIC",
+            "sources": [
+                {"source_name": "كتاب أ", "title": "المادة الأولى", "source_reference": "ص. 12"},
+                {"source_name": "كتاب ب", "title": "المادة الثانية", "source_reference": None},
+            ],
+        },
+        "عنوان التركيب",
+        "كتاب أ",
+        "ص. 12",
+    )
+    assert attribution == "المصادر: كتاب أ — المادة الأولى (ص. 12)؛ كتاب ب — المادة الثانية"
+    assert len(references) == 2
+    assert references[0]["source_reference"] == "ص. 12"
+    assert references[1]["source_reference"] is None
+
+
+def test_thematic_card_attribution_fails_closed_when_provenance_is_missing():
+    with pytest.raises(ValueError, match="complete source attribution"):
+        _build_card_attribution(
+            {"composition_mode": "MULTI_SOURCE_THEMATIC", "sources": []},
+            "عنوان التركيب",
+            "كتاب",
+            None,
+        )

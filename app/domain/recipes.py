@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.domain.prompt_templates import validate_template_variables
 
-SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("produce_image_artifact", 1), ("produce_video_artifact", 1), ("produce_audio_artifact", 1)})
+SUPPORTED_RECIPE_CAPABILITIES = frozenset({("produce_post", 1), ("produce_text_artifact", 1), ("compose_thematic_artifact", 1), ("produce_image_artifact", 1), ("render_approved_text_card", 1), ("produce_video_artifact", 1), ("produce_audio_artifact", 1)})
 
 
 @dataclass(frozen=True)
@@ -139,7 +139,7 @@ BOOK_TO_TELEGRAM_POST = ProductionRecipe(
 
 def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
     """Validate only the public configuration contract of built-in capabilities."""
-    if (stage.capability_key, stage.capability_version) in {("produce_post", 1), ("produce_text_artifact", 1)}:
+    if (stage.capability_key, stage.capability_version) in {("produce_post", 1), ("produce_text_artifact", 1), ("compose_thematic_artifact", 1)}:
         unknown = set(stage.configuration) - {"style_instructions"}
         if unknown:
             raise ValueError(f"{stage.capability_key} configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
@@ -150,6 +150,37 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
             raise ValueError(f"{stage.capability_key} style_instructions must be a non-empty string up to 2000 characters.")
 
 
+    if stage.capability_key == "render_approved_text_card" and stage.capability_version == 1:
+        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment"}
+        unknown = set(stage.configuration) - allowed
+        if unknown:
+            raise ValueError("render_approved_text_card configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
+        integer_ranges = {
+            "width": (320, 2400), "height": (320, 3200), "padding": (16, 1000),
+            "font_size": (16, 120), "line_spacing": (0, 80), "max_lines": (1, 100),
+        }
+        for key, (minimum, maximum) in integer_ranges.items():
+            value = stage.configuration.get(key)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum):
+                raise ValueError(f"render_approved_text_card {key} is outside supported bounds.")
+        font_family = stage.configuration.get("font_family")
+        if font_family is not None and (not isinstance(font_family, str) or font_family not in {"default", "naskh", "sans"}):
+            raise ValueError("render_approved_text_card font_family must be default, naskh, or sans.")
+        for key in ("show_title", "show_source_attribution"):
+            value = stage.configuration.get(key)
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(f"render_approved_text_card {key} must be a boolean.")
+        for key in ("title_font_size", "attribution_font_size"):
+            value = stage.configuration.get(key)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 12 <= value <= 100):
+                raise ValueError(f"render_approved_text_card {key} must be between 12 and 100.")
+        alignment = stage.configuration.get("text_alignment")
+        if alignment is not None and (not isinstance(alignment, str) or alignment not in {"right", "center"}):
+            raise ValueError("render_approved_text_card text_alignment must be right or center.")
+        for key in ("background", "foreground"):
+            value = stage.configuration.get(key)
+            if value is not None and (not isinstance(value, str) or len(value) not in {4, 7} or not value.startswith("#")):
+                raise ValueError(f"render_approved_text_card {key} must be a hex color.")
     if stage.capability_key == "produce_image_artifact" and stage.capability_version == 1:
         unknown = set(stage.configuration) - {"style_instructions", "aspect_ratio", "image_size", "generation_prompt"}
         if unknown:

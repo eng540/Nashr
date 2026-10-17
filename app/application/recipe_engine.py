@@ -1,5 +1,6 @@
 """Bounded recipe execution over explicitly registered capabilities."""
 import asyncio
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field as dataclass_field, replace
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.artifacts import ensure_post_artifact, find_existing_generic_artifact, persist_generic_artifact
+from app.application.design_card_renderer import render_arabic_text_card_png
 from app.application.control_plane import ControlPlaneResolver
 from app.application.posts import DraftKnowledgeUnitText, ProducePost
 from app.adapters.image_generation.factory import create_image_generator
@@ -24,7 +26,7 @@ from app.domain.prompt_templates import render_prompt_template
 from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
 from app.infrastructure.artifact_storage import ArtifactStorageError, S3ArtifactStorage
 from app.application.provider_operations import record_provider_operation, update_provider_operation_status
-from app.infrastructure.database.models import KnowledgeUnitModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel
 
 
 @dataclass(frozen=True)
@@ -633,6 +635,260 @@ class ProduceAudioArtifactCapability:
             raise
 
 
+class ComposeThematicArtifactCapability:
+    """Create one reviewable text Artifact from an explicit, multi-source selection."""
+
+    key = "compose_thematic_artifact"
+    version = 1
+
+    def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
+        self.drafter = drafter
+        self.resolver = resolver or ControlPlaneResolver()
+
+    async def execute(
+        self,
+        context: ProductionExecutionContext,
+        previous_output: object | None = None,
+    ) -> Artifact:
+        from app.application.thematic_composition import ComposeThematicDraft, persist_thematic_draft
+
+        raw_ids = context.inputs.get("thematic_source_knowledge_unit_ids")
+        theme = context.inputs.get("thematic_theme")
+        anchor_id = context.inputs.get("knowledge_unit_id")
+        if not isinstance(theme, str) or not theme.strip():
+            raise ValueError("compose_thematic_artifact requires a non-empty thematic_theme input.")
+        if not isinstance(raw_ids, (list, tuple)) or len(raw_ids) < 2:
+            raise ValueError("compose_thematic_artifact requires at least two explicitly selected source IDs.")
+        try:
+            source_ids = [value if isinstance(value, UUID) else UUID(str(value)) for value in raw_ids]
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Thematic source IDs must be valid UUIDs.") from exc
+        if len(set(source_ids)) != len(source_ids):
+            raise ValueError("Thematic source IDs must not contain duplicates.")
+        if not isinstance(anchor_id, UUID) or source_ids[0] != anchor_id:
+            raise ValueError("The first selected source must match the production item's lineage anchor.")
+        if context.resolved_context is None:
+            raise ValueError("compose_thematic_artifact requires a pinned product context.")
+        existing = await find_existing_generic_artifact(
+            context.session,
+            production_job_id=context.run_id,
+            source_knowledge_unit_id=anchor_id,
+            kind=ArtifactKind.TEXT,
+        )
+        if existing is not None:
+            existing_metadata = existing.metadata or {}
+            if (
+                existing_metadata.get("composition_mode") == "MULTI_SOURCE_THEMATIC"
+                and existing_metadata.get("source_knowledge_unit_ids") == [str(value) for value in source_ids]
+                and existing_metadata.get("theme") == theme.strip()
+            ):
+                return existing
+            raise ValueError(
+                "A TEXT Artifact already exists for this production job and lineage anchor, "
+                "but it does not match this thematic request; refusing to generate a duplicate."
+            )
+        system_prompt = _stage_system_prompt(context, self.key)
+        composer = ComposeThematicDraft(drafter=self.drafter, resolver=self.resolver)
+        result = await composer.execute(
+            context.session,
+            theme=theme,
+            knowledge_unit_ids=source_ids,
+            system_prompt=system_prompt,
+        )
+        return await persist_thematic_draft(
+            context.session,
+            result,
+            resolved_context=dict(context.resolved_context),
+            production_job_id=context.run_id,
+        )
+
+
+def _build_card_attribution(
+    source_metadata: Mapping[str, object],
+    fallback_title: str,
+    fallback_source_name: str,
+    fallback_reference: str | None,
+) -> tuple[str, list[dict[str, str | None]]]:
+    """Build attribution only from stored provenance; preserve every thematic source."""
+    if source_metadata.get("composition_mode") == "MULTI_SOURCE_THEMATIC":
+        raw_sources = source_metadata.get("sources")
+        if not isinstance(raw_sources, list) or not raw_sources:
+            raise ValueError("Thematic text Artifact has no complete source attribution metadata.")
+        normalized: list[dict[str, str | None]] = []
+        labels: list[str] = []
+        for item in raw_sources:
+            if not isinstance(item, Mapping):
+                raise ValueError("Thematic source attribution metadata is malformed.")
+            title = item.get("title")
+            source_name = item.get("source_name")
+            reference = item.get("source_reference")
+            if not isinstance(title, str) or not title.strip() or not isinstance(source_name, str) or not source_name.strip():
+                raise ValueError("Thematic source attribution is missing a stored source title or name.")
+            if reference is not None and not isinstance(reference, str):
+                raise ValueError("Thematic source reference metadata is malformed.")
+            reference = reference.strip() if isinstance(reference, str) and reference.strip() else None
+            label = f"{source_name.strip()} — {title.strip()}"
+            if reference:
+                label += f" ({reference})"
+            labels.append(label)
+            normalized.append({
+                "source_name": source_name.strip(),
+                "title": title.strip(),
+                "source_reference": reference,
+            })
+        return "المصادر: " + "؛ ".join(labels), normalized
+
+    label = f"{fallback_source_name} — {fallback_title}"
+    if fallback_reference:
+        label += f" ({fallback_reference})"
+    return f"المصدر: {label}", [{
+        "source_name": fallback_source_name,
+        "title": fallback_title,
+        "source_reference": fallback_reference,
+    }]
+
+
+class RenderApprovedTextCardCapability:
+    """Render a previously human-approved TEXT Artifact into a deterministic PNG."""
+
+    key = "render_approved_text_card"
+    version = 1
+
+    def __init__(self, storage_factory=None) -> None:
+        self.storage_factory = storage_factory or S3ArtifactStorage.from_environment
+
+    async def execute(
+        self,
+        context: ProductionExecutionContext,
+        previous_output: object | None = None,
+    ) -> Artifact:
+        raw_artifact_id = context.inputs.get("source_artifact_id")
+        knowledge_unit_id = context.inputs.get("knowledge_unit_id")
+        if not isinstance(raw_artifact_id, (str, UUID)):
+            raise ValueError("render_approved_text_card requires a source_artifact_id.")
+        if not isinstance(knowledge_unit_id, UUID):
+            raise ValueError("render_approved_text_card requires the source material lineage anchor.")
+        try:
+            source_artifact_id = raw_artifact_id if isinstance(raw_artifact_id, UUID) else UUID(raw_artifact_id)
+        except ValueError as exc:
+            raise ValueError("source_artifact_id must be a valid UUID.") from exc
+
+        source_result = await context.session.execute(
+            select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
+        )
+        source_artifact = source_result.scalar_one_or_none()
+        if source_artifact is None:
+            raise ValueError("The selected source Artifact does not exist.")
+        if source_artifact.kind != ArtifactKind.TEXT.value or source_artifact.review_status != "APPROVED":
+            raise ValueError("Design cards can only be created from a human-approved TEXT Artifact.")
+        if source_artifact.status != ArtifactStatus.AVAILABLE.value or not source_artifact.content:
+            raise ValueError("The approved source Artifact is unavailable or has no inline text.")
+        if source_artifact.source_knowledge_unit_id != knowledge_unit_id:
+            raise ValueError("The approved text Artifact does not match the production lineage anchor.")
+        if context.resolved_context is None or "output_contract" not in context.resolved_context:
+            raise ValueError("render_approved_text_card requires a pinned output contract.")
+
+        existing = await find_existing_generic_artifact(
+            context.session,
+            production_job_id=context.run_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.IMAGE,
+        )
+        if existing is not None:
+            if (existing.metadata or {}).get("source_artifact_id") == str(source_artifact_id):
+                return existing
+            raise ValueError("An IMAGE Artifact already exists for this job and source anchor.")
+
+        pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
+        contract = OutputContractDefinition.from_dict(pinned_contract.definition)
+        if (
+            contract.artifact_kind != ArtifactKind.IMAGE.value
+            or contract.mime_type != "image/png"
+            or contract.content_mode != "STORAGE_URI"
+        ):
+            raise ValueError("render_approved_text_card requires a storage-backed image/png output contract.")
+
+        unit_result = await context.session.execute(
+            select(KnowledgeUnitModel)
+            .options(selectinload(KnowledgeUnitModel.source))
+            .where(KnowledgeUnitModel.id == knowledge_unit_id)
+        )
+        source_unit = unit_result.scalar_one_or_none()
+        if source_unit is None:
+            raise ValueError("The approved text Artifact's source material is unavailable.")
+        source = source_unit.source
+        source_name = (source.book_title or source.filename) if source is not None else "المصدر"
+        source_reference = source_unit.source_reference
+        if not source_reference and source_unit.discovery_page_start is not None:
+            source_reference = (
+                f"ص. {source_unit.discovery_page_start}"
+                if source_unit.discovery_page_end in (None, source_unit.discovery_page_start)
+                else f"ص. {source_unit.discovery_page_start}–{source_unit.discovery_page_end}"
+            )
+        source_attribution, source_references = _build_card_attribution(
+            source_artifact.artifact_metadata or {},
+            source_unit.title,
+            source_name,
+            source_reference,
+        )
+
+        render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment"}
+        render_configuration = {key: value for key, value in context.stage_configuration.items() if key in render_keys}
+        title_value = (source_artifact.artifact_metadata or {}).get("title")
+        card_title = title_value if isinstance(title_value, str) and title_value.strip() else source_unit.title
+        storage = self.storage_factory()
+        await storage.ensure_available()
+        png = render_arabic_text_card_png(
+            source_artifact.content,
+            render_configuration,
+            title=card_title,
+            attribution=source_attribution,
+        )
+        artifact_id = uuid4()
+        storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.png"
+        storage_uri = await storage.put(key=storage_key, content=png, content_type="image/png")
+        now = datetime.now(timezone.utc)
+        artifact = Artifact(
+            id=artifact_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.IMAGE,
+            content=None,
+            status=ArtifactStatus.AVAILABLE.value,
+            created_at=now,
+            updated_at=now,
+            storage_uri=storage_uri,
+            mime_type="image/png",
+            production_job_id=context.run_id,
+            output_contract_key=pinned_contract.key,
+            output_contract_version=pinned_contract.version,
+            resolved_context=dict(context.resolved_context),
+            metadata={
+                "title": card_title,
+                "source_artifact_id": str(source_artifact_id),
+                "source_text_sha256": hashlib.sha256(source_artifact.content.encode("utf-8")).hexdigest(),
+                "renderer": "nashr.deterministic_arabic_card",
+                "renderer_version": 1,
+                "render_configuration": render_configuration,
+                "source_review_status": source_artifact.review_status,
+                "source_name": source_name if len(source_references) == 1 else None,
+                "source_reference": source_reference if len(source_references) == 1 else None,
+                "card_title": card_title,
+                "source_attribution": source_attribution,
+                "source_references": source_references,
+            },
+        )
+        try:
+            return await persist_generic_artifact(
+                context.session, artifact, resolved_context=dict(context.resolved_context)
+            )
+        except Exception:
+            try:
+                await storage.delete(storage_uri)
+            except (AttributeError, ArtifactStorageError, ValueError):
+                pass
+            raise
+
+
 class ProductionRecipeEngine:
     def __init__(self, capabilities: CapabilityRegistry) -> None:
         self.capabilities = capabilities
@@ -670,7 +926,9 @@ def build_production_recipe_engine(
     capabilities = CapabilityRegistry()
     capabilities.register(ProducePostCapability(drafter, resolver))
     capabilities.register(ProduceTextArtifactCapability(drafter, resolver))
+    capabilities.register(ComposeThematicArtifactCapability(drafter, resolver))
     capabilities.register(ProduceImageArtifactCapability())
+    capabilities.register(RenderApprovedTextCardCapability())
     capabilities.register(ProduceVideoArtifactCapability())
     capabilities.register(ProduceAudioArtifactCapability(drafter, resolver))
     return ProductionRecipeEngine(capabilities=capabilities)
