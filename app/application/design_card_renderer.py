@@ -25,10 +25,11 @@ class CardRenderConfig:
     font_size: int = 42
     line_spacing: int = 18
     max_lines: int = 22
+    font_family: str = "default"
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "CardRenderConfig":
-        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines"}
+        allowed = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family"}
         unknown = set(value) - allowed
         if unknown:
             raise ValueError("Unsupported card render configuration: " + ", ".join(sorted(unknown)))
@@ -44,6 +45,8 @@ class CardRenderConfig:
             raise ValueError("Card typography settings are outside the supported bounds.")
         if not (1 <= config.max_lines <= 100):
             raise ValueError("Card max_lines must be between 1 and 100.")
+        if config.font_family not in {"default", "naskh", "sans"}:
+            raise ValueError("Card font_family must be default, naskh, or sans.")
         for color in (config.background, config.foreground):
             if not isinstance(color, str) or len(color) not in {4, 7} or not color.startswith("#"):
                 raise ValueError("Card colors must be hex color values.")
@@ -103,18 +106,39 @@ def render_arabic_text_card_png(
         raise ValueError("A non-empty approved text Artifact is required.")
     if not features.check("raqm"):
         raise RuntimeError("Arabic card rendering requires Pillow built with libraqm support.")
-    selected_font = font_path or os.environ.get("NASHR_CARD_FONT_PATH")
-    if not selected_font:
-        candidates = (
-            "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-        )
-        selected_font = next((candidate for candidate in candidates if Path(candidate).is_file()), None)
-    if not selected_font or not Path(selected_font).is_file():
-        raise RuntimeError("Set NASHR_CARD_FONT_PATH to an installed, licensed Arabic-capable font file.")
     config = CardRenderConfig.from_mapping(configuration or {})
+    environment_key = {
+        "default": "NASHR_CARD_FONT_PATH",
+        "naskh": "NASHR_CARD_FONT_NASKH_PATH",
+        "sans": "NASHR_CARD_FONT_SANS_PATH",
+    }[config.font_family]
+    selected_font = font_path or os.environ.get(environment_key)
+    if not selected_font and config.font_family == "default":
+        selected_font = os.environ.get("NASHR_CARD_FONT_PATH")
+    if not selected_font:
+        candidates_by_family = {
+            "default": (
+                "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+                "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            ),
+            "naskh": (
+                "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+            ),
+            "sans": (
+                "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            ),
+        }
+        selected_font = next(
+            (candidate for candidate in candidates_by_family[config.font_family] if Path(candidate).is_file()),
+            None,
+        )
+    if not selected_font or not Path(selected_font).is_file():
+        raise RuntimeError(f"Set {environment_key} to an installed, licensed Arabic-capable font file.")
     try:
         font = ImageFont.truetype(selected_font, config.font_size, layout_engine=ImageFont.Layout.RAQM)
     except (OSError, ValueError) as exc:
