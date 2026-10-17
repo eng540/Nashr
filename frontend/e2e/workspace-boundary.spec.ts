@@ -118,7 +118,7 @@ test("approved text Artifact can start a card job only through a published card 
       updated_at: "2026-10-15T00:00:00Z",
     }]),
   }));
-  await page.route("**/api/production-jobs", async (route) => {
+  await page.route("**/production-jobs", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     submittedPayload = route.request().postDataJSON() as Record<string, unknown>;
     await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job_id: "e2e-card-job", status: "QUEUED" }) });
