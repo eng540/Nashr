@@ -1,5 +1,6 @@
 """Bounded recipe execution over explicitly registered capabilities."""
 import asyncio
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field as dataclass_field, replace
@@ -25,7 +26,7 @@ from app.domain.prompt_templates import render_prompt_template
 from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
 from app.infrastructure.artifact_storage import ArtifactStorageError, S3ArtifactStorage
 from app.application.provider_operations import record_provider_operation, update_provider_operation_status
-from app.infrastructure.database.models import KnowledgeUnitModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel
 
 
 @dataclass(frozen=True)
