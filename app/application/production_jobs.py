@@ -127,6 +127,7 @@ async def create_production_job(
     request_payload: dict | None = None,
     thematic_theme: str | None = None,
     source_artifact_id: UUID | None = None,
+    source_post_id: UUID | None = None,
 ) -> ProductionJobModel:
     # A claim is durable user intent; the job is a separate execution record.
     # A missing key means an explicit fresh claim, never a settings-based dedupe.
@@ -146,6 +147,7 @@ async def create_production_job(
         "product_key": product_key,
         "thematic_theme": thematic_theme.strip() if isinstance(thematic_theme, str) else None,
         "source_artifact_id": str(source_artifact_id) if source_artifact_id is not None else None,
+        "source_post_id": str(source_post_id) if source_post_id is not None else None,
     }
     if request_fingerprint is None:
         request_fingerprint = hashlib.sha256(
@@ -211,20 +213,34 @@ async def create_production_job(
     has_card_stage = any(stage.capability_key == "render_approved_text_card" for stage in resolved_recipe.stages)
     if has_card_stage and len(resolved_recipe.stages) != 1:
         raise ValueError("A design-card recipe must contain only render_approved_text_card; it cannot trigger unrelated production stages.")
-    if has_card_stage != (source_artifact_id is not None):
-        raise ValueError("Design-card recipes require an explicit approved source_artifact_id, and other recipes cannot accept one.")
-    if source_artifact_id is not None:
+    has_card_source = source_artifact_id is not None or source_post_id is not None
+    if source_artifact_id is not None and source_post_id is not None:
+        raise ValueError("Choose either an approved TEXT Artifact or an approved Post as the design source, not both.")
+    if has_card_stage != has_card_source:
+        raise ValueError("Design-card recipes require an explicit approved source_artifact_id or source_post_id, and other recipes cannot accept either.")
+    if has_card_source:
         if scope != ProductionScope.SELECTION or topic_id is not None or len(knowledge_unit_ids or []) != 1:
             raise ValueError("Design-card production requires selection scope with exactly one lineage anchor.")
-        source_artifact = (await session.execute(
-            select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
-        )).scalar_one_or_none()
-        if source_artifact is None:
-            raise ValueError("The selected source Artifact does not exist.")
-        if source_artifact.kind != ArtifactKind.TEXT.value or source_artifact.review_status != "APPROVED":
-            raise ValueError("Design cards can only be produced from a human-approved TEXT Artifact.")
-        if source_artifact.source_knowledge_unit_id != knowledge_unit_ids[0]:
-            raise ValueError("The selected approved text Artifact must match the selected lineage anchor.")
+        if source_artifact_id is not None:
+            source_artifact = (await session.execute(
+                select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
+            )).scalar_one_or_none()
+            if source_artifact is None:
+                raise ValueError("The selected source Artifact does not exist.")
+            if source_artifact.kind != ArtifactKind.TEXT.value or source_artifact.review_status != "APPROVED":
+                raise ValueError("Design cards can only be produced from a human-approved TEXT Artifact.")
+            if source_artifact.source_knowledge_unit_id != knowledge_unit_ids[0]:
+                raise ValueError("The selected approved text Artifact must match the selected lineage anchor.")
+        if source_post_id is not None:
+            source_post = (await session.execute(
+                select(PostModel).where(PostModel.id == source_post_id)
+            )).scalar_one_or_none()
+            if source_post is None:
+                raise ValueError("The selected source Post does not exist.")
+            if source_post.status != "APPROVED" or not source_post.content.strip():
+                raise ValueError("Design cards can only be produced from a human-approved Post with non-empty text.")
+            if source_post.knowledge_unit_id != knowledge_unit_ids[0]:
+                raise ValueError("The selected approved Post must match the selected lineage anchor.")
         card_contract = OutputContractDefinition.from_dict(resolved_output_contract.definition)
         if card_contract.artifact_kind != ArtifactKind.IMAGE or card_contract.mime_type != "image/png" or card_contract.content_mode != "STORAGE_URI":
             raise ValueError("Design-card product must pin a storage-backed image/png output contract.")
