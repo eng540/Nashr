@@ -30,6 +30,7 @@ from app.application.scheduling import (
 from app.domain.production_jobs import ProductionScope
 from app.domain.production_context import ResolvedProductionContext
 from app.infrastructure.database.models import (
+    ArtifactModel,
     KnowledgeUnitModel,
     ProductionJobItemModel,
     ProductionJobModel,
@@ -58,8 +59,8 @@ router = APIRouter()
 
 
 class ProductionJobRequest(BaseModel):
-    source_id: UUID
-    scope: ProductionScope
+    source_id: UUID | None = None
+    scope: ProductionScope = ProductionScope.SELECTION
     topic_id: UUID | None = None
     knowledge_unit_ids: list[UUID] = Field(default_factory=list)
     recipe_key: str = Field(default="BOOK_TO_TELEGRAM_POST", min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
@@ -688,16 +689,38 @@ async def create_production_job_route(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     try:
+        source_id = payload.source_id
+        knowledge_unit_ids = list(payload.knowledge_unit_ids)
+        if payload.source_artifact_id is not None:
+            source_artifact = (await session.execute(
+                select(ArtifactModel).where(ArtifactModel.id == payload.source_artifact_id)
+            )).scalar_one_or_none()
+            if source_artifact is None or source_artifact.kind != "TEXT" or source_artifact.review_status != "APPROVED":
+                raise ValueError("Design cards can only be started from a human-approved TEXT Artifact.")
+            unit = (await session.execute(
+                select(KnowledgeUnitModel).where(KnowledgeUnitModel.id == source_artifact.source_knowledge_unit_id)
+            )).scalar_one_or_none()
+            if unit is None:
+                raise ValueError("The approved Artifact's source material is unavailable.")
+            if source_id is not None and source_id != unit.source_id:
+                raise ValueError("source_id does not match the approved Artifact's source.")
+            source_id = unit.source_id
+            if not knowledge_unit_ids:
+                knowledge_unit_ids = [unit.id]
+        if source_id is None:
+            raise ValueError("source_id is required unless source_artifact_id identifies an approved text Artifact.")
         request_payload = payload.model_dump(mode="json", exclude={"idempotency_key"})
+        request_payload["source_id"] = str(source_id)
+        request_payload["knowledge_unit_ids"] = [str(value) for value in knowledge_unit_ids]
         request_fingerprint = hashlib.sha256(
             json.dumps(request_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         ).hexdigest()
         job = await create_production_job(
             session,
-            payload.source_id,
+            source_id,
             payload.scope,
             payload.topic_id,
-            payload.knowledge_unit_ids,
+            knowledge_unit_ids,
             recipe_key=payload.recipe_key,
             identity_key=payload.identity_key,
             product_key=payload.product_key,
