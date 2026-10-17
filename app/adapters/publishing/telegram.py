@@ -37,6 +37,7 @@ class _TelegramHTMLSerializer(HTMLParser):
             if attrs:
                 raise ValueError("Telegram line breaks do not accept attributes.")
             self.output.append("\n")
+            self.visible_text.append("\n")
             return
         normalized: list[tuple[str, str]] = []
         for name, value in attrs:
@@ -67,6 +68,7 @@ class _TelegramHTMLSerializer(HTMLParser):
         if tag.lower() != "br" or attrs:
             raise ValueError("Only <br/> is supported as a self-closing Telegram tag.")
         self.output.append("\n")
+        self.visible_text.append("\n")
 
     def handle_data(self, data: str) -> None:
         self.output.append(html.escape(data, quote=False))
@@ -123,6 +125,31 @@ def telegram_html_content(content: str, *, max_visible_characters: int = 4096) -
     if len(visible_text) > max_visible_characters:
         raise ValueError(f"Telegram messages cannot exceed {max_visible_characters} visible characters.")
     return prepared
+
+
+def telegram_html_to_visible_text(content: str) -> str:
+    """Return the visible text from the exact Telegram HTML subset accepted by the publisher.
+
+    This is the shared content interpretation for non-Telegram renderers: tags
+    never leak into an image, supported entities are decoded, and explicit
+    Telegram line breaks remain line breaks. The publisher still sends the
+    original validated rich HTML so Telegram retains its native formatting.
+    """
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Telegram message content cannot be empty.")
+    if not _RICH_TAG_RE.search(content):
+        return content
+    parser = _TelegramHTMLSerializer()
+    try:
+        parser.feed(content)
+        parser.close()
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("Telegram HTML could not be parsed.") from exc
+    if parser.stack:
+        raise ValueError("Telegram HTML contains unclosed tags.")
+    return "".join(parser.visible_text)
 
 
 class TelegramPublisher(IPublisher):
