@@ -194,27 +194,30 @@ class ApproveAndPublish:
             ):
                 raise ValueError("The attached visual Artifact is no longer approved or available for Publishing.")
             visual_metadata = visual.artifact_metadata or {}
-            source_artifact_value = visual_metadata.get("source_artifact_id")
+            source_type = visual_metadata.get("source_type", "TEXT_ARTIFACT")
             source_text_hash = visual_metadata.get("source_text_sha256")
-            try:
-                source_artifact_id = UUID(str(source_artifact_value))
-            except (TypeError, ValueError) as exc:
-                raise ValueError("The attached visual Artifact has invalid approved-text provenance.") from exc
-            source_text_result = await session.execute(
-                select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
-            )
-            source_text = source_text_result.scalar_one_or_none()
-            if (
-                source_text is None
-                or source_text.kind != "TEXT"
-                or source_text.status != "AVAILABLE"
-                or source_text.review_status != "APPROVED"
-                or source_text.content is None
-                or source_text.source_knowledge_unit_id != post_row.knowledge_unit_id
-                or source_text.content != post_row.content
-                or source_text_hash != hashlib.sha256(source_text.content.encode("utf-8")).hexdigest()
-            ):
-                raise ValueError("The Post text no longer matches the approved TEXT Artifact used to create the visual.")
+            if source_type == "POST":
+                if visual_metadata.get("source_post_id") != str(post_row.id) or visual_metadata.get("source_id") != str(post_row.id):
+                    raise ValueError("The attached visual was not produced from this Post.")
+                if post_row.content is None or source_text_hash != hashlib.sha256(post_row.content.encode("utf-8")).hexdigest():
+                    raise ValueError("The Post text no longer matches the approved text used to create the visual.")
+            elif source_type == "TEXT_ARTIFACT":
+                source_artifact_value = visual_metadata.get("source_artifact_id")
+                try:
+                    source_artifact_id = UUID(str(source_artifact_value))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("The attached visual Artifact has invalid approved-text provenance.") from exc
+                source_text = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == source_artifact_id))).scalar_one_or_none()
+                if (
+                    source_text is None or source_text.kind != "TEXT" or source_text.status != "AVAILABLE"
+                    or source_text.review_status != "APPROVED" or source_text.content is None
+                    or source_text.source_knowledge_unit_id != post_row.knowledge_unit_id
+                    or source_text.content != post_row.content
+                    or source_text_hash != hashlib.sha256(source_text.content.encode("utf-8")).hexdigest()
+                ):
+                    raise ValueError("The Post text no longer matches the approved TEXT Artifact used to create the visual.")
+            else:
+                raise ValueError("The attached visual has missing or unsupported source provenance.")
             try:
                 media_bytes = await S3ArtifactStorage.from_environment().get_bytes(visual.storage_uri)
             except (ArtifactStorageError, ValueError) as exc:
