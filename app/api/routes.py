@@ -1310,6 +1310,10 @@ async def list_posts(
         PublicationModel.post_id == PostModel.id,
         PublicationModel.status == "PUBLISHED",
     ).exists()
+    publication_started_exists = select(PublicationModel.id).where(
+        PublicationModel.post_id == PostModel.id,
+        PublicationModel.status != "DRAFT",
+    ).exists()
     scheduled_exists = select(ScheduleItemModel.id).join(
         ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id
     ).where(
@@ -1333,7 +1337,7 @@ async def list_posts(
         filters.extend([
             PostModel.status == "APPROVED",
             func.trim(PostModel.content) != "",
-            ~published_exists,
+            ~publication_started_exists,
             ~scheduled_exists,
         ])
     elif publication_state not in (None, "", "ALL"):
@@ -2798,6 +2802,10 @@ async def list_posts(
         filters.append(KnowledgeUnitModel.kind == kind)
     published_exists = select(PublicationModel.id).where(
         PublicationModel.post_id == PostModel.id,
+        PublicationModel.status == "PUBLISHED",
+    ).exists()
+    publication_started_exists = select(PublicationModel.id).where(
+        PublicationModel.post_id == PostModel.id,
         PublicationModel.status != "DRAFT",
     ).exists()
     scheduled_exists = select(ScheduleItemModel.id).join(
@@ -2823,7 +2831,7 @@ async def list_posts(
         filters.extend([
             PostModel.status == "APPROVED",
             func.trim(PostModel.content) != "",
-            ~published_exists,
+            ~publication_started_exists,
             ~scheduled_exists,
         ])
     elif publication_state not in (None, "", "ALL"):
