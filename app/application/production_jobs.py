@@ -209,6 +209,8 @@ async def create_production_job(
         resolved_policy = await resolver.resolve_policy(session, policy_key)
 
     has_card_stage = any(stage.capability_key == "render_approved_text_card" for stage in resolved_recipe.stages)
+    if has_card_stage and len(resolved_recipe.stages) != 1:
+        raise ValueError("A design-card recipe must contain only render_approved_text_card; it cannot trigger unrelated production stages.")
     if has_card_stage != (source_artifact_id is not None):
         raise ValueError("Design-card recipes require an explicit approved source_artifact_id, and other recipes cannot accept one.")
     if source_artifact_id is not None:
