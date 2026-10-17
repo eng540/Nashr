@@ -45,7 +45,7 @@ class CardRenderConfig:
             raise ValueError("Card typography settings are outside the supported bounds.")
         if not (1 <= config.max_lines <= 100):
             raise ValueError("Card max_lines must be between 1 and 100.")
-        if config.font_family not in {"default", "naskh", "sans"}:
+        if not isinstance(config.font_family, str) or config.font_family not in {"default", "naskh", "sans"}:
             raise ValueError("Card font_family must be default, naskh, or sans.")
         for color in (config.background, config.foreground):
             if not isinstance(color, str) or len(color) not in {4, 7} or not color.startswith("#"):
