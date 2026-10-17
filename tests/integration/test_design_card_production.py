@@ -4,6 +4,7 @@ from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
+import httpx
 from PIL import Image
 from sqlalchemy import select, text
 
@@ -12,8 +13,9 @@ from app.application.image_generation import GeneratedImage
 from app.application.generic_artifact_review import GenericArtifactReviewService
 from app.application.recipe_engine import ProductionExecutionContext, RenderApprovedTextCardCapability
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, ProductionClaimModel, ProductionJobModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionClaimModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
+from app.main import app
 
 
 class MemoryCardStorage:
@@ -345,3 +347,88 @@ async def test_migrations_seed_four_published_versioned_design_card_products():
                 assert stage["configuration"]["background_mode"] == "ai_generated"
                 assert stage["configuration"]["provider"] == "fal"
                 assert stage["configuration"]["model"] == "fal-ai/flux/schnell"
+
+
+@pytest.mark.asyncio
+async def test_visual_artifact_handoff_api_requires_approved_image_and_matching_approved_text():
+    source_id, unit_id, post_id = uuid4(), uuid4(), uuid4()
+    text_artifact_id, image_artifact_id = uuid4(), uuid4()
+    approved_text = "نص معتمد يجب أن يطابق المنشور حرفيًا."
+    source_text_hash = hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
+    async with SessionFactory() as session:
+        session.add(SourceModel(
+            id=source_id,
+            filename="handoff.pdf",
+            mime_type="application/pdf",
+            storage_path=f"./storage/test/{source_id}.pdf",
+            size_bytes=10,
+            status="STORED",
+            book_title="كتاب التسليم",
+        ))
+        session.add(KnowledgeUnitModel(
+            id=unit_id,
+            source_id=source_id,
+            position=1,
+            title="مادة التسليم",
+            content="مادة المصدر",
+        ))
+        session.add(PostModel(
+            id=post_id,
+            knowledge_unit_id=unit_id,
+            content=approved_text,
+            status="APPROVED",
+        ))
+        session.add(ArtifactModel(
+            id=text_artifact_id,
+            source_knowledge_unit_id=unit_id,
+            kind="TEXT",
+            status="AVAILABLE",
+            content=approved_text,
+            mime_type="text/plain",
+            output_contract_key="TEXT_ARTIFACT",
+            output_contract_version=1,
+            resolved_context={},
+            artifact_metadata={"title": "نص التسليم"},
+            review_status="APPROVED",
+        ))
+        session.add(ArtifactModel(
+            id=image_artifact_id,
+            source_knowledge_unit_id=unit_id,
+            kind="IMAGE",
+            status="AVAILABLE",
+            storage_uri=f"s3://test-bucket/{image_artifact_id}.png",
+            mime_type="image/png",
+            output_contract_key="IMAGE_ARTIFACT",
+            output_contract_version=1,
+            resolved_context={},
+            artifact_metadata={
+                "source_artifact_id": str(text_artifact_id),
+                "source_text_sha256": source_text_hash,
+            },
+            review_status="DRAFT",
+        ))
+        await session.commit()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        unapproved = await client.post(
+            f"/posts/{post_id}/visual-artifact",
+            json={"artifact_id": str(image_artifact_id)},
+        )
+    assert unapproved.status_code == 409
+
+    async with SessionFactory() as session:
+        visual = (await session.execute(
+            select(ArtifactModel).where(ArtifactModel.id == image_artifact_id)
+        )).scalar_one()
+        visual.review_status = "APPROVED"
+        visual.review_note = "اعتماد بصري مستقل"
+        await session.commit()
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        attached = await client.post(
+            f"/posts/{post_id}/visual-artifact",
+            json={"artifact_id": str(image_artifact_id)},
+        )
+    assert attached.status_code == 200
+    assert attached.json()["visual_artifact_id"] == str(image_artifact_id)
