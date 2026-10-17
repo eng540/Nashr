@@ -765,9 +765,9 @@ class RenderApprovedTextCardCapability:
 
         render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family"}
         render_configuration = {key: value for key, value in context.stage_configuration.items() if key in render_keys}
-        png = render_arabic_text_card_png(source_artifact.content, render_configuration)
         storage = self.storage_factory()
         await storage.ensure_available()
+        png = render_arabic_text_card_png(source_artifact.content, render_configuration)
         artifact_id = uuid4()
         storage_key = f"artifacts/{knowledge_unit_id}/{context.run_id or uuid4()}/{artifact_id}.png"
         storage_uri = await storage.put(key=storage_key, content=png, content_type="image/png")
