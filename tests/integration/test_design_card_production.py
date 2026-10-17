@@ -89,13 +89,15 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance(mon
         ))
         await session.flush()
         claim_id = uuid4()
-        session.add(ProductionClaimModel(
+        claim = ProductionClaimModel(
             id=claim_id,
             source_id=source_id,
             scope="SELECTION",
             request_fingerprint="a" * 64,
             request_payload={"source_id": str(source_id)},
-        ))
+        )
+        session.add(claim)
+        await session.flush()
         session.add(ProductionJobModel(
             id=run_id,
             claim_id=claim_id,
