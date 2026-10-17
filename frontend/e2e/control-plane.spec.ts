@@ -21,6 +21,29 @@ test("control plane keeps prompt management available beside product controls", 
 });
 
 
+test("Control Plane can publish the approved-text card recipe capability", async ({ page }) => {
+  await page.goto("/control");
+  await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
+  await page.getByRole("button", { name: "الوصفات" }).click();
+  await page.getByRole("button", { name: "جديد" }).click();
+  await page.getByLabel("المفتاح").fill("E2E_APPROVED_TEXT_CARD_RECIPE");
+  await page.getByLabel("الاسم").fill("E2E Approved Text Card Recipe");
+  await page.getByLabel("الغرض").fill("Verify card capability is configurable through Control Plane");
+  await page.getByLabel("القدرة").selectOption("render_approved_text_card");
+  await expect(page.getByLabel("القدرة")).toHaveValue("render_approved_text_card");
+  await page.getByRole("button", { name: "إنشاء ومسودة أولى" }).click();
+  await expect(page.getByText("تم إنشاء العنصر ومسودته الأولى.")).toBeVisible();
+  await page.getByRole("button", { name: "نشر الإصدار" }).click();
+  await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
+  const recipeResponse = await page.request.get("/api/control/recipes/E2E_APPROVED_TEXT_CARD_RECIPE");
+  expect(recipeResponse.ok()).toBeTruthy();
+  const recipe = await recipeResponse.json();
+  const published = recipe.versions.find((version: { status: string }) => version.status === "PUBLISHED");
+  expect(published.definition.stages).toEqual([
+    expect.objectContaining({ capability_key: "render_approved_text_card", capability_version: 1 }),
+  ]);
+});
+
 test("a product can be created in Control Plane and selected in the factory", async ({ page }) => {
   const promptsResponse = await page.request.get("/api/control/prompts");
   expect(promptsResponse.ok()).toBeTruthy();
