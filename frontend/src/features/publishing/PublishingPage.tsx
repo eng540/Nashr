@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 import { useMemo, useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
+import { genericArtifactsApi } from "../../shared/api/artifactsApi";
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime } from "../../shared/utils/timezone";
@@ -19,6 +20,8 @@ export function PublishingPage() {
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
   const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [visualArtifactSelections, setVisualArtifactSelections] = useState<Record<string, string>>({});
+  const [visualPreviewUrls, setVisualPreviewUrls] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<ScheduleDetail | null>(null);
   const [readyQuery, setReadyQuery] = useState("");
   const [readySort, setReadySort] = useState<"created" | "title" | "kind" | "topic">("created");
@@ -45,6 +48,12 @@ export function PublishingPage() {
     }),
     placeholderData: (previous) => previous,
   });
+  const approvedImages = useQuery({
+    queryKey: ["publishing", "approved-image-artifacts"],
+    queryFn: async () => (await genericArtifactsApi.list("APPROVED")).filter(
+      (artifact) => artifact.kind === "IMAGE" && artifact.status === "AVAILABLE" && Boolean(artifact.storage_uri) && ["image/png", "image/jpeg", "image/webp"].includes(artifact.mime_type ?? ""),
+    ),
+  });
   const readyFilterOptions = useQuery({
     queryKey: ["publishing", "filter-options", readySourceId],
     queryFn: () => postsApi.filterOptions(readySourceId || undefined, "ELIGIBLE"),
@@ -57,6 +66,23 @@ export function PublishingPage() {
   });
 
   const eligibility = useMutation({ mutationFn: () => schedulesApi.eligibility(selectedIds) });
+  const attachVisual = useMutation({
+    mutationFn: ({ postId, artifactId }: { postId: string; artifactId: string }) => postsApi.attachVisualArtifact(postId, artifactId),
+    onSuccess: async () => {
+      setMessage("تم إرفاق التصميم المعتمد بالمنشور. سيستخدمه مسار النشر الحالي بعد إعادة التحقق من اعتماده.");
+      await refresh();
+    },
+    onError: (error) => setMessage(error instanceof Error ? error.message : "تعذر إرفاق التصميم."),
+  });
+  const detachVisual = useMutation({
+    mutationFn: (postId: string) => postsApi.detachVisualArtifact(postId),
+    onSuccess: async () => {
+      setMessage("تم فصل التصميم عن المنشور دون تغيير اعتماد النص.");
+      await refresh();
+    },
+    onError: (error) => setMessage(error instanceof Error ? error.message : "تعذر فصل التصميم."),
+  });
+
   const createSchedule = useMutation({
     mutationFn: () => {
       if (!form.startAt) throw new Error("حدد وقت بداية صالح.");
@@ -152,6 +178,15 @@ export function PublishingPage() {
     }
   };
 
+  const previewVisual = async (postId: string, artifactId: string) => {
+    try {
+      const media = await genericArtifactsApi.mediaUrl(artifactId);
+      setVisualPreviewUrls((current) => ({ ...current, [postId]: media.url }));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "تعذر تحميل معاينة التصميم المخزن.");
+    }
+  };
+
   const readyItems = posts.data?.items ?? [];
   const readyTotal = posts.data?.total ?? 0;
   const readyPageCount = Math.max(1, Math.ceil(readyTotal / PAGE_SIZE));
@@ -228,7 +263,34 @@ export function PublishingPage() {
 
           {readyItems.length === 0
             ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد منشورات جاهزة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير عبارة البحث، أو عد إلى مصنع المحتوى لاعتماد منشورات جديدة.</p></div>
-            : <div className="space-y-3">{readyItems.map((post) => <article key={post.post_id} className="rounded-2xl border bg-white p-4 shadow-sm"><label className="flex cursor-pointer items-start gap-3"><input aria-label={`تحديد ${post.title}`} type="checkbox" checked={selectedIds.includes(post.post_id)} onChange={(e) => setSelection(post.post_id, e.target.checked)} className="mt-1 h-4 w-4"/><span className="min-w-0"><strong className="block">{post.title}</strong><span className="mt-1 block text-xs text-slate-500">{post.source_title}</span><p className="mt-2 text-sm leading-7 text-slate-600">{post.content_preview}</p></span></label></article>)}</div>}
+            : <div className="space-y-3">{readyItems.map((post) => {
+              const matchingImages = (approvedImages.data ?? []).filter((image) => image.source_knowledge_unit_id === post.knowledge_unit_id);
+              return <article key={post.post_id} className="rounded-2xl border bg-white p-4 shadow-sm" data-testid={`ready-post-${post.post_id}`}>
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input aria-label={`تحديد ${post.title}`} type="checkbox" checked={selectedIds.includes(post.post_id)} onChange={(e) => setSelection(post.post_id, e.target.checked)} className="mt-1 h-4 w-4"/>
+                  <span className="min-w-0"><strong className="block">{post.title}</strong><span className="mt-1 block text-xs text-slate-500">{post.source_title}</span><p className="mt-2 text-sm leading-7 text-slate-600">{post.content_preview}</p></span>
+                </label>
+                <div className="mt-4 rounded-xl border border-dashed p-3">
+                  {post.visual_artifact_id ? <>
+                    <p className="text-sm font-semibold text-emerald-700">تصميم معتمد مرفق</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => void previewVisual(post.post_id, post.visual_artifact_id!)}>معاينة التصميم المخزن</button>
+                      <button type="button" className="rounded-lg border px-3 py-2 text-sm" disabled={detachVisual.isPending} onClick={() => detachVisual.mutate(post.post_id)}>فصل التصميم</button>
+                    </div>
+                    {visualPreviewUrls[post.post_id] && <img src={visualPreviewUrls[post.post_id]} alt="معاينة التصميم المعتمد" className="mt-3 max-h-96 rounded-lg border object-contain"/>}
+                  </> : <>
+                    <label className="block text-sm font-semibold">إرفاق تصميم بصري معتمد
+                      <select aria-label={`تصميم معتمد لـ ${post.title}`} className="mt-2 block w-full rounded-lg border p-2 font-normal" value={visualArtifactSelections[post.post_id] ?? ""} onChange={(event) => setVisualArtifactSelections((current) => ({ ...current, [post.post_id]: event.target.value }))}>
+                        <option value="">اختر تصميمًا اختياريًا</option>
+                        {matchingImages.map((image) => <option key={image.id} value={image.id}>{String(image.metadata.title ?? image.id)} · {image.mime_type}</option>)}
+                      </select>
+                    </label>
+                    {matchingImages.length === 0 && <p className="mt-2 text-xs text-slate-500">لا توجد صور معتمدة لهذه المادة. اعتماد النص وحده لا يرفق صورة.</p>}
+                    <button type="button" className="mt-2 rounded-lg border px-3 py-2 text-sm font-semibold" disabled={!visualArtifactSelections[post.post_id] || attachVisual.isPending} onClick={() => attachVisual.mutate({ postId: post.post_id, artifactId: visualArtifactSelections[post.post_id] })}>إرفاق التصميم</button>
+                  </>}
+                </div>
+              </article>;
+            })}</div>}
 
           <Pagination page={readyPage} pageCount={readyPageCount} onChange={setReadyPage} loading={posts.isFetching} label="صفحات المنشورات الجاهزة" />
         </section>

@@ -48,3 +48,52 @@ test("publishing workspace separates ready, plans, and calendar sections", async
   await expect(page.getByTestId("publishing-calendar")).toBeVisible();
   await expect(page.getByLabel("تاريخ التقويم")).toBeVisible();
 });
+
+
+test("publishing can attach and preview an approved visual artifact without publishing externally", async ({ page }) => {
+  let attached = false;
+  const post = () => ({
+    post_id: "post-visual-e2e",
+    title: "عنوان الاختبار",
+    status: "APPROVED",
+    knowledge_unit_id: "unit-visual-e2e",
+    topic_id: null,
+    topic_title: null,
+    source_id: "source-visual-e2e",
+    source_title: "كتاب الاختبار",
+    content: "نص معتمد للاختبار",
+    content_preview: "نص معتمد للاختبار",
+    created_at: "2026-10-17T00:00:00Z",
+    updated_at: "2026-10-17T00:00:00Z",
+    reviewed_at: "2026-10-17T00:00:00Z",
+    review_note: null,
+    published: false,
+    visual_artifact_id: attached ? "image-visual-e2e" : null,
+  });
+  await page.route("**/posts?**", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [post()], total: 1, limit: 20, offset: 0 }) }));
+  await page.route("**/posts/filter-options**", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kinds: [], topics: [], sources: [] }) }));
+  await page.route("**/api/artifacts?review_status=APPROVED", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{
+    id: "image-visual-e2e", source_knowledge_unit_id: "unit-visual-e2e", kind: "IMAGE", status: "AVAILABLE",
+    content: null, storage_uri: "s3://test/card.png", mime_type: "image/png", output_contract_key: "IMAGE_ARTIFACT",
+    output_contract_version: 1, metadata: { title: "بطاقة الاختبار" }, review_status: "APPROVED",
+    review_note: null, reviewed_at: "2026-10-17T00:00:00Z", created_at: "2026-10-17T00:00:00Z", updated_at: "2026-10-17T00:00:00Z",
+  }]) }));
+  await page.route("**/posts/post-visual-e2e/visual-artifact", async (route) => {
+    attached = true;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(post()) });
+  });
+  await page.route("**/posts/post-visual-e2e/visual-artifact/detach", async (route) => {
+    attached = false;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(post()) });
+  });
+  await page.route("**/api/artifacts/image-visual-e2e/media-url", async (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jv9sAAAAASUVORK5CYII=", expires_in: 300 }),
+  }));
+  await page.goto("/publishing");
+  await expect(page.getByTestId("ready-post-post-visual-e2e")).toBeVisible();
+  await page.getByLabel("تصميم معتمد لـ عنوان الاختبار").selectOption("image-visual-e2e");
+  await page.getByRole("button", { name: "إرفاق التصميم" }).click();
+  await expect(page.getByText("تصميم معتمد مرفق")).toBeVisible();
+  await page.getByRole("button", { name: "معاينة التصميم المخزن" }).click();
+  await expect(page.getByAltText("معاينة التصميم المعتمد")).toBeVisible();
+});

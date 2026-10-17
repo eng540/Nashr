@@ -2,16 +2,20 @@ from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
+
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import select
 
 from app.adapters.drafting.fake import FakeEditorialDrafter
 from app.adapters.publishing.fake import FakePublisher
+from app.domain.publications import PublishResult
 from app.application.posts import ProducePost
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.application.reviews import ReviewPost
 from app.domain.artifacts import Artifact, ArtifactKind
-from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, SourceModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, SourceModel
+from app.infrastructure.artifact_storage import S3ArtifactStorage
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -52,9 +56,9 @@ class RecordingPublisher(FakePublisher):
     def __init__(self) -> None:
         self.contents: list[str] = []
 
-    async def publish(self, *, destination: str, content: str):
+    async def publish(self, *, destination: str, content: str, media: bytes | None = None, media_mime_type: str | None = None):
         self.contents.append(content)
-        return await super().publish(destination=destination, content=content)
+        return await super().publish(destination=destination, content=content, media=media, media_mime_type=media_mime_type)
 
 
 async def test_create_telegram_draft_compatibility_accepts_post_model() -> None:
@@ -158,7 +162,7 @@ async def test_create_draft_passes_visual_slice_and_restores_source() -> None:
 class FailingPublisher(FakePublisher):
     """Simulate a platform failure."""
 
-    async def publish(self, *, destination: str, content: str):
+    async def publish(self, *, destination: str, content: str, media: bytes | None = None, media_mime_type: str | None = None):
         """Raise a deterministic publish failure."""
         raise RuntimeError("telegram unavailable")
 
@@ -173,3 +177,83 @@ async def test_publish_failure_is_recorded() -> None:
         result = await ApproveAndPublish(FailingPublisher()).execute(session, draft.id)
         assert result.status.value == "FAILED"
         assert result.error_message == "telegram unavailable"
+
+
+class RecordingMediaPublisher:
+    def __init__(self):
+        self.calls = []
+
+    async def publish(self, *, destination: str, content: str, media: bytes | None = None, media_mime_type: str | None = None):
+        self.calls.append((destination, content, media, media_mime_type))
+        return PublishResult(external_id="test_visual_msg_1")
+
+
+class FakePrivateArtifactStorage:
+    async def get_bytes(self, storage_uri: str) -> bytes:
+        assert storage_uri == "s3://test-bucket/card.png"
+        return b"stored-approved-png"
+
+
+async def test_approved_visual_artifact_flows_through_existing_publication_boundary(monkeypatch) -> None:
+    unit_id = await _knowledge_unit()
+    async with SessionFactory() as session:
+        draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit_id, "@test")
+        post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_id))).scalar_one()
+        await ReviewPost().approve(session, post.id, "approved post")
+
+        visual_id = uuid4()
+        session.add(ArtifactModel(
+            id=visual_id,
+            source_knowledge_unit_id=unit_id,
+            kind="IMAGE",
+            status="AVAILABLE",
+            storage_uri="s3://test-bucket/card.png",
+            mime_type="image/png",
+            output_contract_key="IMAGE_ARTIFACT",
+            output_contract_version=1,
+            resolved_context={},
+            artifact_metadata={"source_artifact_id": str(uuid4()), "source_text_sha256": "a" * 64},
+            review_status="APPROVED",
+            review_note="approved visual",
+        ))
+        await session.flush()
+        post.visual_artifact_id = visual_id
+        await session.commit()
+
+        fake_storage = FakePrivateArtifactStorage()
+        monkeypatch.setattr(S3ArtifactStorage, "from_environment", classmethod(lambda cls: fake_storage))
+        publisher = RecordingMediaPublisher()
+        published = await ApproveAndPublish(publisher).execute(session, draft.id)
+        assert published.status.value == "PUBLISHED"
+        assert publisher.calls == [("@test", draft.content, b"stored-approved-png", "image/png")]
+
+
+async def test_unapproved_visual_artifact_blocks_publication_without_publishing_text(monkeypatch) -> None:
+    unit_id = await _knowledge_unit()
+    async with SessionFactory() as session:
+        draft = await CreateTelegramDraft(FakeEditorialDrafter()).execute(session, unit_id, "@test")
+        post = (await session.execute(select(PostModel).where(PostModel.knowledge_unit_id == unit_id))).scalar_one()
+        await ReviewPost().approve(session, post.id, "approved post")
+
+        visual_id = uuid4()
+        session.add(ArtifactModel(
+            id=visual_id,
+            source_knowledge_unit_id=unit_id,
+            kind="IMAGE",
+            status="AVAILABLE",
+            storage_uri="s3://test-bucket/card.png",
+            mime_type="image/png",
+            output_contract_key="IMAGE_ARTIFACT",
+            output_contract_version=1,
+            resolved_context={},
+            artifact_metadata={"source_artifact_id": str(uuid4()), "source_text_sha256": "a" * 64},
+            review_status="DRAFT",
+        ))
+        await session.flush()
+        post.visual_artifact_id = visual_id
+        await session.commit()
+
+        publisher = RecordingMediaPublisher()
+        with pytest.raises(ValueError, match="no longer approved"):
+            await ApproveAndPublish(publisher).execute(session, draft.id)
+        assert publisher.calls == []

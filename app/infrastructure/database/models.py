@@ -115,11 +115,12 @@ class KnowledgeUnitModel(Base):
 
 class PostModel(Base):
     __tablename__ = "posts"
-    __table_args__ = (UniqueConstraint("production_job_id", "knowledge_unit_id", name="uq_posts_job_knowledge_unit"),)
+    __table_args__ = (UniqueConstraint("production_job_id", "knowledge_unit_id", name="uq_posts_job_knowledge_unit"), UniqueConstraint("visual_artifact_id", name="uq_posts_visual_artifact_id"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     knowledge_unit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("knowledge_units.id", ondelete="RESTRICT"), nullable=False)
     production_job_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("production_jobs.id", ondelete="SET NULL"), nullable=True)
+    visual_artifact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="SET NULL"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

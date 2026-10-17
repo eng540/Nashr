@@ -93,7 +93,7 @@ class _TelegramHTMLSerializer(HTMLParser):
         raise ValueError("HTML declarations are not supported in Telegram messages.")
 
 
-def telegram_html_content(content: str) -> str:
+def telegram_html_content(content: str, *, max_visible_characters: int = 4096) -> str:
     """Prepare plain text or rich Telegram HTML and enforce structural/platform limits.
 
     Plain text is escaped before Telegram's HTML parser sees it. Rich HTML is
@@ -120,8 +120,8 @@ def telegram_html_content(content: str) -> str:
         prepared = "".join(parser.output)
         visible_text = "".join(parser.visible_text)
 
-    if len(visible_text) > 4096:
-        raise ValueError("Telegram messages cannot exceed 4096 visible characters.")
+    if len(visible_text) > max_visible_characters:
+        raise ValueError(f"Telegram messages cannot exceed {max_visible_characters} visible characters.")
     return prepared
 
 
@@ -135,19 +135,38 @@ class TelegramPublisher(IPublisher):
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN is required.")
 
-    async def publish(self, *, destination: str, content: str) -> PublishResult:
-        """Send a message to Telegram and return its message identifier."""
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        message = telegram_html_content(content)
+    async def publish(
+        self,
+        *,
+        destination: str,
+        content: str,
+        media: bytes | None = None,
+        media_mime_type: str | None = None,
+    ) -> PublishResult:
+        """Send a text message or an approved visual card with a text caption."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                url,
-                json={
-                    "chat_id": destination,
-                    "text": message,
-                    "parse_mode": "HTML",
-                },
-            )
+            if media is None:
+                url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+                message = telegram_html_content(content)
+                response = await client.post(
+                    url,
+                    json={
+                        "chat_id": destination,
+                        "text": message,
+                        "parse_mode": "HTML",
+                    },
+                )
+            else:
+                if not media or media_mime_type not in {"image/png", "image/jpeg", "image/webp"}:
+                    raise ValueError("Publishing media must be a non-empty supported image.")
+                extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[media_mime_type]
+                url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
+                caption = telegram_html_content(content, max_visible_characters=1024)
+                response = await client.post(
+                    url,
+                    data={"chat_id": destination, "caption": caption, "parse_mode": "HTML"},
+                    files={"photo": (f"nashr-card.{extension}", media, media_mime_type)},
+                )
             response.raise_for_status()
             payload = response.json()
         if not payload.get("ok") or "result" not in payload or "message_id" not in payload["result"]:

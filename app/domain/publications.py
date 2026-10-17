@@ -22,8 +22,10 @@ class PublishResult:
 class IPublisher(Protocol):
     """Define the platform publishing port."""
 
-    async def publish(self, *, destination: str, content: str) -> PublishResult:
-        """Publish content and return its external message identifier."""
+    async def publish(
+        self, *, destination: str, content: str, media: bytes | None = None, media_mime_type: str | None = None
+    ) -> PublishResult:
+        """Publish text or an optional approved visual attachment and return its external message identifier."""
 
 
 @dataclass(frozen=True)

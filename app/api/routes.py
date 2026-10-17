@@ -91,6 +91,10 @@ class BulkPostApproveRequest(BaseModel):
 class PostRejectRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=5_000)
 
+
+class PostVisualArtifactRequest(BaseModel):
+    artifact_id: UUID
+
 class ScheduleItemRequest(BaseModel):
     post_id: UUID
     scheduled_at: datetime
@@ -138,6 +142,7 @@ def _post_payload(post: PostModel) -> dict[str, Any]:
         "reviewed_at": post.reviewed_at,
         "review_note": post.review_note,
         "published": published,
+        "visual_artifact_id": str(post.visual_artifact_id) if post.visual_artifact_id else None,
     }
 
 
@@ -1586,6 +1591,104 @@ async def reject_post(
         select(PostModel).options(*_post_query_options()).where(PostModel.id == post.id)
     )
     return _post_payload(result.scalar_one())
+
+
+@router.post("/posts/{post_id}/visual-artifact")
+async def attach_visual_artifact_to_post(
+    post_id: UUID,
+    payload: PostVisualArtifactRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    post_result = await session.execute(
+        select(PostModel).options(*_post_query_options()).where(PostModel.id == post_id)
+    )
+    post = post_result.scalar_one_or_none()
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    if post.status != "APPROVED":
+        raise HTTPException(status_code=409, detail="Only an approved Post can receive an approved visual Artifact.")
+    published = (await session.execute(
+        select(PublicationModel.id).where(
+            PublicationModel.post_id == post_id,
+            PublicationModel.status == "PUBLISHED",
+        ).limit(1)
+    )).scalar_one_or_none()
+    scheduled = (await session.execute(
+        select(ScheduleItemModel.id)
+        .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
+        .where(
+            ScheduleItemModel.post_id == post_id,
+            ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if published is not None or scheduled is not None:
+        raise HTTPException(status_code=409, detail="Detach or change the visual only before this Post enters Publishing or a schedule.")
+    visual = (await session.execute(
+        select(ArtifactModel).where(ArtifactModel.id == payload.artifact_id)
+    )).scalar_one_or_none()
+    if visual is None:
+        raise HTTPException(status_code=404, detail="Visual Artifact not found.")
+    if (
+        visual.kind != "IMAGE"
+        or visual.status != "AVAILABLE"
+        or visual.review_status != "APPROVED"
+        or not visual.storage_uri
+        or visual.mime_type not in {"image/png", "image/jpeg", "image/webp"}
+    ):
+        raise HTTPException(status_code=409, detail="Only an available, human-approved, storage-backed image can be attached.")
+    if visual.source_knowledge_unit_id != post.knowledge_unit_id:
+        raise HTTPException(status_code=409, detail="The approved visual Artifact must share the Post's source-material lineage.")
+    already_linked = (await session.execute(
+        select(PostModel.id).where(
+            PostModel.visual_artifact_id == visual.id,
+            PostModel.id != post_id,
+        ).limit(1)
+    )).scalar_one_or_none()
+    if already_linked is not None:
+        raise HTTPException(status_code=409, detail="This visual Artifact is already attached to another Post.")
+    post.visual_artifact_id = visual.id
+    await session.commit()
+    refreshed = await session.execute(
+        select(PostModel).options(*_post_query_options()).where(PostModel.id == post_id)
+    )
+    return _post_payload(refreshed.scalar_one())
+
+
+@router.post("/posts/{post_id}/visual-artifact/detach")
+async def detach_visual_artifact_from_post(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    post_result = await session.execute(
+        select(PostModel).options(*_post_query_options()).where(PostModel.id == post_id)
+    )
+    post = post_result.scalar_one_or_none()
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    if post.status != "APPROVED":
+        raise HTTPException(status_code=409, detail="Only an approved Post can be updated in Publishing.")
+    published = (await session.execute(
+        select(PublicationModel.id).where(
+            PublicationModel.post_id == post_id,
+            PublicationModel.status == "PUBLISHED",
+        ).limit(1)
+    )).scalar_one_or_none()
+    scheduled = (await session.execute(
+        select(ScheduleItemModel.id)
+        .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
+        .where(
+            ScheduleItemModel.post_id == post_id,
+            ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if published is not None or scheduled is not None:
+        raise HTTPException(status_code=409, detail="A visual cannot be detached after the Post enters Publishing or a schedule.")
+    post.visual_artifact_id = None
+    await session.commit()
+    refreshed = await session.execute(
+        select(PostModel).options(*_post_query_options()).where(PostModel.id == post_id)
+    )
+    return _post_payload(refreshed.scalar_one())
 
 
 @router.post("/knowledge-units/{knowledge_unit_id}/draft")
