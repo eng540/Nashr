@@ -4,7 +4,6 @@
     "node": "22.22.0"
   },
   "buildAptPackages": [
-    "...",
     "build-essential",
     "libraqm-dev",
     "libharfbuzz-dev",
@@ -15,7 +14,6 @@
   ],
   "deploy": {
     "aptPackages": [
-      "...",
       "libraqm0",
       "libharfbuzz0b",
       "libfribidi0",
