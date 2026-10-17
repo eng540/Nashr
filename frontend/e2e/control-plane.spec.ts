@@ -39,7 +39,7 @@ test("Control Plane can publish the approved-text card recipe capability", async
   expect(recipeResponse.ok()).toBeTruthy();
   const recipe = await recipeResponse.json();
   const published = recipe.versions.find((version: { status: string }) => version.status === "PUBLISHED");
-  expect(published.definition.stages).toEqual([
+  expect(published.stages).toEqual([
     expect.objectContaining({ capability_key: "render_approved_text_card", capability_version: 1 }),
   ]);
 });
