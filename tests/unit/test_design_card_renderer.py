@@ -25,7 +25,7 @@ def test_card_configuration_accepts_bounded_product_values():
 
 
 def test_card_configuration_rejects_unknown_and_unsafe_values():
-    with pytest.raises(ValueError, match="unsupported"):
+    with pytest.raises(ValueError, match="Unsupported"):
         CardRenderConfig.from_mapping({"arbitrary_html": "<script>"})
     with pytest.raises(ValueError, match="dimensions"):
         CardRenderConfig.from_mapping({"width": 10})
