@@ -3,7 +3,27 @@
   "packages": {
     "node": "22.22.0"
   },
+  "buildAptPackages": [
+    "...",
+    "build-essential",
+    "libraqm-dev",
+    "libharfbuzz-dev",
+    "libfribidi-dev",
+    "libfreetype-dev",
+    "libjpeg-dev",
+    "zlib1g-dev"
+  ],
   "deploy": {
-    "startCommand": "sh -c 'python -m pip install --no-cache-dir --disable-pip-version-check . && python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
+    "aptPackages": [
+      "...",
+      "libraqm0",
+      "libharfbuzz0b",
+      "libfribidi0",
+      "libfreetype6",
+      "libjpeg62-turbo",
+      "libpng16-16",
+      "zlib1g"
+    ],
+    "startCommand": "sh -c 'python scripts/check_arabic_renderer.py && python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
   }
 }
