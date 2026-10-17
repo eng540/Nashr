@@ -844,7 +844,7 @@ class RenderApprovedTextCardCapability:
             "family": str(render_configuration.get("font_family", "default")),
             "file_name": Path(selected_font).name,
             "sha256": hashlib.sha256(Path(selected_font).read_bytes()).hexdigest(),
-            "license": "SIL Open Font License 1.1" if "NotoNaskhArabic" in selected_font else "externally configured/system font; verify license before production use",
+            "license": "SIL Open Font License 1.1 (bundled Noto Naskh Arabic)" if Path(selected_font).resolve() == (Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoNaskhArabic[wght].ttf").resolve() else "not asserted for externally configured/system font",
         }
         png = render_arabic_text_card_png(
             source_artifact.content,

@@ -140,6 +140,7 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance(mon
                 "font_size": 30,
                 "line_spacing": 10,
                 "max_lines": 20,
+                "font_family": "naskh",
                 "show_title": True,
                 "show_source_attribution": True,
             },
