@@ -877,9 +877,15 @@ class RenderApprovedTextCardCapability:
                 }
                 background_generation_status = "GENERATED"
             except Exception as exc:
+                # Record the attempted provider/model even when no image bytes
+                # were returned, so a fallback is traceable rather than opaque.
                 background_failure = {
                     "operation_id": background_operation_id,
                     "status": "FALLBACK_TO_SOLID",
+                    "provider": getattr(generator, "provider_name", context.stage_configuration.get("provider")),
+                    "model": getattr(generator, "model", context.stage_configuration.get("model")),
+                    "adapter": type(generator).__name__ if generator is not None else None,
+                    "adapter_version": 1 if generator is not None else None,
                     "error_type": type(exc).__name__,
                 }
                 background_generation_status = "FALLBACK_TO_SOLID"
