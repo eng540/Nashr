@@ -815,7 +815,7 @@ class RenderApprovedTextCardCapability:
             output_contract_version=pinned_contract.version,
             resolved_context=dict(context.resolved_context),
             metadata={
-                "title": (source_artifact.artifact_metadata or {}).get("title", "بطاقة نصية"),
+                "title": card_title,
                 "source_artifact_id": str(source_artifact_id),
                 "source_text_sha256": hashlib.sha256(source_artifact.content.encode("utf-8")).hexdigest(),
                 "renderer": "nashr.deterministic_arabic_card",
