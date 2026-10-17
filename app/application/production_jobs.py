@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.application.control_plane import ControlPlaneResolver, EDITORIAL_PROMPT_KEY
