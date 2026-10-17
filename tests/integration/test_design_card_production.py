@@ -385,6 +385,7 @@ async def test_visual_artifact_handoff_api_requires_approved_image_and_matching_
             content=approved_text,
             status="APPROVED",
         ))
+        await session.flush()
         session.add(ArtifactModel(
             id=text_artifact_id,
             source_knowledge_unit_id=unit_id,
