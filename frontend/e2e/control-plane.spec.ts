@@ -27,11 +27,16 @@ test("Control Plane can publish the approved-text card recipe capability", async
   await page.getByRole("button", { name: "الوصفات" }).click();
   await page.getByRole("button", { name: "جديد" }).click();
   await page.getByLabel("المفتاح").fill("E2E_APPROVED_TEXT_CARD_RECIPE");
+  await expect(page.getByLabel("المفتاح")).toHaveValue("E2E_APPROVED_TEXT_CARD_RECIPE");
   await page.getByLabel("الاسم").fill("E2E Approved Text Card Recipe");
+  await expect(page.getByLabel("الاسم")).toHaveValue("E2E Approved Text Card Recipe");
   await page.getByLabel("الغرض").fill("Verify card capability is configurable through Control Plane");
+  await expect(page.getByLabel("الغرض")).toHaveValue("Verify card capability is configurable through Control Plane");
   await page.getByLabel("القدرة").first().selectOption("render_approved_text_card");
   await expect(page.getByLabel("القدرة").first()).toHaveValue("render_approved_text_card");
-  await page.getByRole("button", { name: "إنشاء ومسودة أولى" }).click();
+  const createRecipeButton = page.getByRole("button", { name: "إنشاء ومسودة أولى" });
+  await expect(createRecipeButton).toBeEnabled();
+  await createRecipeButton.click();
   await expect(page.getByText("تم إنشاء العنصر ومسودته الأولى.")).toBeVisible();
   await page.getByRole("button", { name: "نشر الإصدار" }).click();
   await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
