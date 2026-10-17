@@ -317,6 +317,57 @@ async def test_approved_text_to_card_capability_persists_png_with_provenance():
 
 
 @pytest.mark.asyncio
+async def test_approved_post_to_card_capability_uses_post_text_without_text_artifact():
+    storage = MemoryCardStorage()
+    source_id, unit_id, post_id, run_id = uuid4(), uuid4(), uuid4(), uuid4()
+    approved_text = "النص النهائي المعتمد داخل المنشور مباشرة."
+    contract = _pinned_contract("POST_CARD_IMAGE", "IMAGE", "image/png", "STORAGE_URI", ["source_artifact_id"])
+    async with SessionFactory() as session:
+        session.add(SourceModel(
+            id=source_id, filename="post-source.pdf", mime_type="application/pdf",
+            storage_path=f"./storage/test/{source_id}.pdf", size_bytes=10, status="STORED",
+            book_title="كتاب المنشور",
+        ))
+        session.add(KnowledgeUnitModel(
+            id=unit_id, source_id=source_id, position=1, title="مادة المنشور", content="المادة الخام",
+        ))
+        await session.flush()
+        post = PostModel(id=post_id, knowledge_unit_id=unit_id, content=approved_text, status="APPROVED")
+        session.add(post)
+        claim_id = uuid4()
+        session.add(ProductionClaimModel(
+            id=claim_id, source_id=source_id, scope="SELECTION",
+            request_fingerprint="e" * 64, request_payload={"source_post_id": str(post_id)},
+        ))
+        await session.flush()
+        session.add(ProductionJobModel(
+            id=run_id, claim_id=claim_id, source_id=source_id, scope="SELECTION",
+            status="RUNNING", total_items=1,
+        ))
+        await session.commit()
+        context = ProductionExecutionContext(
+            session=session,
+            inputs={"knowledge_unit_id": unit_id, "source_post_id": post_id},
+            configuration={},
+            run_id=run_id,
+            resolved_context={"output_contract": contract},
+            stage_configuration={
+                "width": 640, "height": 800, "padding": 40, "font_size": 30,
+                "line_spacing": 10, "max_lines": 20, "font_family": "naskh",
+                "show_title": True, "show_source_attribution": True,
+            },
+        )
+        image = await RenderApprovedTextCardCapability(storage_factory=lambda: storage).execute(context)
+        assert image.kind == ArtifactKind.IMAGE
+        assert image.metadata["source_type"] == "POST"
+        assert image.metadata["source_post_id"] == str(post_id)
+        assert image.metadata["source_artifact_id"] is None
+        assert image.metadata["source_text_sha256"] == hashlib.sha256(approved_text.encode("utf-8")).hexdigest()
+        assert image.storage_uri in storage.objects
+        assert (await session.execute(select(ArtifactModel).where(ArtifactModel.id == image.id))).scalar_one().review_status == "DRAFT"
+
+
+@pytest.mark.asyncio
 async def test_migrations_seed_four_published_versioned_design_card_products():
     expected_keys = {
         "ARABIC_QUOTE_CARD",
@@ -440,3 +491,21 @@ async def test_visual_artifact_handoff_api_requires_approved_image_and_matching_
         )
     assert attached.status_code == 200
     assert attached.json()["visual_artifact_id"] == str(image_artifact_id)
+
+    post_image_id = uuid4()
+    async with SessionFactory() as session:
+        session.add(ArtifactModel(
+            id=post_image_id, source_knowledge_unit_id=unit_id, kind="IMAGE", status="AVAILABLE",
+            storage_uri=f"s3://test-bucket/{post_image_id}.png", mime_type="image/png",
+            output_contract_key="IMAGE_ARTIFACT", output_contract_version=1, resolved_context={},
+            artifact_metadata={
+                "source_type": "POST", "source_id": str(post_id), "source_post_id": str(post_id),
+                "source_artifact_id": None, "source_text_sha256": source_text_hash,
+            },
+            review_status="APPROVED",
+        ))
+        await session.commit()
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        post_attached = await client.post(f"/posts/{post_id}/visual-artifact", json={"artifact_id": str(post_image_id)})
+    assert post_attached.status_code == 200
+    assert post_attached.json()["visual_artifact_id"] == str(post_image_id)

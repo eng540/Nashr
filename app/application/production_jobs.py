@@ -844,6 +844,7 @@ class ProductionJobRunner:
                                 inputs={
                                     "knowledge_unit_id": knowledge_unit_id,
                                     **({"source_artifact_id": job_request_payload.get("source_artifact_id")} if job_request_payload.get("source_artifact_id") else {}),
+                                    **({"source_post_id": job_request_payload.get("source_post_id")} if job_request_payload.get("source_post_id") else {}),
                                     **provider_operation_context,
                                     **({
                                         "thematic_theme": job_request_payload.get("thematic_theme"),

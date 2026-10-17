@@ -28,7 +28,7 @@ from app.domain.prompt_templates import render_prompt_template
 from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
 from app.infrastructure.artifact_storage import ArtifactStorageError, S3ArtifactStorage
 from app.application.provider_operations import record_provider_operation, update_provider_operation_status
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel
 
 logger = logging.getLogger(__name__)
 
@@ -768,28 +768,55 @@ class RenderApprovedTextCardCapability:
         previous_output: object | None = None,
     ) -> Artifact:
         raw_artifact_id = context.inputs.get("source_artifact_id")
+        raw_post_id = context.inputs.get("source_post_id")
         knowledge_unit_id = context.inputs.get("knowledge_unit_id")
-        if not isinstance(raw_artifact_id, (str, UUID)):
-            raise ValueError("render_approved_text_card requires a source_artifact_id.")
         if not isinstance(knowledge_unit_id, UUID):
             raise ValueError("render_approved_text_card requires the source material lineage anchor.")
-        try:
-            source_artifact_id = raw_artifact_id if isinstance(raw_artifact_id, UUID) else UUID(raw_artifact_id)
-        except ValueError as exc:
-            raise ValueError("source_artifact_id must be a valid UUID.") from exc
+        if bool(raw_artifact_id) == bool(raw_post_id):
+            raise ValueError("Provide exactly one approved source: source_artifact_id or source_post_id.")
+        source_artifact = None
+        source_post = None
+        if raw_artifact_id:
+            if not isinstance(raw_artifact_id, (str, UUID)):
+                raise ValueError("source_artifact_id must be a valid UUID.")
+            try:
+                source_artifact_id = raw_artifact_id if isinstance(raw_artifact_id, UUID) else UUID(raw_artifact_id)
+            except ValueError as exc:
+                raise ValueError("source_artifact_id must be a valid UUID.") from exc
+            source_artifact = (await context.session.execute(select(ArtifactModel).where(ArtifactModel.id == source_artifact_id))).scalar_one_or_none()
+            if source_artifact is None:
+                raise ValueError("The selected source Artifact does not exist.")
+            if source_artifact.kind != ArtifactKind.TEXT.value or source_artifact.review_status != "APPROVED":
+                raise ValueError("Design cards can only be created from a human-approved TEXT Artifact.")
+            if source_artifact.status != ArtifactStatus.AVAILABLE.value or not source_artifact.content:
+                raise ValueError("The approved source Artifact is unavailable or has no inline text.")
+            if source_artifact.source_knowledge_unit_id != knowledge_unit_id:
+                raise ValueError("The approved text Artifact does not match the production lineage anchor.")
+            source_text = source_artifact.content
+            source_metadata = source_artifact.artifact_metadata or {}
+            source_review_status = source_artifact.review_status
+            source_type = "TEXT_ARTIFACT"
+            source_id_value = str(source_artifact.id)
+        else:
+            if not isinstance(raw_post_id, (str, UUID)):
+                raise ValueError("source_post_id must be a valid UUID.")
+            try:
+                source_post_id = raw_post_id if isinstance(raw_post_id, UUID) else UUID(raw_post_id)
+            except ValueError as exc:
+                raise ValueError("source_post_id must be a valid UUID.") from exc
+            source_post = (await context.session.execute(select(PostModel).where(PostModel.id == source_post_id))).scalar_one_or_none()
+            if source_post is None:
+                raise ValueError("The selected source Post does not exist.")
+            if source_post.status != "APPROVED" or not source_post.content.strip():
+                raise ValueError("Design cards can only be created from a human-approved Post with non-empty text.")
+            if source_post.knowledge_unit_id != knowledge_unit_id:
+                raise ValueError("The approved Post does not match the production lineage anchor.")
+            source_text = source_post.content
+            source_metadata = {}
+            source_review_status = source_post.status
+            source_type = "POST"
+            source_id_value = str(source_post.id)
 
-        source_result = await context.session.execute(
-            select(ArtifactModel).where(ArtifactModel.id == source_artifact_id)
-        )
-        source_artifact = source_result.scalar_one_or_none()
-        if source_artifact is None:
-            raise ValueError("The selected source Artifact does not exist.")
-        if source_artifact.kind != ArtifactKind.TEXT.value or source_artifact.review_status != "APPROVED":
-            raise ValueError("Design cards can only be created from a human-approved TEXT Artifact.")
-        if source_artifact.status != ArtifactStatus.AVAILABLE.value or not source_artifact.content:
-            raise ValueError("The approved source Artifact is unavailable or has no inline text.")
-        if source_artifact.source_knowledge_unit_id != knowledge_unit_id:
-            raise ValueError("The approved text Artifact does not match the production lineage anchor.")
         if context.resolved_context is None or "output_contract" not in context.resolved_context:
             raise ValueError("render_approved_text_card requires a pinned output contract.")
 
@@ -800,7 +827,17 @@ class RenderApprovedTextCardCapability:
             kind=ArtifactKind.IMAGE,
         )
         if existing is not None:
-            if (existing.metadata or {}).get("source_artifact_id") == str(source_artifact_id):
+            existing_metadata = existing.metadata or {}
+            same_explicit_source = (
+                existing_metadata.get("source_type") == source_type
+                and existing_metadata.get("source_id") == source_id_value
+            )
+            legacy_text_retry = (
+                source_type == "TEXT_ARTIFACT"
+                and existing_metadata.get("source_type") is None
+                and existing_metadata.get("source_artifact_id") == source_id_value
+            )
+            if (same_explicit_source or legacy_text_retry) and existing_metadata.get("source_text_sha256") == hashlib.sha256(source_text.encode("utf-8")).hexdigest():
                 return existing
             raise ValueError("An IMAGE Artifact already exists for this job and source anchor.")
 
@@ -831,7 +868,7 @@ class RenderApprovedTextCardCapability:
                 else f"ص. {source_unit.discovery_page_start}–{source_unit.discovery_page_end}"
             )
         source_attribution, source_references = _build_card_attribution(
-            source_artifact.artifact_metadata or {},
+            source_metadata,
             source_unit.title,
             source_name,
             source_reference,
@@ -839,7 +876,7 @@ class RenderApprovedTextCardCapability:
 
         render_keys = {"width", "height", "padding", "background", "foreground", "font_size", "line_spacing", "max_lines", "font_family", "show_title", "show_source_attribution", "title_font_size", "attribution_font_size", "text_alignment", "background_overlay_color", "background_overlay_opacity"}
         render_configuration = {key: value for key, value in context.stage_configuration.items() if key in render_keys}
-        title_value = (source_artifact.artifact_metadata or {}).get("title")
+        title_value = source_metadata.get("title")
         card_title = title_value if isinstance(title_value, str) and title_value.strip() else source_unit.title
         storage = self.storage_factory()
         await storage.ensure_available()
@@ -904,7 +941,7 @@ class RenderApprovedTextCardCapability:
             "license": "SIL Open Font License 1.1 (bundled Noto Naskh Arabic)" if Path(selected_font).resolve() == (Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoNaskhArabic[wght].ttf").resolve() else "not asserted for externally configured/system font",
         }
         png = render_arabic_text_card_png(
-            source_artifact.content,
+            source_text,
             render_configuration,
             title=card_title,
             attribution=source_attribution,
@@ -931,8 +968,11 @@ class RenderApprovedTextCardCapability:
             resolved_context=dict(context.resolved_context),
             metadata={
                 "title": card_title,
-                "source_artifact_id": str(source_artifact_id),
-                "source_text_sha256": hashlib.sha256(source_artifact.content.encode("utf-8")).hexdigest(),
+                "source_type": source_type,
+                "source_id": source_id_value,
+                "source_artifact_id": str(source_artifact.id) if source_artifact is not None else None,
+                "source_post_id": str(source_post.id) if source_post is not None else None,
+                "source_text_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
                 "renderer": "nashr.deterministic_arabic_card",
                 "renderer_version": 2,
                 "render_configuration": render_configuration,
@@ -942,7 +982,7 @@ class RenderApprovedTextCardCapability:
                 "background_generation_failure": background_failure,
                 "background_prompt_sha256": hashlib.sha256(background_prompt.encode("utf-8")).hexdigest() if isinstance(background_prompt, str) and background_prompt.strip() else None,
                 "ai_asset_identity": background_identity,
-                "source_review_status": source_artifact.review_status,
+                "source_review_status": source_review_status,
                 "source_name": source_name if len(source_references) == 1 else None,
                 "source_reference": source_reference if len(source_references) == 1 else None,
                 "card_title": card_title,
