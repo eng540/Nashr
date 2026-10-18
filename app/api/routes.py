@@ -768,8 +768,30 @@ async def create_production_job_route(
             raise ValueError("Additional task instructions require PRODUCT_WITH_INSTRUCTIONS mode.")
         if payload.input_text is not None and not payload.input_text.strip():
             raise ValueError("Direct input text cannot be empty.")
+        if payload.input_text is not None and payload.scope != ProductionScope.SELECTION:
+            raise ValueError("Direct text input requires SELECTION scope.")
         if payload.input_text is not None and source_id is not None:
             raise ValueError("Choose either direct input text or a library source for this request.")
+        # Check replay identity before creating internal source/material lineage rows.
+        # Direct-text fingerprints use the submitted request, not newly generated UUIDs.
+        if payload.input_text is not None and payload.idempotency_key is not None:
+            replay_payload = payload.model_dump(mode="json", exclude={"idempotency_key"})
+            replay_fingerprint = hashlib.sha256(
+                json.dumps(replay_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            existing_claim = (await session.execute(
+                select(ProductionClaimModel).where(ProductionClaimModel.idempotency_key == payload.idempotency_key)
+            )).scalar_one_or_none()
+            if existing_claim is not None:
+                if existing_claim.request_fingerprint != replay_fingerprint:
+                    raise ValueError("Idempotency key was already used for a different production request.")
+                existing_job = (await session.execute(
+                    select(ProductionJobModel).where(ProductionJobModel.claim_id == existing_claim.id)
+                )).scalar_one_or_none()
+                if existing_job is None:
+                    raise RuntimeError("Production claim exists without its execution job.")
+                background_tasks.add_task(run_production_job, existing_job.id)
+                return await _load_production_job_payload(session, existing_job)
         if payload.input_text is not None and (payload.source_artifact_id is not None or payload.source_post_id is not None):
             raise ValueError("Direct input text cannot be combined with a previously approved output source.")
         if source_id is None and payload.input_text is not None:
@@ -798,8 +820,12 @@ async def create_production_job_route(
         request_payload = payload.model_dump(mode="json", exclude={"idempotency_key"})
         request_payload["source_id"] = str(source_id)
         request_payload["knowledge_unit_ids"] = [str(value) for value in knowledge_unit_ids]
+        fingerprint_payload = (
+            payload.model_dump(mode="json", exclude={"idempotency_key"})
+            if payload.input_text is not None else request_payload
+        )
         request_fingerprint = hashlib.sha256(
-            json.dumps(request_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         ).hexdigest()
         job = await create_production_job(
             session,
