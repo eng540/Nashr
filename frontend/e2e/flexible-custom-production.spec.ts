@@ -101,6 +101,8 @@ test("product mode can use direct text and task-specific instructions without a 
   });
 
   await page.goto("/posts/workspace");
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload();
   await page.getByRole("button", { name: "منتج مع تعليمات إضافية" }).click();
   await page.getByLabel("المنتج").selectOption(productKey);
   // Product-pinned identity is resolved internally; no separate selector is required here.
