@@ -343,6 +343,14 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
                     f"\nProduct experience: {product_definition.experience}"
                 )
         effective_prompt = append_task_instructions(effective_prompt, custom_instructions)
+        if pinned_context.recipe is not None:
+            for stage in pinned_context.recipe.stages:
+                stage_style = stage.configuration.get("style_instructions")
+                if isinstance(stage_style, str) and stage_style.strip():
+                    effective_prompt = (
+                        f"{effective_prompt.rstrip()}\n\nRecipe-specific instructions ({stage.key}):"
+                        f"\n{stage_style.strip()}"
+                    )
     except (TypeError, ValueError):
         # Historical or malformed snapshots should remain inspectable; do not
         # invent a current prompt when the pinned context cannot be reconstructed.
