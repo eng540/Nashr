@@ -206,8 +206,11 @@ async def create_production_job(
         output_contract_key = "TELEGRAM_POST"
         policy_key = "EDITORIAL_DEFAULT"
         resolved_recipe = await resolver.resolve_recipe(session, recipe_key)
-        if any(stage.capability_key in {"produce_text_artifact", "compose_thematic_artifact", "render_approved_text_card"} for stage in resolved_recipe.stages):
-            raise ValueError("Non-Post artifact recipes must be selected through a Product so the correct Output Contract is pinned.")
+        if any(stage.capability_key != "produce_post" for stage in resolved_recipe.stages):
+            raise ValueError(
+                "Productless production currently supports only recipes made of produce_post stages. "
+                "Choose a compatible Post recipe or select a published Product for other output types."
+            )
         resolved_identity = await resolver.resolve_identity(session, identity_key) if identity_key is not None else None
         resolved_output_contract = await resolver.resolve_output_contract(session, output_contract_key)
         resolved_policy = await resolver.resolve_policy(session, policy_key)
