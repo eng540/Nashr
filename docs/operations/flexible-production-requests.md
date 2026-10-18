@@ -4,7 +4,7 @@ The content factory exposes three request modes: a published product, a publishe
 
 Task instructions are persisted on the Production Claim and appended to the pinned execution prompt by the existing production runner. They do not mutate published product versions or override recipe, output-contract, policy, or execution constraints.
 
-Direct text is represented with the existing Source and KnowledgeUnit lineage. It is not stored in a parallel library. Flexible requests preserve the explicit order of selected materials; legacy requests retain the existing order-independent behavior.
+Direct text is represented with the existing Source and KnowledgeUnit lineage. It is not stored in a parallel library. Multiple selected materials currently follow the source/library order. A separate user-defined reordering control is not part of this change; legacy selection semantics remain unchanged.
 
 Productless production requires the user to choose an existing published recipe compatible with the current Post production capability and TELEGRAM_POST output contract. Image, audio, and video remain product-backed unless a compatible productless recipe and contract are implemented.
 
