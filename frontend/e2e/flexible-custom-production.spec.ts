@@ -41,7 +41,8 @@ test("custom production submits direct text and instructions without a product",
     scope: "SELECTION",
     production_mode: "CUSTOM",
     input_text: "هذا نص مباشر للاختبار.",
-    custom_instructions: "اشرح الفرق الدلالي"
+    custom_instructions: "اشرح الفرق الدلالي",
+    recipe_key: "BOOK_TO_TELEGRAM_POST"
   });
   expect(submittedPayload).not.toHaveProperty("product_key");
 });
