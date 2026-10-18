@@ -839,6 +839,7 @@ async def create_production_job_route(
             request_payload=request_payload,
             thematic_theme=payload.thematic_theme,
             custom_instructions=payload.custom_instructions,
+            preserve_selection_order=payload.production_mode is not None,
             source_artifact_id=payload.source_artifact_id,
             source_post_id=payload.source_post_id,
         )
