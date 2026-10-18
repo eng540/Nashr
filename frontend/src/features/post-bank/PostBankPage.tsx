@@ -10,7 +10,7 @@ const PAGE_SIZE = 30;
 const ALL_SOURCES = "ALL";
 const PENDING_CLAIM_STORAGE_KEY = "nashr.pending-production-claim.v1";
 type PendingClaim = { key: string; payload: string };
-type CreateProductionRequest = { source_id?: string; scope: ProductionScope; production_mode?: "PRODUCT" | "PRODUCT_WITH_INSTRUCTIONS" | "CUSTOM"; input_text?: string; input_title?: string; topic_id?: string; knowledge_unit_ids?: string[]; thematic_theme?: string; custom_instructions?: string; identity_key?: string; product_key?: string; idempotency_key: string };
+type CreateProductionRequest = { source_id?: string; scope: ProductionScope; production_mode?: "PRODUCT" | "PRODUCT_WITH_INSTRUCTIONS" | "CUSTOM"; input_text?: string; input_title?: string; topic_id?: string; knowledge_unit_ids?: string[]; thematic_theme?: string; recipe_key?: string; custom_instructions?: string; identity_key?: string; product_key?: string; idempotency_key: string };
 
 function productionLineFilter(products: ProductionProductOption[] | undefined, identities: EditorialIdentityOption[] | undefined, recipes: ProductionRecipeOption[] | undefined, productKey: string, identityKey: string): ProductionLineFilter {
   const product = products?.find((item) => item.key === productKey);
