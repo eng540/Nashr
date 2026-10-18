@@ -538,7 +538,7 @@ async def list_sources(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict[str, Any]]:
     result = await session.execute(
-        select(SourceModel).where(SourceModel.mime_type != "application/vnd.nashr.inline-text").options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
+        select(SourceModel).where(or_(SourceModel.mime_type.is_(None), SourceModel.mime_type != "application/vnd.nashr.inline-text")).options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
     )
     sources = result.scalars().all()
     unit_counts = dict((await session.execute(
