@@ -300,7 +300,7 @@ export function PostBankPage() {
   const activeProductVersion = selectedProduct?.versions.find((version) => version.version === selectedProduct.active_version);
   const pinnedIdentity = activeProductVersion?.definition.component_versions?.identity;
   const isPostProduct = activeProductVersion ? activeProductVersion.definition.output_contract_key === "TELEGRAM_POST" : true;
-  const productionSources = (sources.data ?? []).filter((source) => !isPostProduct
+  const productionSources = (sources.data ?? []).filter((source) => productionModeChoice === "CUSTOM" ? source.material_count > 0 : !isPostProduct
     ? source.material_count > 0
     : productionMode === "ALL" || productionMode === "NEEDS" && source.pending_count > 0 || productionMode === "DONE" && source.pending_count === 0 && source.material_count > 0);
   const visibleTopics = topics.filter((topic) => !isPostProduct
