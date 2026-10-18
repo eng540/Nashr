@@ -567,3 +567,24 @@ async def test_custom_direct_text_api_creates_a_tracked_job(monkeypatch: pytest.
         assert payload["request_details"]["production_mode"] == "CUSTOM"
         assert payload["request_details"]["custom_instructions"] == body["custom_instructions"]
         assert payload["request_details"]["input_text_preview"] == body["input_text"]
+
+    async with SessionFactory() as session:
+        job = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == UUID(payload["job_id"]))
+        )).scalar_one()
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id)
+        )).scalar_one()
+        unit = (await session.execute(
+            select(KnowledgeUnitModel).where(KnowledgeUnitModel.id == item.knowledge_unit_id)
+        )).scalar_one()
+        source = (await session.execute(
+            select(SourceModel).where(SourceModel.id == unit.source_id)
+        )).scalar_one()
+        claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
+        )).scalar_one()
+        assert unit.content == body["input_text"]
+        assert source.mime_type == "application/vnd.nashr.inline-text"
+        assert claim.request_payload["custom_instructions"] == body["custom_instructions"]
+        assert claim.request_payload["product_key"] is None
