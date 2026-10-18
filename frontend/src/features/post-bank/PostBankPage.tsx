@@ -184,20 +184,21 @@ export function PostBankPage() {
   const identities = useQuery({ queryKey: ["control-plane", "identities"], queryFn: productionJobsApi.identities });
   const products = useQuery({ queryKey: ["control-plane", "products"], queryFn: productionJobsApi.products });
   const recipes = useQuery({ queryKey: ["control-plane", "recipes"], queryFn: productionJobsApi.recipes });
-  const lineFilter = productionModeChoice === "CUSTOM" ? undefined : productionLineFilter(products.data, identities.data, recipes.data, productKey, identityKey);
+  const resolvedLineFilter = productionLineFilter(products.data, identities.data, recipes.data, productKey, identityKey);
+  const lineFilter = productionModeChoice === "CUSTOM" ? undefined : resolvedLineFilter;
   const queryProduct = products.data?.find((product) => product.key === productKey);
   const queryProductVersion = queryProduct?.versions.find((version) => version.version === queryProduct.active_version);
   const queryRecipe = recipes.data?.find((recipe) => recipe.key === queryProductVersion?.definition.recipe_key);
   const queryRecipeVersion = queryRecipe?.versions.find((version) => version.version === queryProductVersion?.definition.component_versions?.recipe.version);
   const isThematicProduct = Boolean(queryRecipeVersion?.stages.some((stage) => stage.capability_key === "compose_thematic_artifact"));
   const sources = useQuery({
-    queryKey: ["production", "sources", lineFilter.product_key, lineFilter.product_version, lineFilter.identity_key, lineFilter.identity_version, lineFilter.recipe_key, lineFilter.recipe_version],
+    queryKey: ["production", "sources", resolvedLineFilter.product_key, resolvedLineFilter.product_version, resolvedLineFilter.identity_key, resolvedLineFilter.identity_version, resolvedLineFilter.recipe_key, resolvedLineFilter.recipe_version],
     queryFn: () => productionJobsApi.sources(lineFilter),
   });
   const thematicSourceList = (sources.data ?? []).filter((source) => source.material_count > 0);
   const thematicBookMaps = useQueries({
     queries: isThematicProduct ? thematicSourceList.map((source) => ({
-      queryKey: ["production", "thematic-book-map", source.id, lineFilter.product_key, lineFilter.product_version, lineFilter.recipe_key, lineFilter.recipe_version],
+      queryKey: ["production", "thematic-book-map", source.id, resolvedLineFilter.product_key, resolvedLineFilter.product_version, resolvedLineFilter.recipe_key, resolvedLineFilter.recipe_version],
       queryFn: () => productionJobsApi.bookMap(source.id, lineFilter),
     })) : [],
   });
@@ -220,7 +221,7 @@ export function PostBankPage() {
     enabled: hasLoaded,
     placeholderData: (previous) => previous,
   });
-  const bookMap = useQuery({ queryKey: ["production", "book-map", productionSourceId, lineFilter.product_key, lineFilter.product_version, lineFilter.identity_key, lineFilter.identity_version, lineFilter.recipe_key, lineFilter.recipe_version], queryFn: () => productionJobsApi.bookMap(productionSourceId, lineFilter), enabled: Boolean(productionSourceId) });
+  const bookMap = useQuery({ queryKey: ["production", "book-map", productionSourceId, resolvedLineFilter.product_key, resolvedLineFilter.product_version, resolvedLineFilter.identity_key, resolvedLineFilter.identity_version, resolvedLineFilter.recipe_key, resolvedLineFilter.recipe_version], queryFn: () => productionJobsApi.bookMap(productionSourceId, lineFilter), enabled: Boolean(productionSourceId) });
   const [jobItemsPage, setJobItemsPage] = useState(0);
   const job = useQuery({ queryKey: ["production", "job", jobId], queryFn: () => productionJobsApi.get(jobId!), enabled: Boolean(jobId), refetchInterval: (q) => q.state.data && ["COMPLETED", "FAILED"].includes(q.state.data.status) ? false : 1500 });
   const jobItems = useQuery({ queryKey: ["production", "job-items", jobId, jobItemsPage], queryFn: () => productionJobsApi.items(jobId!, jobItemsPage * 20, 20), enabled: Boolean(jobId) });
