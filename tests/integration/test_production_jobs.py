@@ -659,6 +659,29 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
     assert "Product audience: Readers who prefer concise Arabic literary content" in drafter.prompts[0]
 
 
+async def test_request_scoped_instructions_reach_the_actual_drafter_prompt():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    instructions = "TASK-INSTRUCTION-PROOF: focus on semantic contrast and omit an ornate introduction."
+    async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "base-prompt-for-task-instructions")
+        job = await create_production_job(
+            session, source_id, ProductionScope.SOURCE,
+            product_key="ARABIC_LITERATURE_BRIEF_TELEGRAM_POST",
+            custom_instructions=instructions,
+        )
+        claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
+        )).scalar_one()
+        assert claim.request_payload["custom_instructions"] == instructions
+
+    drafter = RecordingDrafter()
+    await ProductionJobRunner(drafter).run(job.id)
+    assert len(drafter.prompts) == 1
+    assert "TASK-SPECIFIC INSTRUCTIONS (request scope only)" in drafter.prompts[0]
+    assert instructions in drafter.prompts[0]
+    assert "Product audience:" in drafter.prompts[0]
+
+
 async def test_product_job_retry_keeps_its_published_manifest_and_archived_prompt_pin():
     source_id, _, _ = await _fixture(materials=1, topics=1)
     async with SessionFactory() as session:
