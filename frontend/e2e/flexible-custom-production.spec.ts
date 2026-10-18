@@ -103,7 +103,7 @@ test("product mode can use direct text and task-specific instructions without a 
   await page.goto("/posts/workspace");
   await page.getByRole("button", { name: "منتج مع تعليمات إضافية" }).click();
   await page.getByLabel("المنتج").selectOption(productKey);
-  await page.getByLabel("الهوية التحريرية").selectOption(identityKey);
+  await expect(page.getByLabel("الهوية التحريرية للإنتاج")).toHaveValue(identityKey);
   await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await page.getByRole("button", { name: "لصق نص مباشر" }).click();
   await page.getByLabel("النص المدخل").fill("نص مباشر داخل مسار المنتج.");
