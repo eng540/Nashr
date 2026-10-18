@@ -795,8 +795,6 @@ async def create_production_job_route(
         if payload.input_text is not None and (payload.source_artifact_id is not None or payload.source_post_id is not None):
             raise ValueError("Direct input text cannot be combined with a previously approved output source.")
         if source_id is None and payload.input_text is not None:
-            if payload.product_key is not None:
-                raise ValueError("Direct text without a library source is currently supported in custom mode only.")
             inline_source_id = uuid4()
             inline_unit_id = uuid4()
             inline_text = payload.input_text.strip()
