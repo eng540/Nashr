@@ -26,9 +26,9 @@ def append_task_instructions(prompt: str, instructions: object) -> str:
     if not isinstance(instructions, str) or not instructions.strip():
         return prompt
     return (
-        f"{prompt.rstrip()}\\n\\n"
-        "TASK-SPECIFIC INSTRUCTIONS (request scope only)\\n"
+        f"{prompt.rstrip()}\n\n"
+        "TASK-SPECIFIC INSTRUCTIONS (request scope only)\n"
         "Apply these instructions where compatible with the pinned product, recipe, "
-        "output contract, and policy. Do not replace or override those constraints.\\n"
+        "output contract, and policy. Do not replace or override those constraints.\n"
         f"{instructions.strip()}"
     )
