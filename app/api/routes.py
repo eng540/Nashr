@@ -332,6 +332,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
     # base prompt. This is reconstructed from the exact job snapshot and claim,
     # never from today's active Control Plane versions.
     effective_prompt = job.editorial_prompt_body or ""
+    pinned_context = None
     try:
         if job.resolved_context is not None:
             pinned_context = ResolvedProductionContext.from_dict(job.resolved_context)
@@ -343,7 +344,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
                     f"\nProduct experience: {product_definition.experience}"
                 )
         effective_prompt = append_task_instructions(effective_prompt, custom_instructions)
-        if pinned_context.recipe is not None:
+        if pinned_context is not None and pinned_context.recipe is not None:
             for stage in pinned_context.recipe.stages:
                 stage_style = stage.configuration.get("style_instructions")
                 if isinstance(stage_style, str) and stage_style.strip():
