@@ -32,6 +32,7 @@ test("custom production submits direct text and instructions without a product",
 
   await page.goto("/posts/workspace");
   await page.getByRole("button", { name: "توجيه مخصص — دون منتج" }).click();
+  await page.getByLabel("مسار الإنتاج النصي").selectOption("BOOK_TO_TELEGRAM_POST");
   await page.getByLabel("النص المدخل").fill("هذا نص مباشر للاختبار.");
   await page.getByLabel("التوجيه المخصص").fill("اشرح الفرق الدلالي");
   await page.getByTestId("start-custom-production").click();
