@@ -499,7 +499,7 @@ async def list_sources(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict[str, Any]]:
     result = await session.execute(
-        select(SourceModel).options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
+        select(SourceModel).where(SourceModel.mime_type != "application/vnd.nashr.inline-text").options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
     )
     sources = result.scalars().all()
     unit_counts = dict((await session.execute(
@@ -756,7 +756,7 @@ async def create_production_job_route(
             inline_text = payload.input_text.strip()
             inline_title = (payload.input_title or next((line.strip() for line in inline_text.splitlines() if line.strip()), "نص مباشر"))[:500]
             session.add(SourceModel(
-                id=inline_source_id, filename="inline-text.txt", mime_type="text/plain",
+                id=inline_source_id, filename="inline-text.txt", mime_type="application/vnd.nashr.inline-text",
                 storage_path=f"inline://{inline_source_id}", size_bytes=len(inline_text.encode("utf-8")),
                 status="STORED", book_title=inline_title, book_description="مدخل نصي مباشر لطلب إنتاج مخصص",
                 content_sha256=hashlib.sha256(inline_text.encode("utf-8")).hexdigest(),
