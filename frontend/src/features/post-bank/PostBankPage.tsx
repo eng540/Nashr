@@ -166,7 +166,7 @@ export function PostBankPage() {
   const [productionMode, setProductionMode] = useState<"ALL" | "NEEDS" | "DONE">(() => pendingRequestFromStorage() ? "ALL" : "NEEDS");
   const [thematicTheme, setThematicTheme] = useState(() => pendingRequestFromStorage()?.thematic_theme ?? "");
   const [customInstructions, setCustomInstructions] = useState(() => pendingRequestFromStorage()?.custom_instructions ?? "");
-  const [productionModeChoice, setProductionModeChoice] = useState<"PRODUCT" | "PRODUCT_WITH_INSTRUCTIONS" | "CUSTOM">("PRODUCT");
+  const [productionModeChoice, setProductionModeChoice] = useState<"PRODUCT" | "PRODUCT_WITH_INSTRUCTIONS" | "CUSTOM">(() => pendingRequestFromStorage()?.production_mode ?? "PRODUCT");
   const [directInputText, setDirectInputText] = useState("");
   const [directInputTitle, setDirectInputTitle] = useState("");
   const [customInputMode, setCustomInputMode] = useState<"TEXT" | "LIBRARY">("TEXT");
