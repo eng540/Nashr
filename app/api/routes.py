@@ -1943,7 +1943,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
             ),
         )
     )).scalar_one() or 0)
-    return _production_job_payload(
+    payload = _production_job_payload(
         job,
         pending_items=counts.get("PENDING", 0),
         running_items=counts.get("RUNNING", 0),
@@ -1951,6 +1951,29 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
         failed_items=counts.get("FAILED", 0),
         reconciliation_required_items=reconciliation_required,
     )
+    claim = None
+    if job.claim_id is not None:
+        claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
+        )).scalar_one_or_none()
+    request = claim.request_payload if claim is not None and isinstance(claim.request_payload, dict) else {}
+    custom_instructions = request.get("custom_instructions")
+    input_text = request.get("input_text")
+    payload["request_details"] = {
+        "production_mode": request.get("production_mode") or (
+            "PRODUCT_WITH_INSTRUCTIONS" if request.get("product_key") and isinstance(custom_instructions, str) and custom_instructions.strip()
+            else "PRODUCT" if request.get("product_key")
+            else "CUSTOM" if isinstance(custom_instructions, str) and custom_instructions.strip()
+            else "LEGACY_OR_UNSPECIFIED"
+        ),
+        "product_key": request.get("product_key"),
+        "custom_instructions": custom_instructions if isinstance(custom_instructions, str) else None,
+        "input_title": request.get("input_title"),
+        "input_text_preview": input_text[:500] if isinstance(input_text, str) else None,
+        "source_id": request.get("source_id"),
+        "knowledge_unit_ids": request.get("knowledge_unit_ids", []),
+    }
+    return payload
 
 
 def _book_map_checkpoint_payload(sections: list[BookMapSectionModel]) -> dict[str, Any]:
