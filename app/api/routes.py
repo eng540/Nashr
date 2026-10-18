@@ -339,8 +339,8 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
             if pinned_context.product is not None:
                 product_definition = ProductionProductDefinition.from_dict(pinned_context.product.definition)
                 effective_prompt = (
-                    f"{effective_prompt.rstrip()}\\n\\nProduct audience: {product_definition.audience}"
-                    f"\\nProduct experience: {product_definition.experience}"
+                    f"{effective_prompt.rstrip()}\n\nProduct audience: {product_definition.audience}"
+                    f"\nProduct experience: {product_definition.experience}"
                 )
         effective_prompt = append_task_instructions(effective_prompt, custom_instructions)
     except (TypeError, ValueError):
