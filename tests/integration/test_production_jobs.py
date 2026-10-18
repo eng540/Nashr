@@ -100,6 +100,23 @@ async def test_topic_scope_only_snapshots_topic_materials():
         assert [item.knowledge_unit_id for item in items] == [unit_ids[1], unit_ids[3]]
 
 
+async def test_flexible_request_can_preserve_explicit_material_order():
+    source_id, _, unit_ids = await _fixture()
+    requested = [unit_ids[4], unit_ids[1], unit_ids[3]]
+    async with SessionFactory() as session:
+        job = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=requested,
+            preserve_selection_order=True,
+        )
+        items = (await session.execute(
+            select(ProductionJobItemModel)
+            .where(ProductionJobItemModel.job_id == job.id)
+            .order_by(ProductionJobItemModel.position)
+        )).scalars().all()
+        assert [item.knowledge_unit_id for item in items] == requested
+
+
 async def test_explicit_selection_snapshots_only_requested_materials():
     source_id, _, unit_ids = await _fixture()
     async with SessionFactory() as session:
