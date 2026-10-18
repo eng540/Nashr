@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.application.control_plane import ControlPlaneResolver, EDITORIAL_PROMPT_KEY
-from app.application.identity_context import compose_editorial_prompt
+from app.application.identity_context import append_task_instructions, compose_editorial_prompt
 from app.domain.production_jobs import (
     ProductionJobItemStatus,
     ProductionJobStatus,
@@ -53,6 +53,7 @@ async def _resolve_units(
     scope: ProductionScope,
     topic_id: UUID | None,
     knowledge_unit_ids: list[UUID],
+    preserve_selection_order: bool = False,
 ) -> list[KnowledgeUnitModel]:
     source = (
         await session.execute(select(SourceModel).where(SourceModel.id == source_id))
@@ -105,9 +106,12 @@ async def _resolve_units(
             .order_by(KnowledgeUnitModel.position, KnowledgeUnitModel.id)
         )
 
-    units = (await session.execute(query)).scalars().all()
+    units = list((await session.execute(query)).scalars().all())
     if scope == ProductionScope.SELECTION and len(units) != len(knowledge_unit_ids):
         raise ValueError("One or more selected knowledge units do not belong to source.")
+    if scope == ProductionScope.SELECTION and preserve_selection_order:
+        requested_order = {unit_id: index for index, unit_id in enumerate(knowledge_unit_ids)}
+        units.sort(key=lambda unit: requested_order[unit.id])
     if not units:
         raise ValueError("Production scope contains no knowledge units.")
     return list(units)
@@ -126,6 +130,8 @@ async def create_production_job(
     request_fingerprint: str | None = None,
     request_payload: dict | None = None,
     thematic_theme: str | None = None,
+    custom_instructions: str | None = None,
+    preserve_selection_order: bool = False,
     source_artifact_id: UUID | None = None,
     source_post_id: UUID | None = None,
 ) -> ProductionJobModel:
@@ -136,7 +142,7 @@ async def create_production_job(
     # Thematic composition treats the user's selection order as editorial input.
     # Keep that order in the durable request payload and fingerprint; ordinary
     # production selections retain their historical order-independent dedupe.
-    request_units = ordered_units if thematic_theme is not None else normalized_units
+    request_units = ordered_units if thematic_theme is not None or preserve_selection_order else normalized_units
     canonical_request_payload = {
         "source_id": str(source_id),
         "scope": scope.value,
@@ -146,6 +152,7 @@ async def create_production_job(
         "identity_key": identity_key,
         "product_key": product_key,
         "thematic_theme": thematic_theme.strip() if isinstance(thematic_theme, str) else None,
+        "custom_instructions": custom_instructions.strip() if isinstance(custom_instructions, str) and custom_instructions.strip() else None,
         "source_artifact_id": str(source_artifact_id) if source_artifact_id is not None else None,
         "source_post_id": str(source_post_id) if source_post_id is not None else None,
     }
@@ -204,13 +211,21 @@ async def create_production_job(
         output_contract_key = "TELEGRAM_POST"
         policy_key = "EDITORIAL_DEFAULT"
         resolved_recipe = await resolver.resolve_recipe(session, recipe_key)
-        if any(stage.capability_key in {"produce_text_artifact", "compose_thematic_artifact", "render_approved_text_card"} for stage in resolved_recipe.stages):
-            raise ValueError("Non-Post artifact recipes must be selected through a Product so the correct Output Contract is pinned.")
+        if any(stage.capability_key != "produce_post" for stage in resolved_recipe.stages):
+            raise ValueError(
+                "Productless production currently supports only recipes made of produce_post stages. "
+                "Choose a compatible Post recipe or select a published Product for other output types."
+            )
         resolved_identity = await resolver.resolve_identity(session, identity_key) if identity_key is not None else None
         resolved_output_contract = await resolver.resolve_output_contract(session, output_contract_key)
         resolved_policy = await resolver.resolve_policy(session, policy_key)
 
     has_card_stage = any(stage.capability_key == "render_approved_text_card" for stage in resolved_recipe.stages)
+    if has_card_stage and isinstance(custom_instructions, str) and custom_instructions.strip():
+        raise ValueError(
+            "This deterministic design-card recipe does not consume free-form task instructions. "
+            "Use the recipe's supported visual settings in /control instead."
+        )
     if has_card_stage and len(resolved_recipe.stages) != 1:
         raise ValueError("A design-card recipe must contain only render_approved_text_card; it cannot trigger unrelated production stages.")
     has_card_source = source_artifact_id is not None or source_post_id is not None
@@ -280,6 +295,7 @@ async def create_production_job(
             scope,
             topic_id,
             knowledge_unit_ids or [],
+            preserve_selection_order=preserve_selection_order,
         )
     claim = ProductionClaimModel(
         id=uuid4(),
@@ -819,6 +835,12 @@ class ProductionJobRunner:
                             f"{pinned_prompt}\n\nProduct audience: {product_definition.audience}"
                             f"\nProduct experience: {product_definition.experience}"
                         )
+                # Task-scoped guidance is read from the durable claim payload at execution
+                # time, so queued and resumed jobs use the same instructions. It may refine
+                # the requested treatment, but does not replace the pinned product/recipe,
+                # output contract, policy, or execution constraints.
+                task_instructions = job_request_payload.get("custom_instructions")
+                pinned_prompt = append_task_instructions(pinned_prompt, task_instructions)
 
             while True:
                 item_id = await _claim_next_item(job_id)
@@ -872,7 +894,8 @@ class ProductionJobRunner:
                                         "key": pinned_prompt_key,
                                         "version": pinned_prompt_version,
                                         "body": pinned_prompt,
-                                    }
+                                    },
+                                    "task_instructions": task_instructions if isinstance(task_instructions, str) else None,
                                 },
                                 run_id=job_id,
                                 resolved_context=pinned_context_payload,

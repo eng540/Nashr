@@ -545,3 +545,59 @@ def test_discovery_job_payload_does_not_require_production_claim_fields():
     assert payload["status"] == "RUNNING"
     assert payload["topics_completed"] == 1
     assert "claim_id" not in payload
+
+
+@pytest.mark.asyncio
+async def test_custom_direct_text_api_creates_a_tracked_job(monkeypatch: pytest.MonkeyPatch):
+    async def noop(job_id):
+        return None
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    body = {
+        "scope": "SELECTION",
+        "production_mode": "CUSTOM",
+        "input_text": "Direct text for API integration test.",
+        "custom_instructions": "Keep the result concise.",
+        "recipe_key": "BOOK_TO_TELEGRAM_POST",
+        "idempotency_key": f"custom-text-{uuid4()}",
+    }
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/production-jobs", json=body)
+        assert response.status_code == 202, response.text
+        payload = response.json()
+        status_response = await client.get(f"/production-jobs/{payload['job_id']}")
+        assert status_response.status_code == 200
+        status_payload = status_response.json()
+        assert "request_details" in status_payload, status_response.text
+        details = status_payload["request_details"]
+        assert details["production_mode"] == "CUSTOM"
+        assert details["custom_instructions"] == body["custom_instructions"]
+        assert details["input_text_preview"] == body["input_text"]
+        assert details["materials"][0]["title"] == body["input_text"]
+        replay = await client.post("/production-jobs", json=body)
+        assert replay.status_code == 202
+        assert replay.json()["job_id"] == payload["job_id"]
+        conflict = {**body, "custom_instructions": "A different request."}
+        conflict_response = await client.post("/production-jobs", json=conflict)
+        assert conflict_response.status_code == 400
+
+    async with SessionFactory() as session:
+        job = (await session.execute(
+            select(ProductionJobModel).where(ProductionJobModel.id == UUID(payload["job_id"]))
+        )).scalar_one()
+        item = (await session.execute(
+            select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id)
+        )).scalar_one()
+        unit = (await session.execute(
+            select(KnowledgeUnitModel).where(KnowledgeUnitModel.id == item.knowledge_unit_id)
+        )).scalar_one()
+        source = (await session.execute(
+            select(SourceModel).where(SourceModel.id == unit.source_id)
+        )).scalar_one()
+        claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
+        )).scalar_one()
+        assert unit.content == body["input_text"]
+        assert source.mime_type == "application/vnd.nashr.inline-text"
+        assert claim.request_payload["custom_instructions"] == body["custom_instructions"]
+        assert claim.request_payload["product_key"] is None

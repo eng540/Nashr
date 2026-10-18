@@ -1,6 +1,7 @@
 import pytest
 from uuid import UUID
 
+from app.application.identity_context import append_task_instructions
 from app.domain.control_plane import ResolvedPrompt
 from app.domain.production_context import (
     LEGACY_PIN_BACKFILL,
@@ -306,3 +307,13 @@ def test_schema_v6_rejects_product_mapping_that_conflicts_with_pinned_components
     with pytest.raises(ValueError, match="does not match"):
         ResolvedProductionContext.capture(prompt, recipe=BOOK_TO_TELEGRAM_POST,
             output_contract=contract, policy=policy, product=product)
+
+
+def test_request_instruction_composition_keeps_base_prompt():
+    base = "base prompt"
+    instruction = "shorten the text"
+    result = append_task_instructions(base, instruction)
+    assert base in result
+    assert instruction in result
+    assert "TASK-SPECIFIC INSTRUCTIONS" in result
+    assert append_task_instructions(base, None) == base

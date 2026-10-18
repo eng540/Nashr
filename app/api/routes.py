@@ -3,8 +3,8 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from typing import Any
-from uuid import UUID
+from typing import Any, Literal
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse
@@ -34,6 +34,7 @@ from app.infrastructure.database.models import (
     KnowledgeUnitModel,
     ProductionJobItemModel,
     ProductionJobModel,
+    ProductionClaimModel,
     ScheduleItemModel,
     ScheduleModel,
     PublicationModel,
@@ -68,6 +69,10 @@ class ProductionJobRequest(BaseModel):
     identity_key: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
     thematic_theme: str | None = Field(default=None, min_length=1, max_length=500)
+    custom_instructions: str | None = Field(default=None, max_length=12000)
+    production_mode: Literal["PRODUCT", "PRODUCT_WITH_INSTRUCTIONS", "CUSTOM"] | None = None
+    input_text: str | None = Field(default=None, max_length=100000)
+    input_title: str | None = Field(default=None, max_length=500)
     source_artifact_id: UUID | None = None
     source_post_id: UUID | None = None
 
@@ -297,7 +302,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
             ),
         )
     )).scalar_one() or 0)
-    return _production_job_payload(
+    payload = _production_job_payload(
         job,
         pending_items=counts.get("PENDING", 0),
         running_items=counts.get("RUNNING", 0),
@@ -305,6 +310,44 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
         failed_items=counts.get("FAILED", 0),
         reconciliation_required_items=reconciliation_required,
     )
+    claim = None
+    if job.claim_id is not None:
+        claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
+        )).scalar_one_or_none()
+    request = claim.request_payload if claim is not None and isinstance(claim.request_payload, dict) else {}
+    material_rows = (await session.execute(
+        select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
+        .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(ProductionJobItemModel.job_id == job.id)
+        .order_by(ProductionJobItemModel.position)
+    )).all()
+    request_materials = [{"id": str(material_id), "title": title} for material_id, title in material_rows]
+    custom_instructions = request.get("custom_instructions")
+    input_text = request.get("input_text")
+    materials = (await session.execute(
+        select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
+        .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(ProductionJobItemModel.job_id == job.id)
+        .order_by(ProductionJobItemModel.position)
+    )).all()
+    payload["request_details"] = {
+        "production_mode": request.get("production_mode") or (
+            "PRODUCT_WITH_INSTRUCTIONS" if request.get("product_key") and isinstance(custom_instructions, str) and custom_instructions.strip()
+            else "PRODUCT" if request.get("product_key")
+            else "CUSTOM" if isinstance(custom_instructions, str) and custom_instructions.strip()
+            else "LEGACY_OR_UNSPECIFIED"
+        ),
+        "product_key": request.get("product_key"),
+        "custom_instructions": custom_instructions if isinstance(custom_instructions, str) else None,
+        "input_title": request.get("input_title"),
+        "input_text_preview": input_text[:500] if isinstance(input_text, str) else None,
+        "source_id": request.get("source_id"),
+        "knowledge_unit_ids": request.get("knowledge_unit_ids", []),
+        "materials": [{"id": str(material_id), "title": title} for material_id, title in materials],
+        "materials": request_materials,
+    }
+    return payload
 
 
 def _book_map_checkpoint_payload(sections: list[BookMapSectionModel]) -> dict[str, Any]:
@@ -495,7 +538,7 @@ async def list_sources(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict[str, Any]]:
     result = await session.execute(
-        select(SourceModel).options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
+        select(SourceModel).where(or_(SourceModel.mime_type.is_(None), SourceModel.mime_type != "application/vnd.nashr.inline-text")).options(defer(SourceModel.file_payload)).order_by(SourceModel.created_at.desc())
     )
     sources = result.scalars().all()
     unit_counts = dict((await session.execute(
@@ -729,13 +772,73 @@ async def create_production_job_route(
             source_id = unit.source_id
             if not knowledge_unit_ids:
                 knowledge_unit_ids = [unit.id]
+        if payload.production_mode == "CUSTOM":
+            if payload.product_key is not None:
+                raise ValueError("Custom production mode must not select a product.")
+            if not payload.custom_instructions or not payload.custom_instructions.strip():
+                raise ValueError("Write the task instructions for custom production.")
+        elif payload.production_mode in {"PRODUCT", "PRODUCT_WITH_INSTRUCTIONS"} and payload.product_key is None:
+            raise ValueError("Choose a published product for this production mode.")
+        if payload.production_mode == "PRODUCT" and payload.custom_instructions and payload.custom_instructions.strip():
+            raise ValueError("Additional task instructions require PRODUCT_WITH_INSTRUCTIONS mode.")
+        if payload.input_text is not None and not payload.input_text.strip():
+            raise ValueError("Direct input text cannot be empty.")
+        if payload.input_text is not None and payload.scope != ProductionScope.SELECTION:
+            raise ValueError("Direct text input requires SELECTION scope.")
+        if payload.input_text is not None and source_id is not None:
+            raise ValueError("Choose either direct input text or a library source for this request.")
+        # Check replay identity before creating internal source/material lineage rows.
+        # Direct-text fingerprints use the submitted request, not newly generated UUIDs.
+        if payload.input_text is not None and payload.idempotency_key is not None:
+            replay_payload = payload.model_dump(mode="json", exclude={"idempotency_key"})
+            replay_fingerprint = hashlib.sha256(
+                json.dumps(replay_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            existing_claim = (await session.execute(
+                select(ProductionClaimModel).where(ProductionClaimModel.idempotency_key == payload.idempotency_key)
+            )).scalar_one_or_none()
+            if existing_claim is not None:
+                if existing_claim.request_fingerprint != replay_fingerprint:
+                    raise ValueError("Idempotency key was already used for a different production request.")
+                existing_job = (await session.execute(
+                    select(ProductionJobModel).where(ProductionJobModel.claim_id == existing_claim.id)
+                )).scalar_one_or_none()
+                if existing_job is None:
+                    raise RuntimeError("Production claim exists without its execution job.")
+                background_tasks.add_task(run_production_job, existing_job.id)
+                return await _load_production_job_payload(session, existing_job)
+        if payload.input_text is not None and (payload.source_artifact_id is not None or payload.source_post_id is not None):
+            raise ValueError("Direct input text cannot be combined with a previously approved output source.")
+        if source_id is None and payload.input_text is not None:
+            inline_source_id = uuid4()
+            inline_unit_id = uuid4()
+            inline_text = payload.input_text.strip()
+            inline_title = (payload.input_title or next((line.strip() for line in inline_text.splitlines() if line.strip()), "نص مباشر"))[:500]
+            session.add(SourceModel(
+                id=inline_source_id, filename="inline-text.txt", mime_type="application/vnd.nashr.inline-text",
+                storage_path=f"inline://{inline_source_id}", size_bytes=len(inline_text.encode("utf-8")),
+                status="STORED", book_title=inline_title, book_description="مدخل نصي مباشر لطلب إنتاج مخصص",
+                content_sha256=hashlib.sha256(inline_text.encode("utf-8")).hexdigest(),
+            ))
+            session.add(KnowledgeUnitModel(
+                id=inline_unit_id, source_id=inline_source_id, position=1, title=inline_title,
+                kind="INLINE_TEXT", content=inline_text, original_text=inline_text,
+                source_reference="user:inline-text",
+            ))
+            source_id = inline_source_id
+            knowledge_unit_ids = [inline_unit_id]
+            payload.scope = ProductionScope.SELECTION
         if source_id is None:
-            raise ValueError("source_id is required unless source_artifact_id or source_post_id identifies an approved design source.")
+            raise ValueError("Choose library materials or provide direct input text for a custom production request.")
         request_payload = payload.model_dump(mode="json", exclude={"idempotency_key"})
         request_payload["source_id"] = str(source_id)
         request_payload["knowledge_unit_ids"] = [str(value) for value in knowledge_unit_ids]
+        fingerprint_payload = (
+            payload.model_dump(mode="json", exclude={"idempotency_key"})
+            if payload.input_text is not None else request_payload
+        )
         request_fingerprint = hashlib.sha256(
-            json.dumps(request_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         ).hexdigest()
         job = await create_production_job(
             session,
@@ -750,6 +853,8 @@ async def create_production_job_route(
             request_fingerprint=request_fingerprint,
             request_payload=request_payload,
             thematic_theme=payload.thematic_theme,
+            custom_instructions=payload.custom_instructions,
+            preserve_selection_order=payload.production_mode is not None,
             source_artifact_id=payload.source_artifact_id,
             source_post_id=payload.source_post_id,
         )
@@ -1854,7 +1959,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
             ),
         )
     )).scalar_one() or 0)
-    return _production_job_payload(
+    payload = _production_job_payload(
         job,
         pending_items=counts.get("PENDING", 0),
         running_items=counts.get("RUNNING", 0),
@@ -1862,6 +1967,44 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
         failed_items=counts.get("FAILED", 0),
         reconciliation_required_items=reconciliation_required,
     )
+    claim = None
+    if job.claim_id is not None:
+        claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
+        )).scalar_one_or_none()
+    request = claim.request_payload if claim is not None and isinstance(claim.request_payload, dict) else {}
+    material_rows = (await session.execute(
+        select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
+        .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(ProductionJobItemModel.job_id == job.id)
+        .order_by(ProductionJobItemModel.position)
+    )).all()
+    request_materials = [{"id": str(material_id), "title": title} for material_id, title in material_rows]
+    custom_instructions = request.get("custom_instructions")
+    input_text = request.get("input_text")
+    materials = (await session.execute(
+        select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
+        .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(ProductionJobItemModel.job_id == job.id)
+        .order_by(ProductionJobItemModel.position)
+    )).all()
+    payload["request_details"] = {
+        "production_mode": request.get("production_mode") or (
+            "PRODUCT_WITH_INSTRUCTIONS" if request.get("product_key") and isinstance(custom_instructions, str) and custom_instructions.strip()
+            else "PRODUCT" if request.get("product_key")
+            else "CUSTOM" if isinstance(custom_instructions, str) and custom_instructions.strip()
+            else "LEGACY_OR_UNSPECIFIED"
+        ),
+        "product_key": request.get("product_key"),
+        "custom_instructions": custom_instructions if isinstance(custom_instructions, str) else None,
+        "input_title": request.get("input_title"),
+        "input_text_preview": input_text[:500] if isinstance(input_text, str) else None,
+        "source_id": request.get("source_id"),
+        "knowledge_unit_ids": request.get("knowledge_unit_ids", []),
+        "materials": [{"id": str(material_id), "title": title} for material_id, title in materials],
+        "materials": request_materials,
+    }
+    return payload
 
 
 def _book_map_checkpoint_payload(sections: list[BookMapSectionModel]) -> dict[str, Any]:

@@ -13,7 +13,7 @@ from app.application.policy_control_plane import ProductionPolicyControlPlaneSer
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, ProductionProductModel, ProductionProductVersionModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionClaimModel, ProductionJobItemModel, ProductionJobModel, ProductionProductModel, ProductionProductVersionModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
 from app.infrastructure.database.control_plane import PromptTemplateRepository
 from app.infrastructure.database.session import SessionFactory
 
@@ -98,6 +98,23 @@ async def test_topic_scope_only_snapshots_topic_materials():
             select(ProductionJobItemModel).where(ProductionJobItemModel.job_id == job.id).order_by(ProductionJobItemModel.position)
         )).scalars().all()
         assert [item.knowledge_unit_id for item in items] == [unit_ids[1], unit_ids[3]]
+
+
+async def test_flexible_request_can_preserve_explicit_material_order():
+    source_id, _, unit_ids = await _fixture()
+    requested = [unit_ids[4], unit_ids[1], unit_ids[3]]
+    async with SessionFactory() as session:
+        job = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=requested,
+            preserve_selection_order=True,
+        )
+        items = (await session.execute(
+            select(ProductionJobItemModel)
+            .where(ProductionJobItemModel.job_id == job.id)
+            .order_by(ProductionJobItemModel.position)
+        )).scalars().all()
+        assert [item.knowledge_unit_id for item in items] == requested
 
 
 async def test_explicit_selection_snapshots_only_requested_materials():
@@ -642,6 +659,29 @@ async def test_second_seeded_recipe_executes_with_stage_configuration_on_shared_
     assert "Product audience: Readers who prefer concise Arabic literary content" in drafter.prompts[0]
 
 
+async def test_request_scoped_instructions_reach_the_actual_drafter_prompt():
+    source_id, _, _ = await _fixture(materials=1, topics=1)
+    instructions = "TASK-INSTRUCTION-PROOF: focus on semantic contrast and omit an ornate introduction."
+    async with SessionFactory() as session:
+        await _reset_editorial_prompt(session, "base-prompt-for-task-instructions")
+        job = await create_production_job(
+            session, source_id, ProductionScope.SOURCE,
+            product_key="ARABIC_LITERATURE_BRIEF_TELEGRAM_POST",
+            custom_instructions=instructions,
+        )
+        claim = (await session.execute(
+            select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
+        )).scalar_one()
+        assert claim.request_payload["custom_instructions"] == instructions
+
+    drafter = RecordingDrafter()
+    await ProductionJobRunner(drafter).run(job.id)
+    assert len(drafter.prompts) == 1
+    assert "TASK-SPECIFIC INSTRUCTIONS (request scope only)" in drafter.prompts[0]
+    assert instructions in drafter.prompts[0]
+    assert "Product audience:" in drafter.prompts[0]
+
+
 async def test_product_job_retry_keeps_its_published_manifest_and_archived_prompt_pin():
     source_id, _, _ = await _fixture(materials=1, topics=1)
     async with SessionFactory() as session:
@@ -862,3 +902,30 @@ async def test_stale_item_reuses_persisted_artifact_instead_of_regenerating(monk
         assert recovered_item.artifact_id == artifact_id
         assert recovered_item.error_code is None
         assert recovered_item.completed_at is not None
+
+
+
+async def test_task_instructions_are_persisted_and_distinguish_production_requests():
+    source_id, _, unit_ids = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        first = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=[unit_ids[0]],
+            custom_instructions="ركز على الفرق الدلالي بين الأسف والندم.",
+        )
+        second = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=[unit_ids[0]],
+            custom_instructions="اجعل النص أقصر ومن دون مقدمة.",
+        )
+        claims = (await session.execute(
+            select(ProductionClaimModel).where(
+                ProductionClaimModel.id.in_([first.claim_id, second.claim_id])
+            )
+        )).scalars().all()
+        by_id = {claim.id: claim for claim in claims}
+        first_claim = by_id[first.claim_id]
+        second_claim = by_id[second.claim_id]
+        assert first_claim.request_payload["custom_instructions"] == "ركز على الفرق الدلالي بين الأسف والندم."
+        assert second_claim.request_payload["custom_instructions"] == "اجعل النص أقصر ومن دون مقدمة."
+        assert first_claim.request_fingerprint != second_claim.request_fingerprint
