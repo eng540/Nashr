@@ -316,6 +316,13 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
             select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
         )).scalar_one_or_none()
     request = claim.request_payload if claim is not None and isinstance(claim.request_payload, dict) else {}
+    material_rows = (await session.execute(
+        select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
+        .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(ProductionJobItemModel.job_id == job.id)
+        .order_by(ProductionJobItemModel.position)
+    )).all()
+    request_materials = [{"id": str(material_id), "title": title} for material_id, title in material_rows]
     custom_instructions = request.get("custom_instructions")
     input_text = request.get("input_text")
     payload["request_details"] = {
@@ -331,6 +338,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
         "input_text_preview": input_text[:500] if isinstance(input_text, str) else None,
         "source_id": request.get("source_id"),
         "knowledge_unit_ids": request.get("knowledge_unit_ids", []),
+        "materials": request_materials,
     }
     return payload
 
@@ -1958,6 +1966,13 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
             select(ProductionClaimModel).where(ProductionClaimModel.id == job.claim_id)
         )).scalar_one_or_none()
     request = claim.request_payload if claim is not None and isinstance(claim.request_payload, dict) else {}
+    material_rows = (await session.execute(
+        select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
+        .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(ProductionJobItemModel.job_id == job.id)
+        .order_by(ProductionJobItemModel.position)
+    )).all()
+    request_materials = [{"id": str(material_id), "title": title} for material_id, title in material_rows]
     custom_instructions = request.get("custom_instructions")
     input_text = request.get("input_text")
     payload["request_details"] = {
@@ -1973,6 +1988,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
         "input_text_preview": input_text[:500] if isinstance(input_text, str) else None,
         "source_id": request.get("source_id"),
         "knowledge_unit_ids": request.get("knowledge_unit_ids", []),
+        "materials": request_materials,
     }
     return payload
 
