@@ -325,6 +325,12 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
     request_materials = [{"id": str(material_id), "title": title} for material_id, title in material_rows]
     custom_instructions = request.get("custom_instructions")
     input_text = request.get("input_text")
+    materials = (await session.execute(
+        select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
+        .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(ProductionJobItemModel.job_id == job.id)
+        .order_by(ProductionJobItemModel.position)
+    )).all()
     payload["request_details"] = {
         "production_mode": request.get("production_mode") or (
             "PRODUCT_WITH_INSTRUCTIONS" if request.get("product_key") and isinstance(custom_instructions, str) and custom_instructions.strip()
@@ -338,6 +344,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
         "input_text_preview": input_text[:500] if isinstance(input_text, str) else None,
         "source_id": request.get("source_id"),
         "knowledge_unit_ids": request.get("knowledge_unit_ids", []),
+        "materials": [{"id": str(material_id), "title": title} for material_id, title in materials],
         "materials": request_materials,
     }
     return payload
@@ -1975,6 +1982,12 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
     request_materials = [{"id": str(material_id), "title": title} for material_id, title in material_rows]
     custom_instructions = request.get("custom_instructions")
     input_text = request.get("input_text")
+    materials = (await session.execute(
+        select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
+        .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
+        .where(ProductionJobItemModel.job_id == job.id)
+        .order_by(ProductionJobItemModel.position)
+    )).all()
     payload["request_details"] = {
         "production_mode": request.get("production_mode") or (
             "PRODUCT_WITH_INSTRUCTIONS" if request.get("product_key") and isinstance(custom_instructions, str) and custom_instructions.strip()
@@ -1988,6 +2001,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
         "input_text_preview": input_text[:500] if isinstance(input_text, str) else None,
         "source_id": request.get("source_id"),
         "knowledge_unit_ids": request.get("knowledge_unit_ids", []),
+        "materials": [{"id": str(material_id), "title": title} for material_id, title in materials],
         "materials": request_materials,
     }
     return payload
