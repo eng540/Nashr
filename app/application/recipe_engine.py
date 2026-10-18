@@ -271,6 +271,10 @@ class ProduceImageArtifactCapability:
             if style_instructions:
                 prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
 
+        task_instructions = context.configuration.get("task_instructions")
+        if isinstance(task_instructions, str) and task_instructions.strip():
+            prompt += f"\n\nTask-specific image instructions:\n{task_instructions.strip()}"
+
         # Resolve from the pinned recipe stage configuration (or deployment default).
         # The provider adapter owns all model-specific API details.
         generator = self.generator or create_image_generator(context.stage_configuration)
