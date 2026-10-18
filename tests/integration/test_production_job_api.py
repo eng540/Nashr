@@ -573,6 +573,7 @@ async def test_custom_direct_text_api_creates_a_tracked_job(monkeypatch: pytest.
         assert details["production_mode"] == "CUSTOM"
         assert details["custom_instructions"] == body["custom_instructions"]
         assert details["input_text_preview"] == body["input_text"]
+        assert details["materials"][0]["title"] == body["input_text"]
         replay = await client.post("/production-jobs", json=body)
         assert replay.status_code == 202
         assert replay.json()["job_id"] == payload["job_id"]
