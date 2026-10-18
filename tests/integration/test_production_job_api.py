@@ -558,6 +558,7 @@ async def test_custom_direct_text_api_creates_a_tracked_job(monkeypatch: pytest.
         "input_text": "Direct text for API integration test.",
         "custom_instructions": "Keep the result concise.",
         "recipe_key": "BOOK_TO_TELEGRAM_POST",
+        "idempotency_key": f"custom-text-{uuid4()}",
     }
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -570,6 +571,12 @@ async def test_custom_direct_text_api_creates_a_tracked_job(monkeypatch: pytest.
         assert details["production_mode"] == "CUSTOM"
         assert details["custom_instructions"] == body["custom_instructions"]
         assert details["input_text_preview"] == body["input_text"]
+        replay = await client.post("/production-jobs", json=body)
+        assert replay.status_code == 202
+        assert replay.json()["job_id"] == payload["job_id"]
+        conflict = {**body, "custom_instructions": "A different request."}
+        conflict_response = await client.post("/production-jobs", json=conflict)
+        assert conflict_response.status_code == 400
 
     async with SessionFactory() as session:
         job = (await session.execute(
