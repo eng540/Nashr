@@ -3,8 +3,8 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from typing import Any
-from uuid import UUID
+from typing import Any, Literal
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse
@@ -69,6 +69,9 @@ class ProductionJobRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
     thematic_theme: str | None = Field(default=None, min_length=1, max_length=500)
     custom_instructions: str | None = Field(default=None, max_length=12000)
+    production_mode: Literal["PRODUCT", "PRODUCT_WITH_INSTRUCTIONS", "CUSTOM"] | None = None
+    input_text: str | None = Field(default=None, max_length=100000)
+    input_title: str | None = Field(default=None, max_length=500)
     source_artifact_id: UUID | None = None
     source_post_id: UUID | None = None
 
