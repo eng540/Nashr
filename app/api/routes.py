@@ -68,6 +68,7 @@ class ProductionJobRequest(BaseModel):
     identity_key: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Z0-9._-]+$")
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=100)
     thematic_theme: str | None = Field(default=None, min_length=1, max_length=500)
+    custom_instructions: str | None = Field(default=None, max_length=12000)
     source_artifact_id: UUID | None = None
     source_post_id: UUID | None = None
 
@@ -750,6 +751,7 @@ async def create_production_job_route(
             request_fingerprint=request_fingerprint,
             request_payload=request_payload,
             thematic_theme=payload.thematic_theme,
+            custom_instructions=payload.custom_instructions,
             source_artifact_id=payload.source_artifact_id,
             source_post_id=payload.source_post_id,
         )
