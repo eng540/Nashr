@@ -53,6 +53,7 @@ async def _resolve_units(
     scope: ProductionScope,
     topic_id: UUID | None,
     knowledge_unit_ids: list[UUID],
+    preserve_selection_order: bool = False,
 ) -> list[KnowledgeUnitModel]:
     source = (
         await session.execute(select(SourceModel).where(SourceModel.id == source_id))
@@ -105,9 +106,12 @@ async def _resolve_units(
             .order_by(KnowledgeUnitModel.position, KnowledgeUnitModel.id)
         )
 
-    units = (await session.execute(query)).scalars().all()
+    units = list((await session.execute(query)).scalars().all())
     if scope == ProductionScope.SELECTION and len(units) != len(knowledge_unit_ids):
         raise ValueError("One or more selected knowledge units do not belong to source.")
+    if scope == ProductionScope.SELECTION and preserve_selection_order:
+        requested_order = {unit_id: index for index, unit_id in enumerate(knowledge_unit_ids)}
+        units.sort(key=lambda unit: requested_order[unit.id])
     if not units:
         raise ValueError("Production scope contains no knowledge units.")
     return list(units)
@@ -127,6 +131,7 @@ async def create_production_job(
     request_payload: dict | None = None,
     thematic_theme: str | None = None,
     custom_instructions: str | None = None,
+    preserve_selection_order: bool = False,
     source_artifact_id: UUID | None = None,
     source_post_id: UUID | None = None,
 ) -> ProductionJobModel:
@@ -137,7 +142,7 @@ async def create_production_job(
     # Thematic composition treats the user's selection order as editorial input.
     # Keep that order in the durable request payload and fingerprint; ordinary
     # production selections retain their historical order-independent dedupe.
-    request_units = ordered_units if thematic_theme is not None else normalized_units
+    request_units = ordered_units if thematic_theme is not None or preserve_selection_order else normalized_units
     canonical_request_payload = {
         "source_id": str(source_id),
         "scope": scope.value,
@@ -285,6 +290,7 @@ async def create_production_job(
             scope,
             topic_id,
             knowledge_unit_ids or [],
+            preserve_selection_order=preserve_selection_order,
         )
     claim = ProductionClaimModel(
         id=uuid4(),
