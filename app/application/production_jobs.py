@@ -828,9 +828,9 @@ class ProductionJobRunner:
                 task_instructions = job_request_payload.get("custom_instructions")
                 if isinstance(task_instructions, str) and task_instructions.strip():
                     pinned_prompt = (
-                        f"{pinned_prompt}\\n\\n"
+                        f"{pinned_prompt}\n\n"
                         "Task-specific instructions (apply where compatible with the pinned "
-                        "product, recipe, output contract, and policy; do not override them):\\n"
+                        "product, recipe, output contract, and policy; do not override them):\n"
                         f"{task_instructions.strip()}"
                     )
 
