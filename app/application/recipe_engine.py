@@ -447,6 +447,16 @@ class ProduceVideoArtifactCapability:
             if style_instructions:
                 prompt += f"\n\nVisual direction:\n{style_instructions.strip()}"
 
+        task_instructions = context.configuration.get("task_instructions")
+        if (
+            isinstance(task_instructions, str)
+            and task_instructions.strip()
+            and isinstance(generation_prompt, str)
+            and generation_prompt.strip()
+            and "{{editorial_prompt}}" not in generation_prompt
+        ):
+            prompt += f"\n\nTask-specific video instructions:\n{task_instructions.strip()}"
+
         provider_name = getattr(self.generator, "provider_name", "google-veo")
         operation_name = context.inputs.get("provider_operation_name")
         stored_provider = context.inputs.get("provider_name")
