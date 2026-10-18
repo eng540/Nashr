@@ -171,6 +171,7 @@ export function PostBankPage() {
   const [directInputTitle, setDirectInputTitle] = useState(() => pendingRequestFromStorage()?.input_title ?? "");
   const [customInputMode, setCustomInputMode] = useState<"TEXT" | "LIBRARY">("TEXT");
   const [customRecipeKey, setCustomRecipeKey] = useState(() => pendingRequestFromStorage()?.recipe_key ?? "");
+  const [productInputMode, setProductInputMode] = useState<"LIBRARY" | "TEXT">(() => pendingRequestFromStorage()?.input_text ? "TEXT" : "LIBRARY");
   const [productionKind, setProductionKind] = useState("");
   const [productionMaterialQuery, setProductionMaterialQuery] = useState("");
   const [productionMaterialPage, setProductionMaterialPage] = useState(0);
@@ -330,16 +331,20 @@ export function PostBankPage() {
   const selectedRecipeKey = activeProductVersion?.definition.recipe_key;
   const recipeReady = recipes.isSuccess && Boolean(selectedRecipeKey && recipes.data.some((recipe) => recipe.key === selectedRecipeKey && recipe.active_version !== null));
   const lineReady = productReady && identityReady && recipeReady;
-  const sourceReady = isThematicProduct
-    ? Boolean(thematicAnchorSourceId && sources.isSuccess && thematicBookMaps.length > 0 && thematicBookMaps.every((result) => result.isSuccess))
-    : Boolean(selectedSource && sources.isSuccess);
+  const sourceReady = productInputMode === "TEXT" && !isThematicProduct
+    ? Boolean(directInputText.trim())
+    : isThematicProduct
+      ? Boolean(thematicAnchorSourceId && sources.isSuccess && thematicBookMaps.length > 0 && thematicBookMaps.every((result) => result.isSuccess))
+      : Boolean(selectedSource && sources.isSuccess);
   const topicReady = scope === "TOPIC" && bookMap.isSuccess && Boolean(selectedTopic && topics.some((topic) => topic.id === productionTopicId) && selectedTopic.materials.length > 0);
   const selectedMaterialIds = materialIds.filter((id) => allProductionMaterials.some((material) => material.id === id));
-  const scopeReady = isThematicProduct
-    ? Boolean(sourceReady && thematicTheme.trim() && selectedMaterialIds.length >= 2 && selectedMaterialIds.length === materialIds.length)
-    : Boolean(sourceReady && bookMap.isSuccess && scopeMaterialCount > 0
-      && (scope !== "TOPIC" || topicReady)
-      && (scope !== "SELECTION" || selectedMaterialIds.length > 0 && selectedMaterialIds.length === materialIds.length));
+  const scopeReady = productInputMode === "TEXT" && !isThematicProduct
+    ? Boolean(sourceReady)
+    : isThematicProduct
+      ? Boolean(sourceReady && thematicTheme.trim() && selectedMaterialIds.length >= 2 && selectedMaterialIds.length === materialIds.length)
+      : Boolean(sourceReady && bookMap.isSuccess && scopeMaterialCount > 0
+        && (scope !== "TOPIC" || topicReady)
+        && (scope !== "SELECTION" || selectedMaterialIds.length > 0 && selectedMaterialIds.length === materialIds.length));
   const canReviewProduction = Boolean(lineReady && scopeReady && !products.isFetching && !identities.isFetching && !recipes.isFetching && !sources.isFetching && !bookMap.isFetching && !thematicBookMaps.some((result) => result.isFetching));
 
   const filterTopics = filterOptions.data?.topics ?? [];
