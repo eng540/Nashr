@@ -733,8 +733,44 @@ async def create_production_job_route(
             source_id = unit.source_id
             if not knowledge_unit_ids:
                 knowledge_unit_ids = [unit.id]
+        if payload.production_mode == "CUSTOM":
+            if payload.product_key is not None:
+                raise ValueError("Custom production mode must not select a product.")
+            if not payload.custom_instructions or not payload.custom_instructions.strip():
+                raise ValueError("Write the task instructions for custom production.")
+        elif payload.production_mode in {"PRODUCT", "PRODUCT_WITH_INSTRUCTIONS"} and payload.product_key is None:
+            raise ValueError("Choose a published product for this production mode.")
+        if payload.production_mode == "PRODUCT" and payload.custom_instructions and payload.custom_instructions.strip():
+            raise ValueError("Additional task instructions require PRODUCT_WITH_INSTRUCTIONS mode.")
+        if payload.input_text is not None and not payload.input_text.strip():
+            raise ValueError("Direct input text cannot be empty.")
+        if payload.input_text is not None and source_id is not None:
+            raise ValueError("Choose either direct input text or a library source for this request.")
+        if payload.input_text is not None and (payload.source_artifact_id is not None or payload.source_post_id is not None):
+            raise ValueError("Direct input text cannot be combined with a previously approved output source.")
+        if source_id is None and payload.input_text is not None:
+            if payload.product_key is not None:
+                raise ValueError("Direct text without a library source is currently supported in custom mode only.")
+            inline_source_id = uuid4()
+            inline_unit_id = uuid4()
+            inline_text = payload.input_text.strip()
+            inline_title = (payload.input_title or next((line.strip() for line in inline_text.splitlines() if line.strip()), "نص مباشر"))[:500]
+            session.add(SourceModel(
+                id=inline_source_id, filename="inline-text.txt", mime_type="text/plain",
+                storage_path=f"inline://{inline_source_id}", size_bytes=len(inline_text.encode("utf-8")),
+                status="STORED", book_title=inline_title, book_description="مدخل نصي مباشر لطلب إنتاج مخصص",
+                content_sha256=hashlib.sha256(inline_text.encode("utf-8")).hexdigest(),
+            ))
+            session.add(KnowledgeUnitModel(
+                id=inline_unit_id, source_id=inline_source_id, position=1, title=inline_title,
+                kind="INLINE_TEXT", content=inline_text, original_text=inline_text,
+                source_reference="user:inline-text",
+            ))
+            source_id = inline_source_id
+            knowledge_unit_ids = [inline_unit_id]
+            payload.scope = ProductionScope.SELECTION
         if source_id is None:
-            raise ValueError("source_id is required unless source_artifact_id or source_post_id identifies an approved design source.")
+            raise ValueError("Choose library materials or provide direct input text for a custom production request.")
         request_payload = payload.model_dump(mode="json", exclude={"idempotency_key"})
         request_payload["source_id"] = str(source_id)
         request_payload["knowledge_unit_ids"] = [str(value) for value in knowledge_unit_ids]
