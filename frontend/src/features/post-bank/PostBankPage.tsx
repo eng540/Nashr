@@ -170,7 +170,7 @@ export function PostBankPage() {
   const [directInputText, setDirectInputText] = useState("");
   const [directInputTitle, setDirectInputTitle] = useState("");
   const [customInputMode, setCustomInputMode] = useState<"TEXT" | "LIBRARY">("TEXT");
-  const [customRecipeKey, setCustomRecipeKey] = useState("BOOK_TO_TELEGRAM_POST");
+  const [customRecipeKey, setCustomRecipeKey] = useState("");
   const [productionKind, setProductionKind] = useState("");
   const [productionMaterialQuery, setProductionMaterialQuery] = useState("");
   const [productionMaterialPage, setProductionMaterialPage] = useState(0);
