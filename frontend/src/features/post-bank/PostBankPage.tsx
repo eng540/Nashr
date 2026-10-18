@@ -167,7 +167,7 @@ export function PostBankPage() {
   const [thematicTheme, setThematicTheme] = useState(() => pendingRequestFromStorage()?.thematic_theme ?? "");
   const [customInstructions, setCustomInstructions] = useState(() => pendingRequestFromStorage()?.custom_instructions ?? "");
   const [productionModeChoice, setProductionModeChoice] = useState<"PRODUCT" | "PRODUCT_WITH_INSTRUCTIONS" | "CUSTOM">(() => pendingRequestFromStorage()?.production_mode ?? "PRODUCT");
-  const [directInputText, setDirectInputText] = useState("");
+  const [directInputText, setDirectInputText] = useState(() => pendingRequestFromStorage()?.input_text ?? "");
   const [directInputTitle, setDirectInputTitle] = useState("");
   const [customInputMode, setCustomInputMode] = useState<"TEXT" | "LIBRARY">("TEXT");
   const [customRecipeKey, setCustomRecipeKey] = useState("");
