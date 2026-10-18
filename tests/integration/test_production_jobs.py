@@ -13,7 +13,7 @@ from app.application.policy_control_plane import ProductionPolicyControlPlaneSer
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.production_jobs import ProductionJobItemStatus, ProductionJobStatus, ProductionScope
-from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionJobItemModel, ProductionJobModel, ProductionProductModel, ProductionProductVersionModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, ProductionClaimModel, ProductionJobItemModel, ProductionJobModel, ProductionProductModel, ProductionProductVersionModel, SourceModel, TopicModel, PromptTemplateModel, PromptTemplateVersionModel
 from app.infrastructure.database.control_plane import PromptTemplateRepository
 from app.infrastructure.database.session import SessionFactory
 
@@ -862,3 +862,30 @@ async def test_stale_item_reuses_persisted_artifact_instead_of_regenerating(monk
         assert recovered_item.artifact_id == artifact_id
         assert recovered_item.error_code is None
         assert recovered_item.completed_at is not None
+
+
+
+async def test_task_instructions_are_persisted_and_distinguish_production_requests():
+    source_id, _, unit_ids = await _fixture(materials=1, topics=1)
+    async with SessionFactory() as session:
+        first = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=[unit_ids[0]],
+            custom_instructions="ركز على الفرق الدلالي بين الأسف والندم.",
+        )
+        second = await create_production_job(
+            session, source_id, ProductionScope.SELECTION,
+            knowledge_unit_ids=[unit_ids[0]],
+            custom_instructions="اجعل النص أقصر ومن دون مقدمة.",
+        )
+        claims = (await session.execute(
+            select(ProductionClaimModel).where(
+                ProductionClaimModel.id.in_([first.claim_id, second.claim_id])
+            )
+        )).scalars().all()
+        by_id = {claim.id: claim for claim in claims}
+        first_claim = by_id[first.claim_id]
+        second_claim = by_id[second.claim_id]
+        assert first_claim.request_payload["custom_instructions"] == "ركز على الفرق الدلالي بين الأسف والندم."
+        assert second_claim.request_payload["custom_instructions"] == "اجعل النص أقصر ومن دون مقدمة."
+        assert first_claim.request_fingerprint != second_claim.request_fingerprint
