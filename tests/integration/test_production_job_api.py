@@ -545,3 +545,25 @@ def test_discovery_job_payload_does_not_require_production_claim_fields():
     assert payload["status"] == "RUNNING"
     assert payload["topics_completed"] == 1
     assert "claim_id" not in payload
+
+
+@pytest.mark.asyncio
+async def test_custom_direct_text_api_creates_a_tracked_job(monkeypatch: pytest.MonkeyPatch):
+    async def noop(job_id):
+        return None
+    monkeypatch.setattr("app.api.routes.run_production_job", noop)
+    body = {
+        "scope": "SELECTION",
+        "production_mode": "CUSTOM",
+        "input_text": "Direct text for API integration test.",
+        "custom_instructions": "Keep the result concise.",
+        "recipe_key": "BOOK_TO_TELEGRAM_POST",
+    }
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/production-jobs", json=body)
+        assert response.status_code == 202, response.text
+        payload = response.json()
+        assert payload["request_details"]["production_mode"] == "CUSTOM"
+        assert payload["request_details"]["custom_instructions"] == body["custom_instructions"]
+        assert payload["request_details"]["input_text_preview"] == body["input_text"]
