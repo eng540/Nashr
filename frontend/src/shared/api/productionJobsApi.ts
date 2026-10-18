@@ -17,7 +17,7 @@ export interface ProductionJob {
   attempts: number; created_at: string; updated_at: string; started_at: string | null; completed_at: string | null;
   progress_percent: number; next_action: "RETRY_FAILED_ITEMS" | "INSPECT_FAILURE" | "WAIT" | "REVIEW_DRAFTS" | "NONE";
   resolved_prompt: { key: string | null; version: number | null; body: string | null; available: boolean };
-  request_details?: { production_mode: string; product_key: string | null; custom_instructions: string | null; input_title: string | null; input_text_preview: string | null; source_id: string | null; knowledge_unit_ids: string[] };
+  request_details?: { production_mode: string; product_key: string | null; custom_instructions: string | null; input_title: string | null; input_text_preview: string | null; source_id: string | null; knowledge_unit_ids: string[]; materials: Array<{ id: string; title: string }> };
   resolved_context: {
     available: boolean; invalid: boolean; schema_version: number | null; origin: string | null;
     captured_at: string | null;
