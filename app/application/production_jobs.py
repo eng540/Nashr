@@ -126,6 +126,7 @@ async def create_production_job(
     request_fingerprint: str | None = None,
     request_payload: dict | None = None,
     thematic_theme: str | None = None,
+    custom_instructions: str | None = None,
     source_artifact_id: UUID | None = None,
     source_post_id: UUID | None = None,
 ) -> ProductionJobModel:
@@ -146,6 +147,7 @@ async def create_production_job(
         "identity_key": identity_key,
         "product_key": product_key,
         "thematic_theme": thematic_theme.strip() if isinstance(thematic_theme, str) else None,
+        "custom_instructions": custom_instructions.strip() if isinstance(custom_instructions, str) and custom_instructions.strip() else None,
         "source_artifact_id": str(source_artifact_id) if source_artifact_id is not None else None,
         "source_post_id": str(source_post_id) if source_post_id is not None else None,
     }
@@ -819,6 +821,18 @@ class ProductionJobRunner:
                             f"{pinned_prompt}\n\nProduct audience: {product_definition.audience}"
                             f"\nProduct experience: {product_definition.experience}"
                         )
+                # Task-scoped guidance is read from the durable claim payload at execution
+                # time, so queued and resumed jobs use the same instructions. It may refine
+                # the requested treatment, but does not replace the pinned product/recipe,
+                # output contract, policy, or execution constraints.
+                task_instructions = job_request_payload.get("custom_instructions")
+                if isinstance(task_instructions, str) and task_instructions.strip():
+                    pinned_prompt = (
+                        f"{pinned_prompt}\\n\\n"
+                        "Task-specific instructions (apply where compatible with the pinned "
+                        "product, recipe, output contract, and policy; do not override them):\\n"
+                        f"{task_instructions.strip()}"
+                    )
 
             while True:
                 item_id = await _claim_next_item(job_id)
