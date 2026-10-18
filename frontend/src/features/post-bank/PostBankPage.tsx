@@ -169,6 +169,7 @@ export function PostBankPage() {
   const [productionModeChoice, setProductionModeChoice] = useState<"PRODUCT" | "PRODUCT_WITH_INSTRUCTIONS" | "CUSTOM">("PRODUCT");
   const [directInputText, setDirectInputText] = useState("");
   const [directInputTitle, setDirectInputTitle] = useState("");
+  const [customInputMode, setCustomInputMode] = useState<"TEXT" | "LIBRARY">("TEXT");
   const [productionKind, setProductionKind] = useState("");
   const [productionMaterialQuery, setProductionMaterialQuery] = useState("");
   const [productionMaterialPage, setProductionMaterialPage] = useState(0);
@@ -183,7 +184,7 @@ export function PostBankPage() {
   const identities = useQuery({ queryKey: ["control-plane", "identities"], queryFn: productionJobsApi.identities });
   const products = useQuery({ queryKey: ["control-plane", "products"], queryFn: productionJobsApi.products });
   const recipes = useQuery({ queryKey: ["control-plane", "recipes"], queryFn: productionJobsApi.recipes });
-  const lineFilter = productionLineFilter(products.data, identities.data, recipes.data, productKey, identityKey);
+  const lineFilter = productionModeChoice === "CUSTOM" ? undefined : productionLineFilter(products.data, identities.data, recipes.data, productKey, identityKey);
   const queryProduct = products.data?.find((product) => product.key === productKey);
   const queryProductVersion = queryProduct?.versions.find((version) => version.version === queryProduct.active_version);
   const queryRecipe = recipes.data?.find((recipe) => recipe.key === queryProductVersion?.definition.recipe_key);
