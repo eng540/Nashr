@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.adapters.drafting.gemini import GeminiEditorialDrafter
 from app.application.control_plane import ControlPlaneResolver, EDITORIAL_PROMPT_KEY
-from app.application.identity_context import compose_editorial_prompt
+from app.application.identity_context import append_task_instructions, compose_editorial_prompt
 from app.domain.production_jobs import (
     ProductionJobItemStatus,
     ProductionJobStatus,
@@ -828,14 +828,9 @@ class ProductionJobRunner:
                 # time, so queued and resumed jobs use the same instructions. It may refine
                 # the requested treatment, but does not replace the pinned product/recipe,
                 # output contract, policy, or execution constraints.
-                task_instructions = job_request_payload.get("custom_instructions")
-                if isinstance(task_instructions, str) and task_instructions.strip():
-                    pinned_prompt = (
-                        f"{pinned_prompt}\n\n"
-                        "Task-specific instructions (apply where compatible with the pinned "
-                        "product, recipe, output contract, and policy; do not override them):\n"
-                        f"{task_instructions.strip()}"
-                    )
+                pinned_prompt = append_task_instructions(
+                    pinned_prompt, job_request_payload.get("custom_instructions")
+                )
 
             while True:
                 item_id = await _claim_next_item(job_id)
