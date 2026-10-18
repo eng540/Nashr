@@ -221,6 +221,11 @@ async def create_production_job(
         resolved_policy = await resolver.resolve_policy(session, policy_key)
 
     has_card_stage = any(stage.capability_key == "render_approved_text_card" for stage in resolved_recipe.stages)
+    if has_card_stage and isinstance(custom_instructions, str) and custom_instructions.strip():
+        raise ValueError(
+            "This deterministic design-card recipe does not consume free-form task instructions. "
+            "Use the recipe's supported visual settings in /control instead."
+        )
     if has_card_stage and len(resolved_recipe.stages) != 1:
         raise ValueError("A design-card recipe must contain only render_approved_text_card; it cannot trigger unrelated production stages.")
     has_card_source = source_artifact_id is not None or source_post_id is not None
@@ -834,9 +839,8 @@ class ProductionJobRunner:
                 # time, so queued and resumed jobs use the same instructions. It may refine
                 # the requested treatment, but does not replace the pinned product/recipe,
                 # output contract, policy, or execution constraints.
-                pinned_prompt = append_task_instructions(
-                    pinned_prompt, job_request_payload.get("custom_instructions")
-                )
+                task_instructions = job_request_payload.get("custom_instructions")
+                pinned_prompt = append_task_instructions(pinned_prompt, task_instructions)
 
             while True:
                 item_id = await _claim_next_item(job_id)
@@ -890,7 +894,8 @@ class ProductionJobRunner:
                                         "key": pinned_prompt_key,
                                         "version": pinned_prompt_version,
                                         "body": pinned_prompt,
-                                    }
+                                    },
+                                    "task_instructions": task_instructions if isinstance(task_instructions, str) else None,
                                 },
                                 run_id=job_id,
                                 resolved_context=pinned_context_payload,
