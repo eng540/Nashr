@@ -22,13 +22,25 @@ def compose_editorial_prompt(base_prompt: str, identity: PinnedIdentity | None) 
 
 
 def append_task_instructions(prompt: str, instructions: object) -> str:
-    """Append request-scoped instructions while retaining pinned product constraints."""
+    """Add request-scoped instructions as an explicit task requirement, without changing the pinned product."""
     if not isinstance(instructions, str) or not instructions.strip():
         return prompt
+
+    task = instructions.strip()
     return (
         f"{prompt.rstrip()}\n\n"
-        "TASK-SPECIFIC INSTRUCTIONS (request scope only)\n"
-        "Apply these instructions where compatible with the pinned product, recipe, "
-        "output contract, and policy. Do not replace or override those constraints.\n"
-        f"{instructions.strip()}"
+        "USER TASK REQUIREMENTS — APPLY TO THIS OUTPUT\n"
+        "The following text is the user's explicit instruction for this production request. "
+        "Treat it as a required task, not as background context or an optional suggestion.\n"
+        "Before drafting, identify the concrete deliverable implied by the instruction. "
+        "Then produce the requested deliverable in the final output, provided it is compatible "
+        "with the pinned product, recipe, output contract, and policy.\n"
+        "Do not silently omit the requested addition. If the instruction asks for information "
+        "that is not present in the supplied source, do not invent facts; use reliable knowledge "
+        "only when permitted by the product, and clearly qualify uncertainty where needed.\n"
+        "Keep this instruction scoped to this job. It does not modify the published product or "
+        "its pinned component versions.\n"
+        f"<user_task_instructions>\n{task}\n</user_task_instructions>\n"
+        "FINAL SELF-CHECK: Verify that the final output visibly addresses every concrete "
+        "requirement in the user task while respecting the pinned output contract."
     )
