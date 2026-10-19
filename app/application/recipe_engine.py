@@ -313,6 +313,7 @@ class ProduceImageArtifactCapability:
             metadata={
                 "title": unit.title,
                 "source_name": source_name,
+                "source": source_name,
                 "provider": generated.provider,
                 "model": generated.model,
                 "aspect_ratio": aspect_ratio,
@@ -536,6 +537,7 @@ class ProduceVideoArtifactCapability:
             metadata={
                 "title": unit.title,
                 "source_name": source_name,
+                "source": source_name,
                 "model": generated_model,
                 "aspect_ratio": aspect_ratio,
                 "resolution": resolution,
@@ -636,6 +638,7 @@ class ProduceAudioArtifactCapability:
             resolved_context=dict(context.resolved_context),
             metadata={
                 "title": drafted.title,
+                "source": drafted.source_name,
                 "transcript": drafted.content[:20000],
                 "model": generated.model,
                 "voice": voice,
@@ -1003,6 +1006,7 @@ class RenderApprovedTextCardCapability:
                 "ai_asset_identity": background_identity,
                 "source_review_status": source_review_status,
                 "source_name": source_name if len(source_references) == 1 else None,
+                "source": source_attribution or source_name or "المصدر",
                 "source_reference": source_reference if len(source_references) == 1 else None,
                 "card_title": card_title,
                 "source_attribution": source_attribution,
