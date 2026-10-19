@@ -104,6 +104,7 @@ async def test_post_artifact_populates_required_source_metadata_from_knowledge_u
         assert saved.output_contract_key == "TEST_POST_SOURCE_CONTRACT"
         assert saved.output_contract_version == 1
         assert saved.metadata["source"] == "generic-artifact.pdf"
+        assert saved.metadata["title"] == "Test source material"
 
 
 @pytest.mark.asyncio
