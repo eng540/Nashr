@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 type SectionKey = "products" | "recipes" | "identities" | "policies" | "output-contracts" | "prompts";
 type Stage = { key: string; capability_key: string; capability_version: number; configuration?: Record<string, unknown> };
 type Version = {
+  id?: string;
   version: number;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   definition?: Record<string, unknown>;
@@ -375,6 +376,34 @@ export function ControlPlanePage() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function updatePinnedComponentVersion(component: string, key: string, versionNumber: number) {
+    const componentSection: Record<string, SectionKey> = {
+      prompt: "prompts",
+      identity: "identities",
+      recipe: "recipes",
+      policy: "policies",
+      output_contract: "output-contracts",
+    };
+    const item = itemsBySection[componentSection[component]]?.find((candidate) => candidate.key === key);
+    const version = item?.versions?.find((candidate) => candidate.version === versionNumber);
+    if (!item || !version?.id || !["PUBLISHED", "ARCHIVED"].includes(version.status)) {
+      setError("تعذر تثبيت إصدار المكوّن المحدد؛ أعد تحميل مكونات التحكم وحاول مجددًا.");
+      return;
+    }
+    let references: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(form.component_versions_json || "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) references = { ...(parsed as Record<string, unknown>) };
+    } catch {
+      setError("مراجع مكونات المنتج غير صالحة؛ أعد تحميل الإصدار قبل التعديل.");
+      return;
+    }
+    references[component] = { key, version_id: version.id, version: version.version };
+    setForm((current) => ({ ...current, component_versions_json: JSON.stringify(references) }));
+    setMessage("تم اختيار " + key + " v" + version.version + " لهذا الإصدار من المنتج. احفظ المسودة ثم انشرها لتطبيق الاختيار.");
+    setError("");
+  }
+
   function bodyForCreate(): Record<string, unknown> {
     if (activeSection === "prompts") return { key: form.key.trim(), name: form.name.trim(), purpose: form.purpose.trim(), body: form.body };
     if (activeSection === "recipes") return { key: form.key.trim(), name: form.name.trim(), purpose: form.purpose.trim(), stages: definitionFor(activeSection, form, stages).stages };
@@ -602,9 +631,34 @@ export function ControlPlanePage() {
               { label: "عقد المخرج", component: "output_contract", key: form.output_contract_key, item: publishedContracts.find((item) => item.key === form.output_contract_key) },
             ].map(({ label, component, key, item }) => {
               const pinnedVersion = pinnedComponentVersion(selectedVersion, component);
+              const currentReference = (() => {
+                try {
+                  const parsed = JSON.parse(form.component_versions_json || "{}") as Record<string, { key?: string; version?: number }>;
+                  const reference = parsed[component];
+                  return reference?.key === key ? reference.version : undefined;
+                } catch { return pinnedVersion; }
+              })();
+              const selectableVersions = (item?.versions ?? [])
+                .filter((candidate) => ["PUBLISHED", "ARCHIVED"].includes(candidate.status) && Boolean(candidate.id))
+                .sort((a, b) => b.version - a.version);
               return <div key={label} className="rounded-lg bg-slate-50 p-3 text-sm">
                 <p className="text-xs text-slate-500">{label}</p><strong>{item ? item.name : key || "غير محدد"}</strong>
-                <p className="mt-1 text-xs">{pinnedVersion != null ? "الإصدار المثبت v" + pinnedVersion : item ? "سيُثبت الإصدار المنشور v" + item.active_version + " عند النشر" : "لا يوجد إصدار منشور"}</p>
+                <p className="mt-1 text-xs">{pinnedVersion != null ? "المثبت في الإصدار المحفوظ: v" + pinnedVersion : item ? "سيُثبت الإصدار المنشور v" + item.active_version + " عند النشر" : "لا يوجد إصدار منشور"}</p>
+                {item && selectableVersions.length > 0 && <label className="mt-2 block text-xs font-semibold">
+                  الإصدار الذي سيستخدمه المنتج
+                  <select
+                    aria-label={"إصدار " + label}
+                    value={currentReference == null ? "" : String(currentReference)}
+                    onChange={(event) => updatePinnedComponentVersion(component, key, Number(event.target.value))}
+                    disabled={formDisabled}
+                    className="mt-1 w-full rounded-lg border bg-white p-2 font-normal disabled:bg-slate-100"
+                  >
+                    <option value="">أحدث إصدار منشور عند نشر مسودة المنتج</option>
+                    {selectableVersions.map((candidate) => <option key={candidate.id} value={candidate.version}>
+                      v{candidate.version} · {statusLabel[candidate.status]}{candidate.version === item.active_version ? " · فعّال" : ""}
+                    </option>)}
+                  </select>
+                </label>}
               </div>;
             })}
           </div><p className="mt-3 text-xs text-slate-500">الهوية التحريرية والتعليمات مثبتتان بإصدارات محددة في بيان المنتج المنشور؛ لا يحق لتشغيل عابر تجاوزهما.</p></div>}
