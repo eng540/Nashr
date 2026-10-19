@@ -3,9 +3,10 @@ from uuid import uuid4
 
 import pytest
 
-from app.application.artifacts import persist_generic_artifact
+from app.application.artifacts import ensure_post_artifact, persist_generic_artifact
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
-from app.infrastructure.database.models import KnowledgeUnitModel, ProductionJobModel, SourceModel
+from app.domain.posts import Post, PostStatus
+from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobModel, SourceModel
 from app.infrastructure.database.session import SessionFactory
 
 
@@ -77,6 +78,32 @@ async def test_generic_text_artifact_persists_contract_provenance_and_is_idempot
         reused = await persist_generic_artifact(session, retry_artifact, resolved_context=context)
         assert reused.id == saved.id
         assert reused.content == saved.content
+
+
+@pytest.mark.asyncio
+async def test_post_artifact_populates_required_source_metadata_from_knowledge_unit():
+    now = datetime.now(timezone.utc)
+    context = contract_context("POST", "text/plain", "INLINE", ["source"], 1000)
+    async with SessionFactory() as session:
+        source_id, unit_id = await _source_unit(session)
+        post_id = uuid4()
+        session.add(PostModel(
+            id=post_id, knowledge_unit_id=unit_id, content="منشور موثق بالمصدر",
+            status=PostStatus.DRAFT.value,
+        ))
+        await session.commit()
+        post = Post(
+            id=post_id, knowledge_unit_id=unit_id, content="منشور موثق بالمصدر",
+            status=PostStatus.DRAFT, created_at=now, updated_at=now,
+            reviewed_at=None, review_note=None,
+        )
+        context["output_contract"]["key"] = "TEST_POST_SOURCE_CONTRACT"
+        saved = await ensure_post_artifact(
+            session, post, production_job_id=None, resolved_context=context,
+        )
+        assert saved.output_contract_key == "TEST_POST_SOURCE_CONTRACT"
+        assert saved.output_contract_version == 1
+        assert saved.metadata["source"] == "generic-artifact.pdf"
 
 
 @pytest.mark.asyncio
