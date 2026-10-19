@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +9,7 @@ from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.posts import Post
 from app.domain.output_contracts import OutputContractDefinition
 from app.domain.policies import ProductionPolicyDefinition
-from app.infrastructure.database.models import ArtifactModel, PostModel
+from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel
 
 
 def post_to_artifact(
