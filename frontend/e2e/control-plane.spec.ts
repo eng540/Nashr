@@ -113,13 +113,13 @@ test("a product can be created in Control Plane and selected in the factory", as
   await expect(page.getByLabel("الاسم")).toHaveValue("E2E UI Product");
   await page.getByLabel("الغرض").fill("Product created through the Control Plane UI");
   await expect(page.getByLabel("الغرض")).toHaveValue("Product created through the Control Plane UI");
-  await page.getByLabel("الوصفة المنشورة").selectOption("E2E_PRODUCT_RECIPE");
-  await page.getByLabel("السياسة المنشورة").selectOption("E2E_PRODUCT_POLICY");
-  await page.getByLabel("عقد المخرج المنشور").selectOption("E2E_PRODUCT_CONTRACT");
-  await page.getByLabel("التعليمات المنشورة").selectOption(promptKey);
-  await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(promptKey);
-  await page.getByLabel("الهوية التحريرية المنشورة").selectOption("E2E_PRODUCT_IDENTITY");
-  await expect(page.getByLabel("الهوية التحريرية المنشورة")).toHaveValue("E2E_PRODUCT_IDENTITY");
+  await page.getByLabel("الوصفة").selectOption("E2E_PRODUCT_RECIPE");
+  await page.getByLabel("السياسة").selectOption("E2E_PRODUCT_POLICY");
+  await page.getByLabel("عقد المخرج").selectOption("E2E_PRODUCT_CONTRACT");
+  await page.getByLabel("التعليمات").selectOption(promptKey);
+  await expect(page.getByLabel("التعليمات")).toHaveValue(promptKey);
+  await page.getByLabel("الهوية التحريرية").selectOption("E2E_PRODUCT_IDENTITY");
+  await expect(page.getByLabel("الهوية التحريرية")).toHaveValue("E2E_PRODUCT_IDENTITY");
   await page.getByLabel("الجمهور").fill("E2E audience");
   await page.getByLabel("تجربة المنتج").fill("E2E product experience");
   const createProductButton = page.getByRole("button", { name: "إنشاء ومسودة أولى" });
@@ -184,15 +184,15 @@ test("a published product can be derived independently with pinned components re
   // can still replace the just-edited form with the persisted prompt value.
   await page.reload();
   await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
-  await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
+  await expect(page.getByLabel("التعليمات").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
   await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
   // Wait for the asynchronous product-detail fetch to hydrate the selected form
   // before interacting with it; otherwise the response can overwrite the edit.
   await expect(page.getByLabel("المفتاح")).toHaveValue(derivedKey);
-  await expect(page.getByLabel("التعليمات المنشورة")).toBeEnabled();
-  await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
-  await page.getByLabel("التعليمات المنشورة").selectOption(alternatePromptKey);
-  await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(alternatePromptKey);
+  await expect(page.getByLabel("التعليمات")).toBeEnabled();
+  await expect(page.getByLabel("التعليمات").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
+  await page.getByLabel("التعليمات").selectOption(alternatePromptKey);
+  await expect(page.getByLabel("التعليمات")).toHaveValue(alternatePromptKey);
   await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
   await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
   const savedDraftResponse = await page.request.get("/api/control/products/" + derivedKey);
