@@ -113,13 +113,14 @@ function initialForm(_section: SectionKey, item?: ControlItem, version?: Version
   };
 }
 
-function pinnedComponentVersion(version: Version | undefined, component: string): number | undefined {
+function pinnedComponentVersion(version: Version | undefined, component: string, expectedKey: string): number | undefined {
   const refs = version?.definition?.component_versions;
   if (!refs || typeof refs !== "object" || Array.isArray(refs)) return undefined;
   const reference = (refs as Record<string, unknown>)[component];
   if (!reference || typeof reference !== "object" || Array.isArray(reference)) return undefined;
-  const value = (reference as { version?: unknown }).version;
-  return typeof value === "number" ? value : undefined;
+  const manifest = reference as { key?: unknown; version?: unknown };
+  if (manifest.key !== expectedKey) return undefined;
+  return typeof manifest.version === "number" ? manifest.version : undefined;
 }
 
 function stagesFromVersion(version?: Version): StageForm[] {
@@ -614,16 +615,16 @@ export function ControlPlanePage() {
 
         {activeSection === "products" && <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <SelectField label="الوصفة المنشورة" value={form.recipe_key} onChange={(value) => updateField("recipe_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر وصفة..." }, ...(!publishedRecipes.some((item) => item.key === form.recipe_key) && form.recipe_key ? [{ value: form.recipe_key, label: form.recipe_key + " · لا يوجد إصدار منشور" }] : []), ...publishedRecipes.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
-            <SelectField label="التعليمات المنشورة" value={form.prompt_key} onChange={(value) => updateField("prompt_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر تعليمات..." }, ...publishedPrompts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
-            <SelectField label="الهوية التحريرية المنشورة" value={form.identity_key} onChange={(value) => updateField("identity_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر هوية..." }, ...publishedIdentities.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
-            <SelectField label="السياسة المنشورة" value={form.policy_key} onChange={(value) => updateField("policy_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر سياسة..." }, ...(!publishedPolicies.some((item) => item.key === form.policy_key) && form.policy_key ? [{ value: form.policy_key, label: form.policy_key + " · لا يوجد إصدار منشور" }] : []), ...publishedPolicies.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
-            <SelectField label="عقد المخرج المنشور" value={form.output_contract_key} onChange={(value) => updateField("output_contract_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر عقد مخرج..." }, ...(!publishedContracts.some((item) => item.key === form.output_contract_key) && form.output_contract_key ? [{ value: form.output_contract_key, label: form.output_contract_key + " · لا يوجد إصدار منشور" }] : []), ...publishedContracts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+            <SelectField label="الوصفة" value={form.recipe_key} onChange={(value) => updateField("recipe_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر وصفة..." }, ...(!publishedRecipes.some((item) => item.key === form.recipe_key) && form.recipe_key ? [{ value: form.recipe_key, label: form.recipe_key + " · لا يوجد إصدار منشور" }] : []), ...publishedRecipes.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
+            <SelectField label="التعليمات" value={form.prompt_key} onChange={(value) => updateField("prompt_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر تعليمات..." }, ...publishedPrompts.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
+            <SelectField label="الهوية التحريرية" value={form.identity_key} onChange={(value) => updateField("identity_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر هوية..." }, ...publishedIdentities.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
+            <SelectField label="السياسة" value={form.policy_key} onChange={(value) => updateField("policy_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر سياسة..." }, ...(!publishedPolicies.some((item) => item.key === form.policy_key) && form.policy_key ? [{ value: form.policy_key, label: form.policy_key + " · لا يوجد إصدار منشور" }] : []), ...publishedPolicies.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
+            <SelectField label="عقد المخرج" value={form.output_contract_key} onChange={(value) => updateField("output_contract_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر عقد مخرج..." }, ...(!publishedContracts.some((item) => item.key === form.output_contract_key) && form.output_contract_key ? [{ value: form.output_contract_key, label: form.output_contract_key + " · لا يوجد إصدار منشور" }] : []), ...publishedContracts.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
             <Field label="الجمهور" value={form.audience} onChange={(value) => updateField("audience", value)} disabled={formDisabled} />
             <div className="md:col-span-2"><Field label="تجربة المنتج" value={form.experience} onChange={(value) => updateField("experience", value)} disabled={formDisabled} multiline /></div>
           </div>
@@ -636,7 +637,7 @@ export function ControlPlanePage() {
               { label: "السياسة", component: "policy", key: form.policy_key, item: publishedPolicies.find((item) => item.key === form.policy_key) },
               { label: "عقد المخرج", component: "output_contract", key: form.output_contract_key, item: publishedContracts.find((item) => item.key === form.output_contract_key) },
             ].map(({ label, component, key, item }) => {
-              const pinnedVersion = pinnedComponentVersion(selectedVersion, component);
+              const pinnedVersion = pinnedComponentVersion(selectedVersion, component, key);
               const currentReference = (() => {
                 try {
                   const parsed = JSON.parse(form.component_versions_json || "{}") as Record<string, { key?: string; version?: number }>;
