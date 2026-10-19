@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 type SectionKey = "products" | "recipes" | "identities" | "policies" | "output-contracts" | "prompts";
 type Stage = { key: string; capability_key: string; capability_version: number; configuration?: Record<string, unknown> };
 type Version = {
+  id?: string;
   version: number;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   definition?: Record<string, unknown>;
@@ -112,13 +113,14 @@ function initialForm(_section: SectionKey, item?: ControlItem, version?: Version
   };
 }
 
-function pinnedComponentVersion(version: Version | undefined, component: string): number | undefined {
+function pinnedComponentVersion(version: Version | undefined, component: string, expectedKey: string): number | undefined {
   const refs = version?.definition?.component_versions;
   if (!refs || typeof refs !== "object" || Array.isArray(refs)) return undefined;
   const reference = (refs as Record<string, unknown>)[component];
   if (!reference || typeof reference !== "object" || Array.isArray(reference)) return undefined;
-  const value = (reference as { version?: unknown }).version;
-  return typeof value === "number" ? value : undefined;
+  const manifest = reference as { key?: unknown; version?: unknown };
+  if (manifest.key !== expectedKey) return undefined;
+  return typeof manifest.version === "number" ? manifest.version : undefined;
 }
 
 function stagesFromVersion(version?: Version): StageForm[] {
@@ -249,7 +251,7 @@ function SelectField({ label, value, onChange, options, disabled = false }: {
   label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean;
 }) {
   return <label className="block text-sm font-semibold">{label}
-    <select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100">
+    <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100">
       {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>
   </label>;
@@ -373,6 +375,40 @@ export function ControlPlanePage() {
 
   function updateField(key: string, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updatePinnedComponentVersion(component: string, key: string, versionNumber: number | null) {
+    const componentSection: Record<string, SectionKey> = {
+      prompt: "prompts",
+      identity: "identities",
+      recipe: "recipes",
+      policy: "policies",
+      output_contract: "output-contracts",
+    };
+    const item = itemsBySection[componentSection[component]]?.find((candidate) => candidate.key === key);
+    const version = versionNumber == null ? undefined : item?.versions?.find((candidate) => candidate.version === versionNumber);
+    if (!item || (versionNumber != null && (!version?.id || !["PUBLISHED", "ARCHIVED"].includes(version.status)))) {
+      setError("تعذر تثبيت إصدار المكوّن المحدد؛ أعد تحميل مكونات التحكم وحاول مجددًا.");
+      return;
+    }
+    let references: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(form.component_versions_json || "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) references = { ...(parsed as Record<string, unknown>) };
+    } catch {
+      setError("مراجع مكونات المنتج غير صالحة؛ أعد تحميل الإصدار قبل التعديل.");
+      return;
+    }
+    if (versionNumber == null) {
+      delete references[component];
+    } else {
+      references[component] = { key, version_id: version!.id, version: version!.version };
+    }
+    setForm((current) => ({ ...current, component_versions_json: JSON.stringify(references) }));
+    setMessage(versionNumber == null
+      ? "سيُثبت أحدث إصدار منشور من " + key + " عند نشر مسودة المنتج."
+      : "تم اختيار " + key + " v" + version!.version + " لهذا الإصدار من المنتج. احفظ المسودة ثم انشرها لتطبيق الاختيار.");
+    setError("");
   }
 
   function bodyForCreate(): Record<string, unknown> {
@@ -579,16 +615,16 @@ export function ControlPlanePage() {
 
         {activeSection === "products" && <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <SelectField label="الوصفة المنشورة" value={form.recipe_key} onChange={(value) => updateField("recipe_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر وصفة..." }, ...(!publishedRecipes.some((item) => item.key === form.recipe_key) && form.recipe_key ? [{ value: form.recipe_key, label: form.recipe_key + " · لا يوجد إصدار منشور" }] : []), ...publishedRecipes.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
-            <SelectField label="التعليمات المنشورة" value={form.prompt_key} onChange={(value) => updateField("prompt_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر تعليمات..." }, ...publishedPrompts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
-            <SelectField label="الهوية التحريرية المنشورة" value={form.identity_key} onChange={(value) => updateField("identity_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر هوية..." }, ...publishedIdentities.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
-            <SelectField label="السياسة المنشورة" value={form.policy_key} onChange={(value) => updateField("policy_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر سياسة..." }, ...(!publishedPolicies.some((item) => item.key === form.policy_key) && form.policy_key ? [{ value: form.policy_key, label: form.policy_key + " · لا يوجد إصدار منشور" }] : []), ...publishedPolicies.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
-            <SelectField label="عقد المخرج المنشور" value={form.output_contract_key} onChange={(value) => updateField("output_contract_key", value)} disabled={formDisabled}
-              options={[{ value: "", label: "اختر عقد مخرج..." }, ...(!publishedContracts.some((item) => item.key === form.output_contract_key) && form.output_contract_key ? [{ value: form.output_contract_key, label: form.output_contract_key + " · لا يوجد إصدار منشور" }] : []), ...publishedContracts.map((item) => ({ value: item.key, label: item.name + " · v" + item.active_version }))]} />
+            <SelectField label="الوصفة" value={form.recipe_key} onChange={(value) => updateField("recipe_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر وصفة..." }, ...(!publishedRecipes.some((item) => item.key === form.recipe_key) && form.recipe_key ? [{ value: form.recipe_key, label: form.recipe_key + " · لا يوجد إصدار منشور" }] : []), ...publishedRecipes.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
+            <SelectField label="التعليمات" value={form.prompt_key} onChange={(value) => updateField("prompt_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر تعليمات..." }, ...publishedPrompts.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
+            <SelectField label="الهوية التحريرية" value={form.identity_key} onChange={(value) => updateField("identity_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر هوية..." }, ...publishedIdentities.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
+            <SelectField label="السياسة" value={form.policy_key} onChange={(value) => updateField("policy_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر سياسة..." }, ...(!publishedPolicies.some((item) => item.key === form.policy_key) && form.policy_key ? [{ value: form.policy_key, label: form.policy_key + " · لا يوجد إصدار منشور" }] : []), ...publishedPolicies.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
+            <SelectField label="عقد المخرج" value={form.output_contract_key} onChange={(value) => updateField("output_contract_key", value)} disabled={formDisabled}
+              options={[{ value: "", label: "اختر عقد مخرج..." }, ...(!publishedContracts.some((item) => item.key === form.output_contract_key) && form.output_contract_key ? [{ value: form.output_contract_key, label: form.output_contract_key + " · لا يوجد إصدار منشور" }] : []), ...publishedContracts.map((item) => ({ value: item.key, label: item.name + " · " + item.key }))]} />
             <Field label="الجمهور" value={form.audience} onChange={(value) => updateField("audience", value)} disabled={formDisabled} />
             <div className="md:col-span-2"><Field label="تجربة المنتج" value={form.experience} onChange={(value) => updateField("experience", value)} disabled={formDisabled} multiline /></div>
           </div>
@@ -601,10 +637,35 @@ export function ControlPlanePage() {
               { label: "السياسة", component: "policy", key: form.policy_key, item: publishedPolicies.find((item) => item.key === form.policy_key) },
               { label: "عقد المخرج", component: "output_contract", key: form.output_contract_key, item: publishedContracts.find((item) => item.key === form.output_contract_key) },
             ].map(({ label, component, key, item }) => {
-              const pinnedVersion = pinnedComponentVersion(selectedVersion, component);
+              const pinnedVersion = pinnedComponentVersion(selectedVersion, component, key);
+              const currentReference = (() => {
+                try {
+                  const parsed = JSON.parse(form.component_versions_json || "{}") as Record<string, { key?: string; version?: number }>;
+                  const reference = parsed[component];
+                  return reference?.key === key ? reference.version : undefined;
+                } catch { return pinnedVersion; }
+              })();
+              const selectableVersions = (item?.versions ?? [])
+                .filter((candidate) => ["PUBLISHED", "ARCHIVED"].includes(candidate.status) && Boolean(candidate.id))
+                .sort((a, b) => b.version - a.version);
               return <div key={label} className="rounded-lg bg-slate-50 p-3 text-sm">
                 <p className="text-xs text-slate-500">{label}</p><strong>{item ? item.name : key || "غير محدد"}</strong>
-                <p className="mt-1 text-xs">{pinnedVersion != null ? "الإصدار المثبت v" + pinnedVersion : item ? "سيُثبت الإصدار المنشور v" + item.active_version + " عند النشر" : "لا يوجد إصدار منشور"}</p>
+                <p className="mt-1 text-xs">{pinnedVersion != null ? "المثبت في الإصدار المحفوظ: v" + pinnedVersion : item ? "سيُثبت الإصدار المنشور v" + item.active_version + " عند النشر" : "لا يوجد إصدار منشور"}</p>
+                {item && selectableVersions.length > 0 && <label className="mt-2 block text-xs font-semibold">
+                  الإصدار الذي سيستخدمه المنتج
+                  <select
+                    aria-label={"إصدار " + label}
+                    value={currentReference == null ? "" : String(currentReference)}
+                    onChange={(event) => updatePinnedComponentVersion(component, key, event.target.value === "" ? null : Number(event.target.value))}
+                    disabled={formDisabled}
+                    className="mt-1 w-full rounded-lg border bg-white p-2 font-normal disabled:bg-slate-100"
+                  >
+                    <option value="">أحدث إصدار منشور عند نشر مسودة المنتج</option>
+                    {selectableVersions.map((candidate) => <option key={candidate.id} value={candidate.version}>
+                      v{candidate.version} · {statusLabel[candidate.status]}{candidate.version === item.active_version ? " · فعّال" : ""}
+                    </option>)}
+                  </select>
+                </label>}
               </div>;
             })}
           </div><p className="mt-3 text-xs text-slate-500">الهوية التحريرية والتعليمات مثبتتان بإصدارات محددة في بيان المنتج المنشور؛ لا يحق لتشغيل عابر تجاوزهما.</p></div>}

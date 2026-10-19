@@ -29,6 +29,10 @@ async def test_product_lifecycle_versions_and_published_reference_validation():
             "body": "Original test prompt version.",
         })
         assert prompt.status_code == 201, prompt.text
+        assert prompt.json()["created_version"]["id"]
+        prompt_detail = await client.get("/api/control/prompts/TEST_PRODUCT_PROMPT")
+        assert prompt_detail.status_code == 200, prompt_detail.text
+        assert prompt_detail.json()["versions"][0]["id"] == prompt.json()["created_version"]["id"]
         assert (await client.post("/api/control/prompts/TEST_PRODUCT_PROMPT/versions/1/publish")).status_code == 200
 
         identity = await client.post("/api/control/identities", json={

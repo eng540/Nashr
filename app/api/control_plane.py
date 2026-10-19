@@ -49,6 +49,7 @@ def _recipe_stages(payload: RecipeStagesRequest | RecipeCreateRequest) -> list[d
 
 def _version_payload(version) -> dict[str, Any]:
     return {
+        "id": str(version.id),
         "version": version.version,
         "body": version.body,
         "status": version.status,
