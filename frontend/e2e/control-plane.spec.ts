@@ -151,6 +151,7 @@ test("a product can be created in Control Plane and selected in the factory", as
   expect((await page.request.post("/api/control/output-contracts/E2E_PRODUCT_CONTRACT/versions/2/publish")).ok()).toBeTruthy();
 
   await page.reload();
+  await page.waitForLoadState("networkidle");
   await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
   await page.getByRole("button", { name: /E2E_UI_PRODUCT/ }).click();
   await expect(page.getByLabel("المفتاح")).toHaveValue("E2E_UI_PRODUCT");
@@ -218,6 +219,7 @@ test("a published product can be derived independently with pinned components re
   // initial load to finish before selecting the derived draft. Otherwise reload()
   // can still replace the just-edited form with the persisted prompt value.
   await page.reload();
+  await page.waitForLoadState("networkidle");
   await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
   await expect(page.getByLabel("التعليمات", { exact: true }).locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
   await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
