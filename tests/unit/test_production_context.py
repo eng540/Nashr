@@ -316,4 +316,6 @@ def test_request_instruction_composition_keeps_base_prompt():
     assert base in result
     assert instruction in result
     assert "TASK-SPECIFIC INSTRUCTIONS" in result
+    assert "explicit requirements from the user" in result
+    assert "Do not ignore a compatible requirement" in result
     assert append_task_instructions(base, None) == base

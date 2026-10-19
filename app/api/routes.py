@@ -20,6 +20,7 @@ from app.application.posts import ProducePost
 from app.application.control_plane import ControlPlaneResolver
 from app.application.reviews import ReviewPost, bulk_approve
 from app.application.production_jobs import create_production_job, resume_production_job, run_production_job
+from app.application.identity_context import append_task_instructions, compose_editorial_prompt
 from app.application.artifacts import load_artifact
 from app.application.scheduling import (
     build_schedule_times, create_schedule, get_schedule, list_schedule_rows, next_scheduled_at,
@@ -29,6 +30,7 @@ from app.application.scheduling import (
 )
 from app.domain.production_jobs import ProductionScope
 from app.domain.production_context import ResolvedProductionContext
+from app.domain.products import ProductionProductDefinition
 from app.infrastructure.database.models import (
     ArtifactModel,
     KnowledgeUnitModel,
@@ -325,6 +327,36 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
     request_materials = [{"id": str(material_id), "title": title} for material_id, title in material_rows]
     custom_instructions = request.get("custom_instructions")
     input_text = request.get("input_text")
+
+    # Show the effective request-scoped guidance separately from the immutable
+    # base prompt. This is reconstructed from the exact job snapshot and claim,
+    # never from today's active Control Plane versions.
+    effective_prompt = job.editorial_prompt_body or ""
+    pinned_context = None
+    try:
+        if job.resolved_context is not None:
+            pinned_context = ResolvedProductionContext.from_dict(job.resolved_context)
+            effective_prompt = compose_editorial_prompt(effective_prompt, pinned_context.identity)
+            if pinned_context.product is not None:
+                product_definition = ProductionProductDefinition.from_dict(pinned_context.product.definition)
+                effective_prompt = (
+                    f"{effective_prompt.rstrip()}\n\nProduct audience: {product_definition.audience}"
+                    f"\nProduct experience: {product_definition.experience}"
+                )
+        effective_prompt = append_task_instructions(effective_prompt, custom_instructions)
+        if pinned_context is not None and pinned_context.recipe is not None:
+            for stage in pinned_context.recipe.stages:
+                stage_style = stage.configuration.get("style_instructions")
+                if isinstance(stage_style, str) and stage_style.strip():
+                    effective_prompt = (
+                        f"{effective_prompt.rstrip()}\n\nRecipe-specific instructions ({stage.key}):"
+                        f"\n{stage_style.strip()}"
+                    )
+    except (TypeError, ValueError):
+        # Historical or malformed snapshots should remain inspectable; do not
+        # invent a current prompt when the pinned context cannot be reconstructed.
+        effective_prompt = None
+
     materials = (await session.execute(
         select(KnowledgeUnitModel.id, KnowledgeUnitModel.title)
         .join(ProductionJobItemModel, ProductionJobItemModel.knowledge_unit_id == KnowledgeUnitModel.id)
@@ -340,6 +372,7 @@ async def _load_production_job_payload(session: AsyncSession, job: ProductionJob
         ),
         "product_key": request.get("product_key"),
         "custom_instructions": custom_instructions if isinstance(custom_instructions, str) else None,
+        "effective_prompt_preview": effective_prompt,
         "input_title": request.get("input_title"),
         "input_text_preview": input_text[:500] if isinstance(input_text, str) else None,
         "source_id": request.get("source_id"),

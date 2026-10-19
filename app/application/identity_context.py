@@ -28,7 +28,9 @@ def append_task_instructions(prompt: str, instructions: object) -> str:
     return (
         f"{prompt.rstrip()}\n\n"
         "TASK-SPECIFIC INSTRUCTIONS (request scope only)\n"
-        "Apply these instructions where compatible with the pinned product, recipe, "
-        "output contract, and policy. Do not replace or override those constraints.\n"
+        "These are explicit requirements from the user for this production run, not optional suggestions. "
+        "Implement each requirement in the generated content whenever it does not conflict with a higher-priority product purpose, "
+        "recipe constraints, output contract, or policy. Do not ignore a compatible requirement merely because the base editorial prompt is generic. "
+        "Do not replace or override product, recipe, output-contract, or policy constraints.\n"
         f"{instructions.strip()}"
     )
