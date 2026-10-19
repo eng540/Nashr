@@ -376,7 +376,7 @@ export function ControlPlanePage() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function updatePinnedComponentVersion(component: string, key: string, versionNumber: number) {
+  function updatePinnedComponentVersion(component: string, key: string, versionNumber: number | null) {
     const componentSection: Record<string, SectionKey> = {
       prompt: "prompts",
       identity: "identities",
@@ -385,8 +385,8 @@ export function ControlPlanePage() {
       output_contract: "output-contracts",
     };
     const item = itemsBySection[componentSection[component]]?.find((candidate) => candidate.key === key);
-    const version = item?.versions?.find((candidate) => candidate.version === versionNumber);
-    if (!item || !version?.id || !["PUBLISHED", "ARCHIVED"].includes(version.status)) {
+    const version = versionNumber == null ? undefined : item?.versions?.find((candidate) => candidate.version === versionNumber);
+    if (!item || (versionNumber != null && (!version?.id || !["PUBLISHED", "ARCHIVED"].includes(version.status)))) {
       setError("تعذر تثبيت إصدار المكوّن المحدد؛ أعد تحميل مكونات التحكم وحاول مجددًا.");
       return;
     }
@@ -398,9 +398,15 @@ export function ControlPlanePage() {
       setError("مراجع مكونات المنتج غير صالحة؛ أعد تحميل الإصدار قبل التعديل.");
       return;
     }
-    references[component] = { key, version_id: version.id, version: version.version };
+    if (versionNumber == null) {
+      delete references[component];
+    } else {
+      references[component] = { key, version_id: version!.id, version: version!.version };
+    }
     setForm((current) => ({ ...current, component_versions_json: JSON.stringify(references) }));
-    setMessage("تم اختيار " + key + " v" + version.version + " لهذا الإصدار من المنتج. احفظ المسودة ثم انشرها لتطبيق الاختيار.");
+    setMessage(versionNumber == null
+      ? "سيُثبت أحدث إصدار منشور من " + key + " عند نشر مسودة المنتج."
+      : "تم اختيار " + key + " v" + version!.version + " لهذا الإصدار من المنتج. احفظ المسودة ثم انشرها لتطبيق الاختيار.");
     setError("");
   }
 
@@ -649,7 +655,7 @@ export function ControlPlanePage() {
                   <select
                     aria-label={"إصدار " + label}
                     value={currentReference == null ? "" : String(currentReference)}
-                    onChange={(event) => updatePinnedComponentVersion(component, key, Number(event.target.value))}
+                    onChange={(event) => updatePinnedComponentVersion(component, key, event.target.value === "" ? null : Number(event.target.value))}
                     disabled={formDisabled}
                     className="mt-1 w-full rounded-lg border bg-white p-2 font-normal disabled:bg-slate-100"
                   >
