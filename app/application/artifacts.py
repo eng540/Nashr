@@ -45,6 +45,7 @@ async def ensure_post_artifact(
     contract_key = None
     contract_version = None
     contract_mime_type = None
+    metadata: dict[str, object] = {}
     if resolved_context is not None and "output_contract" in resolved_context:
         from app.domain.production_context import PinnedOutputContract
         pinned = PinnedOutputContract.from_dict(resolved_context["output_contract"])
