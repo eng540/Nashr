@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from app.application.artifacts import ensure_post_artifact, persist_generic_artifact
+from app.application.recipe_engine import ProduceTextArtifactCapability, ProductionExecutionContext
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.posts import Post, PostStatus
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel, ProductionJobModel, SourceModel
@@ -78,6 +79,35 @@ async def test_generic_text_artifact_persists_contract_provenance_and_is_idempot
         reused = await persist_generic_artifact(session, retry_artifact, resolved_context=context)
         assert reused.id == saved.id
         assert reused.content == saved.content
+
+
+@pytest.mark.asyncio
+async def test_text_capability_populates_required_source_and_title_metadata():
+    now = datetime.now(timezone.utc)
+    context = contract_context("TEXT", "text/plain", "INLINE", ["source", "title"], 1000)
+    async with SessionFactory() as session:
+        source_id, unit_id = await _source_unit(session)
+        job_id = uuid4()
+        session.add(ProductionJobModel(
+            id=job_id, source_id=source_id, scope="SOURCE", status="RUNNING", total_items=1,
+        ))
+        await session.commit()
+
+        class FakeDrafter:
+            async def draft(self, **kwargs):
+                return "مادة نصية للاختبار"
+
+        capability = ProduceTextArtifactCapability(FakeDrafter())
+        execution = ProductionExecutionContext(
+            session=session,
+            inputs={"knowledge_unit_id": unit_id},
+            configuration={"editorial_prompt": {"body": "اكتب نصًا دقيقًا."}},
+            run_id=job_id,
+            resolved_context=context,
+        )
+        artifact = await capability.execute(execution)
+        assert artifact.metadata["source"] == "generic-artifact.pdf"
+        assert artifact.metadata["title"] == "Test source material"
 
 
 @pytest.mark.asyncio
