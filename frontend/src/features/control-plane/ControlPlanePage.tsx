@@ -251,7 +251,7 @@ function SelectField({ label, value, onChange, options, disabled = false }: {
   label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean;
 }) {
   return <label className="block text-sm font-semibold">{label}
-    <select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100">
+    <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100">
       {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>
   </label>;
