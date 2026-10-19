@@ -29,7 +29,7 @@ def append_task_instructions(prompt: str, instructions: object) -> str:
     task = instructions.strip()
     return (
         f"{prompt.rstrip()}\n\n"
-        "USER TASK REQUIREMENTS — APPLY TO THIS OUTPUT\n"
+        "USER TASK REQUIREMENTS — APPLY TO THIS OUTPUT (TASK-SPECIFIC INSTRUCTIONS)\n"
         "The following text is the user's explicit instruction for this production request. "
         "Treat it as a required task, not as background context or an optional suggestion.\n"
         "Before drafting, identify the concrete deliverable implied by the instruction. "
