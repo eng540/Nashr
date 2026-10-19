@@ -56,7 +56,7 @@ async def ensure_post_artifact(
         if definition.max_content_chars is not None and len(post.content) > definition.max_content_chars:
             raise ValueError("Generated Post exceeds the pinned output contract content limit.")
         metadata: dict[str, object] = {}
-        if "source" in definition.required_metadata_fields:
+        if any(field in definition.required_metadata_fields for field in ("source", "title")):
             source_result = await session.execute(
                 select(KnowledgeUnitModel)
                 .options(selectinload(KnowledgeUnitModel.source))
@@ -64,10 +64,13 @@ async def ensure_post_artifact(
             )
             unit = source_result.scalar_one_or_none()
             if unit is None:
-                raise ValueError("Cannot populate required artifact metadata source: source material was not found.")
-            source = unit.source
-            source_name = ((source.book_title or source.filename) if source is not None else None) or "المصدر"
-            metadata["source"] = source_name
+                raise ValueError("Cannot populate required artifact metadata: source material was not found.")
+            if "title" in definition.required_metadata_fields:
+                metadata["title"] = unit.title
+            if "source" in definition.required_metadata_fields:
+                source = unit.source
+                source_name = ((source.book_title or source.filename) if source is not None else None) or "المصدر"
+                metadata["source"] = source_name
         missing = [field for field in definition.required_metadata_fields if field not in metadata]
         if missing:
             raise ValueError("Generated Artifact is missing required metadata fields: " + ", ".join(missing))
