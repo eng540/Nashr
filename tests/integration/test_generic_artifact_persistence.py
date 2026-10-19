@@ -83,7 +83,7 @@ async def test_generic_text_artifact_persists_contract_provenance_and_is_idempot
 @pytest.mark.asyncio
 async def test_post_artifact_populates_required_source_metadata_from_knowledge_unit():
     now = datetime.now(timezone.utc)
-    context = contract_context("POST", "text/plain", "INLINE", ["source"], 1000)
+    context = contract_context("POST", "text/plain", "INLINE", ["source", "title"], 1000)
     async with SessionFactory() as session:
         source_id, unit_id = await _source_unit(session)
         post_id = uuid4()
