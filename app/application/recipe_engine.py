@@ -155,7 +155,7 @@ class ProduceTextArtifactCapability:
             output_contract_key=pinned_contract.key,
             output_contract_version=pinned_contract.version,
             resolved_context=dict(context.resolved_context),
-            metadata={"title": drafted.title},
+            metadata={"title": drafted.title, "source": drafted.source_name},
         )
         return await persist_generic_artifact(
             context.session, artifact, resolved_context=dict(context.resolved_context)
