@@ -113,13 +113,16 @@ test("a product can be created in Control Plane and selected in the factory", as
   await expect(page.getByLabel("الاسم")).toHaveValue("E2E UI Product");
   await page.getByLabel("الغرض").fill("Product created through the Control Plane UI");
   await expect(page.getByLabel("الغرض")).toHaveValue("Product created through the Control Plane UI");
-  await page.getByLabel("الوصفة المنشورة").selectOption("E2E_PRODUCT_RECIPE");
-  await page.getByLabel("السياسة المنشورة").selectOption("E2E_PRODUCT_POLICY");
-  await page.getByLabel("عقد المخرج المنشور").selectOption("E2E_PRODUCT_CONTRACT");
-  await page.getByLabel("التعليمات المنشورة").selectOption(promptKey);
-  await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(promptKey);
-  await page.getByLabel("الهوية التحريرية المنشورة").selectOption("E2E_PRODUCT_IDENTITY");
-  await expect(page.getByLabel("الهوية التحريرية المنشورة")).toHaveValue("E2E_PRODUCT_IDENTITY");
+  await page.getByLabel("الوصفة", { exact: true }).selectOption("E2E_PRODUCT_RECIPE");
+  await expect(page.getByLabel("الوصفة", { exact: true })).toHaveValue("E2E_PRODUCT_RECIPE");
+  await page.getByLabel("السياسة", { exact: true }).selectOption("E2E_PRODUCT_POLICY");
+  await expect(page.getByLabel("السياسة", { exact: true })).toHaveValue("E2E_PRODUCT_POLICY");
+  await page.getByLabel("عقد المخرج", { exact: true }).selectOption("E2E_PRODUCT_CONTRACT");
+  await expect(page.getByLabel("عقد المخرج", { exact: true })).toHaveValue("E2E_PRODUCT_CONTRACT");
+  await page.getByLabel("التعليمات", { exact: true }).selectOption(promptKey);
+  await expect(page.getByLabel("التعليمات", { exact: true })).toHaveValue(promptKey);
+  await page.getByLabel("الهوية التحريرية", { exact: true }).selectOption("E2E_PRODUCT_IDENTITY");
+  await expect(page.getByLabel("الهوية التحريرية", { exact: true })).toHaveValue("E2E_PRODUCT_IDENTITY");
   await page.getByLabel("الجمهور").fill("E2E audience");
   await page.getByLabel("تجربة المنتج").fill("E2E product experience");
   const createProductButton = page.getByRole("button", { name: "إنشاء ومسودة أولى" });
@@ -137,8 +140,44 @@ test("a product can be created in Control Plane and selected in the factory", as
   expect(publishedProductVersion.definition.prompt_key).toBe(promptKey);
   expect(publishedProductVersion.definition.identity_key).toBe("E2E_PRODUCT_IDENTITY");
 
+  // Publish a new contract version, then explicitly pin it to a new product version.
+  const contractV2 = await page.request.post("/api/control/output-contracts/E2E_PRODUCT_CONTRACT/versions", { data: {
+    definition: {
+      artifact_kind: "POST",
+      mime_type: "text/plain",
+      content_mode: "INLINE",
+      required_metadata_fields: ["source", "title"],
+      max_content_chars: 10000,
+    },
+  } });
+  expect(contractV2.ok()).toBeTruthy();
+  expect((await page.request.post("/api/control/output-contracts/E2E_PRODUCT_CONTRACT/versions/2/publish")).ok()).toBeTruthy();
+
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
+  await page.getByRole("button", { name: /E2E_UI_PRODUCT/ }).click();
+  await expect(page.getByLabel("المفتاح")).toHaveValue("E2E_UI_PRODUCT");
+  await page.getByRole("button", { name: "إنشاء مسودة من هذا الإصدار" }).click();
+  await expect(page.getByText("تم إنشاء مسودة إصدار جديدة من الإصدار المحدد.")).toBeVisible();
+  await expect(page.getByLabel("إصدار عقد المخرج")).toBeVisible();
+  await page.getByLabel("إصدار عقد المخرج").selectOption("2");
+  await expect(page.getByLabel("إصدار عقد المخرج")).toHaveValue("2");
+  await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
+  await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
+  await page.getByRole("button", { name: "نشر الإصدار" }).click();
+  await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
+
+  const upgradedProductResponse = await page.request.get("/api/control/products/E2E_UI_PRODUCT");
+  expect(upgradedProductResponse.ok()).toBeTruthy();
+  const upgradedProduct = await upgradedProductResponse.json();
+  const upgradedV2 = upgradedProduct.versions.find((version: { version: number; status: string }) => version.version === 2 && version.status === "PUBLISHED");
+  expect(upgradedV2.definition.component_versions.output_contract.version).toBe(2);
+  const originalV1 = upgradedProduct.versions.find((version: { version: number }) => version.version === 1);
+  expect(originalV1.definition.component_versions.output_contract.version).toBe(1);
+
   await page.goto("/posts/workspace");
-  await expect(page.getByLabel("المنتج")).toContainText("E2E UI Product · v1");
+  await expect(page.getByLabel("المنتج")).toContainText("E2E UI Product · v2");
   await page.getByLabel("المنتج").selectOption("E2E_UI_PRODUCT");
   await expect(page.getByLabel("المنتج")).toHaveValue("E2E_UI_PRODUCT");
 });
@@ -183,16 +222,17 @@ test("a published product can be derived independently with pinned components re
   // initial load to finish before selecting the derived draft. Otherwise reload()
   // can still replace the just-edited form with the persisted prompt value.
   await page.reload();
+  await page.waitForLoadState("networkidle");
   await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
-  await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
+  await expect(page.getByLabel("التعليمات", { exact: true }).locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
   await page.getByRole("button", { name: new RegExp(derivedKey) }).click();
   // Wait for the asynchronous product-detail fetch to hydrate the selected form
   // before interacting with it; otherwise the response can overwrite the edit.
   await expect(page.getByLabel("المفتاح")).toHaveValue(derivedKey);
-  await expect(page.getByLabel("التعليمات المنشورة")).toBeEnabled();
-  await expect(page.getByLabel("التعليمات المنشورة").locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
-  await page.getByLabel("التعليمات المنشورة").selectOption(alternatePromptKey);
-  await expect(page.getByLabel("التعليمات المنشورة")).toHaveValue(alternatePromptKey);
+  await expect(page.getByLabel("التعليمات", { exact: true })).toBeEnabled();
+  await expect(page.getByLabel("التعليمات", { exact: true }).locator('option[value="' + alternatePromptKey + '"]')).toHaveCount(1);
+  await page.getByLabel("التعليمات", { exact: true }).selectOption(alternatePromptKey);
+  await expect(page.getByLabel("التعليمات", { exact: true })).toHaveValue(alternatePromptKey);
   await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
   await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
   const savedDraftResponse = await page.request.get("/api/control/products/" + derivedKey);

@@ -131,6 +131,7 @@ async def persist_thematic_draft(
         "title": result.theme,
         "language": "ar",
         "theme": result.theme,
+        "source": "؛ ".join(dict.fromkeys(source.source_name for source in result.sources)),
         "composition_mode": "MULTI_SOURCE_THEMATIC",
         "source_knowledge_unit_ids": source_ids,
         "sources": [
