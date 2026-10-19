@@ -137,6 +137,41 @@ test("a product can be created in Control Plane and selected in the factory", as
   expect(publishedProductVersion.definition.prompt_key).toBe(promptKey);
   expect(publishedProductVersion.definition.identity_key).toBe("E2E_PRODUCT_IDENTITY");
 
+  // Publish a new contract version, then explicitly pin it to a new product version.
+  const contractV2 = await page.request.post("/api/control/output-contracts/E2E_PRODUCT_CONTRACT/versions", { data: {
+    definition: {
+      artifact_kind: "POST",
+      mime_type: "text/plain",
+      content_mode: "INLINE",
+      required_metadata_fields: ["source", "title"],
+      max_content_chars: 10000,
+    },
+  } });
+  expect(contractV2.ok()).toBeTruthy();
+  expect((await page.request.post("/api/control/output-contracts/E2E_PRODUCT_CONTRACT/versions/2/publish")).ok()).toBeTruthy();
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "المنتجات" })).toBeEnabled();
+  await page.getByRole("button", { name: /E2E_UI_PRODUCT/ }).click();
+  await expect(page.getByLabel("المفتاح")).toHaveValue("E2E_UI_PRODUCT");
+  await page.getByRole("button", { name: "إنشاء مسودة من هذا الإصدار" }).click();
+  await expect(page.getByText("تم إنشاء مسودة إصدار جديدة من الإصدار المحدد.")).toBeVisible();
+  await expect(page.getByLabel("إصدار عقد المخرج")).toBeVisible();
+  await page.getByLabel("إصدار عقد المخرج").selectOption("2");
+  await expect(page.getByLabel("إصدار عقد المخرج")).toHaveValue("2");
+  await page.getByRole("button", { name: "حفظ / إنشاء مسودة" }).click();
+  await expect(page.getByText("تم حفظ تعديلات المسودة.")).toBeVisible();
+  await page.getByRole("button", { name: "نشر الإصدار" }).click();
+  await expect(page.getByText("تم نشر الإصدار بعد تحقق الخادم.")).toBeVisible();
+
+  const upgradedProductResponse = await page.request.get("/api/control/products/E2E_UI_PRODUCT");
+  expect(upgradedProductResponse.ok()).toBeTruthy();
+  const upgradedProduct = await upgradedProductResponse.json();
+  const upgradedV2 = upgradedProduct.versions.find((version: { version: number; status: string }) => version.version === 2 && version.status === "PUBLISHED");
+  expect(upgradedV2.definition.component_versions.output_contract.version).toBe(2);
+  const originalV1 = upgradedProduct.versions.find((version: { version: number }) => version.version === 1);
+  expect(originalV1.definition.component_versions.output_contract.version).toBe(1);
+
   await page.goto("/posts/workspace");
   await expect(page.getByLabel("المنتج")).toContainText("E2E UI Product · v1");
   await page.getByLabel("المنتج").selectOption("E2E_UI_PRODUCT");
