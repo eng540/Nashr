@@ -85,7 +85,7 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
             "artifact_kind": "IMAGE",
             "mime_type": "image/png",
             "content_mode": "STORAGE_URI",
-            "required_metadata_fields": ["title"],
+            "required_metadata_fields": ["title", "source"],
             "max_content_chars": None,
         },
     }
@@ -156,6 +156,7 @@ async def test_image_capability_persists_private_draft_and_reuses_it_on_retry():
     assert artifact.storage_uri.startswith("s3://nashr-media/artifacts/")
     assert artifact.mime_type == "image/png"
     assert artifact.metadata["title"] == "A literary scene"
+    assert artifact.metadata["source"] == "Test Book"
     assert row.review_status == "DRAFT"
     assert row.output_contract_key == "IMAGE_ARTIFACT"
     assert row.output_contract_version == 1
