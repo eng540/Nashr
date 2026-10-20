@@ -140,10 +140,7 @@ BOOK_TO_TELEGRAM_POST = ProductionRecipe(
 def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
     """Validate only the public configuration contract of built-in capabilities."""
     if (stage.capability_key, stage.capability_version) in {("produce_post", 1), ("produce_text_artifact", 1), ("compose_thematic_artifact", 1)}:
-        allowed = {"style_instructions"}
-        if (stage.capability_key, stage.capability_version) in {("produce_post", 1), ("produce_text_artifact", 1)}:
-            allowed.add("formatting_instructions")
-        unknown = set(stage.configuration) - allowed
+        unknown = set(stage.configuration) - {"style_instructions"}
         if unknown:
             raise ValueError(f"{stage.capability_key} configuration contains unsupported fields: " + ", ".join(sorted(unknown)))
         instructions = stage.configuration.get("style_instructions")
@@ -151,13 +148,6 @@ def validate_recipe_stage_configuration(stage: RecipeStage) -> None:
             not isinstance(instructions, str) or not instructions.strip() or len(instructions) > 2000
         ):
             raise ValueError(f"{stage.capability_key} style_instructions must be a non-empty string up to 2000 characters.")
-        formatting_instructions = stage.configuration.get("formatting_instructions")
-        if formatting_instructions is not None and (
-            not isinstance(formatting_instructions, str)
-            or not formatting_instructions.strip()
-            or len(formatting_instructions) > 2000
-        ):
-            raise ValueError(f"{stage.capability_key} formatting_instructions must be a non-empty string up to 2000 characters.")
 
 
     if stage.capability_key == "render_approved_text_card" and stage.capability_version == 1:
