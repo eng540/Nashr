@@ -165,6 +165,39 @@ class PromptRecordingDrafter:
         return content
 
 
+class SourceMaterialRecordingDrafter:
+    def __init__(self):
+        self.content = None
+
+    async def draft(self, *, title: str, content: str, source_name: str, pdf_slice: bytes | None = None, system_prompt: str | None = None) -> str:
+        self.content = content
+        return "مسودة اختبار"
+
+
+async def test_draft_receives_original_text_and_separates_extracted_context():
+    _, _, unit_id = await _unit()
+    original_text = "قال الشاعر: اصبر على الدهر إن الدهر ذو غير"
+    extracted_context = "خلاصة المادة: تحث على الصبر أمام تقلبات الزمن."
+    source_reference = "صفحة 27"
+    async with SessionFactory() as session:
+        unit = (await session.execute(
+            select(KnowledgeUnitModel).where(KnowledgeUnitModel.id == unit_id)
+        )).scalar_one()
+        unit.original_text = original_text
+        unit.content = extracted_context
+        unit.source_reference = source_reference
+        await session.commit()
+
+    drafter = SourceMaterialRecordingDrafter()
+    async with SessionFactory() as session:
+        await ProducePost(drafter).execute(session, unit_id, system_prompt="test prompt")
+
+    assert drafter.content is not None
+    assert f"النص الأصلي المحفوظ من المصدر:\n{original_text}" in drafter.content
+    assert f"وصف المادة المستخرج للسياق فقط، وليس اقتباسًا حرفيًا:\n{extracted_context}" in drafter.content
+    assert f"إحالة المادة المحفوظة: {source_reference}" in drafter.content
+
+
 async def test_runtime_uses_new_published_prompt_without_code_change(monkeypatch):
     key = "editorial.test." + str(uuid4())
     monkeypatch.setattr("app.application.posts.EDITORIAL_PROMPT_KEY", key)
