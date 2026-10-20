@@ -13,6 +13,25 @@ from app.domain.posts import Post, PostStatus
 from app.infrastructure.database.models import KnowledgeUnitModel, PostModel
 
 
+def _source_material_for_drafting(
+    original_text: str | None,
+    extracted_content: str,
+    source_reference: str | None,
+) -> str:
+    if isinstance(original_text, str) and original_text.strip():
+        material = f"النص الأصلي المحفوظ من المصدر:\n{original_text}"
+        if extracted_content.strip() != original_text.strip():
+            material += (
+                "\n\nوصف المادة المستخرج للسياق فقط، وليس اقتباسًا حرفيًا:\n"
+                f"{extracted_content}"
+            )
+    else:
+        material = f"المادة النصية المحفوظة:\n{extracted_content}"
+    if isinstance(source_reference, str) and source_reference.strip():
+        material += f"\n\nإحالة المادة المحفوظة: {source_reference}"
+    return material
+
+
 @dataclass(frozen=True)
 class DraftedKnowledgeUnitText:
     content: str
@@ -63,9 +82,15 @@ class DraftKnowledgeUnitText:
         if system_prompt is None:
             system_prompt = (await self.resolver.resolve_prompt(session, EDITORIAL_PROMPT_KEY)).body
 
+        source_material = _source_material_for_drafting(
+            unit.original_text,
+            unit.content,
+            unit.source_reference,
+        )
+
         content = (await self.drafter.draft(
             title=unit.title,
-            content=unit.content,
+            content=source_material,
             source_name=source_name,
             pdf_slice=pdf_slice,
             system_prompt=system_prompt,
