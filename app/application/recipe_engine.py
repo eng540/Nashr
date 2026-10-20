@@ -106,6 +106,7 @@ class ProducePostCapability:
             knowledge_unit_id,
             system_prompt=system_prompt,
             production_job_id=context.run_id,
+            formatting_instructions=context.stage_configuration.get("formatting_instructions"),
         )
         return await ensure_post_artifact(
             context.session,
@@ -139,7 +140,9 @@ class ProduceTextArtifactCapability:
         pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
         contract = OutputContractDefinition.from_dict(pinned_contract.definition)
         drafted = await self.generator.execute(
-            context.session, knowledge_unit_id, system_prompt=_stage_system_prompt(context, self.key)
+            context.session, knowledge_unit_id,
+            system_prompt=_stage_system_prompt(context, self.key),
+            formatting_instructions=context.stage_configuration.get("formatting_instructions"),
         )
         now = datetime.now(timezone.utc)
         artifact = Artifact(
