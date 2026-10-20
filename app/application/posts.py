@@ -20,6 +20,38 @@ class DraftedKnowledgeUnitText:
     source_name: str
 
 
+
+
+async def format_existing_editorial_content(
+    drafter: IEditorialDrafter,
+    *,
+    title: str,
+    content: str,
+    source_name: str,
+    instructions: str | None,
+) -> str:
+    """Apply an explicitly requested formatting pass without drafting new ideas."""
+    if not isinstance(instructions, str) or not instructions.strip():
+        return content
+    formatting_prompt = (
+        "مهمتك تنسيق النص الموجود فقط وفق التعليمات التالية. لا تنشئ محتوى جديدًا. "
+        "حافظ على المعنى والمعلومات والاقتباسات والصياغة الأصلية قدر الإمكان؛ لا تضف أفكارًا، "
+        "ولا تحذف معلومات، ولا تلخص، ولا تعِد الكتابة أو تغيّر النبرة إلا إذا طلبت التعليمات ذلك صراحة. "
+        "أعد النص النهائي المنسق فقط، دون شرح أو مقدمات أو وسوم داخلية.\n\n"
+        "تعليمات التنسيق المطلوبة:\n" + instructions.strip()
+    )
+    formatted = await drafter.draft(
+        title=title,
+        content=content,
+        source_name=source_name,
+        system_prompt=formatting_prompt,
+    )
+    formatted = formatted.strip()
+    if not formatted:
+        raise ValueError("Editorial formatter returned empty content.")
+    return formatted
+
+
 class DraftKnowledgeUnitText:
     """Generate source-grounded text without choosing an output artifact or persistence model."""
 
@@ -33,6 +65,7 @@ class DraftKnowledgeUnitText:
         knowledge_unit_id: UUID,
         *,
         system_prompt: str | None = None,
+        formatting_instructions: str | None = None,
     ) -> DraftedKnowledgeUnitText:
         result = await session.execute(
             select(KnowledgeUnitModel)
@@ -72,6 +105,13 @@ class DraftKnowledgeUnitText:
         )).strip()
         if not content:
             raise ValueError("Editorial drafter returned empty content.")
+        content = await format_existing_editorial_content(
+            self.drafter,
+            title=unit.title,
+            content=content,
+            source_name=source_name,
+            instructions=formatting_instructions,
+        )
         return DraftedKnowledgeUnitText(content=content, title=unit.title, source_name=source_name)
 
 
@@ -102,6 +142,7 @@ class ProducePost:
         *,
         system_prompt: str | None = None,
         production_job_id: UUID | None = None,
+        formatting_instructions: str | None = None,
     ) -> Post:
         # Retries within one durable job reuse that job's Post. A direct request
         # or a different job is a new explicit production claim and gets its own Post.
@@ -113,7 +154,8 @@ class ProducePost:
             return _to_domain(existing)
 
         drafted = await self.generator.execute(
-            session, knowledge_unit_id, system_prompt=system_prompt
+            session, knowledge_unit_id, system_prompt=system_prompt,
+            formatting_instructions=formatting_instructions,
         )
         row = PostModel(
             id=uuid4(),
