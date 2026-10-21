@@ -452,13 +452,7 @@ async def _reconcile_stale_item(session: AsyncSession, job_id: UUID, item: Produ
             try:
                 if not isinstance(payload, dict):
                     raise ValueError("Missing quiz payload.")
-                quiz = QuizPayload(
-                    question=payload.get("question"),
-                    options=tuple(payload.get("options", ())),
-                    correct_option_id=payload.get("correct_option_id"),
-                    explanation=payload.get("explanation"),
-                    source_reference=payload.get("source_reference"),
-                )
+                quiz = QuizPayload.from_dict(payload)
                 valid_output = (
                     artifact_row.storage_uri is None
                     and isinstance(artifact_row.content, str)
