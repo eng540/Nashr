@@ -49,13 +49,7 @@ def _validate_review_candidate(row: ArtifactModel, content: str | None, metadata
         payload = metadata.get("quiz")
         if not isinstance(payload, dict):
             raise ValueError("QUIZ Artifact requires structured quiz metadata.")
-        from_payload = QuizPayload(
-            question=payload.get("question"),
-            options=tuple(payload.get("options", ())),
-            correct_option_id=payload.get("correct_option_id"),
-            explanation=payload.get("explanation"),
-            source_reference=payload.get("source_reference"),
-        )
+        from_payload = QuizPayload.from_dict(payload)
         if content != from_payload.question:
             raise ValueError("QUIZ Artifact content must match its structured question.")
     if definition.content_mode == "INLINE":
