@@ -203,13 +203,7 @@ class ProduceQuizArtifactCapability:
             value = json.loads(drafted.content)
             if not isinstance(value, dict):
                 raise ValueError("Quiz model output must be a JSON object.")
-            quiz = QuizPayload(
-                question=value.get("question"),
-                options=tuple(value.get("options", ())),
-                correct_option_id=value.get("correct_option_id"),
-                explanation=value.get("explanation"),
-                source_reference=value.get("source_reference"),
-            )
+            quiz = QuizPayload.from_dict(value)
         except (json.JSONDecodeError, TypeError) as exc:
             raise ValueError("Quiz generation must return valid JSON with a question, options and correct_option_id.") from exc
 
