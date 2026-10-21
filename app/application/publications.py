@@ -147,7 +147,9 @@ class ApproveAndPublish:
             artifact_row = (await session.execute(
                 select(ArtifactModel).where(ArtifactModel.id == artifact.id)
             )).scalar_one_or_none()
-            artifact_review_status = artifact_row.review_status if artifact_row is not None else None
+            if artifact_row is None or artifact_row.status != "AVAILABLE":
+                raise ValueError("Artifact must be AVAILABLE before publication.")
+            artifact_review_status = artifact_row.review_status
         approved = artifact.editorial_status == "APPROVED" if artifact.kind == ArtifactKind.POST else artifact_review_status == "APPROVED"
         if not approved:
             raise ValueError("Artifact must be APPROVED before publication.")
