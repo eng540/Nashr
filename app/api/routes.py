@@ -1216,15 +1216,20 @@ async def create_schedule_route(
 
 
 def _upcoming_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
-    post = item.post
-    unit = post.knowledge_unit
+    if item.artifact_id is not None:
+        artifact = item.artifact
+        metadata = (artifact.artifact_metadata or {}) if artifact is not None else {}
+        title = metadata.get("title") or "اختبار تفاعلي"
+    else:
+        title = item.post.knowledge_unit.title if item.post is not None else "منشور"
     return {
         "schedule_id": str(item.schedule_id),
         "schedule_name": item.schedule.name,
         "timezone": item.schedule.timezone,
         "item_id": str(item.id),
-        "post_id": str(item.post_id),
-        "title": unit.title,
+        "post_id": str(item.post_id) if item.post_id else None,
+        "artifact_id": str(item.artifact_id) if item.artifact_id else None,
+        "title": title,
         "scheduled_at": item.scheduled_at,
         "status": item.status,
         "position": item.position,
@@ -1253,6 +1258,7 @@ async def schedule_calendar(
         .join(ScheduleModel)
         .options(
             selectinload(ScheduleItemModel.schedule),
+            selectinload(ScheduleItemModel.artifact),
             selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit),
         )
         .where(
