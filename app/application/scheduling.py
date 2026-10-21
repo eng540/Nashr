@@ -622,6 +622,14 @@ async def _execute_claimed_item(
     destination: str | None = None,
 ) -> None:
     destination = destination or os.getenv("TELEGRAM_DESTINATION_ID", "")
+    async with SessionFactory() as probe_session:
+        probe = (await probe_session.execute(
+            select(ScheduleItemModel.post_id, ScheduleItemModel.artifact_id).where(ScheduleItemModel.id == item_id)
+        )).one_or_none()
+    if probe is not None and probe.post_id is None and probe.artifact_id is not None:
+        from app.application.quiz_scheduling import execute_quiz_schedule_item
+        await execute_quiz_schedule_item(item_id, publisher=publisher, destination=destination)
+        return
 
     async with SessionFactory() as session:
         item = (await session.execute(
