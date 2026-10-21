@@ -1,4 +1,5 @@
 from io import BytesIO
+from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -342,6 +343,8 @@ async def test_approved_quiz_artifact_flows_through_publication_ledger() -> None
             status="AVAILABLE",
             mime_type="application/vnd.nashr.quiz+json",
             metadata=metadata,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         draft = await CreateTelegramDraft.execute_for_artifact(session, artifact, "@quiz-test")
         assert draft.status.value == "DRAFT"
