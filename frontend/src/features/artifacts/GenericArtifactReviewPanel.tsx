@@ -75,7 +75,20 @@ export function GenericArtifactReviewPanel() {
   }, [activeJob.data?.status, queryClient]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
   const save = useMutation({
-    mutationFn: (id: string) => genericArtifactsApi.update(id, { content: drafts[id]?.content }),
+    mutationFn: (id: string) => {
+      const artifact = (artifacts.data ?? []).find((item) => item.id === id);
+      const content = drafts[id]?.content;
+      if (artifact?.kind === "QUIZ" && content !== undefined) {
+        const quiz = artifact.metadata.quiz && typeof artifact.metadata.quiz === "object" && !Array.isArray(artifact.metadata.quiz)
+          ? artifact.metadata.quiz as Record<string, unknown>
+          : {};
+        return genericArtifactsApi.update(id, {
+          content,
+          metadata: { ...artifact.metadata, quiz: { ...quiz, question: content } },
+        });
+      }
+      return genericArtifactsApi.update(id, { content });
+    },
     onSuccess: refresh,
   });
   const approve = useMutation({
