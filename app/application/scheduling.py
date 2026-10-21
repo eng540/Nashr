@@ -12,6 +12,7 @@ from app.application.artifacts import post_model_to_artifact
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.domain.scheduling import ScheduleItemStatus, ScheduleStatus
 from app.infrastructure.database.models import (
+    ArtifactModel,
     KnowledgeUnitModel,
     PostModel,
     PublicationModel,
@@ -237,6 +238,7 @@ async def get_schedule(session: AsyncSession, schedule_id: UUID) -> ScheduleMode
             .selectinload(KnowledgeUnitModel.source)
             .defer(SourceModel.file_payload),
             selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.publication),
+            selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.artifact),
             selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.post).selectinload(PostModel.publications),
         )
         .where(ScheduleModel.id == schedule_id)
@@ -301,10 +303,35 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
 
     seen: set[UUID] = set()
     for item in items:
-        if item.post_id in seen:
-            errors.append(f"المنشور في الموضع {item.position} مكرر داخل الخطة.")
-        seen.add(item.post_id)
+        content_id = item.post_id or item.artifact_id
+        if content_id in seen:
+            errors.append(f"العنصر في الموضع {item.position} مكرر داخل الخطة.")
+        seen.add(content_id)
 
+        if item.artifact_id is not None:
+            artifact_row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == item.artifact_id))).scalar_one_or_none()
+            if artifact_row is None or artifact_row.kind != "QUIZ":
+                blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "ARTIFACT_NOT_FOUND", "message": "Scheduled quiz Artifact was not found."})
+                continue
+            if item.status in (ScheduleItemStatus.CANCELLED.value, ScheduleItemStatus.SKIPPED.value, ScheduleItemStatus.PUBLISHED.value):
+                continue
+            if item.status != ScheduleItemStatus.PENDING.value:
+                blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_ITEM_STATE", "message": f"Quiz is in state {item.status}."})
+                continue
+            if artifact_row.status != "AVAILABLE" or artifact_row.review_status != "APPROVED":
+                blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "QUIZ_NOT_APPROVED", "message": "Quiz must be available and approved."})
+            if not artifact_row.content or not isinstance((artifact_row.artifact_metadata or {}).get("quiz"), dict):
+                blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_QUIZ_PAYLOAD", "message": "Quiz payload is incomplete."})
+            if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
+                blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_TIME", "message": "Quiz schedule time is invalid."})
+            already_published = (await session.execute(select(PublicationModel.id).where(PublicationModel.artifact_id == item.artifact_id, PublicationModel.platform == "telegram", PublicationModel.status == "PUBLISHED").limit(1))).scalar_one_or_none()
+            if already_published is not None:
+                blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "ALREADY_PUBLISHED", "message": "Quiz was already published."})
+            continue
+
+        if item.post_id is None or item.post is None:
+            errors.append(f"Schedule item {item.position} has no valid Post or Artifact reference.")
+            continue
         if item.status == ScheduleItemStatus.FAILED.value:
             blocked_items.append({
                 "item_id": str(item.id),
