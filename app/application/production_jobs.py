@@ -463,7 +463,8 @@ async def _reconcile_stale_item(session: AsyncSession, job_id: UUID, item: Produ
                     artifact_row.storage_uri is None
                     and isinstance(artifact_row.content, str)
                     and artifact_row.content == quiz.question
-                    and artifact_row.mime_type == "application/vnd.nashr.quiz+json"
+                    and isinstance(artifact_row.mime_type, str)
+                    and artifact_row.mime_type.startswith("application/")
                 )
             except (TypeError, ValueError):
                 valid_output = False
