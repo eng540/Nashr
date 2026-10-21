@@ -315,6 +315,11 @@ class ScheduleItemModel(Base):
         UniqueConstraint("schedule_id", "position", name="uq_schedule_items_schedule_position"),
         UniqueConstraint("schedule_id", "post_id", name="uq_schedule_items_schedule_post"),
         UniqueConstraint("schedule_id", "artifact_id", name="uq_schedule_items_schedule_artifact"),
+        CheckConstraint(
+            "((post_id IS NOT NULL AND artifact_id IS NULL) OR "
+            "(post_id IS NULL AND artifact_id IS NOT NULL))",
+            name="ck_schedule_items_single_content_reference",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
