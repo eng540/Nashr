@@ -44,6 +44,7 @@ const statusLabel: Record<string, string> = { DRAFT: "مسودة", PUBLISHED: "�
 const capabilityOptions = [
   ["produce_post", "إنتاج منشور"],
   ["produce_text_artifact", "إنتاج مخرج نصي"],
+  ["produce_quiz_artifact", "إنتاج اختبار تفاعلي"],
   ["produce_image_artifact", "إنتاج صورة"],
   ["render_approved_text_card", "إنشاء بطاقة من نص معتمد"],
   ["produce_video_artifact", "إنتاج فيديو"],
