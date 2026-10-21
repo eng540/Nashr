@@ -39,4 +39,7 @@ export const genericArtifactsApi = {
   createQuizDraft(id: string): Promise<{ id: string; artifact_id: string | null; status: string; content: string }> {
     return post<{ id: string; artifact_id: string | null; status: string; content: string }>(`/api/artifacts/${id}/telegram-draft`, {});
   },
+  publishQuiz(publicationId: string, content: string): Promise<{ id: string; status: string; external_id: string | null; error_message: string | null }> {
+    return post<{ id: string; status: string; external_id: string | null; error_message: string | null }>(`/publications/${publicationId}/publish`, { content });
+  },
 };
