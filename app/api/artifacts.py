@@ -1,4 +1,5 @@
 from typing import Any
+import os
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.generic_artifact_review import GenericArtifactReviewService
+from app.application.artifacts import load_artifact
+from app.application.publications import CreateTelegramDraft
+from app.domain.artifacts import ArtifactKind
 from app.infrastructure.artifact_storage import (
     ArtifactStorageConfigurationError,
     ArtifactStorageError,
@@ -107,5 +111,38 @@ async def reject_generic_artifact(
 ) -> dict[str, Any]:
     try:
         return await GenericArtifactReviewService(session).reject(artifact_id, payload.review_note)
+    except (LookupError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/{artifact_id}/telegram-draft", status_code=201)
+async def create_telegram_draft_for_artifact(
+    artifact_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Create a durable Telegram publication draft for a human-approved generic QUIZ Artifact."""
+    destination = os.getenv("TELEGRAM_DESTINATION_ID", "").strip()
+    if not destination:
+        raise HTTPException(status_code=503, detail="TELEGRAM_DESTINATION_ID is required.")
+    try:
+        review = await GenericArtifactReviewService(session).get(artifact_id)
+        if review.get("kind") != ArtifactKind.QUIZ.value:
+            raise ValueError("Only QUIZ Artifacts can use this native poll publication route.")
+        if review.get("review_status") != "APPROVED":
+            raise ValueError("QUIZ Artifact must be approved before creating a publication draft.")
+        artifact = await load_artifact(session, artifact_id)
+        if artifact is None:
+            raise LookupError("Artifact not found.")
+        publication = await CreateTelegramDraft.execute_for_artifact(session, artifact, destination)
+        return {
+            "id": str(publication.id),
+            "post_id": str(publication.post_id) if publication.post_id else None,
+            "artifact_id": str(publication.artifact_id) if publication.artifact_id else None,
+            "knowledge_unit_id": str(publication.knowledge_unit_id),
+            "platform": publication.platform,
+            "destination": publication.destination,
+            "status": publication.status.value,
+            "content": publication.content,
+        }
     except (LookupError, ValueError) as exc:
         raise _handle_error(exc) from exc
