@@ -5,7 +5,7 @@ export type GenericArtifactReviewStatus = "DRAFT" | "APPROVED" | "REJECTED";
 export interface GenericReviewableArtifact {
   id: string;
   source_knowledge_unit_id: string;
-  kind: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO";
+  kind: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "QUIZ";
   status: string;
   content: string | null;
   storage_uri: string | null;
