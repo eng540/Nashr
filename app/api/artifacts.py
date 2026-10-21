@@ -145,6 +145,12 @@ async def create_telegram_draft_for_artifact(
         if artifact is None:
             raise LookupError("Artifact not found.")
         publication = await CreateTelegramDraft.execute_for_artifact(session, artifact, destination)
+        if publication.status.value == "FAILED":
+            row = (await session.execute(select(PublicationModel).where(PublicationModel.id == publication.id))).scalar_one()
+            row.status = "DRAFT"
+            row.error_message = None
+            await session.commit()
+            publication = await CreateTelegramDraft.execute_for_artifact(session, artifact, destination)
         return {
             "id": str(publication.id),
             "post_id": str(publication.post_id) if publication.post_id else None,
