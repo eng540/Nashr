@@ -5,7 +5,7 @@ export type GenericArtifactReviewStatus = "DRAFT" | "APPROVED" | "REJECTED";
 export interface GenericReviewableArtifact {
   id: string;
   source_knowledge_unit_id: string;
-  kind: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO";
+  kind: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "QUIZ";
   status: string;
   content: string | null;
   storage_uri: string | null;
@@ -35,5 +35,11 @@ export const genericArtifactsApi = {
   },
   reject(id: string, review_note: string): Promise<GenericReviewableArtifact> {
     return post<GenericReviewableArtifact>(`/api/artifacts/${id}/reject`, { review_note });
+  },
+  createQuizDraft(id: string): Promise<{ id: string; artifact_id: string | null; status: string; content: string }> {
+    return post<{ id: string; artifact_id: string | null; status: string; content: string }>(`/api/artifacts/${id}/telegram-draft`, {});
+  },
+  publishQuiz(publicationId: string, content: string): Promise<{ id: string; status: string; external_id: string | null; error_message: string | null }> {
+    return post<{ id: string; status: string; external_id: string | null; error_message: string | null }>(`/publications/${publicationId}/publish`, { content });
   },
 };

@@ -22,6 +22,7 @@ from app.domain.production_jobs import (
 from app.domain.production_context import ResolvedProductionContext
 from app.domain.products import ProductionProductDefinition
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus, validate_production_artifact
+from app.domain.quizzes import QuizPayload
 from app.domain.output_contracts import OutputContractDefinition
 from app.domain.recipes import BOOK_TO_TELEGRAM_POST
 from app.application.recipe_engine import (
@@ -446,6 +447,21 @@ async def _reconcile_stale_item(session: AsyncSession, job_id: UUID, item: Produ
         kind = str(artifact_row.kind)
         if kind in {ArtifactKind.POST.value, ArtifactKind.TEXT.value}:
             valid_output = isinstance(artifact_row.content, str) and bool(artifact_row.content.strip())
+        elif kind == ArtifactKind.QUIZ.value:
+            payload = (artifact_row.artifact_metadata or {}).get("quiz")
+            try:
+                if not isinstance(payload, dict):
+                    raise ValueError("Missing quiz payload.")
+                quiz = QuizPayload.from_dict(payload)
+                valid_output = (
+                    artifact_row.storage_uri is None
+                    and isinstance(artifact_row.content, str)
+                    and artifact_row.content == quiz.question
+                    and isinstance(artifact_row.mime_type, str)
+                    and artifact_row.mime_type.startswith("application/")
+                )
+            except (TypeError, ValueError):
+                valid_output = False
         else:
             mime_prefix = {
                 ArtifactKind.IMAGE.value: "image/",

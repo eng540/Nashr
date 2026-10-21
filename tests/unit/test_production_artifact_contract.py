@@ -19,18 +19,20 @@ def _artifact(kind: ArtifactKind, job_id, source_id, **overrides) -> Artifact:
         "id": uuid4(),
         "source_knowledge_unit_id": source_id,
         "kind": kind,
-        "content": "valid text" if kind in {ArtifactKind.POST, ArtifactKind.TEXT} else None,
+        "content": ("Which one?" if kind == ArtifactKind.QUIZ else "valid text") if kind in {ArtifactKind.POST, ArtifactKind.TEXT, ArtifactKind.QUIZ} else None,
         "status": ArtifactStatus.AVAILABLE.value,
         "created_at": NOW,
         "updated_at": NOW,
-        "storage_uri": None if kind in {ArtifactKind.POST, ArtifactKind.TEXT} else "s3://private/artifact",
+        "storage_uri": None if kind in {ArtifactKind.POST, ArtifactKind.TEXT, ArtifactKind.QUIZ} else "s3://private/artifact",
         "mime_type": "text/plain" if kind in {ArtifactKind.POST, ArtifactKind.TEXT} else {
             ArtifactKind.IMAGE: "image/png",
             ArtifactKind.VIDEO: "video/mp4",
             ArtifactKind.AUDIO: "audio/wav",
+            ArtifactKind.QUIZ: "application/vnd.nashr.quiz+json",
         }[kind],
         "post_id": uuid4() if kind == ArtifactKind.POST else None,
         "production_job_id": job_id,
+        "metadata": {"quiz": {"question": "Which one?", "options": ["A", "B"], "correct_option_id": 0}} if kind == ArtifactKind.QUIZ else None,
     }
     values.update(overrides)
     return Artifact(**values)

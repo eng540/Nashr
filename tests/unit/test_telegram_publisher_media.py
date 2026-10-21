@@ -73,3 +73,20 @@ async def test_telegram_publisher_keeps_legacy_text_send_message_path(monkeypatc
     url, request = FakeAsyncClient.calls[0]
     assert url.endswith("/sendMessage")
     assert request["json"] == {"chat_id": "@test-channel", "text": "نص فقط", "parse_mode": "HTML"}
+
+
+@pytest.mark.asyncio
+async def test_telegram_publisher_sends_native_quiz_poll_without_network(monkeypatch):
+    from app.domain.quizzes import QuizPayload
+
+    FakeAsyncClient.calls = []
+    monkeypatch.setattr("app.adapters.publishing.telegram.httpx.AsyncClient", FakeAsyncClient)
+    publisher = TelegramPublisher(token="test-token")
+    quiz = QuizPayload(question="ما جمع كلمة «قلم»؟", options=("أقلام", "قلام"), correct_option_id=0, explanation="جمع تكسير.")
+    result = await publisher.publish(destination="@test-channel", content="", quiz=quiz)
+    assert result.external_id == "4321"
+    url, request = FakeAsyncClient.calls[0]
+    assert url.endswith("/sendPoll")
+    assert request["json"]["type"] == "quiz"
+    assert request["json"]["correct_option_id"] == 0
+    assert request["json"]["options"] == [{"text": "أقلام"}, {"text": "قلام"}]

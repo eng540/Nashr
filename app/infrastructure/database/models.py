@@ -224,7 +224,7 @@ class ArtifactModel(Base):
             postgresql_where=text("production_job_id IS NOT NULL"),
         ),
         CheckConstraint(
-            "kind IN ('POST', 'TEXT', 'IMAGE', 'VIDEO', 'AUDIO')",
+            "kind IN ('POST', 'TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'QUIZ')",
             name="ck_artifacts_kind",
         ),
         CheckConstraint(
@@ -281,6 +281,7 @@ class PublicationModel(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     knowledge_unit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("knowledge_units.id", ondelete="RESTRICT"), nullable=False)
     post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="SET NULL"), nullable=True)
+    artifact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="RESTRICT"), nullable=True, index=True)
     platform: Mapped[str] = mapped_column(String(50), nullable=False, default="telegram")
     destination: Mapped[str] = mapped_column(String(500), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -313,11 +314,18 @@ class ScheduleItemModel(Base):
     __table_args__ = (
         UniqueConstraint("schedule_id", "position", name="uq_schedule_items_schedule_position"),
         UniqueConstraint("schedule_id", "post_id", name="uq_schedule_items_schedule_post"),
+        UniqueConstraint("schedule_id", "artifact_id", name="uq_schedule_items_schedule_artifact"),
+        CheckConstraint(
+            "((post_id IS NOT NULL AND artifact_id IS NULL) OR "
+            "(post_id IS NULL AND artifact_id IS NOT NULL))",
+            name="ck_schedule_items_single_content_reference",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     schedule_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False)
-    post_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="RESTRICT"), nullable=False)
+    post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="RESTRICT"), nullable=True)
+    artifact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="RESTRICT"), nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
@@ -329,7 +337,8 @@ class ScheduleItemModel(Base):
     processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     schedule: Mapped["ScheduleModel"] = relationship(back_populates="items")
-    post: Mapped[PostModel] = relationship()
+    post: Mapped[PostModel | None] = relationship()
+    artifact: Mapped[ArtifactModel | None] = relationship()
     publication: Mapped["PublicationModel | None"] = relationship()
 
 

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.output_contracts import OutputContractDefinition
+from app.domain.quizzes import QuizPayload
 from app.domain.policies import ProductionPolicyDefinition
 from app.domain.production_context import PinnedOutputContract, PinnedPolicy
 from app.infrastructure.database.models import ArtifactModel
@@ -44,6 +45,13 @@ def _validate_review_candidate(row: ArtifactModel, content: str | None, metadata
     missing = [field for field in definition.required_metadata_fields if field not in metadata]
     if missing:
         raise ValueError("Artifact is missing required metadata fields: " + ", ".join(missing))
+    if row.kind == "QUIZ":
+        payload = metadata.get("quiz")
+        if not isinstance(payload, dict):
+            raise ValueError("QUIZ Artifact requires structured quiz metadata.")
+        from_payload = QuizPayload.from_dict(payload)
+        if content != from_payload.question:
+            raise ValueError("QUIZ Artifact content must match its structured question.")
     if definition.content_mode == "INLINE":
         if not isinstance(content, str) or not content.strip():
             raise ValueError("Inline artifact content cannot be empty.")

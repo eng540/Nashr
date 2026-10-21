@@ -24,6 +24,7 @@ from app.adapters.audio_generation.gemini_tts import GeminiAudioGenerator
 from app.adapters.video_generation.veo import VeoVideoGenerator
 from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.domain.output_contracts import OutputContractDefinition
+from app.domain.quizzes import QuizPayload
 from app.domain.production_context import PinnedOutputContract
 from app.domain.prompt_templates import render_prompt_template
 from app.domain.recipes import ProductionRecipe, validate_recipe_stage_configuration
@@ -156,6 +157,89 @@ class ProduceTextArtifactCapability:
             output_contract_version=pinned_contract.version,
             resolved_context=dict(context.resolved_context),
             metadata={"title": drafted.title, "source": drafted.source_name},
+        )
+        return await persist_generic_artifact(
+            context.session, artifact, resolved_context=dict(context.resolved_context)
+        )
+
+
+class ProduceQuizArtifactCapability:
+    """Generate a typed, reviewable quiz Artifact using the pinned product prompt."""
+
+    key = "produce_quiz_artifact"
+    version = 1
+
+    def __init__(self, drafter, resolver: ControlPlaneResolver | None = None) -> None:
+        self.generator = DraftKnowledgeUnitText(drafter, resolver or ControlPlaneResolver())
+
+    async def execute(
+        self,
+        context: ProductionExecutionContext,
+        previous_output: object | None = None,
+    ) -> Artifact:
+        knowledge_unit_id = context.inputs.get("knowledge_unit_id")
+        if not isinstance(knowledge_unit_id, UUID):
+            raise ValueError("produce_quiz_artifact capability requires a knowledge_unit_id input.")
+        if context.resolved_context is None or "output_contract" not in context.resolved_context:
+            raise ValueError("produce_quiz_artifact capability requires a pinned output contract.")
+        pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
+        contract = OutputContractDefinition.from_dict(pinned_contract.definition)
+        if contract.artifact_kind != ArtifactKind.QUIZ.value or contract.content_mode != "INLINE":
+            raise ValueError("produce_quiz_artifact requires a QUIZ inline output contract.")
+
+        existing = await find_existing_generic_artifact(
+            context.session,
+            production_job_id=context.run_id,
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.QUIZ,
+        )
+        if existing is not None:
+            return existing
+
+        quiz_system_prompt = _stage_system_prompt(context, self.key) + (
+            "\n\nRequired machine-readable output contract: return only one valid JSON object, "
+            "with no Markdown fences or surrounding prose. Required keys: "
+            '"question" (string), "options" (array of 2–12 distinct non-empty strings), '
+            '"correct_option_id" (zero-based integer index into options). Optional keys: '
+            '"explanation" (string or null) and "source_reference" (string or null). '
+            "Base the question and correct answer on the supplied source material; do not invent facts."
+        )
+        drafted = await self.generator.execute(
+            context.session, knowledge_unit_id, system_prompt=quiz_system_prompt
+        )
+        try:
+            value = json.loads(drafted.content)
+            if not isinstance(value, dict):
+                raise ValueError("Quiz model output must be a JSON object.")
+            quiz = QuizPayload.from_dict(value)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise ValueError("Quiz generation must return valid JSON with a question, options and correct_option_id.") from exc
+
+        now = datetime.now(timezone.utc)
+        artifact = Artifact(
+            id=uuid4(),
+            source_knowledge_unit_id=knowledge_unit_id,
+            kind=ArtifactKind.QUIZ,
+            content=quiz.question,
+            status=ArtifactStatus.AVAILABLE.value,
+            created_at=now,
+            updated_at=now,
+            mime_type=contract.mime_type,
+            production_job_id=context.run_id,
+            output_contract_key=pinned_contract.key,
+            output_contract_version=pinned_contract.version,
+            resolved_context=dict(context.resolved_context),
+            metadata={
+                "title": drafted.title,
+                "source": drafted.source_name,
+                "quiz": {
+                    "question": quiz.question,
+                    "options": list(quiz.options),
+                    "correct_option_id": quiz.correct_option_id,
+                    "explanation": quiz.explanation,
+                    "source_reference": quiz.source_reference,
+                },
+            },
         )
         return await persist_generic_artifact(
             context.session, artifact, resolved_context=dict(context.resolved_context)
@@ -1062,6 +1146,7 @@ def build_production_recipe_engine(
     capabilities = CapabilityRegistry()
     capabilities.register(ProducePostCapability(drafter, resolver))
     capabilities.register(ProduceTextArtifactCapability(drafter, resolver))
+    capabilities.register(ProduceQuizArtifactCapability(drafter, resolver))
     capabilities.register(ComposeThematicArtifactCapability(drafter, resolver))
     capabilities.register(ProduceImageArtifactCapability())
     capabilities.register(RenderApprovedTextCardCapability())

@@ -40,6 +40,7 @@ export function GenericArtifactReviewPanel() {
   const [status, setStatus] = useState<GenericArtifactReviewStatus>("DRAFT");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
+  const [quizDrafts, setQuizDrafts] = useState<Record<string, { id: string; status: string; external_id?: string | null }>>({});
   const [selectedPostId, setSelectedPostId] = useState("");
   const [postProductKey, setPostProductKey] = useState("");
   const [activeCardJob, setActiveCardJob] = useState("");
@@ -74,7 +75,20 @@ export function GenericArtifactReviewPanel() {
   }, [activeJob.data?.status, queryClient]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
   const save = useMutation({
-    mutationFn: (id: string) => genericArtifactsApi.update(id, { content: drafts[id]?.content }),
+    mutationFn: (id: string) => {
+      const artifact = (artifacts.data ?? []).find((item) => item.id === id);
+      const content = drafts[id]?.content;
+      if (artifact?.kind === "QUIZ" && content !== undefined) {
+        const quiz = artifact.metadata.quiz && typeof artifact.metadata.quiz === "object" && !Array.isArray(artifact.metadata.quiz)
+          ? artifact.metadata.quiz as Record<string, unknown>
+          : {};
+        return genericArtifactsApi.update(id, {
+          content,
+          metadata: { ...artifact.metadata, quiz: { ...quiz, question: content } },
+        });
+      }
+      return genericArtifactsApi.update(id, { content });
+    },
     onSuccess: refresh,
   });
   const approve = useMutation({
@@ -84,6 +98,14 @@ export function GenericArtifactReviewPanel() {
   const reject = useMutation({
     mutationFn: (id: string) => genericArtifactsApi.reject(id, drafts[id]?.review_note ?? ""),
     onSuccess: refresh,
+  });
+  const createQuizDraft = useMutation({
+    mutationFn: (id: string) => genericArtifactsApi.createQuizDraft(id),
+    onSuccess: (publication, artifactId) => setQuizDrafts((current) => ({ ...current, [artifactId]: { id: publication.id, status: publication.status } })),
+  });
+  const publishQuiz = useMutation({
+    mutationFn: ({ publicationId, content }: { artifactId: string; publicationId: string; content: string }) => genericArtifactsApi.publishQuiz(publicationId, content),
+    onSuccess: (publication, input) => setQuizDrafts((current) => ({ ...current, [input.artifactId]: { id: publication.id, status: publication.status, external_id: publication.external_id } })),
   });
   const createCard = useMutation({
     mutationFn: async ({ artifact, postId, productKey }: { artifact?: GenericReviewableArtifact; postId?: string; productKey: string }) => {
@@ -192,6 +214,16 @@ export function GenericArtifactReviewPanel() {
           <button type="button" onClick={() => createCard.mutate({ artifact, productKey: cardProducts[artifact.id] ?? "" })} disabled={!cardProducts[artifact.id] || createCard.isPending} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">إنتاج البطاقة</button>
           {products.isLoading || recipes.isLoading ? <span className="text-xs">تحميل منتجات البطاقات...</span> : null}
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
+        </div> : null}
+        {status === "APPROVED" && artifact.kind === "QUIZ" ? <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 space-y-2">
+          <p className="text-sm font-semibold">اختبار تفاعلي معتمد</p>
+          <p className="text-sm text-slate-700">السؤال: {String((artifact.metadata.quiz as Record<string, unknown> | undefined)?.question ?? artifact.content ?? "")}</p>
+          <ol className="list-decimal space-y-1 pr-6 text-sm text-slate-700">{(Array.isArray((artifact.metadata.quiz as Record<string, unknown> | undefined)?.options) ? (artifact.metadata.quiz as Record<string, unknown>).options as string[] : []).map((option, index) => <li key={index}>{option}{index === Number((artifact.metadata.quiz as Record<string, unknown> | undefined)?.correct_option_id) ? " ✓ الإجابة الصحيحة" : ""}</li>)}</ol>
+          {quizDrafts[artifact.id] ? <p role="status" className="text-xs">سجل Telegram: {quizDrafts[artifact.id].id} · الحالة {quizDrafts[artifact.id].status}{quizDrafts[artifact.id].external_id ? ` · معرّف Telegram ${quizDrafts[artifact.id].external_id}` : ""}</p> : null}
+          {(!quizDrafts[artifact.id] || quizDrafts[artifact.id].status === "FAILED") ? <button type="button" onClick={() => createQuizDraft.mutate(artifact.id)} disabled={createQuizDraft.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{createQuizDraft.isPending ? "جارٍ تجهيز المسودة..." : quizDrafts[artifact.id] ? "إعادة تجهيز المسودة" : "إنشاء مسودة Telegram"}</button> : null}
+          {quizDrafts[artifact.id]?.status === "DRAFT" ? <button type="button" onClick={() => publishQuiz.mutate({ artifactId: artifact.id, publicationId: quizDrafts[artifact.id].id, content: String((artifact.metadata.quiz as Record<string, unknown> | undefined)?.question ?? artifact.content ?? "") })} disabled={publishQuiz.isPending} className="rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white">{publishQuiz.isPending ? "جارٍ النشر..." : "نشر الاختبار الآن"}</button> : null}
+          {createQuizDraft.isError ? <p role="alert" className="text-sm text-rose-700">{createQuizDraft.error.message}</p> : null}
+          {publishQuiz.isError ? <p role="alert" className="text-sm text-rose-700">{publishQuiz.error.message}</p> : null}
         </div> : null}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {Object.keys(artifact.metadata).length > 0 ? <pre className="overflow-x-auto rounded-lg bg-slate-50 p-3 text-xs">{JSON.stringify(artifact.metadata, null, 2)}</pre> : null}

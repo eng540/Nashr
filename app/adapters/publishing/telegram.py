@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 import httpx
 
 from app.domain.publications import IPublisher, PublishResult
+from app.domain.quizzes import QuizPayload
 
 
 _ALLOWED_TAGS = {
@@ -171,10 +172,16 @@ class TelegramPublisher(IPublisher):
         content: str,
         media: bytes | None = None,
         media_mime_type: str | None = None,
+        quiz: QuizPayload | None = None,
     ) -> PublishResult:
-        """Send a text message or an approved visual card with a text caption."""
+        """Send text, an approved visual card, or a native Telegram quiz poll."""
+        if quiz is not None and media is not None:
+            raise ValueError("A Telegram quiz cannot be combined with image media.")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            if media is None:
+            if quiz is not None:
+                url = f"https://api.telegram.org/bot{self.token}/sendPoll"
+                response = await client.post(url, json=quiz.to_telegram_payload(destination))
+            elif media is None:
                 url = f"https://api.telegram.org/bot{self.token}/sendMessage"
                 message = telegram_html_content(content)
                 response = await client.post(

@@ -1,4 +1,5 @@
 from io import BytesIO
+from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -15,6 +16,7 @@ from app.application.posts import ProducePost
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.application.reviews import ReviewPost
 from app.domain.artifacts import Artifact, ArtifactKind
+from app.domain.quizzes import QuizPayload
 from app.infrastructure.database.models import ArtifactModel, KnowledgeUnitModel, PostModel, SourceModel
 from app.infrastructure.artifact_storage import S3ArtifactStorage
 from app.infrastructure.database.session import SessionFactory
@@ -290,3 +292,78 @@ async def test_unapproved_visual_artifact_blocks_publication_without_publishing_
         with pytest.raises(ValueError, match="no longer approved"):
             await ApproveAndPublish(publisher).execute(session, draft.id)
         assert publisher.calls == []
+
+
+
+class RecordingQuizPublisher:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def publish(
+        self, *, destination: str, content: str, media: bytes | None = None,
+        media_mime_type: str | None = None, quiz: QuizPayload | None = None,
+    ):
+        self.calls.append((destination, content, quiz))
+        return PublishResult(external_id="test_quiz_msg_1")
+
+
+async def test_approved_quiz_artifact_flows_through_publication_ledger() -> None:
+    """A QUIZ Artifact must retain its structured answers through draft and publish."""
+    unit_id = await _knowledge_unit()
+    artifact_id = uuid4()
+    question = "ما جمع كلمة «قلم»؟"
+    metadata = {
+        "title": "اختبار لغوي",
+        "quiz": {
+            "question": question,
+            "options": ["أقلام", "قلام", "قلمات"],
+            "correct_option_id": 0,
+            "explanation": "جمع تكسير.",
+            "source_reference": "المادة 12",
+        },
+    }
+    async with SessionFactory() as session:
+        session.add(ArtifactModel(
+            id=artifact_id,
+            source_knowledge_unit_id=unit_id,
+            kind="QUIZ",
+            status="AVAILABLE",
+            content=question,
+            mime_type="application/vnd.nashr.quiz+json",
+            artifact_metadata=metadata,
+            review_status="APPROVED",
+            review_note="مراجع بشريًا",
+        ))
+        await session.commit()
+        artifact = Artifact(
+            id=artifact_id,
+            source_knowledge_unit_id=unit_id,
+            kind=ArtifactKind.QUIZ,
+            content=question,
+            status="AVAILABLE",
+            mime_type="application/vnd.nashr.quiz+json",
+            metadata=metadata,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        draft = await CreateTelegramDraft.execute_for_artifact(session, artifact, "@quiz-test")
+        assert draft.status.value == "DRAFT"
+        assert draft.post_id is None
+        assert draft.artifact_id == artifact_id
+
+        publisher = RecordingQuizPublisher()
+        result = await ApproveAndPublish(publisher).execute(session, draft.id, content=question, artifact=artifact)
+
+        assert result.status.value == "PUBLISHED"
+        assert result.external_id == "test_quiz_msg_1"
+        assert len(publisher.calls) == 1
+        destination, published_content, quiz = publisher.calls[0]
+        assert destination == "@quiz-test"
+        assert published_content == question
+        assert quiz == QuizPayload(
+            question=question,
+            options=("أقلام", "قلام", "قلمات"),
+            correct_option_id=0,
+            explanation="جمع تكسير.",
+            source_reference="المادة 12",
+        )

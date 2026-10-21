@@ -11,6 +11,7 @@ class ArtifactKind(StrEnum):
     IMAGE = "IMAGE"
     VIDEO = "VIDEO"
     AUDIO = "AUDIO"
+    QUIZ = "QUIZ"
 
 
 class ArtifactStatus(StrEnum):
@@ -77,6 +78,20 @@ def validate_production_artifact(
         raise ValueError("Production Artifact belongs to a different production job.")
     if status != ArtifactStatus.AVAILABLE:
         raise ValueError("Production Artifact must be AVAILABLE before item completion.")
+
+    if kind == ArtifactKind.QUIZ:
+        if not isinstance(artifact.content, str) or not artifact.content.strip():
+            raise ValueError("QUIZ Artifact must contain its question as non-empty content.")
+        if artifact.storage_uri is not None:
+            raise ValueError("QUIZ Artifact must use inline content.")
+        from app.domain.quizzes import QuizPayload
+        payload = (artifact.metadata or {}).get("quiz")
+        if not isinstance(payload, dict):
+            raise ValueError("QUIZ Artifact requires structured quiz metadata.")
+        QuizPayload.from_dict(payload)
+        if artifact.content != payload.get("question"):
+            raise ValueError("QUIZ Artifact content must match its structured question.")
+        return
 
     if kind in {ArtifactKind.POST, ArtifactKind.TEXT}:
         if not isinstance(artifact.content, str) or not artifact.content.strip():

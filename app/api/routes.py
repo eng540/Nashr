@@ -1048,15 +1048,39 @@ async def resume_production_job_route(
 
 
 def _schedule_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
+    publication = item.publication
+    if item.artifact_id is not None:
+        artifact = item.artifact
+        metadata = (artifact.artifact_metadata or {}) if artifact is not None else {}
+        return {
+            "id": str(item.id),
+            "position": item.position,
+            "post_id": None,
+            "artifact_id": str(item.artifact_id),
+            "title": metadata.get("title") or "اختبار تفاعلي",
+            "status": item.status,
+            "scheduled_at": item.scheduled_at,
+            "attempts": item.attempts,
+            "publication_id": str(item.publication_id) if item.publication_id else None,
+            "published_at": item.published_at,
+            "last_error": item.last_error,
+            "published": bool(publication and publication.status == "PUBLISHED"),
+            "content_preview": (artifact.content or "")[:300] if artifact is not None else "",
+            "knowledge_unit_id": str(artifact.source_knowledge_unit_id) if artifact is not None else None,
+            "topic_id": None,
+            "topic_title": None,
+            "source_id": None,
+            "source_title": metadata.get("source"),
+        }
     post = item.post
     unit = post.knowledge_unit
     topic = unit.topic
     source = topic.source if topic is not None else unit.source
-    publication = item.publication
     return {
         "id": str(item.id),
         "position": item.position,
         "post_id": str(post.id),
+        "artifact_id": None,
         "title": unit.title,
         "status": item.status,
         "scheduled_at": item.scheduled_at,
@@ -1192,15 +1216,20 @@ async def create_schedule_route(
 
 
 def _upcoming_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
-    post = item.post
-    unit = post.knowledge_unit
+    if item.artifact_id is not None:
+        artifact = item.artifact
+        metadata = (artifact.artifact_metadata or {}) if artifact is not None else {}
+        title = metadata.get("title") or "اختبار تفاعلي"
+    else:
+        title = item.post.knowledge_unit.title if item.post is not None else "منشور"
     return {
         "schedule_id": str(item.schedule_id),
         "schedule_name": item.schedule.name,
         "timezone": item.schedule.timezone,
         "item_id": str(item.id),
-        "post_id": str(item.post_id),
-        "title": unit.title,
+        "post_id": str(item.post_id) if item.post_id else None,
+        "artifact_id": str(item.artifact_id) if item.artifact_id else None,
+        "title": title,
         "scheduled_at": item.scheduled_at,
         "status": item.status,
         "position": item.position,
@@ -1229,6 +1258,7 @@ async def schedule_calendar(
         .join(ScheduleModel)
         .options(
             selectinload(ScheduleItemModel.schedule),
+            selectinload(ScheduleItemModel.artifact),
             selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit),
         )
         .where(

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import re
 
 
-ARTIFACT_KINDS = frozenset({"POST", "TEXT", "IMAGE", "VIDEO", "AUDIO"})
+ARTIFACT_KINDS = frozenset({"POST", "TEXT", "IMAGE", "VIDEO", "AUDIO", "QUIZ"})
 CONTENT_MODES = frozenset({"INLINE", "STORAGE_URI"})
 
 
@@ -26,6 +26,7 @@ class OutputContractDefinition:
             "IMAGE": "image/",
             "VIDEO": "video/",
             "AUDIO": "audio/",
+            "QUIZ": "application/",
         }[self.artifact_kind]
         if not self.mime_type.lower().startswith(expected_prefix):
             raise ValueError(f"Output contract MIME type must match artifact kind {self.artifact_kind}.")
@@ -33,7 +34,7 @@ class OutputContractDefinition:
             raise ValueError("Output contract content_mode must be INLINE or STORAGE_URI.")
         if not isinstance(self.required_metadata_fields, tuple):
             raise ValueError("Output contract required_metadata_fields must be a tuple.")
-        if self.artifact_kind in {"POST", "TEXT"} and self.content_mode != "INLINE":
+        if self.artifact_kind in {"POST", "TEXT", "QUIZ"} and self.content_mode != "INLINE":
             raise ValueError("POST and TEXT contracts must use INLINE content.")
         if self.artifact_kind in {"IMAGE", "VIDEO", "AUDIO"} and self.content_mode != "STORAGE_URI":
             raise ValueError("Media contracts must use STORAGE_URI content.")
