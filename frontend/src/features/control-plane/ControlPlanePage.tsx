@@ -715,9 +715,9 @@ export function ControlPlanePage() {
 
         {activeSection === "output-contracts" && <div className="grid gap-3 md:grid-cols-2">
           <SelectField label="نوع المخرج" value={form.artifact_kind} onChange={(value) => {
-            const mime: Record<string, string> = { POST: "text/plain", TEXT: "text/plain", IMAGE: "image/png", VIDEO: "video/mp4", AUDIO: "audio/wav" };
+            const mime: Record<string, string> = { POST: "text/plain", TEXT: "text/plain", QUIZ: "application/vnd.nashr.quiz+json", IMAGE: "image/png", VIDEO: "video/mp4", AUDIO: "audio/wav" };
             setForm((current) => ({ ...current, artifact_kind: value, mime_type: mime[value], content_mode: ["IMAGE", "VIDEO", "AUDIO"].includes(value) ? "STORAGE_URI" : "INLINE", max_contract_chars: ["POST", "TEXT"].includes(value) ? current.max_contract_chars || "10000" : "" }));
-          }} disabled={formDisabled} options={[{ value: "POST", label: "منشور" }, { value: "TEXT", label: "نص" }, { value: "IMAGE", label: "صورة" }, { value: "VIDEO", label: "فيديو" }, { value: "AUDIO", label: "صوت" }]} />
+          }} disabled={formDisabled} options={[{ value: "POST", label: "منشور" }, { value: "TEXT", label: "نص" }, { value: "QUIZ", label: "اختبار تفاعلي" }, { value: "IMAGE", label: "صورة" }, { value: "VIDEO", label: "فيديو" }, { value: "AUDIO", label: "صوت" }]} />
           <Field label="نوع MIME" value={form.mime_type} onChange={(value) => updateField("mime_type", value)} disabled={formDisabled} />
           <SelectField label="طريقة المحتوى" value={form.content_mode} onChange={(value) => updateField("content_mode", value)} disabled={formDisabled} options={[{ value: "INLINE", label: "مضمن داخل النظام" }, { value: "STORAGE_URI", label: "مرجع إلى تخزين دائم" }]} />
           <Field label="الحد الأقصى لأحرف المحتوى (للنص فقط)" type="number" value={form.max_contract_chars} onChange={(value) => updateField("max_contract_chars", value)} disabled={formDisabled || form.content_mode === "STORAGE_URI"} />
