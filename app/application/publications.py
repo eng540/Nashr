@@ -208,13 +208,7 @@ class ApproveAndPublish:
             quiz_data = metadata.get("quiz")
             if not isinstance(quiz_data, dict):
                 raise ValueError("Approved QUIZ Artifact has no structured quiz payload.")
-            quiz_payload = QuizPayload(
-                question=quiz_data.get("question"),
-                options=tuple(quiz_data.get("options", ())),
-                correct_option_id=quiz_data.get("correct_option_id"),
-                explanation=quiz_data.get("explanation"),
-                source_reference=quiz_data.get("source_reference"),
-            )
+            quiz_payload = QuizPayload.from_dict(quiz_data)
             if artifact.content != quiz_payload.question:
                 raise ValueError("QUIZ Artifact question does not match its approved content.")
         post_result = await session.execute(select(PostModel).where(PostModel.id == artifact.id))
