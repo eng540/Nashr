@@ -2,8 +2,8 @@
 
 Nashr's typed quiz payload is represented by `app.domain.quizzes.QuizPayload`:
 - `question`: required, 1–300 characters.
-- `options`: 2–10 non-empty options, each at most 100 characters.
-- `correct_option_id`: required zero-based index into `options`; never inferred from prose.
+- `options`: 2–12 non-empty options, each at most 100 characters.
+- `correct_option_ids` (a one-element list for a single-answer quiz): required zero-based index into `options`; never inferred from prose.
 - `explanation`: optional, at most 200 characters.
 - `source_reference`: optional provenance for review; it is not sent to Telegram.
 
