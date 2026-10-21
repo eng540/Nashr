@@ -16,7 +16,7 @@ def test_quiz_payload_builds_native_telegram_quiz_poll():
         "question": "ما جمع كلمة «قلم»؟",
         "options": [{"text": "أقلام"}, {"text": "قلمات"}, {"text": "قلام"}],
         "type": "quiz",
-        "correct_option_id": 0,
+        "correct_option_ids": [0],
         "is_anonymous": True,
         "explanation": "جمع تكسير.",
     }
