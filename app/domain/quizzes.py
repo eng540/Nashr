@@ -62,7 +62,7 @@ class QuizPayload:
             "question": self.question,
             "options": [{"text": option} for option in self.options],
             "type": "quiz",
-            "correct_option_ids": [self.correct_option_id],
+            "correct_option_id": self.correct_option_id,
             "is_anonymous": True,
         }
         if self.explanation:
