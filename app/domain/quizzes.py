@@ -18,8 +18,8 @@ class QuizPayload:
             raise ValueError("Quiz question must not be empty.")
         if len(self.question) > 300:
             raise ValueError("Quiz question cannot exceed 300 characters.")
-        if not isinstance(self.options, tuple) or not 2 <= len(self.options) <= 10:
-            raise ValueError("Quiz must contain between 2 and 10 answer options.")
+        if not isinstance(self.options, tuple) or not 2 <= len(self.options) <= 12:
+            raise ValueError("Quiz must contain between 2 and 12 answer options.")
         for index, option in enumerate(self.options):
             if not isinstance(option, str) or not option.strip():
                 raise ValueError(f"Quiz option {index + 1} must not be empty.")
@@ -29,8 +29,13 @@ class QuizPayload:
             raise ValueError("Quiz correct_option_id must be an integer.")
         if not 0 <= self.correct_option_id < len(self.options):
             raise ValueError("Quiz correct_option_id must identify one of the supplied options.")
-        if self.explanation is not None and len(self.explanation) > 200:
-            raise ValueError("Quiz explanation cannot exceed 200 characters.")
+        if self.explanation is not None:
+            if not isinstance(self.explanation, str):
+                raise ValueError("Quiz explanation must be a string or null.")
+            if len(self.explanation) > 200:
+                raise ValueError("Quiz explanation cannot exceed 200 characters.")
+            if self.explanation.count("\n") > 2:
+                raise ValueError("Quiz explanation cannot contain more than two line feeds.")
         if self.source_reference is not None and not isinstance(self.source_reference, str):
             raise ValueError("Quiz source_reference must be a string or null.")
 
@@ -41,7 +46,7 @@ class QuizPayload:
             "question": self.question,
             "options": [{"text": option} for option in self.options],
             "type": "quiz",
-            "correct_option_id": self.correct_option_id,
+            "correct_option_ids": [self.correct_option_id],
             "is_anonymous": True,
         }
         if self.explanation:
