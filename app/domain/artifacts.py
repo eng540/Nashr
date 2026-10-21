@@ -88,13 +88,7 @@ def validate_production_artifact(
         payload = (artifact.metadata or {}).get("quiz")
         if not isinstance(payload, dict):
             raise ValueError("QUIZ Artifact requires structured quiz metadata.")
-        QuizPayload(
-            question=payload.get("question"),
-            options=tuple(payload.get("options", ())),
-            correct_option_id=payload.get("correct_option_id"),
-            explanation=payload.get("explanation"),
-            source_reference=payload.get("source_reference"),
-        )
+        QuizPayload.from_dict(payload)
         if artifact.content != payload.get("question"):
             raise ValueError("QUIZ Artifact content must match its structured question.")
         return
