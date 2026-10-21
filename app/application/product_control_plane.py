@@ -169,6 +169,7 @@ class ProductionProductControlPlaneService:
         capability_output_kind = {
             "produce_post": "POST",
             "produce_text_artifact": "TEXT",
+            "produce_quiz_artifact": "QUIZ",
             "produce_image_artifact": "IMAGE",
             "produce_video_artifact": "VIDEO",
             "produce_audio_artifact": "AUDIO",
