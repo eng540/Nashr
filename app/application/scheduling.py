@@ -270,7 +270,12 @@ async def list_schedule_rows(session: AsyncSession, limit: int, offset: int) -> 
     total = int((await session.execute(select(func.count(ScheduleModel.id)))).scalar_one() or 0)
     result = await session.execute(
         select(ScheduleModel)
-        .options(selectinload(ScheduleModel.items))
+        .options(
+            selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.artifact),
+            selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit).selectinload(KnowledgeUnitModel.topic).selectinload(TopicModel.source),
+            selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit).selectinload(KnowledgeUnitModel.source),
+            selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.publication),
+        )
         .order_by(ScheduleModel.created_at.desc(), ScheduleModel.id.desc())
         .offset(offset)
         .limit(limit)
@@ -415,10 +420,23 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
         "skipped_items": sum(item.status == ScheduleItemStatus.SKIPPED.value for item in items),
         "processable_pending_items": sum(
             item.status == ScheduleItemStatus.PENDING.value
-            and item.post.status == "APPROVED"
-            and bool(item.post.content.strip())
+            and (
+                (
+                    item.artifact_id is not None
+                    and item.artifact is not None
+                    and item.artifact.kind == "QUIZ"
+                    and item.artifact.status == "AVAILABLE"
+                    and item.artifact.review_status == "APPROVED"
+                    and bool(item.artifact.content)
+                )
+                or (
+                    item.post is not None
+                    and item.post.status == "APPROVED"
+                    and bool(item.post.content.strip())
+                    and not any(publication.status == "PUBLISHED" for publication in item.post.publications)
+                )
+            )
             and item.scheduled_at.tzinfo is not None
-            and not any(publication.status == "PUBLISHED" for publication in item.post.publications)
             for item in items
         ),
     }
