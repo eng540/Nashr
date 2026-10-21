@@ -127,8 +127,9 @@ function stagesFromVersion(version?: Version): StageForm[] {
   const stages = version?.stages ?? [];
   return stages.map((stage) => {
     const configuration = { ...(stage.configuration ?? {}) };
-    const generationPrompt = typeof configuration.generation_prompt === "string" ? configuration.generation_prompt : "";
+    const generationPrompt = typeof configuration.generation_prompt === "string" ? configuration.generation_prompt : typeof configuration.style_instructions === "string" && stage.capability_key === "produce_quiz_artifact" ? configuration.style_instructions : "";
     delete configuration.generation_prompt;
+    if (stage.capability_key === "produce_quiz_artifact") delete configuration.style_instructions;
     return {
       key: stage.key,
       capability_key: stage.capability_key,
@@ -190,6 +191,10 @@ function definitionFor(section: SectionKey, form: FormState, stages: StageForm[]
       if (["produce_image_artifact", "produce_video_artifact"].includes(stage.capability_key)) {
         if (stage.generation_prompt.trim()) configuration.generation_prompt = stage.generation_prompt;
         else delete configuration.generation_prompt;
+      } else if (stage.capability_key === "produce_quiz_artifact") {
+        delete configuration.generation_prompt;
+        if (stage.generation_prompt.trim()) configuration.style_instructions = stage.generation_prompt;
+        else delete configuration.style_instructions;
       } else {
         delete configuration.generation_prompt;
       }
@@ -680,15 +685,17 @@ export function ControlPlanePage() {
               <SelectField label="القدرة" value={stage.capability_key} onChange={(value) => setStages((current) => current.map((item, i) => i === index ? { ...item, capability_key: value } : item))} disabled={formDisabled} options={capabilityOptions.map(([value, label]) => ({ value, label }))} />
               <Field label="إصدار القدرة" type="number" value={stage.capability_version} onChange={(value) => setStages((current) => current.map((item, i) => i === index ? { ...item, capability_version: value } : item))} disabled={formDisabled} />
             </div>
-            {["produce_image_artifact", "produce_video_artifact"].includes(stage.capability_key) && <Field
-              label="قالب توجيه التوليد (قابل للتعديل ضمن إصدار الوصفة)"
+            {["produce_image_artifact", "produce_video_artifact", "produce_quiz_artifact"].includes(stage.capability_key) && <Field
+              label={stage.capability_key === "produce_quiz_artifact" ? "تعليمات إنتاج الاختبار (يجب أن يكون الناتج JSON منظمًا)" : "قالب توجيه التوليد (قابل للتعديل ضمن إصدار الوصفة)"}
               value={stage.generation_prompt}
               onChange={(value) => setStages((current) => current.map((item, i) => i === index ? { ...item, generation_prompt: value } : item))}
               disabled={formDisabled}
               multiline
               placeholder={stage.capability_key === "produce_video_artifact"
                 ? "المتغيرات المطلوبة: {{audience}}, {{experience}}, {{source_title}}, {{source_name}}, {{source_excerpt}}, {{editorial_prompt}}, {{style_instructions}}"
-                : "المتغيرات المطلوبة: {{audience}}, {{experience}}, {{source_title}}, {{source_name}}, {{source_excerpt}}, {{style_instructions}}"}
+                : stage.capability_key === "produce_quiz_artifact"
+                  ? "أخرج JSON فقط: question، options (2–12 خيارًا)، correct_option_id (فهرس يبدأ من 0)، explanation، source_reference. استند إلى المصدر ولا تخترع إجابة."
+                  : "المتغيرات المطلوبة: {{audience}}, {{experience}}, {{source_title}}, {{source_name}}, {{source_excerpt}}, {{style_instructions}}"}
             />}
             <details><summary className="cursor-pointer text-xs font-semibold text-slate-600">إعدادات متقدمة للمرحلة (اختياري)</summary><textarea value={stage.configuration} onChange={(event) => setStages((current) => current.map((item, i) => i === index ? { ...item, configuration: event.target.value } : item))} disabled={formDisabled} placeholder='{"setting": "value"}' className="mt-2 min-h-20 w-full rounded-lg border p-3 font-mono text-xs disabled:bg-slate-100" /></details>
           </div>)}
