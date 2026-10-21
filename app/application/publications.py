@@ -14,7 +14,8 @@ from sqlalchemy.orm import selectinload
 from app.domain.editorial import IEditorialDrafter
 from app.application.control_plane import ControlPlaneResolver
 from app.domain.publications import IPublisher, Publication, PublicationStatus
-from app.domain.artifacts import Artifact
+from app.domain.artifacts import Artifact, ArtifactKind
+from app.domain.quizzes import QuizPayload
 from app.application.posts import ProducePost
 from app.application.artifacts import load_post_model_to_artifact, post_model_to_artifact, post_to_artifact
 from app.application.editorial_context import slice_pdf_pages_as_bytes
@@ -36,6 +37,7 @@ def _to_domain(row: PublicationModel) -> Publication:
         error_message=row.error_message,
         created_at=row.created_at,
         published_at=row.published_at,
+        artifact_id=row.artifact_id,
     )
 
 
@@ -56,10 +58,12 @@ class CreateTelegramDraft:
 
     @staticmethod
     async def execute_for_artifact(session: AsyncSession, artifact: Artifact, destination: str) -> Publication:
+        is_post = artifact.kind == ArtifactKind.POST
+        reference_filter = PublicationModel.post_id == artifact.id if is_post else PublicationModel.artifact_id == artifact.id
         existing_result = await session.execute(
             select(PublicationModel)
             .where(
-                PublicationModel.post_id == artifact.id,
+                reference_filter,
                 PublicationModel.platform == "telegram",
                 PublicationModel.destination == destination,
             )
@@ -73,7 +77,8 @@ class CreateTelegramDraft:
         row = PublicationModel(
             id=uuid4(),
             knowledge_unit_id=artifact.source_knowledge_unit_id,
-            post_id=artifact.id,
+            post_id=artifact.id if is_post else None,
+            artifact_id=None if is_post else artifact.id,
             platform="telegram",
             destination=destination,
             content=artifact.content,
@@ -87,7 +92,7 @@ class CreateTelegramDraft:
             result = await session.execute(
                 select(PublicationModel)
                 .where(
-                    PublicationModel.post_id == artifact.id,
+                    reference_filter,
                     PublicationModel.platform == "telegram",
                     PublicationModel.destination == destination,
                 )
@@ -127,12 +132,25 @@ class ApproveAndPublish:
             publication_row = publication_result.scalar_one_or_none()
             if publication_row is None:
                 raise ValueError("Publication not found.")
-            if publication_row.post_id is None:
-                raise ValueError("Publication requires an Artifact-backed Post.")
-            artifact = await load_post_model_to_artifact(session, publication_row.post_id)
+            if publication_row.artifact_id is not None:
+                from app.application.artifacts import load_artifact
+                artifact = await load_artifact(session, publication_row.artifact_id)
+                if artifact is None:
+                    raise ValueError("Publication Artifact not found.")
+            elif publication_row.post_id is not None:
+                artifact = await load_post_model_to_artifact(session, publication_row.post_id)
+            else:
+                raise ValueError("Publication must reference a Post or generic Artifact.")
 
-        if artifact.editorial_status != "APPROVED":
-            raise ValueError("Post must be APPROVED before publication.")
+        artifact_review_status = None
+        if artifact.kind != ArtifactKind.POST:
+            artifact_row = (await session.execute(
+                select(ArtifactModel).where(ArtifactModel.id == artifact.id)
+            )).scalar_one_or_none()
+            artifact_review_status = artifact_row.review_status if artifact_row is not None else None
+        approved = artifact.editorial_status == "APPROVED" if artifact.kind == ArtifactKind.POST else artifact_review_status == "APPROVED"
+        if not approved:
+            raise ValueError("Artifact must be APPROVED before publication.")
         if content is not None:
             content = content.strip()
             if not content:
@@ -149,7 +167,10 @@ class ApproveAndPublish:
             current_row = current.scalar_one_or_none()
             if current_row is None:
                 raise ValueError("Publication is not a DRAFT.")
-            if current_row.post_id != artifact.id:
+            if not (
+                (artifact.kind == ArtifactKind.POST and current_row.post_id == artifact.id)
+                or (artifact.kind != ArtifactKind.POST and current_row.artifact_id == artifact.id)
+            ):
                 raise ValueError("Publication does not belong to the supplied Artifact.")
             edited = await session.execute(
                 update(PublicationModel)
@@ -169,13 +190,31 @@ class ApproveAndPublish:
         current_row = current.scalar_one_or_none()
         if current_row is None:
             raise ValueError("Publication not found.")
-        if current_row.post_id != artifact.id:
+        if not (
+            (artifact.kind == ArtifactKind.POST and current_row.post_id == artifact.id)
+            or (artifact.kind != ArtifactKind.POST and current_row.artifact_id == artifact.id)
+        ):
             raise ValueError("Publication does not belong to the supplied Artifact.")
         if current_row.status != PublicationStatus.DRAFT.value:
             raise ValueError("Publication is not a DRAFT.")
 
         media_bytes = None
         media_mime_type = None
+        quiz_payload = None
+        if artifact.kind == ArtifactKind.QUIZ:
+            metadata = artifact.metadata or {}
+            quiz_data = metadata.get("quiz")
+            if not isinstance(quiz_data, dict):
+                raise ValueError("Approved QUIZ Artifact has no structured quiz payload.")
+            quiz_payload = QuizPayload(
+                question=quiz_data.get("question"),
+                options=tuple(quiz_data.get("options", ())),
+                correct_option_id=quiz_data.get("correct_option_id"),
+                explanation=quiz_data.get("explanation"),
+                source_reference=quiz_data.get("source_reference"),
+            )
+            if artifact.content != quiz_payload.question:
+                raise ValueError("QUIZ Artifact question does not match its approved content.")
         post_result = await session.execute(select(PostModel).where(PostModel.id == artifact.id))
         post_row = post_result.scalar_one_or_none()
         if post_row is not None and post_row.visual_artifact_id is not None:
@@ -251,7 +290,13 @@ class ApproveAndPublish:
         # The provider call must never hold an open database transaction.
         await session.commit()
         try:
-            if media_bytes is None:
+            if quiz_payload is not None:
+                if row.content != quiz_payload.question:
+                    raise ValueError("Publication content no longer matches the approved quiz question.")
+                published = await self.publisher.publish(
+                    destination=row.destination, content=row.content, quiz=quiz_payload
+                )
+            elif media_bytes is None:
                 published = await self.publisher.publish(destination=row.destination, content=row.content)
             else:
                 published = await self.publisher.publish(
