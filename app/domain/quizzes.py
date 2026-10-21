@@ -39,6 +39,22 @@ class QuizPayload:
         if self.source_reference is not None and not isinstance(self.source_reference, str):
             raise ValueError("Quiz source_reference must be a string or null.")
 
+    @classmethod
+    def from_dict(cls, value: object) -> "QuizPayload":
+        """Parse persisted or model-generated JSON without coercing malformed option values."""
+        if not isinstance(value, dict):
+            raise ValueError("Quiz payload must be a JSON object.")
+        options = value.get("options")
+        if not isinstance(options, (list, tuple)):
+            raise ValueError("Quiz options must be a JSON array.")
+        return cls(
+            question=value.get("question"),
+            options=tuple(options),
+            correct_option_id=value.get("correct_option_id"),
+            explanation=value.get("explanation"),
+            source_reference=value.get("source_reference"),
+        )
+
     def to_telegram_payload(self, destination: str) -> dict[str, object]:
         """Build the Bot API sendPoll parameters for a native quiz."""
         payload: dict[str, object] = {
