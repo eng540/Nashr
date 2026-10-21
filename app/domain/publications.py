@@ -44,3 +44,4 @@ class Publication:
     error_message: str | None
     created_at: datetime
     published_at: datetime | None
+    artifact_id: object | None = None
