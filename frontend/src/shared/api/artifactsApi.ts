@@ -36,4 +36,7 @@ export const genericArtifactsApi = {
   reject(id: string, review_note: string): Promise<GenericReviewableArtifact> {
     return post<GenericReviewableArtifact>(`/api/artifacts/${id}/reject`, { review_note });
   },
+  createQuizDraft(id: string): Promise<{ id: string; artifact_id: string | null; status: string; content: string }> {
+    return post<{ id: string; artifact_id: string | null; status: string; content: string }>(`/api/artifacts/${id}/telegram-draft`, {});
+  },
 };
