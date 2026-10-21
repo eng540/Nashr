@@ -26,7 +26,7 @@ def test_quiz_payload_builds_native_telegram_quiz_poll():
     "kwargs, message",
     [
         ({"question": "", "options": ("أ", "ب"), "correct_option_id": 0}, "question"),
-        ({"question": "سؤال", "options": ("أ",), "correct_option_id": 0}, "between 2 and 10"),
+        ({"question": "سؤال", "options": ("أ",), "correct_option_id": 0}, "between 2 and 12"),
         ({"question": "سؤال", "options": ("أ", "ب"), "correct_option_id": 2}, "identify"),
         ({"question": "سؤال", "options": ("أ" * 101, "ب"), "correct_option_id": 0}, "100 characters"),
         ({"question": "سؤال", "options": ("أ", "ب"), "correct_option_id": True}, "integer"),
