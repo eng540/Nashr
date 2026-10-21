@@ -88,5 +88,5 @@ async def test_telegram_publisher_sends_native_quiz_poll_without_network(monkeyp
     url, request = FakeAsyncClient.calls[0]
     assert url.endswith("/sendPoll")
     assert request["json"]["type"] == "quiz"
-    assert request["json"]["correct_option_id"] == 0
+    assert request["json"]["correct_option_ids"] == [0]
     assert request["json"]["options"] == [{"text": "أقلام"}, {"text": "قلام"}]
