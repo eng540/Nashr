@@ -139,16 +139,8 @@ class ProduceTextArtifactCapability:
             raise ValueError("produce_text_artifact capability requires a pinned output contract.")
         pinned_contract = PinnedOutputContract.from_dict(context.resolved_context["output_contract"])
         contract = OutputContractDefinition.from_dict(pinned_contract.definition)
-        quiz_system_prompt = _stage_system_prompt(context, self.key) + (
-            "\n\nRequired machine-readable output contract: return only one valid JSON object, "
-            "with no Markdown fences or surrounding prose. Required keys: "
-            '"question" (string), "options" (array of 2–12 distinct non-empty strings), '
-            '"correct_option_id" (zero-based integer index into options). Optional keys: '
-            '"explanation" (string or null) and "source_reference" (string or null). '
-            "Base the question and correct answer on the supplied source material; do not invent facts."
-        )
         drafted = await self.generator.execute(
-            context.session, knowledge_unit_id, system_prompt=quiz_system_prompt
+            context.session, knowledge_unit_id, system_prompt=_stage_system_prompt(context, self.key)
         )
         now = datetime.now(timezone.utc)
         artifact = Artifact(
@@ -204,8 +196,16 @@ class ProduceQuizArtifactCapability:
         if existing is not None:
             return existing
 
+        quiz_system_prompt = _stage_system_prompt(context, self.key) + (
+            "\n\nRequired machine-readable output contract: return only one valid JSON object, "
+            "with no Markdown fences or surrounding prose. Required keys: "
+            '"question" (string), "options" (array of 2–12 distinct non-empty strings), '
+            '"correct_option_id" (zero-based integer index into options). Optional keys: '
+            '"explanation" (string or null) and "source_reference" (string or null). '
+            "Base the question and correct answer on the supplied source material; do not invent facts."
+        )
         drafted = await self.generator.execute(
-            context.session, knowledge_unit_id, system_prompt=_stage_system_prompt(context, self.key)
+            context.session, knowledge_unit_id, system_prompt=quiz_system_prompt
         )
         try:
             value = json.loads(drafted.content)
