@@ -25,6 +25,6 @@
       "libpng16-16",
       "zlib1g"
     ],
-    "startCommand": "sh -c 'python scripts/check_arabic_renderer.py && python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
+    "startCommand": "sh -c 'export PYTHONPATH=\"/app/python-deps${PYTHONPATH:+:$PYTHONPATH}\"; python scripts/check_arabic_renderer.py && python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
   }
 }
