@@ -23,7 +23,13 @@
       "libfreetype6",
       "libjpeg62-turbo",
       "libpng16-16",
-      "zlib1g"
+      "zlib1g",
+      "libtiff6",
+      "libwebp7",
+      "libopenjp2-7",
+      "liblcms2-2",
+      "libxcb1",
+      "libdeflate0"
     ],
     "startCommand": "sh -c 'export PYTHONPATH=\"/app/python-deps${PYTHONPATH:+:$PYTHONPATH}\"; python scripts/check_arabic_renderer.py && python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
   }
