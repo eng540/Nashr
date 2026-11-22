@@ -15,6 +15,7 @@ from app.adapters.gemini_policy import (
     resolve_model_chain,
     retry_after_seconds,
 )
+from app.api.auth import AuthMiddleware, router as auth_router
 from app.api.benchmark import benchmark_router
 from app.api.control_plane import router as control_plane_router
 from app.api.policies import router as policies_router
@@ -168,6 +169,8 @@ def create_app() -> FastAPI:
     """Create the Nashr FastAPI application."""
     configure_logging()
     application = FastAPI(title="Nashr", lifespan=lifespan)
+    application.add_middleware(AuthMiddleware)
+    application.include_router(auth_router)
     register_gemini_error_handlers(application)
     application.include_router(router)
     application.include_router(control_plane_router)
