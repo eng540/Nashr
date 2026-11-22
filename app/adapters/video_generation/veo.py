@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 
 from app.application.provider_errors import ProviderOutcomeUnknownError
+from app.application.media_gate import ensure_media_generation_enabled
 
 
 class VeoVideoGenerationError(RuntimeError):
@@ -67,6 +68,7 @@ class VeoVideoGenerator:
         )
 
     def _start_sync(self, prompt: str, aspect_ratio: str, resolution: str, duration_seconds: int) -> str:
+        ensure_media_generation_enabled()
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("Video generation prompt is required.")
         if aspect_ratio not in {"16:9", "9:16"}:
