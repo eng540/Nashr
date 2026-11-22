@@ -9,6 +9,7 @@ from typing import Any
 
 from app.application.image_generation import GeneratedImage
 from app.application.provider_errors import raise_if_provider_outcome_unknown
+from app.application.media_gate import ensure_media_generation_enabled
 
 from google.genai import types
 
@@ -144,6 +145,7 @@ class GeminiImageGenerator:
         return await asyncio.to_thread(self._generate_sync, prompt, aspect_ratio, image_size)
 
     def _generate_sync(self, prompt: str, aspect_ratio: str, image_size: str) -> GeneratedImage:
+        ensure_media_generation_enabled()
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("Image generation prompt is required.")
         if aspect_ratio not in {"1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"}:
