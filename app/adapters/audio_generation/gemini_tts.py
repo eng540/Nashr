@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from app.adapters.gemini_policy import create_gemini_client
 from app.application.provider_errors import raise_if_provider_outcome_unknown
+from app.application.media_gate import ensure_media_generation_enabled
 
 
 class GeminiAudioGenerationError(RuntimeError):
@@ -37,6 +38,7 @@ class GeminiAudioGenerator:
         return await asyncio.to_thread(self._generate_sync, text, voice, style)
 
     def _generate_sync(self, text: str, voice: str, style: str) -> GeneratedAudio:
+        ensure_media_generation_enabled()
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Audio transcript is required.")
         if len(text) > 20000:
