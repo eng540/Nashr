@@ -2,7 +2,7 @@
 
 Use an inline TEXT review wrapper with telegram_album metadata containing a bounded list of2-10 approved stored artifact IDs. No recipient or BotAPI method in user-controlled metadata. Existing approval separation is preserved; selecting source content never approves it.
 
-- Validate IDs, uniqueness and grouping rules. Only IMAGE/VIDEO combinations, homogeneous AUDIO, or homogeneous DOCUMENT. LivePhoto is a separate currently unsupported type; do not silently call a video a live photo.
+- Validate IDs, uniqueness and grouping rules. Only IMAGE/VIDEO combinations, homogeneous AUDIO, or homogeneous DOCUMENT. LivePhoto is a separate review workflow implemented in PR178; do not silently call a video a live photo.
 - At creation, approval, schedule activation and send: reload children, require AVAILABLE+APPROVED, supported MIME+private storage. At send pin a fingerprint of IDs/kinds/storage/captions so approved album cannot silently inherit changed child media.
 - Send media through multipart attach:// fields with per-item current approved caption, max1024. No paid broadcast flag. Check total memory bound and each upload limit before reading bytes.
 - Parse array result; persist all message IDs in a new ledger field, retain first external_id for compatibility. Return exact list on schedule/publication responses and record result details. An ambiguous result is not safely retryable.
@@ -10,4 +10,8 @@ Use an inline TEXT review wrapper with telegram_album metadata containing a boun
 - UI: select approved eligible children, explicit create-album action distinct from batch individual drafts; review ordered list/captions with previews, draft, schedule, activate, result.
 - Tests: allowed and rejected mixes,2/10bounds, revoked/changed child, filenames/MIME/size, multipart2items and parsedallIDs, no-paid-flags, concurrent claim/retry safety, current legacy tests, browser desktop/mobile.
 
-Known follow-up UI issues from live175tests: quiz has immediate publish but lacks schedule and multi-select UI despite backend support; media schedule titles fall back to quiz, and list details stay stale after sends until reload; position rendered plus1 despite one-based model.
+Historical follow-up observations from the live175 tests (verify current UI before treating these as open): quiz has immediate publish but lacks schedule and multi-select UI despite backend support; media schedule titles fall back to quiz, and list details stay stale after sends until reload; position rendered plus1 despite one-based model.
+
+## Verified outcome
+
+PR177 was merged and deployed on 2026-11-23. A fresh synthetic two-photo album completed one scheduled send with both Telegram message IDs retained. The response and ledger were checked; visual appearance inside Telegram remains unverified. PR178 added the separate Live Photo workflow, not an album type alias.
