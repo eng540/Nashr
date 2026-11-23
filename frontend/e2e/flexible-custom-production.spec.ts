@@ -6,7 +6,7 @@ test("custom production submits direct text and instructions without a product",
   await page.route("**/api/control/products", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [{ id: "post-recipe-id", key: "BOOK_TO_TELEGRAM_POST", name: "Book to Telegram Post", purpose: "Post production", active_version: 1, versions: [{ version: 1, status: "PUBLISHED", stages: [{ key: "produce-post", capability_key: "produce_post", capability_version: 1 }] }] }] }));
-  await page.route("**/api/sources*", (route) => route.fulfill({ json: [] }));
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => route.fulfill({ json: [] }));
   await page.route("**/production-jobs/custom-text-job", (route) => route.fulfill({ json: {
     job_id: "custom-text-job", claim_id: "custom-claim", source_id: "inline-source", status: "COMPLETED",
     scope: "SELECTION", total_items: 1, completed_items: 1, failed_items: 0, pending_items: 0,
@@ -79,7 +79,7 @@ test("product mode can use direct text and task-specific instructions without a 
       audience: "readers", experience: "post"
     } }]
   }] }));
-  await page.route("**/api/sources**", (route) => route.fulfill({ json: [] }));
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => route.fulfill({ json: [] }));
   await page.route("**/production-jobs/product-text-job", (route) => route.fulfill({ json: {
     job_id: "product-text-job", source_id: "inline-source", status: "COMPLETED", scope: "SELECTION",
     total_items: 1, completed_items: 1, failed_items: 0, pending_items: 0, running_items: 0,
