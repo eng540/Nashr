@@ -173,12 +173,21 @@ class TelegramPublisher(IPublisher):
         media: bytes | None = None,
         media_mime_type: str | None = None,
         quiz: QuizPayload | None = None,
+        media_kind: str | None = None,
+        media_filename: str | None = None,
+        native: dict | None = None,
     ) -> PublishResult:
         """Send text, an approved visual card, or a native Telegram quiz poll."""
         if quiz is not None and media is not None:
             raise ValueError("A Telegram quiz cannot be combined with image media.")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            if quiz is not None:
+            if native is not None:
+                if quiz is not None or media is not None:
+                    raise ValueError("Native content cannot be combined with quiz or media.")
+                from app.domain.telegram_payloads import native_payload
+                method, data = native_payload(native)
+                response = await client.post(f"https://api.telegram.org/bot{self.token}/{method}", json={"chat_id": destination, **data})
+            elif quiz is not None:
                 url = f"https://api.telegram.org/bot{self.token}/sendPoll"
                 response = await client.post(url, json=quiz.to_telegram_payload(destination))
             elif media is None:
@@ -193,22 +202,14 @@ class TelegramPublisher(IPublisher):
                     },
                 )
             else:
-                image_types = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
-                video_types = {"video/mp4": "mp4"}
-                if not media or (media_mime_type not in image_types and media_mime_type not in video_types):
-                    raise ValueError("Publishing media must be a non-empty supported image or MP4 video.")
-                caption = telegram_html_content(content, max_visible_characters=1024)
-                if media_mime_type in image_types:
-                    url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
-                    files = {"photo": (f"nashr-card.{image_types[media_mime_type]}", media, media_mime_type)}
-                else:
-                    url = f"https://api.telegram.org/bot{self.token}/sendVideo"
-                    files = {"video": (f"nashr-media.{video_types[media_mime_type]}", media, media_mime_type)}
-                response = await client.post(
-                    url,
-                    data={"chat_id": destination, "caption": caption, "parse_mode": "HTML"},
-                    files=files,
-                )
+                from app.domain.telegram_media import media_request, NO_CAPTION
+                selected_kind = media_kind or ("IMAGE" if (media_mime_type or "").startswith("image/") else "VIDEO")
+                method, field, filename = media_request(selected_kind, media_mime_type, media, media_filename)
+                url = f"https://api.telegram.org/bot{self.token}/{method}"
+                data = {"chat_id": destination}
+                if selected_kind not in NO_CAPTION:
+                    data.update({"caption": telegram_html_content(content, max_visible_characters=1024), "parse_mode": "HTML"})
+                response = await client.post(url, data=data, files={field: (filename, media, media_mime_type)})
             response.raise_for_status()
             payload = response.json()
         if not payload.get("ok") or "result" not in payload or "message_id" not in payload["result"]:

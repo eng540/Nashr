@@ -9,6 +9,15 @@ import { postsApi } from "../../shared/api/postsApi";
 
 
 const LIBRARY_PAGE_SIZE = 12;
+const STORED_MEDIA = ["IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "ANIMATION", "VOICE", "VIDEO_NOTE", "STICKER"];
+const NATIVE_TEMPLATES: Record<string, Record<string, unknown>> = {
+  POLL: { type: "POLL", question: "سؤال الاستطلاع", options: ["الخيار الأول", "الخيار الثاني"], allows_multiple_answers: false },
+  LOCATION: { type: "LOCATION", latitude: 0, longitude: 0 },
+  VENUE: { type: "VENUE", latitude: 0, longitude: 0, title: "اسم المكان", address: "العنوان" },
+  CONTACT: { type: "CONTACT", phone_number: "+000000000", first_name: "جهة اتصال تجريبية" },
+  DICE: { type: "DICE", emoji: "🎲" },
+};
+const MEDIA_LABELS: Record<string, string> = { IMAGE: "صورة", VIDEO: "فيديو", AUDIO: "ملف صوتي", DOCUMENT: "ملف", ANIMATION: "صورة متحركة", VOICE: "رسالة صوتية", VIDEO_NOTE: "رسالة فيديو دائرية", STICKER: "ملصق" };
 
 function artifactTitle(artifact: GenericReviewableArtifact): string {
   const title = artifact.metadata.title;
@@ -40,17 +49,19 @@ function TelegramMediaDraftPreview({ artifact }: { artifact: GenericReviewableAr
   const media = useQuery({
     queryKey: ["generic-artifact-media-url", artifact.id],
     queryFn: () => genericArtifactsApi.mediaUrl(artifact.id),
-    enabled: Boolean(artifact.storage_uri) && ["IMAGE", "VIDEO"].includes(artifact.kind),
+    enabled: Boolean(artifact.storage_uri) && STORED_MEDIA.includes(artifact.kind),
     staleTime: 4 * 60 * 1000,
   });
-  const caption = typeof artifact.metadata.caption === "string" ? artifact.metadata.caption : "";
+  const caption = ["VIDEO_NOTE", "STICKER"].includes(artifact.kind) ? "" : typeof artifact.metadata.caption === "string" ? artifact.metadata.caption : "";
   return (
     <section aria-label={`معاينة مسودة تيليجرام ${artifact.id}`} className="rounded-xl border border-sky-200 bg-[#0e1621] p-3">
       <div className="mx-auto max-w-sm rounded-2xl bg-white p-2 shadow">
         {media.isLoading ? <p role="status" className="p-3 text-sm text-slate-500">تحميل الوسيط للمعاينة...</p> : null}
         {media.isError ? <p role="alert" className="p-3 text-sm text-rose-700">تعذر تحميل الوسيط: {media.error?.message ?? "رابط غير متاح"}</p> : null}
-        {media.data?.url && artifact.kind === "IMAGE" ? <img src={media.data.url} alt={caption || "معاينة الوسيط"} className="max-h-72 w-full rounded-xl object-contain" /> : null}
-        {media.data?.url && artifact.kind === "VIDEO" ? <video src={media.data.url} controls preload="metadata" className="max-h-72 w-full rounded-xl bg-black object-contain" /> : null}
+        {media.data?.url && (artifact.kind === "IMAGE" || artifact.kind === "ANIMATION" && artifact.mime_type === "image/gif") ? <img src={media.data.url} alt={caption || "معاينة الوسيط"} className="max-h-72 w-full rounded-xl object-contain" /> : null}
+        {media.data?.url && (["VIDEO", "VIDEO_NOTE"].includes(artifact.kind) || artifact.kind === "ANIMATION" && artifact.mime_type === "video/mp4") ? <video src={media.data.url} controls preload="metadata" className="max-h-72 w-full rounded-xl bg-black object-contain" /> : null}
+        {media.data?.url && ["AUDIO", "VOICE"].includes(artifact.kind) ? <audio src={media.data.url} controls className="w-full" /> : null}
+        {media.data?.url && ["DOCUMENT", "STICKER"].includes(artifact.kind) ? <p className="p-3 text-sm">مرفق:{String(artifact.metadata.original_filename ?? artifact.kind)}</p> : null}
         {caption ? <p dir="auto" className="whitespace-pre-wrap break-words p-3 text-sm leading-6 text-slate-900">{caption}</p> : null}
         <p dir="ltr" className="px-3 pb-2 text-left text-[11px] text-slate-400">قناة المعاينة · الآن</p>
       </div>
@@ -63,7 +74,7 @@ function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewable
   const media = useQuery({
     queryKey: ["generic-artifact-media-url", artifact.id],
     queryFn: () => genericArtifactsApi.mediaUrl(artifact.id),
-    enabled: Boolean(artifact.storage_uri) && ["IMAGE", "VIDEO", "AUDIO"].includes(artifact.kind),
+    enabled: Boolean(artifact.storage_uri) && STORED_MEDIA.includes(artifact.kind),
     staleTime: 4 * 60 * 1000,
   });
   if (!artifact.storage_uri) {
@@ -76,16 +87,16 @@ function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewable
     return <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm">تعذر تحميل معاينة الوسيط: {media.error?.message ?? "رابط المعاينة غير متاح."}</p>;
   }
   const title = typeof artifact.metadata.title === "string" ? artifact.metadata.title : `معاينة ${artifact.kind}`;
-  if (artifact.kind === "IMAGE") {
+  if (artifact.kind === "IMAGE" || artifact.kind === "ANIMATION" && artifact.mime_type === "image/gif") {
     return <img src={media.data.url} alt={title} className="max-h-64 max-w-full rounded-xl border object-contain" />;
   }
-  if (artifact.kind === "VIDEO") {
+  if (["VIDEO", "VIDEO_NOTE"].includes(artifact.kind) || artifact.kind === "ANIMATION" && artifact.mime_type === "video/mp4") {
     return <video src={media.data.url} controls preload="metadata" className="max-h-64 w-full rounded-xl border object-contain bg-black" />;
   }
-  if (artifact.kind === "AUDIO") {
+  if (["AUDIO", "VOICE"].includes(artifact.kind)) {
     return <audio src={media.data.url} controls preload="metadata" className="w-full" />;
   }
-  return <p className="break-all rounded-lg bg-slate-50 p-3 text-sm">مخرج محفوظ في تخزين الوسائط.</p>;
+  return <a href={media.data.url} download rel="noreferrer" className="block break-words rounded-lg bg-slate-50 p-3 text-sm text-indigo-800">تنزيل المرفق:{String(artifact.metadata.original_filename ?? artifact.kind)}</a>;
 }
 
 
@@ -113,6 +124,13 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const [batchNote, setBatchNote] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState("");
+  const [uploadKind, setUploadKind] = useState("");
+  const [manualKind, setManualKind] = useState("TEXT");
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualContent, setManualContent] = useState("");
+  const [quizOptions, setQuizOptions] = useState("");
+  const [quizAnswer, setQuizAnswer] = useState(0);
+  const [nativeJson, setNativeJson] = useState("");
   const [selectedPostId, setSelectedPostId] = useState("");
   const [postProductKey, setPostProductKey] = useState("");
   const [activeCardJob, setActiveCardJob] = useState("");
@@ -203,7 +221,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const ingestMedia = useMutation({
     mutationFn: () => {
       if (!uploadFile) throw new Error("اختر ملف صورة أو فيديو أولًا.");
-      return genericArtifactsApi.ingestReadyMedia({ file: uploadFile, caption: uploadCaption });
+      return genericArtifactsApi.ingestReadyMedia({ file: uploadFile, caption: uploadCaption, media_kind: uploadKind || undefined });
     },
     onSuccess: () => {
       setUploadFile(null);
@@ -211,6 +229,12 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       setStatus("DRAFT");
       refresh();
     },
+  });
+  const createManual = useMutation({
+    mutationFn: () => genericArtifactsApi.manualDraft({ kind: manualKind === "QUIZ" ? "QUIZ" : "TEXT", title: manualTitle, content: manualContent,
+      ...(NATIVE_TEMPLATES[manualKind] ? { native: JSON.parse(nativeJson) as Record<string, unknown> } : {}),
+      ...(manualKind === "QUIZ" ? { quiz: { question: manualContent, options: quizOptions.split("\n").map(v => v.trim()).filter(Boolean), correct_option_id: quizAnswer } } : {}) }),
+    onSuccess: () => { setStatus("DRAFT"); setManualTitle(""); setManualContent(""); refresh(); },
   });
   const deriveVariant = useMutation({
     mutationFn: ({ id, platform }: { id: string; platform: string }) => genericArtifactsApi.derivePlatformVariant(id, platform),
@@ -245,7 +269,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     onSuccess: (schedule, input) => setMediaSchedules((current) => ({ ...current, [input.id]: { id: schedule.id, status: schedule.status, at: schedule.items[0]?.scheduled_at ?? "" } })),
   });
   const isTelegramMediaEligible = (artifact: GenericReviewableArtifact) =>
-    ["IMAGE", "VIDEO"].includes(artifact.kind) && Boolean(artifact.storage_uri) && artifact.metadata.source_type === "MEDIA_BANK_UPLOAD";
+    (STORED_MEDIA.includes(artifact.kind) && Boolean(artifact.storage_uri) || artifact.kind === "TEXT") && artifact.review_status === "APPROVED";
   const eligibleSelectedCount = selectedMediaIds.length;
   const batchMediaDrafts = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -383,6 +407,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <option value="TEXT">نص</option>
           <option value="AUDIO">صوت</option>
           <option value="QUIZ">اختبار</option>
+          {Object.entries(MEDIA_LABELS).filter(([k]) => !["IMAGE", "VIDEO", "AUDIO"].includes(k)).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
         <Select aria-label="تصفية حسب مصدر المخرج" value={sourceFilter} onChange={(event) => updateFilters(() => setSourceFilter(event.target.value))}>
           <option value="ALL">كل المصادر</option>
@@ -452,6 +477,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
+        {artifact.metadata.telegram_native ? <section className="rounded-lg border bg-sky-50 p-3"><h4 className="font-bold">معاينة بيانات Telegram</h4><pre dir="ltr" className="whitespace-pre-wrap break-all text-xs">{JSON.stringify(artifact.metadata.telegram_native, null, 2)}</pre></section> : null}
         {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
           <section aria-label={`تحرير المخرج ${artifact.id}`} className="min-w-0 space-y-2">
             <h3 className="text-sm font-bold text-slate-700">المحرر</h3>
@@ -501,8 +527,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {deriveVariant.isError ? <span role="alert" className="text-xs text-rose-700">{deriveVariant.error.message}</span> : null}
           <span className="text-xs text-slate-600">تُقصّ النسخة عند حد المنصة على حدود آمنة (جملة أو كلمة، دون قطع الروابط) وتُحفظ قيد المراجعة؛ تجهيز طول فقط وليس إعادة صياغة، ولا يُنشر شيء خارجيًا.</span>
         </div> : null}
-        {status === "APPROVED" && ["IMAGE", "VIDEO"].includes(artifact.kind) && artifact.storage_uri ? <TelegramMediaDraftPreview artifact={artifact} /> : null}
-        {status === "APPROVED" && ["IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+        {status === "APPROVED" && STORED_MEDIA.includes(artifact.kind) && artifact.storage_uri ? <TelegramMediaDraftPreview artifact={artifact} /> : null}
+        {status === "APPROVED" && (STORED_MEDIA.includes(artifact.kind) || artifact.kind === "TEXT") ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
           <p className="text-sm font-semibold">وسيط معتمد من بنك الوسائط</p>
           {mediaDrafts[artifact.id] ? <p role="status" className="text-xs">سجل نشر Telegram: {mediaDrafts[artifact.id].id} · الحالة {mediaDrafts[artifact.id].status} · المسودة جاهزة للمراجعة في سجل النشر.</p> : null}
           {!mediaDrafts[artifact.id] ? <button type="button" onClick={() => createMediaDraft.mutate(artifact.id)} disabled={createMediaDraft.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{createMediaDraft.isPending ? "جارٍ إنشاء المسودة..." : "إنشاء مسودة نشر Telegram"}</button> : null}
@@ -558,11 +584,26 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       <summary className="cursor-pointer text-sm font-bold text-slate-600">إجراءات إضافية: رفع وسيط جاهز، اشتقاق نسخة منصة، وبطاقة تصميم</summary>
       <div className="mt-3 space-y-3">
     <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-      <h3 className="font-bold">بنك الوسائط الجاهزة</h3>
-      <p className="text-sm text-slate-600">ارفع صورة (JPEG/PNG/WebP) أو فيديو (MP4) جاهزًا للنشر. يدخل الملف حالة «قيد المراجعة» ولا يُنشر شيء دون اعتمادك.</p>
+      <h3 className="font-bold">نص أو اختبار تفاعلي</h3>
+      <select aria-label="نوع المسودة اليدوية" value={manualKind} onChange={e => { setManualKind(e.target.value); if (NATIVE_TEMPLATES[e.target.value]) setNativeJson(JSON.stringify(NATIVE_TEMPLATES[e.target.value], null, 2)); }} className="w-full rounded-lg border p-2"><option value="TEXT">نص</option><option value="QUIZ">اختبار</option><option value="POLL">استطلاع</option><option value="LOCATION">موقع</option><option value="VENUE">مكان</option><option value="CONTACT">جهة اتصال</option><option value="DICE">نرد تفاعلي</option></select>
+      <input aria-label="عنوان المسودة اليدوية" value={manualTitle} onChange={e => setManualTitle(e.target.value)} placeholder="عنوان داخلي" className="w-full rounded-lg border p-2" />
+      <textarea aria-label="نص المسودة اليدوية" value={manualContent} onChange={e => setManualContent(e.target.value)} placeholder={manualKind === "QUIZ" ? "سؤال الاختبار" : "النص الكامل"} className="min-h-32 w-full rounded-lg border p-2" />
+      {NATIVE_TEMPLATES[manualKind] ? <label className="block text-sm">البيانات المنظمة(JSON)،عدّل القيم قبل الحفظ<textarea aria-label="بيانات Telegram المنظمة" value={nativeJson} onChange={e => setNativeJson(e.target.value)} dir="ltr" className="min-h-48 w-full rounded-lg border p-3 font-mono text-xs" /></label> : null}
+      {manualKind === "QUIZ" ? <><textarea aria-label="خيارات الاختبار" value={quizOptions} onChange={e => setQuizOptions(e.target.value)} placeholder="كل خيار في سطر" className="w-full rounded-lg border p-2" /><label className="block">رقم الإجابة الصحيحة بدءاً من1<input aria-label="رقم الإجابة الصحيحة" type="number" min="1" value={quizAnswer + 1} onChange={e => setQuizAnswer(Number(e.target.value) - 1)} className="mx-2 rounded border p-2" /></label></> : null}
+      <button type="button" onClick={() => createManual.mutate()} disabled={!manualTitle.trim() || !manualContent.trim() || createManual.isPending} className="rounded-lg bg-indigo-700 px-3 py-2 text-white">حفظ مسودة للمراجعة</button>
+      {createManual.isError ? <p role="alert" className="text-rose-700">{createManual.error.message}</p> : null}
+      {createManual.isSuccess ? <p role="status">حُفظت المسودة،لا نشر ولا اعتماد تلقائي.</p> : null}
+      <h3 className="border-t pt-4 font-bold">بنك الوسائط الجاهزة</h3>
+      <p className="text-sm text-slate-600">اختر نوع إرسال Telegram صراحةً للصوت والملفات والملصقات. كل رفع يدخل قيد المراجعة. حد Telegram: الصور10MiB، وبقية الملفات50MiB. الأصل محفوظ؛ تعليق النشر محدود1024حرفاً، ولا تعليق للملصق أو الفيديو الدائري.</p>
+      <label className="block text-sm font-semibold">نوع الإرسال
+        <select aria-label="نوع الوسيط المرفوع" value={uploadKind} onChange={e => setUploadKind(e.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2">
+          <option value="">تلقائي:صورة أوMP4</option>
+          {Object.entries(MEDIA_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </label>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold">ملف الوسيط
-          <input aria-label="ملف الوسيط الجاهز" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal" />
+          <input aria-label="ملف الوسيط الجاهز" type="file" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal" />
         </label>
         <label className="text-sm font-semibold">التعليق (يظهر نصًا مع الوسيط عند النشر)
           <input aria-label="تعليق الوسيط الجاهز" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" placeholder="نص يرافق الوسيط عند النشر" />

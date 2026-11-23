@@ -25,6 +25,11 @@ def _artifact(kind: ArtifactKind, job_id, source_id, **overrides) -> Artifact:
         "updated_at": NOW,
         "storage_uri": None if kind in {ArtifactKind.POST, ArtifactKind.TEXT, ArtifactKind.QUIZ} else "s3://private/artifact",
         "mime_type": "text/plain" if kind in {ArtifactKind.POST, ArtifactKind.TEXT} else {
+            ArtifactKind.DOCUMENT: "application/octet-stream",
+            ArtifactKind.ANIMATION: "image/gif",
+            ArtifactKind.VOICE: "audio/ogg",
+            ArtifactKind.VIDEO_NOTE: "video/mp4",
+            ArtifactKind.STICKER: "image/webp",
             ArtifactKind.IMAGE: "image/png",
             ArtifactKind.VIDEO: "video/mp4",
             ArtifactKind.AUDIO: "audio/wav",

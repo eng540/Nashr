@@ -127,17 +127,23 @@ class S3ArtifactStorage:
         except Exception as exc:
             raise ArtifactStorageError("Unable to read an Artifact media object.") from exc
 
-    async def presign_get(self, storage_uri: str, *, expires_seconds: int = 300) -> str:
+    async def presign_get(self, storage_uri: str, *, expires_seconds: int = 300, attachment_filename: str | None = None) -> str:
         bucket, key = self._parse_uri(storage_uri)
         if bucket != self.bucket:
             raise ValueError("Artifact storage URI points to an unexpected bucket.")
         if isinstance(expires_seconds, bool) or not isinstance(expires_seconds, int) or not 60 <= expires_seconds <= 900:
             raise ValueError("Signed media URL expiry must be between 60 and 900 seconds.")
+        params = {"Bucket": self.bucket, "Key": key}
+        if attachment_filename is not None:
+            import re
+            safe_name = re.sub(r"[^A-Za-z0-9._-]", "-", attachment_filename)[:200] or "attachment.bin"
+            params["ResponseContentDisposition"] = f'attachment; filename="{safe_name}"'
+            params["ResponseContentType"] = "application/octet-stream"
         try:
             return await asyncio.to_thread(
                 self.client.generate_presigned_url,
                 "get_object",
-                Params={"Bucket": self.bucket, "Key": key},
+                Params=params,
                 ExpiresIn=expires_seconds,
             )
         except Exception as exc:

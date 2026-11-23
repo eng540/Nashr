@@ -15,6 +15,7 @@ from app.domain.editorial import IEditorialDrafter
 from app.application.control_plane import ControlPlaneResolver
 from app.domain.publications import IPublisher, Publication, PublicationStatus
 from app.domain.artifacts import Artifact, ArtifactKind
+from app.application.media_bank import MEDIA_KINDS
 from app.domain.quizzes import QuizPayload
 from app.application.posts import ProducePost
 from app.application.artifacts import load_post_model_to_artifact, post_model_to_artifact, post_to_artifact
@@ -152,6 +153,11 @@ class ApproveAndPublish:
             if artifact_row is None or artifact_row.status != "AVAILABLE":
                 raise ValueError("Artifact must be AVAILABLE before publication.")
             artifact_review_status = artifact_row.review_status
+            # Always use the current approved record, not a caller's stale copy.
+            from app.application.artifacts import load_artifact
+            artifact = await load_artifact(session, artifact_row.id)
+            if artifact is None:
+                raise ValueError("Approved Artifact could not be loaded.")
         approved = artifact.editorial_status == "APPROVED" if artifact.kind == ArtifactKind.POST else artifact_review_status == "APPROVED"
         if not approved:
             raise ValueError("Artifact must be APPROVED before publication.")
@@ -215,7 +221,7 @@ class ApproveAndPublish:
                 raise ValueError("QUIZ Artifact question does not match its approved content.")
         post_result = await session.execute(select(PostModel).where(PostModel.id == artifact.id))
         post_row = post_result.scalar_one_or_none()
-        if artifact.kind in {ArtifactKind.IMAGE, ArtifactKind.VIDEO}:
+        if artifact.kind.value in MEDIA_KINDS:
             if not artifact.storage_uri:
                 raise ValueError("Approved media Artifact has no storage reference.")
             try:
@@ -303,13 +309,17 @@ class ApproveAndPublish:
                     destination=row.destination, content=row.content, quiz=quiz_payload
                 )
             elif media_bytes is None:
-                published = await self.publisher.publish(destination=row.destination, content=row.content)
+                published = await self.publisher.publish(destination=row.destination, content=row.content,
+                    **({"native": (artifact.metadata or {})["telegram_native"]} if (artifact.metadata or {}).get("telegram_native") is not None else {}))
             else:
                 published = await self.publisher.publish(
                     destination=row.destination,
                     content=row.content,
                     media=media_bytes,
                     media_mime_type=media_mime_type,
+                    **({"media_kind": artifact.kind.value,
+                        "media_filename": str((artifact.metadata or {}).get("original_filename") or "")}
+                       if artifact.kind.value in MEDIA_KINDS - {"IMAGE", "VIDEO"} else {}),
                 )
         except Exception as exc:
             await session.execute(

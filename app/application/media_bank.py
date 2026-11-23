@@ -20,7 +20,15 @@ from app.domain.artifacts import Artifact, ArtifactKind, ArtifactStatus
 from app.infrastructure.artifact_storage import S3ArtifactStorage
 from app.infrastructure.database.models import KnowledgeUnitModel, SourceModel
 
-_ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "video/mp4"}
+_ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "video/mp4",
+    "audio/mpeg", "audio/mp4", "audio/ogg", "image/gif", "video/webm", "application/x-tgsticker"}
+MEDIA_KINDS = frozenset({"IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "ANIMATION", "VOICE", "VIDEO_NOTE", "STICKER"})
+MODE_MIMES = {
+    "IMAGE": {"image/jpeg", "image/png", "image/webp"}, "VIDEO": {"video/mp4"},
+    "AUDIO": {"audio/mpeg", "audio/mp4"}, "VOICE": {"audio/mpeg", "audio/mp4", "audio/ogg"},
+    "ANIMATION": {"image/gif", "video/mp4"}, "VIDEO_NOTE": {"video/mp4"},
+    "STICKER": {"image/webp", "video/webm", "application/x-tgsticker"},
+}
 
 
 def _matches_signature(mime_type: str, data: bytes) -> bool:
@@ -31,7 +39,17 @@ def _matches_signature(mime_type: str, data: bytes) -> bool:
         return data[:8] == b"\x89PNG\r\n\x1a\n"
     if mime_type == "image/webp":
         return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
-    if mime_type == "video/mp4":
+    if mime_type == "image/gif":
+        return data[:6] in {b"GIF87a", b"GIF89a"}
+    if mime_type == "audio/mpeg":
+        return data[:3] == b"ID3" or (len(data) >= 2 and data[0] == 255 and data[1] & 224 == 224)
+    if mime_type == "audio/ogg":
+        return data[:4] == b"OggS" and b"OpusHead" in data[:256]
+    if mime_type == "video/webm":
+        return data[:4] == b"\x1aE\xdf\xa3"
+    if mime_type == "application/x-tgsticker":
+        return data[:2] == b"\x1f\x8b"
+    if mime_type in {"video/mp4", "audio/mp4"}:
         return len(data) > 12 and data[4:8] == b"ftyp"
     return False
 _DEFAULT_MAX_BYTES = 100 * 1024 * 1024
@@ -73,6 +91,7 @@ class IngestReadyMedia:
         caption: str | None = None,
         storage_key: str | None = None,
         metadata: dict | None = None,
+        media_kind: str | None = None,
     ) -> Artifact:
         if not isinstance(data, (bytes, bytearray)) or not data:
             raise ValueError("Uploaded media is empty.")
@@ -80,11 +99,24 @@ class IngestReadyMedia:
         if len(payload) > self.max_bytes:
             raise ValueError("Uploaded media exceeds the maximum size of %d bytes." % self.max_bytes)
         mime_type = (content_type or "").strip().lower()
-        if mime_type not in _ALLOWED_MIME_TYPES:
-            raise ValueError("Unsupported media type; upload JPEG, PNG, WebP or MP4.")
-        if not _matches_signature(mime_type, payload):
-            raise ValueError("Uploaded file content does not match its declared media type.")
-        kind = ArtifactKind.IMAGE if mime_type.startswith("image/") else ArtifactKind.VIDEO
+        mime_type = {"audio/x-m4a": "audio/mp4", "audio/mp3": "audio/mpeg", "application/gzip": "application/x-tgsticker"}.get(mime_type, mime_type)
+        if media_kind is None:
+            # Keep the legacy auto mode restricted to known images and MP4.
+            if mime_type not in {"image/jpeg", "image/png", "image/webp", "video/mp4"}:
+                raise ValueError("Unsupported media type; select an explicit Telegram media kind.")
+            media_kind = "IMAGE" if mime_type.startswith("image/") else "VIDEO"
+        if media_kind not in MEDIA_KINDS:
+            raise ValueError("Unsupported media kind.")
+        if media_kind == "DOCUMENT":
+            # Documents are stored and downloaded as attachments, never executed.
+            mime_type = "application/octet-stream"
+        elif mime_type not in MODE_MIMES[media_kind] or not _matches_signature(mime_type, payload):
+            raise ValueError("Uploaded file content or MIME does not match its selected media kind.")
+        from app.domain.telegram_media import validate_special_media
+        validate_special_media(media_kind, mime_type, payload)
+        from app.domain.telegram_media import media_request
+        media_request(media_kind, mime_type, payload, filename)
+        kind = ArtifactKind(media_kind)
         clean_filename = (filename or "").strip() or "media"
         clean_caption = (caption or "").strip() or clean_filename
 
@@ -137,6 +169,7 @@ class IngestReadyMedia:
                 "source_type": _SOURCE_TYPE,
                 "original_filename": clean_filename,
                 "caption": clean_caption,
+                "telegram_media_kind": media_kind,
                 **(metadata or {}),
             },
         )

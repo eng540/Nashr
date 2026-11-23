@@ -224,7 +224,7 @@ class ArtifactModel(Base):
             postgresql_where=text("production_job_id IS NOT NULL"),
         ),
         CheckConstraint(
-            "kind IN ('POST', 'TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'QUIZ')",
+            "kind IN ('POST', 'TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'QUIZ', 'DOCUMENT', 'ANIMATION', 'VOICE', 'VIDEO_NOTE', 'STICKER')",
             name="ck_artifacts_kind",
         ),
         CheckConstraint(

@@ -1,3 +1,4 @@
+from app.application.media_bank import MEDIA_KINDS
 import os
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -315,7 +316,7 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
 
         if item.artifact_id is not None:
             artifact_row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == item.artifact_id))).scalar_one_or_none()
-            if artifact_row is None or artifact_row.kind != "QUIZ":
+            if artifact_row is None or artifact_row.kind not in MEDIA_KINDS | {"TEXT", "QUIZ"}:
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "ARTIFACT_NOT_FOUND", "message": "Scheduled quiz Artifact was not found."})
                 continue
             if item.status in (ScheduleItemStatus.CANCELLED.value, ScheduleItemStatus.SKIPPED.value, ScheduleItemStatus.PUBLISHED.value):
@@ -325,7 +326,7 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
                 continue
             if artifact_row.status != "AVAILABLE" or artifact_row.review_status != "APPROVED":
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "QUIZ_NOT_APPROVED", "message": "Quiz must be available and approved."})
-            if not artifact_row.content or not isinstance((artifact_row.artifact_metadata or {}).get("quiz"), dict):
+            if (artifact_row.kind == "QUIZ" and (not artifact_row.content or not isinstance((artifact_row.artifact_metadata or {}).get("quiz"), dict))) or (artifact_row.kind == "TEXT" and not artifact_row.content) or (artifact_row.kind in MEDIA_KINDS and not artifact_row.storage_uri):
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_QUIZ_PAYLOAD", "message": "Quiz payload is incomplete."})
             if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_TIME", "message": "Quiz schedule time is invalid."})
@@ -424,10 +425,10 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
                 (
                     item.artifact_id is not None
                     and item.artifact is not None
-                    and item.artifact.kind == "QUIZ"
+                    and item.artifact.kind in MEDIA_KINDS | {"TEXT", "QUIZ"}
                     and item.artifact.status == "AVAILABLE"
                     and item.artifact.review_status == "APPROVED"
-                    and bool(item.artifact.content)
+                    and bool(item.artifact.content or item.artifact.storage_uri)
                 )
                 or (
                     item.post is not None
