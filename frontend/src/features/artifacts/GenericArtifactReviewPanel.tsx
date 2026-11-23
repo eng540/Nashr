@@ -212,6 +212,7 @@ export function GenericArtifactReviewPanel() {
             <strong>{artifact.kind} · {artifact.mime_type ?? "نوع غير محدد"}</strong>
             <p className="mt-1 break-all text-xs text-slate-500">Artifact {artifact.id} · المادة {artifact.source_knowledge_unit_id}</p>
           </div>
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? "رفع يدوي" : "مخرج مولّد"}</span>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
         {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
