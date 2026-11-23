@@ -1,9 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
+import { Badge, EmptyState, Input, Select } from "../../shared/components/ui";
 import { productionJobsApi, type ProductionProductOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
 import { postsApi } from "../../shared/api/postsApi";
+
+
+const LIBRARY_PAGE_SIZE = 12;
+
+function artifactTitle(artifact: GenericReviewableArtifact): string {
+  const title = artifact.metadata.title;
+  if (typeof title === "string" && title.trim()) return title.trim();
+  const caption = artifact.metadata.caption;
+  if (typeof caption === "string" && caption.trim()) {
+    const firstLine = caption.trim().split("\n")[0].trim();
+    return firstLine.length > 90 ? firstLine.slice(0, 90) + "…" : firstLine;
+  }
+  const filename = artifact.metadata.original_filename;
+  if (typeof filename === "string" && filename.trim()) return filename.replace(/^\d+-/, "");
+  return `مخرج ${artifact.kind}`;
+}
+
+function artifactSeries(artifact: GenericReviewableArtifact): string | null {
+  const filename = typeof artifact.metadata.original_filename === "string" ? artifact.metadata.original_filename.replace(/^\d+-/, "") : "";
+  const episode = filename.match(/^b(\d+)v\d+/);
+  if (episode) return `وش معنى · دفعة ${episode[1]}`;
+  const womdha = filename.match(/^womdha-(\d+)/);
+  if (womdha) return `ومضة ${womdha[1]}`;
+  const intro = filename.match(/^v(\d+)-/);
+  if (intro) return `فيديو تعريفي ${intro[1]}`;
+  return null;
+}
+
+type ArtifactSortMode = "newest" | "oldest" | "title" | "kind";
 
 function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
   const media = useQuery({
@@ -23,10 +53,10 @@ function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewable
   }
   const title = typeof artifact.metadata.title === "string" ? artifact.metadata.title : `معاينة ${artifact.kind}`;
   if (artifact.kind === "IMAGE") {
-    return <img src={media.data.url} alt={title} className="max-h-[32rem] max-w-full rounded-xl border object-contain" />;
+    return <img src={media.data.url} alt={title} className="max-h-64 max-w-full rounded-xl border object-contain" />;
   }
   if (artifact.kind === "VIDEO") {
-    return <video src={media.data.url} controls preload="metadata" className="max-h-[32rem] w-full rounded-xl border" />;
+    return <video src={media.data.url} controls preload="metadata" className="max-h-64 w-full rounded-xl border object-contain bg-black" />;
   }
   if (artifact.kind === "AUDIO") {
     return <audio src={media.data.url} controls preload="metadata" className="w-full" />;
@@ -47,6 +77,13 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const [variantPostId, setVariantPostId] = useState("");
   const [variantPostPlatform, setVariantPostPlatform] = useState("");
   const [variantPostNote, setVariantPostNote] = useState("");
+  const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState("ALL");
+  const [sourceFilter, setSourceFilter] = useState("ALL");
+  const [sortMode, setSortMode] = useState<ArtifactSortMode>("newest");
+  const [page, setPage] = useState(0);
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const [batchNote, setBatchNote] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState("");
   const [selectedPostId, setSelectedPostId] = useState("");
@@ -65,7 +102,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   });
   const artifacts = useQuery({
     queryKey: ["generic-artifacts", status],
-    queryFn: () => genericArtifactsApi.list(status),
+    queryFn: () => genericArtifactsApi.listAll(status),
     enabled: !designCardOnly,
   });
   const activeJob = useQuery({
@@ -83,9 +120,31 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     }
   }, [activeJob.data?.status, queryClient]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
+  const allArtifacts = useMemo(() => artifacts.data?.items ?? [], [artifacts.data]);
+  const filteredArtifacts = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const matches = allArtifacts.filter((artifact) => {
+      if (kindFilter !== "ALL" && artifact.kind !== kindFilter) return false;
+      const sourceType = typeof artifact.metadata.source_type === "string" ? artifact.metadata.source_type : "GENERATED";
+      if (sourceFilter !== "ALL" && sourceType !== sourceFilter) return false;
+      if (!needle) return true;
+      const haystack = [artifactTitle(artifact), typeof artifact.metadata.caption === "string" ? artifact.metadata.caption : "", typeof artifact.metadata.original_filename === "string" ? artifact.metadata.original_filename : "", artifact.id].join(" ").toLowerCase();
+      return haystack.includes(needle);
+    });
+    const sorted = [...matches];
+    if (sortMode === "oldest") sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    else if (sortMode === "title") sorted.sort((a, b) => artifactTitle(a).localeCompare(artifactTitle(b), "ar"));
+    else if (sortMode === "kind") sorted.sort((a, b) => a.kind.localeCompare(b.kind) || b.created_at.localeCompare(a.created_at));
+    else sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return sorted;
+  }, [allArtifacts, search, kindFilter, sourceFilter, sortMode]);
+  const pageCount = Math.max(1, Math.ceil(filteredArtifacts.length / LIBRARY_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedArtifacts = filteredArtifacts.slice(safePage * LIBRARY_PAGE_SIZE, safePage * LIBRARY_PAGE_SIZE + LIBRARY_PAGE_SIZE);
+  const updateFilters = (apply: () => void) => { apply(); setPage(0); };
   const save = useMutation({
     mutationFn: (id: string) => {
-      const artifact = (artifacts.data ?? []).find((item) => item.id === id);
+      const artifact = (artifacts.data?.items ?? []).find((item) => item.id === id);
       const content = drafts[id]?.content;
       if (artifact?.kind === "QUIZ" && content !== undefined) {
         const quiz = artifact.metadata.quiz && typeof artifact.metadata.quiz === "object" && !Array.isArray(artifact.metadata.quiz)
@@ -142,6 +201,44 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     mutationFn: (id: string) => genericArtifactsApi.createTelegramMediaDraft(id),
     onSuccess: (publication, artifactId) => setMediaDrafts((current) => ({ ...current, [artifactId]: { id: publication.id, status: publication.status } })),
   });
+  const isTelegramMediaEligible = (artifact: GenericReviewableArtifact) =>
+    ["IMAGE", "VIDEO"].includes(artifact.kind) && Boolean(artifact.storage_uri) && artifact.metadata.source_type === "MEDIA_BANK_UPLOAD";
+  const eligibleSelectedCount = selectedMediaIds.length;
+  const batchMediaDrafts = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results: Array<{ artifactId: string; id?: string; status?: string; error?: string }> = [];
+      for (const artifactId of ids) {
+        try {
+          const publication = await genericArtifactsApi.createTelegramMediaDraft(artifactId);
+          results.push({ artifactId, id: publication.id, status: publication.status });
+        } catch (error) {
+          results.push({ artifactId, error: error instanceof Error ? error.message : "تعذر إنشاء المسودة" });
+        }
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      setMediaDrafts((current) => {
+        const next = { ...current };
+        results.forEach((result) => {
+          if (result.id) next[result.artifactId] = { id: result.id, status: result.status ?? "DRAFT" };
+        });
+        return next;
+      });
+      const succeeded = results.filter((result) => result.id).length;
+      const failed = results.length - succeeded;
+      setBatchNote(failed === 0
+        ? `أُنشئت ${succeeded} مسودة Telegram قيد المراجعة في سجل النشر. لا يُنشر شيء خارجيًا دون اعتمادك.`
+        : `أُنشئت ${succeeded} مسودة وتعذر إنشاء ${failed}. راجع العناصر المحددة لمعرفة السبب.`);
+      if (failed === 0) setSelectedMediaIds([]);
+    },
+    onError: (error) => setBatchNote(`تعذر إنشاء المسودات: ${error instanceof Error ? error.message : "خطأ غير معروف"}`),
+  });
+  const toggleMediaSelection = (artifactId: string, checked: boolean) => {
+    setSelectedMediaIds((current) => checked ? [...new Set([...current, artifactId])] : current.filter((id) => id !== artifactId));
+  };
+  const pageEligibleIds = pagedArtifacts.filter(isTelegramMediaEligible).map((artifact) => artifact.id);
+  const allPageSelected = pageEligibleIds.length > 0 && pageEligibleIds.every((id) => selectedMediaIds.includes(id));
   const publishQuiz = useMutation({
     mutationFn: ({ publicationId, content }: { artifactId: string; publicationId: string; content: string }) => genericArtifactsApi.publishQuiz(publicationId, content),
     onSuccess: (publication, input) => setQuizDrafts((current) => ({ ...current, [input.artifactId]: { id: publication.id, status: publication.status, external_id: publication.external_id } })),
@@ -227,57 +324,85 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         </select>
       </label>
     </div>
-    <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-      <h3 className="font-bold">بنك الوسائط الجاهزة</h3>
-      <p className="text-sm text-slate-600">ارفع صورة (JPEG/PNG/WebP) أو فيديو (MP4) جاهزًا للنشر. يدخل الملف حالة «قيد المراجعة» ولا يُنشر شيء دون اعتمادك.</p>
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="text-sm font-semibold">ملف الوسيط
-          <input aria-label="ملف الوسيط الجاهز" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal" />
-        </label>
-        <label className="text-sm font-semibold">التعليق (يظهر نصًا مع الوسيط عند النشر)
-          <input aria-label="تعليق الوسيط الجاهز" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" placeholder="نص يرافق الوسيط عند النشر" />
-        </label>
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-bold">مكتبة المخرجات</h3>
+        <p className="text-xs font-semibold text-slate-500">
+          {artifacts.data ? `${filteredArtifacts.length} من ${artifacts.data.total} عنصرًا في هذه الحالة` : ""}
+        </p>
       </div>
-      <button type="button" onClick={() => ingestMedia.mutate()} disabled={!uploadFile || ingestMedia.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{ingestMedia.isPending ? "جارٍ الرفع..." : "رفع إلى بنك الوسائط"}</button>
-      {ingestMedia.isError ? <p role="alert" className="text-sm text-rose-700">{ingestMedia.error.message}</p> : null}
-      {ingestMedia.isSuccess ? <p role="status" className="text-sm text-emerald-800">تم الرفع؛ الوسيط الآن قيد المراجعة.</p> : null}
-    </div>
-    <div className="space-y-3 rounded-xl border border-sky-100 bg-sky-50/50 p-4">
-      <h3 className="font-bold">اشتقاق نسخة بحدود منصة من منشور معتمد</h3>
-      <p className="text-sm text-slate-600">ينشئ نسخة نصية منفصلة من منشور معتمد، مقصوصة عند حدود آمنة ضمن حد المنصة الموثق. تجهيز طول فقط دون إعادة صياغة؛ المنشور الأصلي لا يتغير، والنسخة تُحفظ قيد المراجعة، ولا يُنشر شيء خارجيًا.</p>
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="text-sm font-semibold">المنشور المصدر
-          <select aria-label="المنشور المصدر للنسخة" value={variantPostId} onChange={(event) => setVariantPostId(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
-            <option value="">اختر منشورًا معتمدًا</option>
-            {(approvedPosts.data?.items ?? []).filter((post) => post.status === "APPROVED" && post.content.trim()).map((post) => <option key={post.post_id} value={post.post_id}>{post.title} · {post.post_id.slice(0, 8)}</option>)}
-          </select>
-        </label>
-        <label className="text-sm font-semibold">المنصة
-          <select aria-label="منصة نسخة المنشور" value={variantPostPlatform} onChange={(event) => setVariantPostPlatform(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
-            <option value="">اختر المنصة</option>
-            <option value="tiktok">تيك توك</option>
-            <option value="instagram">إنستقرام</option>
-            <option value="x">إكس</option>
-          </select>
-        </label>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <Input aria-label="بحث في المخرجات" value={search} onChange={(event) => updateFilters(() => setSearch(event.target.value))} placeholder="ابحث بالعنوان أو النص أو اسم الملف..." />
+        <Select aria-label="تصفية حسب نوع المخرج" value={kindFilter} onChange={(event) => updateFilters(() => setKindFilter(event.target.value))}>
+          <option value="ALL">كل الأنواع</option>
+          <option value="VIDEO">فيديو</option>
+          <option value="IMAGE">صورة</option>
+          <option value="TEXT">نص</option>
+          <option value="AUDIO">صوت</option>
+          <option value="QUIZ">اختبار</option>
+        </Select>
+        <Select aria-label="تصفية حسب مصدر المخرج" value={sourceFilter} onChange={(event) => updateFilters(() => setSourceFilter(event.target.value))}>
+          <option value="ALL">كل المصادر</option>
+          <option value="MEDIA_BANK_UPLOAD">رفع يدوي</option>
+          <option value="GENERATED">مخرج مولّد</option>
+          <option value="PLATFORM_VARIANT">نسخة منصة</option>
+        </Select>
+        <Select aria-label="ترتيب المخرجات" value={sortMode} onChange={(event) => setSortMode(event.target.value as ArtifactSortMode)}>
+          <option value="newest">الأحدث أولًا</option>
+          <option value="oldest">الأقدم أولًا</option>
+          <option value="title">العنوان أبجديًا</option>
+          <option value="kind">النوع</option>
+        </Select>
       </div>
-      <button type="button" onClick={() => derivePostVariant.mutate({ postId: variantPostId, platform: variantPostPlatform })} disabled={!variantPostId || !variantPostPlatform || derivePostVariant.isPending} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white">{derivePostVariant.isPending ? "جارٍ الاشتقاق..." : "اشتقاق نسخة المنشور"}</button>
-      {variantPostNote ? <p role="status" className="text-sm text-sky-900">{variantPostNote}</p> : null}
-      {derivePostVariant.isError ? <p role="alert" className="text-sm text-rose-700">تعذر اشتقاق النسخة: {derivePostVariant.error.message}</p> : null}
-      {approvedPosts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المنشورات المعتمدة...</p> : null}
+      {status === "APPROVED" ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+        <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+          <input
+            type="checkbox"
+            aria-label="تحديد كل وسائط الصفحة"
+            checked={allPageSelected}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setSelectedMediaIds((current) => checked
+                ? [...new Set([...current, ...pageEligibleIds])]
+                : current.filter((id) => !pageEligibleIds.includes(id)));
+            }}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          تحديد كل وسائط الصفحة
+        </label>
+        <span className="text-xs font-semibold text-slate-500" data-testid="media-selection-count">{eligibleSelectedCount} محدد</span>
+        <button
+          type="button"
+          data-testid="create-telegram-media-drafts"
+          disabled={eligibleSelectedCount === 0 || batchMediaDrafts.isPending}
+          onClick={() => batchMediaDrafts.mutate(selectedMediaIds)}
+          className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-emerald-300"
+        >{batchMediaDrafts.isPending ? "جارٍ إنشاء المسودات..." : `إنشاء مسودات Telegram للمحدد (${eligibleSelectedCount})`}</button>
+        {eligibleSelectedCount > 0 ? <button type="button" onClick={() => { setSelectedMediaIds([]); setBatchNote(""); }} className="text-sm font-bold text-slate-500 hover:text-slate-700">مسح التحديد</button> : null}
+        <span className="w-full text-xs leading-5 text-slate-500">ينشئ مسودة نشر Telegram لكل وسيط معتمد محدد مع نص تعليقه للمراجعة؛ تجهيز فقط ولا يُنشر أو يُجدول شيء خارجيًا.</span>
+        {batchNote ? <p role="status" className="w-full text-sm font-semibold text-emerald-800">{batchNote}</p> : null}
+      </div> : null}
     </div>
-    {showDesignCard ? designCard : null}
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
-    {artifacts.data?.length === 0 ? <div className="rounded-xl border border-dashed p-5 text-sm text-slate-500">لا توجد مخرجات في هذه الحالة.</div> : null}
-    <div className="space-y-3">
-      {(artifacts.data ?? []).map((artifact) => <article key={artifact.id} className="space-y-3 rounded-xl border p-4">
+    {!artifacts.isLoading && !artifacts.isError && filteredArtifacts.length === 0 ? <EmptyState title={allArtifacts.length === 0 ? "لا توجد مخرجات في هذه الحالة." : "لا توجد نتائج مطابقة للبحث أو الفلاتر الحالية."} /> : null}
+    <div className="grid gap-3 xl:grid-cols-2">
+      {pagedArtifacts.map((artifact) => <article key={artifact.id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <strong>{artifact.kind} · {artifact.mime_type ?? "نوع غير محدد"}</strong>
-            <p className="mt-1 break-all text-xs text-slate-500">Artifact {artifact.id} · المادة {artifact.source_knowledge_unit_id}</p>
+          {status === "APPROVED" && isTelegramMediaEligible(artifact) ? <input
+            type="checkbox"
+            aria-label={`تحديد المخرج ${artifact.id}`}
+            checked={selectedMediaIds.includes(artifact.id)}
+            onChange={(event) => toggleMediaSelection(artifact.id, event.target.checked)}
+            className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+          /> : null}
+          <div className="min-w-0">
+            <h3 className="text-sm font-extrabold text-slate-900" dir="auto">{artifactTitle(artifact)}</h3>
+            <strong className="mt-0.5 block text-xs font-semibold text-slate-500">{artifact.kind} · {artifact.mime_type ?? "نوع غير محدد"}</strong>
+            <p className="mt-1 text-[11px] text-slate-400">المعرّف {artifact.id.slice(0, 8)}</p>
           </div>
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? "رفع يدوي" : artifact.metadata.source_type === "PLATFORM_VARIANT" ? `نسخة ${String(artifact.metadata.platform_label_ar ?? artifact.metadata.platform ?? "منصة")}${(artifact.metadata.constraints as Record<string, unknown> | undefined)?.trimmed ? " · مقصوصة للحد" : ""}` : "مخرج مولّد"}</span>
+          {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
         {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
@@ -356,6 +481,56 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         </div> : null}
       </article>)}
     </div>
+    {pageCount > 1 ? <nav className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3" aria-label="ترقيم صفحات المخرجات">
+      <button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">السابق</button>
+      <span className="text-xs font-semibold text-slate-500">صفحة {safePage + 1} من {pageCount} · عرض {pagedArtifacts.length} من {filteredArtifacts.length}</span>
+      <button type="button" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">التالي</button>
+    </nav> : null}
+    <details className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/40 p-4" open>
+      <summary className="cursor-pointer text-sm font-bold text-slate-600">إجراءات إضافية: رفع وسيط جاهز، اشتقاق نسخة منصة، وبطاقة تصميم</summary>
+      <div className="mt-3 space-y-3">
+    <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+      <h3 className="font-bold">بنك الوسائط الجاهزة</h3>
+      <p className="text-sm text-slate-600">ارفع صورة (JPEG/PNG/WebP) أو فيديو (MP4) جاهزًا للنشر. يدخل الملف حالة «قيد المراجعة» ولا يُنشر شيء دون اعتمادك.</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm font-semibold">ملف الوسيط
+          <input aria-label="ملف الوسيط الجاهز" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal" />
+        </label>
+        <label className="text-sm font-semibold">التعليق (يظهر نصًا مع الوسيط عند النشر)
+          <input aria-label="تعليق الوسيط الجاهز" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" placeholder="نص يرافق الوسيط عند النشر" />
+        </label>
+      </div>
+      <button type="button" onClick={() => ingestMedia.mutate()} disabled={!uploadFile || ingestMedia.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{ingestMedia.isPending ? "جارٍ الرفع..." : "رفع إلى بنك الوسائط"}</button>
+      {ingestMedia.isError ? <p role="alert" className="text-sm text-rose-700">{ingestMedia.error.message}</p> : null}
+      {ingestMedia.isSuccess ? <p role="status" className="text-sm text-emerald-800">تم الرفع؛ الوسيط الآن قيد المراجعة.</p> : null}
+    </div>
+    <div className="space-y-3 rounded-xl border border-sky-100 bg-sky-50/50 p-4">
+      <h3 className="font-bold">اشتقاق نسخة بحدود منصة من منشور معتمد</h3>
+      <p className="text-sm text-slate-600">ينشئ نسخة نصية منفصلة من منشور معتمد، مقصوصة عند حدود آمنة ضمن حد المنصة الموثق. تجهيز طول فقط دون إعادة صياغة؛ المنشور الأصلي لا يتغير، والنسخة تُحفظ قيد المراجعة، ولا يُنشر شيء خارجيًا.</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm font-semibold">المنشور المصدر
+          <select aria-label="المنشور المصدر للنسخة" value={variantPostId} onChange={(event) => setVariantPostId(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
+            <option value="">اختر منشورًا معتمدًا</option>
+            {(approvedPosts.data?.items ?? []).filter((post) => post.status === "APPROVED" && post.content.trim()).map((post) => <option key={post.post_id} value={post.post_id}>{post.title} · {post.post_id.slice(0, 8)}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-semibold">المنصة
+          <select aria-label="منصة نسخة المنشور" value={variantPostPlatform} onChange={(event) => setVariantPostPlatform(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
+            <option value="">اختر المنصة</option>
+            <option value="tiktok">تيك توك</option>
+            <option value="instagram">إنستقرام</option>
+            <option value="x">إكس</option>
+          </select>
+        </label>
+      </div>
+      <button type="button" onClick={() => derivePostVariant.mutate({ postId: variantPostId, platform: variantPostPlatform })} disabled={!variantPostId || !variantPostPlatform || derivePostVariant.isPending} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white">{derivePostVariant.isPending ? "جارٍ الاشتقاق..." : "اشتقاق نسخة المنشور"}</button>
+      {variantPostNote ? <p role="status" className="text-sm text-sky-900">{variantPostNote}</p> : null}
+      {derivePostVariant.isError ? <p role="alert" className="text-sm text-rose-700">تعذر اشتقاق النسخة: {derivePostVariant.error.message}</p> : null}
+      {approvedPosts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المنشورات المعتمدة...</p> : null}
+    </div>
+      {showDesignCard ? designCard : null}
+      </div>
+    </details>
     {jobStatus}
     {mutationError}
   </section>;
