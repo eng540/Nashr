@@ -47,6 +47,7 @@ class QuizScheduleRequest(BaseModel):
 class PlatformVariantRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     platform: str = Field(min_length=1, max_length=30)
+    allow_length_trim: bool = False
 
 
 class ArtifactRejectDecision(BaseModel):
@@ -224,7 +225,7 @@ async def derive_platform_variant_from_post(
     from app.application.platform_variants import DerivePlatformVariant
 
     try:
-        artifact = await DerivePlatformVariant().execute_post(session, post_id=post_id, platform=input.platform)
+        artifact = await DerivePlatformVariant().execute_post(session, post_id=post_id, platform=input.platform, allow_length_trim=input.allow_length_trim)
         return await GenericArtifactReviewService(session).get(artifact.id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -247,7 +248,7 @@ async def derive_platform_variant(
     from app.application.platform_variants import DerivePlatformVariant
 
     try:
-        artifact = await DerivePlatformVariant().execute(session, artifact_id=artifact_id, platform=input.platform)
+        artifact = await DerivePlatformVariant().execute(session, artifact_id=artifact_id, platform=input.platform, allow_length_trim=input.allow_length_trim)
         return await GenericArtifactReviewService(session).get(artifact.id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
