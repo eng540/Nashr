@@ -307,6 +307,7 @@ class ScheduleModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+    telegram_review: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     items: Mapped[list["ScheduleItemModel"]] = relationship(back_populates="schedule", cascade="all, delete-orphan")
 
 
