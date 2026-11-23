@@ -106,7 +106,7 @@ test("approved text can create a card, receive independent visual approval, and 
     await route.fulfill({ json: post() });
   });
   await page.route(/\/(?:api\/)?schedules(?:\/[^?]*)?(?:\?.*)?$/, (route) => route.fulfill({ json: { items: [], total: 0 } }));
-  await page.route(/\/(?:api\/)?sources(?:\/[^?]*)?(?:\?.*)?$/, (route) => route.fulfill({ json: [] }));
+  await page.route(/^https?:\/\/[^/]+\/(?:api\/)?sources(\/[^?]*)?(\?.*)?$/, (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
 
   await page.goto("/bank");
