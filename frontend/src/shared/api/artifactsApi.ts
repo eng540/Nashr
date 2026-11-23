@@ -45,6 +45,9 @@ export const genericArtifactsApi = {
     if (input.caption?.trim()) form.append("caption", input.caption.trim());
     return postForm<GenericReviewableArtifact>("/api/artifacts/ingest-media", form);
   },
+  derivePlatformVariant(id: string, platform: string): Promise<GenericReviewableArtifact> {
+    return post<GenericReviewableArtifact>(`/api/artifacts/${id}/platform-variant`, { platform });
+  },
   createTelegramMediaDraft(id: string): Promise<{ id: string; status: string; external_id?: string | null }> {
     return post<{ id: string; status: string; external_id?: string | null }>(`/api/artifacts/${id}/telegram-media-draft`);
   },
