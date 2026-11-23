@@ -207,6 +207,21 @@ async def telegram_batch_preview(payload: TelegramBatchPreviewRequest, session: 
         raise HTTPException(422, str(exc)) from exc
 
 
+@router.post("/platform-copies/prepare-batch")
+async def prepare_batch_platform_copies(payload: TelegramBatchPreviewRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.central_platform_copies import prepare_copies
+    if len(set(payload.artifact_ids)) != len(payload.artifact_ids):
+        raise HTTPException(422, 'القائمة تحتوي مادة مكررة.')
+    rows = (await session.execute(select(ArtifactModel).where(ArtifactModel.id.in_(payload.artifact_ids)).order_by(ArtifactModel.id).with_for_update())).scalars().all()
+    if len(rows) != len(payload.artifact_ids) or any(row.review_status != 'APPROVED' or row.status != 'AVAILABLE' or row.kind == 'POST' or (row.artifact_metadata or {}).get('source_type') == 'PLATFORM_VARIANT' for row in rows):
+        raise HTTPException(422, 'الدفعة تتطلب مواد أصلية معتمدة ومتاحة. لم تُجهّز أي نسخة.')
+    result=[]
+    for row in rows:
+        result.append({'artifact_id':str(row.id),'items':await prepare_copies(session,row)})
+    await session.commit()
+    return {'prepared':len(rows),'items':result,'publications_created':0,'schedules_created':0,'selection_changed':False}
+
+
 class TelegramBatchScheduleRequest(TelegramBatchPreviewRequest):
     copy_versions: dict[str, int | None] = Field(default_factory=dict)
     fingerprints: dict[str, str]

@@ -71,6 +71,7 @@ export interface TelegramBatchPreview { destination:string|null;ready_count:numb
 
 export interface CentralPlatformCopy {platform:string;label:string;fields:{title:string;description:string;tags:string[];alt_text:string};version:number;source_fingerprint:string;current_source_fingerprint:string;origin:string;source_stale:boolean;central_approval:string;field_status:string;blockers:string[];warnings:string[];media_checks_pending:string[];execution_blockers:string[];sources:string[];}
 export const genericArtifactsApi = {
+  prepareBatchCopies(ids:string[]):Promise<{prepared:number;items:Array<{artifact_id:string;items:CentralPlatformCopy[]}>}>{return post('/api/artifacts/platform-copies/prepare-batch',{artifact_ids:ids});},
   platformCopies(id:string):Promise<{items:CentralPlatformCopy[]}>{return get(`/api/artifacts/${id}/platform-copies`);},
   prepareCopies(id:string):Promise<{items:CentralPlatformCopy[]}>{return post(`/api/artifacts/${id}/platform-copies/prepare`,{});},
   updateCopy(id:string,copy:CentralPlatformCopy):Promise<CentralPlatformCopy>{return patch(`/api/artifacts/${id}/platform-copies/${copy.platform}`,{fields:copy.fields,version:copy.version,current_source_fingerprint:copy.current_source_fingerprint});},
