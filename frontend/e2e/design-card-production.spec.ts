@@ -58,13 +58,13 @@ test("approved text can create a card, receive independent visual approval, and 
       configuration: { width: 1080, height: 1350, font_family: "naskh", background_mode: "solid" },
     }] }],
   }] }));
-  await page.route(/\/api\/artifacts\?review_status=APPROVED$/, (route) => route.fulfill({
+  await page.route(/\/api\/artifacts\?review_status=APPROVED/, (route) => route.fulfill({
     json: [textArtifact, ...(imageCreated && imageStatus === "APPROVED" ? [imageArtifact()] : [])],
   }));
-  await page.route(/\/api\/artifacts\?review_status=DRAFT$/, (route) => route.fulfill({
+  await page.route(/\/api\/artifacts\?review_status=DRAFT/, (route) => route.fulfill({
     json: imageCreated && imageStatus === "DRAFT" ? [imageArtifact()] : [],
   }));
-  await page.route(/\/api\/artifacts\?review_status=REJECTED$/, (route) => route.fulfill({
+  await page.route(/\/api\/artifacts\?review_status=REJECTED/, (route) => route.fulfill({
     json: imageCreated && imageStatus === "REJECTED" ? [imageArtifact()] : [],
   }));
   await page.route(new RegExp("/api/artifacts/" + imageId + "/media-url$"), (route) => route.fulfill({
