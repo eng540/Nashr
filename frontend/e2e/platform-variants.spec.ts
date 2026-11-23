@@ -61,7 +61,7 @@ test("approved text artifact derives an X platform variant into the DRAFT queue"
     await route.fulfill({ status: 201, json: variantArtifact() });
   });
 
-  await page.goto("/bank");
+  await page.goto("/bank?library_view=expanded");
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
   await expect(page.getByLabel(`منصة النسخة ${textId}`)).toBeVisible();
   await page.getByLabel(`منصة النسخة ${textId}`).selectOption("x");
@@ -88,7 +88,7 @@ test("approved post derives a platform variant from the bank review view", async
     await route.fulfill({ status: 201, json: variant });
   });
 
-  await page.goto("/bank");
+  await page.goto("/bank?library_view=expanded");
   await expect(page.getByLabel("المنشور المصدر للنسخة")).toBeVisible();
   await page.getByLabel("المنشور المصدر للنسخة").selectOption(postId);
   await page.getByLabel("منصة نسخة المنشور").selectOption("tiktok");
@@ -100,7 +100,7 @@ test("bank review view keeps the document inside the mobile viewport", async ({ 
   const state = { derived: false };
   await mockBankRoutes(page, state);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/bank");
+  await page.goto("/bank?library_view=expanded");
   const fitsViewport = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
   await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
   expect(await fitsViewport()).toBe(true);
