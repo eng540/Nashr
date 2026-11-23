@@ -128,7 +128,7 @@ async def library_import_page():
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>استيراد مكتبة المحتوى</title>
 <style>body{font:16px system-ui;background:#10151f;color:#e7ebf2;max-width:850px;margin:60px auto;padding:24px}section{padding:30px;border:1px solid #354157;border-radius:18px;background:#192334}button,input{padding:14px;margin:12px 0;max-width:100%}button{background:#a2edce;color:#102a20;border:0;border-radius:8px;font-weight:700}pre{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}a{color:#a2edce}</style>
 <a href="/publishing">العودة إلى النشر</a><h1>استيراد مكتبة المحتوى</h1><section>
-<p>اختر حزم ZIP المجهزة من Engineering540. حد الحزمة25MiB، وحتى100مادة. يستمر الاستيراد حزمة بعد حزمة، ويمكن إعادة المحاولة دون تكرار المواد المكتملة.</p>
+<p>اختر حزم ZIP المجهزة من Engineering540. حد الحزمة 25MiB، وحتى 100 مادة. يستمر الاستيراد حزمة بعد حزمة، ويمكن إعادة المحاولة دون تكرار المواد المكتملة.</p>
 <p>كل المواد تبقى مسودات للمراجعة. لا اعتماد ولا جدولة ولا نشر تلقائي.</p>
 <label for="archives">حزم المكتبة</label><br><input id="archives" type="file" accept=".zip" multiple><br>
 <button id="start">بدء الاستيراد</button><pre id="result" role="status" aria-live="polite"></pre></section>
