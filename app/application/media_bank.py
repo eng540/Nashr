@@ -72,6 +72,7 @@ class IngestReadyMedia:
         data: bytes,
         caption: str | None = None,
         storage_key: str | None = None,
+        metadata: dict | None = None,
     ) -> Artifact:
         if not isinstance(data, (bytes, bytearray)) or not data:
             raise ValueError("Uploaded media is empty.")
@@ -136,6 +137,7 @@ class IngestReadyMedia:
                 "source_type": _SOURCE_TYPE,
                 "original_filename": clean_filename,
                 "caption": clean_caption,
+                **(metadata or {}),
             },
         )
         saved = await persist_generic_artifact(session, artifact, resolved_context=_media_bank_contract(kind.value, mime_type))
