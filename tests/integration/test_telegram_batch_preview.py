@@ -48,6 +48,7 @@ async def test_batch_schedule_is_draft_atomic_and_detects_repeats(monkeypatch):
         payload={'artifact_ids':[uid],'name':'اختبار محلي','timezone':'Asia/Riyadh','start_at':(datetime.now(timezone.utc)+timedelta(days=1)).isoformat(),'interval_minutes':60,'destination':'synthetic-target','fingerprints':{uid:'stale'}}
         assert (await client.post('/api/artifacts/telegram-batch-schedule',json=payload)).status_code==422
         payload['fingerprints']={uid:preview['items'][0]['source_fingerprint']}
+        payload['copy_versions']={uid:preview['items'][0].get('copy_version')}
         first=await client.post('/api/artifacts/telegram-batch-schedule',json=payload)
         assert first.status_code==201,first.text
         assert first.json()['status']=='DRAFT'

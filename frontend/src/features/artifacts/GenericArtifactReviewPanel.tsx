@@ -1,3 +1,4 @@
+import { CentralPlatformCopiesPanel } from "./CentralPlatformCopiesPanel";
 import { TelegramBatchPreviewPanel } from "./TelegramBatchPreviewPanel";
 import { DistributionReadinessPanel } from "./DistributionReadinessPanel";
 import { useEffect, useMemo, useState } from "react";
@@ -638,6 +639,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         {artifact.metadata.source_type === "PLATFORM_VARIANT" && variantLength(artifact, drafts[artifact.id]?.content) > Number((artifact.metadata.constraints as Record<string,unknown>)?.max_text ?? Infinity) ? <p role="alert" className="text-sm text-rose-700">تجاوزت النسخة حد المنصة. قصّر النص قبل الحفظ والاعتماد.</p> : null}
         {artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <DistributionReadinessPanel ids={[artifact.id]} /> : null}
         <ArtifactPublicationLedger id={artifact.id} />
+          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} /> : null}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {typeof artifact.metadata.caption === "string" && artifact.metadata.caption ? <p dir="auto" className="rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p> : null}
         {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">

@@ -4,7 +4,7 @@ import os
 from sqlalchemy import select
 from app.application.distribution_readiness import source_fingerprint
 from app.application.telegram_copy_readiness import telegram_copy_blockers
-from app.infrastructure.database.models import ArtifactModel, DistributionSelectionModel, PublicationModel, ScheduleItemModel, ScheduleModel
+from app.infrastructure.database.models import ArtifactModel, DistributionSelectionModel, PublicationModel, ScheduleItemModel, ScheduleModel, PlatformCopyModel
 
 
 async def preview_telegram_batch(session, artifact_ids):
@@ -15,6 +15,7 @@ async def preview_telegram_batch(session, artifact_ids):
     selections = {row.artifact_id: row for row in (await session.execute(select(DistributionSelectionModel).where(DistributionSelectionModel.artifact_id.in_(artifact_ids)))).scalars().all()}
     publications = (await session.execute(select(PublicationModel).where(PublicationModel.artifact_id.in_(artifact_ids), PublicationModel.platform == 'telegram'))).scalars().all()
     schedules = (await session.execute(select(ScheduleItemModel.artifact_id, ScheduleModel.name, ScheduleModel.status, ScheduleItemModel.status).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id).where(ScheduleItemModel.artifact_id.in_(artifact_ids), ScheduleModel.status.in_(['DRAFT','ACTIVE','PAUSED']), ScheduleItemModel.status.in_(['PENDING','PROCESSING','PUBLISHED'])))).all()
+    copies = {copy.artifact_id:copy for copy in (await session.execute(select(PlatformCopyModel).where(PlatformCopyModel.artifact_id.in_(artifact_ids),PlatformCopyModel.platform=='telegram'))).scalars().all()}
     destination = os.getenv('TELEGRAM_DESTINATION_ID', '').strip()
     items = []
     for uid in artifact_ids:
@@ -28,7 +29,14 @@ async def preview_telegram_batch(session, artifact_ids):
             blockers.append('اختر المادة الأصلية من مسار المخرجات.')
         if row.review_status != 'APPROVED' or row.status != 'AVAILABLE':
             blockers.append('اعتمد المادة الأصلية وأتح توفرها قبل التجهيز.')
-        blockers.extend(telegram_copy_blockers(row))
+        copy=copies.get(uid)
+        text=telegram_publish_text(row)
+        if copy:
+            from app.application.central_platform_copies import evaluate
+            blockers.extend(evaluate(row,copy)['blockers'])
+            text=copy.fields['description']
+        else:
+            blockers.extend(telegram_copy_blockers(row))
         selection = selections.get(uid)
         if selection is not None:
             if selection.source_fingerprint != source_fingerprint(row):
@@ -44,7 +52,7 @@ async def preview_telegram_batch(session, artifact_ids):
         if not destination:
             blockers.append('لم تُضبط وجهة Telegram في الخادم.')
         items.append({'artifact_id':str(uid),'title':str(meta.get('title') or meta.get('original_filename') or row.kind),'kind':row.kind,
-                      'content':telegram_publish_text(row),
+                      'content':text,'copy_version':copy.version if copy else None,
                       'source_fingerprint':source_fingerprint(row),'ready':not blockers,'blockers':blockers,
                       'publications':[{'id':str(p.id),'status':p.status,'external_ids':p.external_ids or ([p.external_id] if p.external_id else [])} for p in pubs], 'schedules':planned})
     return {'destination':destination or None,'items':items,'ready_count':sum(item['ready'] for item in items),

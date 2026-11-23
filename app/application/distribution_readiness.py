@@ -70,7 +70,18 @@ async def get_readiness(session, artifact_id):
     row = await session.get(ArtifactModel, artifact_id)
     if row is None or row.kind == "POST":
         raise LookupError("المادة الأصلية غير موجودة في مسار المخرجات.")
-    return readiness(row, await session.get(DistributionSelectionModel, artifact_id))
+    result = readiness(row, await session.get(DistributionSelectionModel, artifact_id))
+    from app.infrastructure.database.models import PlatformCopyModel
+    from app.application.central_platform_copies import evaluate
+    copies = {copy.platform: copy for copy in (await session.execute(select(PlatformCopyModel).where(PlatformCopyModel.artifact_id == artifact_id))).scalars().all()}
+    for target in result['targets']:
+        if target['platform'] in copies:
+            evaluated = evaluate(row,copies[target['platform']])
+            target['copy_status'] = evaluated['field_status']
+            target['copy_blockers'] = evaluated['blockers']
+            target['execution_blockers'] = evaluated['media_checks_pending'] + evaluated['execution_blockers']
+            target['copy_version'] = evaluated['version']
+    return result
 
 
 async def save_selection(session, artifact_ids, platforms, fingerprints):

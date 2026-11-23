@@ -15,7 +15,7 @@ export function TelegramBatchPreviewPanel({ids}:{ids:string[]}) {
    if(!preview||loaded!==key||preview.blocked_count||!confirmed||!preview.destination)throw new Error('راجع الدفعة أولاً.');
    const at=new Date(`${start}:00+03:00`);
    if(!start||!Number.isFinite(at.getTime())||at.getTime()<=Date.now())throw new Error('اختر وقت بداية مستقبلياً بتوقيت الرياض.');
-   return genericArtifactsApi.telegramBatchSchedule({artifact_ids:ids,fingerprints:Object.fromEntries(preview.items.map(item=>[item.artifact_id,item.source_fingerprint])),name,timezone:'Asia/Riyadh',start_at:at.toISOString(),interval_minutes:interval,destination:preview.destination});
+   return genericArtifactsApi.telegramBatchSchedule({artifact_ids:ids,fingerprints:Object.fromEntries(preview.items.map(item=>[item.artifact_id,item.source_fingerprint])),copy_versions:Object.fromEntries(preview.items.map(item=>[item.artifact_id,item.copy_version??null])),name,timezone:'Asia/Riyadh',start_at:at.toISOString(),interval_minutes:interval,destination:preview.destination});
  },onSuccess:data=>{setSaved(data.id);setConfirmed(false);}});
  const check=useMutation({mutationFn:()=>genericArtifactsApi.telegramBatchPreview(ids),onSuccess:data=>{setPreview(data);setLoaded(key);setConfirmed(false);setSaved('');}});
  return <section aria-label="معاينة دفعة Telegram" className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
