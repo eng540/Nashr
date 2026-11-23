@@ -227,3 +227,55 @@ async def test_second_schedule_item_skipped_after_publish():
         assert statuses[str(schedule2_id)] == "SKIPPED"
         pubs = (await session.execute(select(PublicationModel).where(PublicationModel.artifact_id == artifact_id))).scalars().all()
         assert len(pubs) == 1
+
+@pytest.mark.asyncio
+async def test_media_preview_draft_and_send_share_original_text(monkeypatch):
+    from app.api.artifacts import create_telegram_media_draft_for_artifact
+    from app.application.telegram_batch_preview import preview_telegram_batch
+    from app.application.publications import ApproveAndPublish
+    from sqlalchemy import select
+    from uuid import UUID
+    uid=await _media_artifact(caption='وصف قديم')
+    uid=UUID(str(uid))
+    monkeypatch.setenv('TELEGRAM_DESTINATION_ID','synthetic-only')
+    class Capture(FakePublisher):
+        seen=None
+        async def publish(self,**kwargs):
+            self.seen=kwargs['content']
+            return await super().publish(**kwargs)
+    capture=Capture()
+    async with SessionFactory() as session:
+        row=await session.get(ArtifactModel,uid)
+        row.content='نص أصلي مختلف'
+        await session.commit()
+        preview=await preview_telegram_batch(session,[uid])
+        assert preview['items'][0]['content']=='نص أصلي مختلف'
+        draft=await create_telegram_media_draft_for_artifact(uid,session)
+        assert draft['content']=='نص أصلي مختلف'
+        await ApproveAndPublish(capture).execute(session,UUID(draft['id']))
+        assert capture.seen=='نص أصلي مختلف'
+
+@pytest.mark.asyncio
+async def test_sticker_draft_and_send_have_no_caption(monkeypatch):
+    from app.api.artifacts import create_telegram_media_draft_for_artifact
+    from app.application.telegram_batch_preview import preview_telegram_batch
+    from app.application.publications import ApproveAndPublish
+    from uuid import UUID
+    uid=UUID(str(await _media_artifact(caption='عنوان محفوظ وليس تعليق نشر')))
+    monkeypatch.setenv('TELEGRAM_DESTINATION_ID','synthetic-sticker')
+    class Capture(FakePublisher):
+        seen=None
+        async def publish(self,**kwargs):
+            self.seen=kwargs['content']
+            return await super().publish(**kwargs)
+    capture=Capture()
+    async with SessionFactory() as session:
+        row=await session.get(ArtifactModel,uid)
+        row.kind='STICKER';row.mime_type='image/webp'
+        await session.commit()
+        preview=await preview_telegram_batch(session,[uid])
+        assert preview['items'][0]['content']==''
+        draft=await create_telegram_media_draft_for_artifact(uid,session)
+        assert draft['content']==''
+        await ApproveAndPublish(capture).execute(session,UUID(draft['id']))
+        assert capture.seen==''
