@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../../shared/components/ui";
 
 type SectionKey = "products" | "recipes" | "identities" | "policies" | "output-contracts" | "prompts";
 type Stage = { key: string; capability_key: string; capability_version: number; configuration?: Record<string, unknown> };
@@ -520,11 +521,11 @@ export function ControlPlanePage() {
   const formDisabled = busy || selectingItem;
 
   return <section dir="rtl" className="space-y-6" data-testid="control-plane-workspace">
-    <header className="space-y-2">
-      <p className="text-sm font-semibold text-indigo-600">Control Plane</p>
-      <h2 className="text-3xl font-bold">التحكم في المنتجات والإنتاج</h2>
-      <p className="max-w-3xl text-sm leading-7 text-slate-600">إدارة المنتجات والوصفات والهويات والسياسات وعقود المخرجات والتعليمات. صلاحية النشر النهائية يقررها الخادم باستخدام قواعده الحالية.</p>
-    </header>
+    <PageHeader
+      eyebrow="لوحة التحكم"
+      title="التحكم في المنتجات والإنتاج"
+      description="إدارة المنتجات والوصفات والهويات والسياسات وعقود المخرجات والتعليمات. صلاحية النشر النهائية يقررها الخادم باستخدام قواعده الحالية."
+    />
 
     <nav className="flex flex-wrap gap-2" aria-label="مكونات التحكم">
       {sections.map((entry) => <button key={entry.key} type="button" onClick={() => selectSection(entry.key)} disabled={loading || busy} aria-pressed={activeSection === entry.key}

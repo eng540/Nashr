@@ -269,7 +269,7 @@ class ApproveAndPublish:
                 raise ValueError("The approved visual Artifact could not be read from private storage.") from exc
             media_mime_type = visual.mime_type
 
-        if content is None:
+        if content is None and artifact.content is not None:
             current_row.content = artifact.content
             await session.commit()
 

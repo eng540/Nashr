@@ -56,9 +56,27 @@ export interface PlatformVariantDraft {
   created_at: string | null;
 }
 
+export interface GenericArtifactPage {
+  items: GenericReviewableArtifact[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export const genericArtifactsApi = {
-  list(status: GenericArtifactReviewStatus = "DRAFT"): Promise<GenericReviewableArtifact[]> {
-    return get<GenericReviewableArtifact[]>(`/api/artifacts?review_status=${status}`);
+  async list(status: GenericArtifactReviewStatus = "DRAFT", offset = 0, limit = 100): Promise<GenericArtifactPage> {
+    const data = await get<GenericArtifactPage | GenericReviewableArtifact[]>(`/api/artifacts?review_status=${status}&limit=${limit}&offset=${offset}`);
+    if (Array.isArray(data)) return { items: data, total: data.length, limit, offset };
+    return data;
+  },
+  async listAll(status: GenericArtifactReviewStatus = "DRAFT"): Promise<GenericArtifactPage> {
+    const first = await genericArtifactsApi.list(status, 0, 100);
+    if (first.items.length >= first.total) return first;
+    const rest = await Promise.all(
+      Array.from({ length: Math.ceil((first.total - first.items.length) / 100) }, (_, index) => genericArtifactsApi.list(status, (index + 1) * 100, 100)),
+    );
+    const items = [...first.items, ...rest.flatMap((page) => page.items)];
+    return { ...first, items, total: Math.max(first.total, items.length) };
   },
   mediaUrl(id: string): Promise<{ url: string; expires_in: number }> {
     return get<{ url: string; expires_in: number }>(`/api/artifacts/${id}/media-url`);
@@ -95,6 +113,9 @@ export const genericArtifactsApi = {
   },
   createTelegramMediaDraft(id: string): Promise<{ id: string; status: string; external_id?: string | null }> {
     return post<{ id: string; status: string; external_id?: string | null }>(`/api/artifacts/${id}/telegram-media-draft`);
+  },
+  scheduleArtifact(id: string, input: { name: string; timezone: string; scheduled_at: string }): Promise<{ id: string; name: string; status: string; timezone: string; items: Array<{ id: string; artifact_id: string | null; post_id: string | null; scheduled_at: string; status: string }> }> {
+    return post(`/api/artifacts/${id}/schedule`, input);
   },
   publishQuiz(publicationId: string, content: string): Promise<{ id: string; status: string; external_id: string | null; error_message: string | null }> {
     return post<{ id: string; status: string; external_id: string | null; error_message: string | null }>(`/publications/${publicationId}/publish`, { content });

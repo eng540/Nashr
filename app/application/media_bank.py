@@ -71,6 +71,7 @@ class IngestReadyMedia:
         content_type: str,
         data: bytes,
         caption: str | None = None,
+        storage_key: str | None = None,
     ) -> Artifact:
         if not isinstance(data, (bytes, bytearray)) or not data:
             raise ValueError("Uploaded media is empty.")
@@ -89,8 +90,10 @@ class IngestReadyMedia:
         storage = self.storage or S3ArtifactStorage.from_environment()
         artifact_id = uuid4()
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", clean_filename).strip("-") or "media"
+        # A caller-provided deterministic key makes a retried import idempotent in
+        # storage: the retry overwrites the same object instead of leaving orphans.
         storage_uri = await storage.put(
-            key=f"artifacts/media-bank/{artifact_id}/{safe_name}",
+            key=storage_key or f"artifacts/media-bank/{artifact_id}/{safe_name}",
             content=payload,
             content_type=mime_type,
         )

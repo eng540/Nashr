@@ -239,4 +239,4 @@ async def test_thematic_text_artifact_keeps_every_source_and_enters_existing_rev
         assert saved.metadata["source_knowledge_unit_ids"] == [str(unit_a), str(unit_b)]
         assert [source["source_name"] for source in saved.metadata["sources"]] == ["كتاب أ", "كتاب ب"]
         review_queue = await GenericArtifactReviewService(session).list("DRAFT")
-        assert any(item["id"] == str(saved.id) for item in review_queue)
+        assert any(item["id"] == str(saved.id) for item in review_queue["items"])

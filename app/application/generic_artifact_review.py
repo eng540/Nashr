@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.output_contracts import OutputContractDefinition
@@ -73,16 +73,23 @@ class GenericArtifactReviewService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def list(self, review_status: str = "DRAFT", limit: int = 50) -> list[dict[str, Any]]:
+    async def list(self, review_status: str = "DRAFT", limit: int = 50, offset: int = 0) -> dict[str, Any]:
         if review_status not in {"DRAFT", "APPROVED", "REJECTED"}:
             raise ValueError("Unsupported artifact review status.")
+        if offset < 0:
+            raise ValueError("offset must be zero or greater.")
+        filters = [ArtifactModel.kind != "POST", ArtifactModel.review_status == review_status]
+        total = (await self.session.execute(
+            select(func.count()).select_from(ArtifactModel).where(*filters)
+        )).scalar_one()
         rows = (await self.session.execute(
             select(ArtifactModel)
-            .where(ArtifactModel.kind != "POST", ArtifactModel.review_status == review_status)
+            .where(*filters)
             .order_by(ArtifactModel.created_at.desc(), ArtifactModel.id.desc())
+            .offset(offset)
             .limit(limit)
         )).scalars().all()
-        return [_payload(row) for row in rows]
+        return {"items": [_payload(row) for row in rows], "total": total, "limit": limit, "offset": offset}
 
     async def get(self, artifact_id: UUID) -> dict[str, Any]:
         row = await self._get_row(artifact_id)

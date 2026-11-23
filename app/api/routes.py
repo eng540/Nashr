@@ -1318,6 +1318,7 @@ async def upcoming_schedule_items(
         .join(ScheduleModel)
         .options(
             selectinload(ScheduleItemModel.schedule),
+            selectinload(ScheduleItemModel.artifact),
             selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit),
         )
         .where(
@@ -1334,22 +1335,19 @@ async def upcoming_schedule_items(
         .limit(limit)
     )
     items = result.scalars().all()
+    payloads = []
+    for item in items:
+        payload = _upcoming_item_payload(item)
+        if item.post is not None and item.post.content:
+            content_preview = item.post.content[:300]
+        elif item.artifact is not None:
+            artifact = item.artifact
+            content_preview = str(((artifact.artifact_metadata or {}).get("caption") or artifact.content or ""))[:300]
+        else:
+            content_preview = ""
+        payloads.append({"id": payload["item_id"], "content_preview": content_preview, **payload})
     return {
-        "items": [
-            {
-                "id": str(item.id),
-                "schedule_id": str(item.schedule_id),
-                "schedule_name": item.schedule.name,
-                "post_id": str(item.post_id),
-                "title": item.post.knowledge_unit.title,
-                "content_preview": item.post.content[:300],
-                "scheduled_at": item.scheduled_at,
-                "timezone": item.schedule.timezone,
-                "position": item.position,
-                "status": item.status,
-            }
-            for item in items
-        ],
+        "items": payloads,
         "days": days,
         "limit": limit,
     }
@@ -2854,6 +2852,7 @@ async def upcoming_schedule_items(
         .join(ScheduleModel)
         .options(
             selectinload(ScheduleItemModel.schedule),
+            selectinload(ScheduleItemModel.artifact),
             selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit),
         )
         .where(
@@ -2870,22 +2869,19 @@ async def upcoming_schedule_items(
         .limit(limit)
     )
     items = result.scalars().all()
+    payloads = []
+    for item in items:
+        payload = _upcoming_item_payload(item)
+        if item.post is not None and item.post.content:
+            content_preview = item.post.content[:300]
+        elif item.artifact is not None:
+            artifact = item.artifact
+            content_preview = str(((artifact.artifact_metadata or {}).get("caption") or artifact.content or ""))[:300]
+        else:
+            content_preview = ""
+        payloads.append({"id": payload["item_id"], "content_preview": content_preview, **payload})
     return {
-        "items": [
-            {
-                "id": str(item.id),
-                "schedule_id": str(item.schedule_id),
-                "schedule_name": item.schedule.name,
-                "post_id": str(item.post_id),
-                "title": item.post.knowledge_unit.title,
-                "content_preview": item.post.content[:300],
-                "scheduled_at": item.scheduled_at,
-                "timezone": item.schedule.timezone,
-                "position": item.position,
-                "status": item.status,
-            }
-            for item in items
-        ],
+        "items": payloads,
         "days": days,
         "limit": limit,
     }

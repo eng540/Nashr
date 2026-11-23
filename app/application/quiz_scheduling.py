@@ -1,4 +1,4 @@
-"""Execution path for scheduled native Telegram quiz Artifacts."""
+"""Execution path for scheduled native Telegram quiz and media Artifacts."""
 import os
 from datetime import datetime, timezone
 from uuid import UUID
@@ -20,9 +20,9 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         if item is None or item.artifact_id is None:
             return
         artifact_row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == item.artifact_id))).scalar_one_or_none()
-        if artifact_row is None or artifact_row.kind != "QUIZ":
+        if artifact_row is None or artifact_row.kind not in ("QUIZ", "IMAGE", "VIDEO"):
             item.status = ScheduleItemStatus.FAILED.value
-            item.last_error = "Scheduled Artifact is missing or is not a QUIZ."
+            item.last_error = "Scheduled Artifact is missing or is not a QUIZ, IMAGE or VIDEO."
             item.processing_started_at = None
             await session.commit()
             return
@@ -46,14 +46,14 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
             return
         if artifact_row.status != "AVAILABLE" or artifact_row.review_status != "APPROVED":
             item.status = ScheduleItemStatus.CANCELLED.value
-            item.last_error = "QUIZ Artifact is no longer approved and available."
+            item.last_error = "Scheduled Artifact is no longer approved and available."
             item.processing_started_at = None
             await session.commit()
             return
         artifact = await load_artifact(session, artifact_row.id)
         if artifact is None:
             item.status = ScheduleItemStatus.FAILED.value
-            item.last_error = "Scheduled QUIZ Artifact could not be loaded."
+            item.last_error = "Scheduled Artifact could not be loaded."
             item.processing_started_at = None
             await session.commit()
             return
@@ -77,7 +77,18 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         elif existing is not None:
             publication_id = existing.id
         else:
-            publication_id = (await CreateTelegramDraft.execute_for_artifact(session, artifact, destination)).id
+            content_override = None
+            if artifact.kind.value in ("IMAGE", "VIDEO"):
+                content_override = str((artifact.metadata or {}).get("caption") or "").strip() or None
+                if content_override is None:
+                    item.status = ScheduleItemStatus.FAILED.value
+                    item.last_error = "Media Artifact needs a non-empty caption before publication."
+                    item.processing_started_at = None
+                    await session.commit()
+                    return
+            publication_id = (await CreateTelegramDraft.execute_for_artifact(
+                session, artifact, destination, content_override=content_override
+            )).id
 
     async with SessionFactory() as session:
         try:
@@ -100,7 +111,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
             item.last_error = None
         else:
             item.status = ScheduleItemStatus.FAILED.value
-            item.last_error = error or "Quiz publication failed."
+            item.last_error = error or "Scheduled publication failed."
         await session.commit()
         schedule = (await session.execute(select(ScheduleModel).where(ScheduleModel.id == item.schedule_id))).scalar_one_or_none()
         if schedule is not None and schedule.status == ScheduleStatus.ACTIVE.value:

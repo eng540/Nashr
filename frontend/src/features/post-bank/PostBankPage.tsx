@@ -5,6 +5,7 @@ import { postsApi } from "../../shared/api/postsApi";
 import { productionJobsApi, type ProductionLineFilter, type ProductionScope, type ProductionProductOption, type EditorialIdentityOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
 import { GenericArtifactReviewPanel } from "../artifacts/GenericArtifactReviewPanel";
 import { toggleSelection } from "../../shared/utils/selection";
+import { PageHeader } from "../../shared/components/ui";
 
 const PAGE_SIZE = 30;
 const ALL_SOURCES = "ALL";
@@ -370,7 +371,15 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   const toggleMaterialPageSelection = (checked: boolean) => setMaterialIds((current) => checked ? Array.from(new Set([...current, ...currentMaterialPageIds])) : current.filter((id) => !currentMaterialPageIds.includes(id)));
 
   return <section data-testid="post-bank-workspace" className="space-y-6">
-    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold text-indigo-600">{workspaceView === "review" ? "بنك المحتوى" : "الإنتاج"}</p><h2 className="mt-1 text-3xl font-bold">{workspaceView === "review" ? "بنك المحتوى والمراجعة" : "الإنتاج من المصادر"}</h2><p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">{workspaceView === "review" ? "مساحة واحدة تجمع المخرجات المولّدة والوسائط المرفوعة يدويًا للتحرير والمراجعة والاعتماد قبل النشر." : "حوّل المواد من المصادر إلى منشورات ومخرجات، ثم راجعها واعتمدها في بنك المحتوى قبل نقلها إلى مساحة النشر."}</p></div><div className="flex flex-wrap gap-2">{workspaceView !== "review" ? <Link to="/bank" className="rounded-xl border px-4 py-2 text-sm font-semibold">بنك المحتوى</Link> : null}<Link to="/publishing" className="rounded-xl border px-4 py-2 text-sm font-semibold">مساحة النشر</Link></div></header>
+    <PageHeader
+      eyebrow={workspaceView === "review" ? "بنك المحتوى" : "الإنتاج"}
+      title={workspaceView === "review" ? "بنك المحتوى والمراجعة" : "الإنتاج من المصادر"}
+      description={workspaceView === "review" ? "مساحة واحدة تجمع المخرجات المولّدة والوسائط المرفوعة يدويًا للتحرير والمراجعة والاعتماد قبل النشر." : "حوّل المواد من المصادر إلى منشورات ومخرجات، ثم راجعها واعتمدها في بنك المحتوى قبل نقلها إلى مساحة النشر."}
+      actions={<>
+        {workspaceView !== "review" ? <Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">بنك المحتوى</Link> : null}
+        <Link to="/publishing" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">مساحة النشر</Link>
+      </>}
+    />
     {workspaceView === "review" ? <GenericArtifactReviewPanel showDesignCard={false} /> : null}
 
     {workspaceView !== "review" ? <nav aria-label="أقسام الإنتاج" className="grid gap-2 rounded-2xl border bg-white p-2 sm:grid-cols-3">

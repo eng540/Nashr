@@ -15,7 +15,13 @@ export default defineConfig({
         },
       },
       "/schedules": "http://127.0.0.1:8000",
-      "/sources": "http://127.0.0.1:8000",
+      "/sources": {
+        target: "http://127.0.0.1:8000",
+        bypass(req) {
+          if (req.url?.startsWith("/sources/library")) return req.url;
+          return undefined;
+        },
+      },
       "/api": "http://127.0.0.1:8000",
     },
   },
