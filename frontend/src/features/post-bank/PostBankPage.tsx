@@ -141,7 +141,7 @@ export function TelegramPreview({ content, onClose }: { content: string; onClose
 }
 
 
-export function PostBankPage() {
+export function PostBankPage({ initialView }: { initialView?: "production" | "job" | "review" }) {
   const navigate = useNavigate();
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -181,7 +181,7 @@ export function PostBankPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [productionStep, setProductionStep] = useState<1 | 2 | 3>(1);
-  const [workspaceView, setWorkspaceView] = useState<"production" | "job" | "review">(() => searchParams.get("status") ? "review" : "production");
+  const [workspaceView, setWorkspaceView] = useState<"production" | "job" | "review">(() => initialView ?? (searchParams.get("status") ? "review" : "production"));
 
   const identities = useQuery({ queryKey: ["control-plane", "identities"], queryFn: productionJobsApi.identities });
   const products = useQuery({ queryKey: ["control-plane", "products"], queryFn: productionJobsApi.products });
@@ -365,7 +365,7 @@ export function PostBankPage() {
   const toggleMaterialPageSelection = (checked: boolean) => setMaterialIds((current) => checked ? Array.from(new Set([...current, ...currentMaterialPageIds])) : current.filter((id) => !currentMaterialPageIds.includes(id)));
 
   return <section data-testid="post-bank-workspace" className="space-y-6">
-    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold text-indigo-600">Workspace 02</p><h2 className="mt-1 text-3xl font-bold">مصنع المنشورات</h2><p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">حوّل المواد إلى منشورات، ثم راجعها واعتمدها قبل نقلها إلى مساحة النشر.</p></div><Link to="/publishing" className="rounded-xl border px-4 py-2 text-sm font-semibold">مساحة النشر</Link></header>
+    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold text-indigo-600">{workspaceView === "review" ? "بنك المحتوى" : "الإنتاج"}</p><h2 className="mt-1 text-3xl font-bold">{workspaceView === "review" ? "بنك المحتوى والمراجعة" : "الإنتاج من المصادر"}</h2><p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">{workspaceView === "review" ? "مساحة واحدة تجمع المخرجات المولّدة والوسائط المرفوعة يدويًا للتحرير والمراجعة والاعتماد قبل النشر." : "حوّل المواد من المصادر إلى منشورات ومخرجات، ثم راجعها واعتمدها في بنك المحتوى قبل نقلها إلى مساحة النشر."}</p></div><Link to="/publishing" className="rounded-xl border px-4 py-2 text-sm font-semibold">مساحة النشر</Link></header>
 
     <nav aria-label="أقسام مصنع المحتوى" className="grid gap-2 rounded-2xl border bg-white p-2 sm:grid-cols-3">
       <button type="button" onClick={() => setWorkspaceView("production")} aria-current={workspaceView === "production" ? "page" : undefined} className={`rounded-xl px-4 py-3 text-right text-sm font-bold ${workspaceView === "production" ? "bg-indigo-600 text-white" : "hover:bg-slate-50"}`}><span className="block">إعداد الإنتاج</span><span className={`mt-1 block text-xs font-normal ${workspaceView === "production" ? "text-indigo-100" : "text-slate-500"}`}>اختر المنتج والمصدر والنطاق</span></button>
@@ -504,4 +504,4 @@ export function PostBankPage() {
     {workspaceView === "review" && editing && <div className="fixed inset-0 z-20 grid place-items-center bg-slate-950/30 p-4"><div role="dialog" className="max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><h3 className="text-xl font-bold">مراجعة المنشور</h3><textarea aria-label="محتوى المنشور" value={content} onChange={(e) => setContent(e.target.value)} className="mt-4 min-h-48 w-full rounded-xl border p-4"/><p className="mt-2 text-xs leading-6 text-slate-500">يمكن استخدام تنسيق تيليجرام HTML مثل &lt;b&gt;النص البارز&lt;/b&gt; و&lt;blockquote&gt;الاقتباس&lt;/blockquote&gt;. المعاينة أدناه لعرض التنسيق فقط؛ الحكم التحريري لك.</p><TelegramPreview content={content} /><input aria-label="ملاحظة المراجعة" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="ملاحظة أو سبب الرفض" className="mt-3 w-full rounded-xl border p-3"/><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={() => save.mutate()} disabled={save.isPending} className="rounded-xl border px-4 py-2 font-semibold">حفظ</button><button type="button" onClick={() => review.mutate({ id: editing, action: "approve" })} disabled={review.isPending} className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white">اعتماد</button><button type="button" onClick={() => review.mutate({ id: editing, action: "reject" })} disabled={review.isPending || !reviewNote.trim()} className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white">رفض</button><button type="button" onClick={() => setEditing(null)} className="rounded-xl bg-slate-100 px-4 py-2 font-semibold">إغلاق</button></div></div></div>}
     {workspaceView === "review" && <GenericArtifactReviewPanel />}
   </section>;
-}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       }
