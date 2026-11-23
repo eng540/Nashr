@@ -94,49 +94,6 @@ export function PublishingPage() {
     const url = manualPub.url.trim();
     recordManual.mutate({ id, published_at: publishedAt, external_url: url ? url : null });
   };
-
-  const renderVariantCard = (v: PlatformVariantDraft) => (
-    <article key={v.id} data-testid="platform-variant-card" className="rounded-2xl border bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <strong>{v.platform_label_ar ?? v.platform ?? "منصة"}</strong>
-        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{v.manual_publication ? "منشورة يدويًا" : v.review_status === "APPROVED" ? "معتمدة" : v.review_status === "REJECTED" ? "مرفوضة" : "مسودة"}</span>
-      </div>
-      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{v.excerpt}{v.full_length > v.excerpt.length ? "…" : ""}</p>
-      <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-        <div><dt className="inline">المصدر: </dt><dd className="inline">{v.source_kind_ar ?? "غير محدد"}</dd></div>
-        {v.constraints.max_text != null && <div><dt className="inline">الطول الحالي: </dt><dd className="inline"><bdi>{v.constraints.measured_length ?? "؟"}</bdi> من <bdi>{v.constraints.max_text}</bdi>{v.constraints.measure ? <span className="mr-1 text-slate-400" dir="ltr">({v.constraints.measure})</span> : null}</dd></div>}
-        {v.constraints.trimmed && <div><dt className="inline">القص: </dt><dd className="inline">عند حد {v.constraints.trim_boundary === "sentence" ? "جملة" : v.constraints.trim_boundary === "whitespace" ? "كلمة" : "ثابت"}</dd></div>}
-      </dl>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {v.needs_review && v.review_status !== "APPROVED" && !v.manual_publication && <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">تتطلب مراجعة</span>}
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">ضبط طول فقط، ليست صياغة مخصصة</span>
-        {v.constraints.provenance && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">مصدر القيود: {v.constraints.provenance === "primary" ? "وثائق رسمية" : "مصادر ثانوية"}</span>}
-      </div>
-      {v.manual_publication ? (
-        <div className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs leading-6 text-emerald-800" data-testid="manual-publication-record">
-          <div>نُشرت يدويًا خارج التطبيق في <bdi>{new Date(v.manual_publication.published_at).toLocaleDateString("ar")}</bdi></div>
-          {v.manual_publication.external_url && <a href={v.manual_publication.external_url} target="_blank" rel="noreferrer" dir="ltr" className="break-all font-semibold underline">رابط المنشور</a>}
-        </div>
-      ) : v.review_status === "APPROVED" ? (
-        manualPub?.id === v.id ? (
-          <form className="mt-3 space-y-2 rounded-xl border p-3" data-testid="manual-publication-form" onSubmit={(e) => { e.preventDefault(); submitManualPublication(v.id); }}>
-            <label className="block text-xs font-semibold">تاريخ النشر اليدوي
-              <input aria-label="تاريخ النشر اليدوي" type="date" required max={new Date().toISOString().slice(0, 10)} value={manualPub.date} onChange={(e) => setManualPub({ ...manualPub, date: e.target.value })} className="mt-1 w-full rounded-lg border p-2 font-normal" />
-            </label>
-            <label className="block text-xs font-semibold">رابط المنشور (اختياري)
-              <input aria-label="رابط المنشور" type="url" inputMode="url" dir="ltr" placeholder="https://…" value={manualPub.url} onChange={(e) => setManualPub({ ...manualPub, url: e.target.value })} className="mt-1 w-full rounded-lg border p-2 font-normal" />
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <button type="submit" disabled={recordManual.isPending} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white">حفظ التسجيل</button>
-              <button type="button" onClick={() => setManualPub(null)} className="rounded-lg border px-4 py-2 text-xs">إلغاء</button>
-            </div>
-          </form>
-        ) : (
-          <button type="button" onClick={() => setManualPub({ id: v.id, date: new Date().toISOString().slice(0, 10), url: "" })} className="mt-3 rounded-xl border border-emerald-300 px-4 py-2 text-xs font-bold text-emerald-700">تسجيل نشر يدوي</button>
-        )
-      ) : null}
-    </article>
-  );
   const attachVisual = useMutation({
     mutationFn: ({ postId, artifactId }: { postId: string; artifactId: string }) => postsApi.attachVisualArtifact(postId, artifactId),
     onSuccess: async () => {
@@ -431,7 +388,7 @@ export function PublishingPage() {
                 <div key={group.key} className="space-y-3">
                   <h4 className="text-sm font-bold text-slate-600">{group.title} (<bdi>{group.items.length}</bdi>)</h4>
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {group.items.map((v) => renderVariantCard(v))}
+                    {group.items.map((v) => <VariantCard key={v.id} v={v} manualPub={manualPub} setManualPub={setManualPub} recordManualPending={recordManual.isPending} onSubmitManual={submitManualPublication} />)}
                   </div>
                 </div>
               ))}
@@ -442,6 +399,102 @@ export function PublishingPage() {
 
       {scheduleOpen && <form data-testid="schedule-panel" className="rounded-2xl border-2 border-indigo-200 bg-white p-5 shadow-sm" onSubmit={(e) => { e.preventDefault(); createSchedule.mutate(); }}><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">إنشاء خطة نشر</h3><p className="mt-1 text-sm text-slate-500">{selectedIds.length} منشور جاهز للخطة.</p></div><button type="button" onClick={() => setScheduleOpen(false)} className="rounded-lg border px-3 py-2 text-sm">إغلاق</button></div><div className="mt-4 grid gap-4 sm:grid-cols-2"><label>اسم الخطة<input aria-label="اسم الخطة" value={form.name} onChange={(e) => setForm({...form, name: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>المنطقة الزمنية<input aria-label="المنطقة الزمنية" value={form.timezone} onChange={(e) => setForm({...form, timezone: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>وقت البداية<input aria-label="وقت البداية" type="datetime-local" value={form.startAt} onChange={(e) => setForm({...form, startAt: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>الفاصل بالدقائق<input aria-label="الفاصل بالدقائق" type="number" min="1" value={form.interval} onChange={(e) => setForm({...form, interval: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label></div><div className="mt-5 flex gap-2"><button data-testid="submit-schedule" type="submit" disabled={createSchedule.isPending} className="rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white">حفظ الخطة</button><button type="button" onClick={() => setScheduleOpen(false)} className="rounded-xl border px-5 py-3">إلغاء</button></div></form>}
     </section>
+  );
+}
+
+function VariantCard({ v, manualPub, setManualPub, recordManualPending, onSubmitManual }: {
+  v: PlatformVariantDraft;
+  manualPub: { id: string; date: string; url: string } | null;
+  setManualPub: (value: { id: string; date: string; url: string } | null) => void;
+  recordManualPending: boolean;
+  onSubmitManual: (id: string) => void;
+}) {
+  const [showFull, setShowFull] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const isMedia = v.kind === "IMAGE" || v.kind === "VIDEO";
+  const media = useQuery({
+    queryKey: ["publishing", "variant-media", v.id],
+    queryFn: () => genericArtifactsApi.mediaUrl(v.id),
+    enabled: mediaOpen && isMedia,
+    staleTime: 240_000,
+  });
+  const copyFullText = async () => {
+    try {
+      await navigator.clipboard.writeText(v.content);
+    } catch {
+      const area = document.createElement("textarea");
+      area.value = v.content;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <article data-testid="platform-variant-card" className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong>{v.platform_label_ar ?? v.platform ?? "منصة"}</strong>
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{v.manual_publication ? "منشورة يدويًا" : v.review_status === "APPROVED" ? "معتمدة" : v.review_status === "REJECTED" ? "مرفوضة" : "مسودة"}</span>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{showFull ? v.content : v.excerpt}{!showFull && v.full_length > v.excerpt.length ? "…" : ""}</p>
+      <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+        <div><dt className="inline">المصدر: </dt><dd className="inline">{v.source_kind_ar ?? "غير محدد"}</dd></div>
+        {v.constraints.max_text != null && <div><dt className="inline">الطول الحالي: </dt><dd className="inline"><bdi>{v.constraints.measured_length ?? "؟"}</bdi> من <bdi>{v.constraints.max_text}</bdi>{v.constraints.measure ? <span className="mr-1 text-slate-400" dir="ltr">({v.constraints.measure})</span> : null}</dd></div>}
+        {v.constraints.trimmed && <div><dt className="inline">القص: </dt><dd className="inline">عند حد {v.constraints.trim_boundary === "sentence" ? "جملة" : v.constraints.trim_boundary === "whitespace" ? "كلمة" : "ثابت"}</dd></div>}
+      </dl>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {v.needs_review && v.review_status !== "APPROVED" && !v.manual_publication && <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">تتطلب مراجعة</span>}
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">ضبط طول فقط، ليست صياغة مخصصة</span>
+        {v.constraints.provenance && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">مصدر القيود: {v.constraints.provenance === "primary" ? "وثائق رسمية" : "مصادر ثانوية"}</span>}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {v.full_length > v.excerpt.length && (
+          <button type="button" onClick={() => setShowFull((open) => !open)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold">{showFull ? "إخفاء النص الكامل" : "عرض النص الكامل"}</button>
+        )}
+        <button type="button" onClick={() => void copyFullText()} className="rounded-lg border px-3 py-1.5 text-xs font-semibold">{copied ? "نُسخ النص" : "نسخ النص للنشر اليدوي"}</button>
+        {isMedia && (
+          <button type="button" onClick={() => setMediaOpen((open) => !open)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold">{mediaOpen ? "إخفاء الوسيط" : "عرض الوسيط"}</button>
+        )}
+      </div>
+      {mediaOpen && isMedia && (
+        <div className="mt-3 rounded-xl border bg-slate-50 p-3" data-testid="variant-media-preview">
+          {media.isLoading ? <p className="text-xs text-slate-500">جارٍ تحميل الوسيط...</p>
+            : media.isError || !media.data?.url ? <p className="text-xs text-red-600">تعذر تحميل الوسيط.</p>
+            : <>
+              {v.kind === "IMAGE"
+                ? <img src={media.data.url} alt={v.excerpt.slice(0, 80)} className="max-h-64 w-full rounded-lg object-contain" />
+                : <video src={media.data.url} controls playsInline className="max-h-64 w-full rounded-lg" />}
+              <a href={media.data.url} target="_blank" rel="noreferrer" dir="ltr" className="mt-2 inline-block break-all text-xs font-semibold text-indigo-700 underline">فتح الوسيط في تبويب</a>
+            </>}
+        </div>
+      )}
+      {v.manual_publication ? (
+        <div className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs leading-6 text-emerald-800" data-testid="manual-publication-record">
+          <div>نُشرت يدويًا خارج التطبيق في <bdi>{new Date(v.manual_publication.published_at).toLocaleDateString("ar")}</bdi></div>
+          {v.manual_publication.external_url && <a href={v.manual_publication.external_url} target="_blank" rel="noreferrer" dir="ltr" className="break-all font-semibold underline">رابط المنشور</a>}
+        </div>
+      ) : v.review_status === "APPROVED" ? (
+        manualPub?.id === v.id ? (
+          <form className="mt-3 space-y-2 rounded-xl border p-3" data-testid="manual-publication-form" onSubmit={(e) => { e.preventDefault(); onSubmitManual(v.id); }}>
+            <label className="block text-xs font-semibold">تاريخ النشر اليدوي
+              <input aria-label="تاريخ النشر اليدوي" type="date" required max={new Date().toISOString().slice(0, 10)} value={manualPub.date} onChange={(e) => setManualPub({ ...manualPub, date: e.target.value })} className="mt-1 w-full rounded-lg border p-2 font-normal" />
+            </label>
+            <label className="block text-xs font-semibold">رابط المنشور (اختياري)
+              <input aria-label="رابط المنشور" type="url" inputMode="url" dir="ltr" placeholder="https://…" value={manualPub.url} onChange={(e) => setManualPub({ ...manualPub, url: e.target.value })} className="mt-1 w-full rounded-lg border p-2 font-normal" />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" disabled={recordManualPending} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white">حفظ التسجيل</button>
+              <button type="button" onClick={() => setManualPub(null)} className="rounded-lg border px-4 py-2 text-xs">إلغاء</button>
+            </div>
+          </form>
+        ) : (
+          <button type="button" onClick={() => setManualPub({ id: v.id, date: new Date().toISOString().slice(0, 10), url: "" })} className="mt-3 rounded-xl border border-emerald-300 px-4 py-2 text-xs font-bold text-emerald-700">تسجيل نشر يدوي</button>
+        )
+      ) : null}
+    </article>
   );
 }
 
