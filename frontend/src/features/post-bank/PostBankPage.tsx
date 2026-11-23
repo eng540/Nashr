@@ -256,7 +256,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
     if (!products.data) return;
     const product = products.data.find((item) => item.key === productKey);
     const version = product?.versions.find((item) => item.version === product.active_version);
-    const pinnedIdentityKey = version?.definition.component_versions?.identity.key;
+    const pinnedIdentityKey = version?.definition.component_versions?.identity?.key;
     if (pinnedIdentityKey && identityKey !== pinnedIdentityKey) setIdentityKey(pinnedIdentityKey);
   }, [products.data, productKey, identityKey]);
 
