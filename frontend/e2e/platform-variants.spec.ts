@@ -66,7 +66,7 @@ test("approved text artifact derives an X platform variant into the DRAFT queue"
   await expect(page.getByLabel(`منصة النسخة ${textId}`)).toBeVisible();
   await page.getByLabel(`منصة النسخة ${textId}`).selectOption("x");
   await page.getByRole("button", { name: "اشتقاق النسخة" }).click();
-  await expect(page.getByText("أُنشئت نسخة إكس بحدود الطول وهي الآن قيد المراجعة.")).toBeVisible();
+  await expect(page.getByText("نسخة إكس جاهزة للمراجعة؛ إن كانت موجودة فقد حُفظت تعديلاتك دون استبدالها.")).toBeVisible();
 
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("DRAFT");
   await expect(page.getByText("نسخة إكس · مقصوصة للحد")).toBeVisible();

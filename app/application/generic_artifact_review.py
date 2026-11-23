@@ -45,6 +45,24 @@ def _validate_review_candidate(row: ArtifactModel, content: str | None, metadata
     missing = [field for field in definition.required_metadata_fields if field not in metadata]
     if missing:
         raise ValueError("Artifact is missing required metadata fields: " + ", ".join(missing))
+    if (row.artifact_metadata or {}).get("source_type") == "PLATFORM_VARIANT":
+        from app.application.platform_variants import _resolve_profile
+        original = row.artifact_metadata or {}
+        # Only the copy text and editorial notes are editable. Provenance and
+        # constraints must remain those created by the dedicated derivation flow.
+        for key in set(original) | set(metadata):
+            if key not in {"caption", "editorial_notes"} and metadata.get(key) != original.get(key):
+                raise ValueError("Platform variant provenance is immutable: " + key)
+        platform, profile = _resolve_profile(str(original.get("platform", "")))
+        if row.output_contract_key != "PLATFORM_VARIANT_" + platform.upper():
+            raise ValueError("Platform variant contract does not match its platform.")
+        text = content if row.kind == "TEXT" else metadata.get("caption")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("Platform variant text cannot be empty.")
+        if profile["measure"](text) > profile["max_text"]:
+            raise ValueError("Platform variant exceeds its platform text limit.")
+    elif metadata.get("source_type") == "PLATFORM_VARIANT":
+        raise ValueError("Use the dedicated platform variant creation workflow.")
     if metadata.get("telegram_native") is not None:
         from app.domain.telegram_payloads import native_payload
         if row.kind != "TEXT":
@@ -129,6 +147,12 @@ class GenericArtifactReviewService:
         elif candidate_metadata.get('telegram_live_photo') is not None:
             raise ValueError('Use the dedicated Live Photo creation workflow.')
         _validate_review_candidate(row, candidate_content, candidate_metadata)
+        if (row.artifact_metadata or {}).get("source_type") == "PLATFORM_VARIANT":
+            from app.application.platform_variants import _resolve_profile
+            _, profile = _resolve_profile(str(candidate_metadata["platform"]))
+            text = candidate_content if row.kind == "TEXT" else candidate_metadata["caption"]
+            candidate_metadata["caption"] = text
+            candidate_metadata["constraints"] = {**candidate_metadata["constraints"], "measured_length": profile["measure"](text)}
         row.content = candidate_content
         row.artifact_metadata = candidate_metadata
         row.updated_at = datetime.now(timezone.utc)
@@ -147,6 +171,8 @@ class GenericArtifactReviewService:
         if (row.artifact_metadata or {}).get('telegram_live_photo') is not None:
             from app.application.telegram_live_photos import resolve_live_photo
             await resolve_live_photo(self.session, row.artifact_metadata)
+        if (row.artifact_metadata or {}).get("source_type") == "PLATFORM_VARIANT":
+            row.artifact_metadata = {**row.artifact_metadata, "needs_review": False}
         row.review_status = "APPROVED"
         row.review_note = review_note.strip() if review_note and review_note.strip() else None
         row.reviewed_at = datetime.now(timezone.utc)

@@ -336,3 +336,66 @@ async def test_media_variant_requires_nonempty_caption():
         assert approve.status_code == 200, approve.text
         derived = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
         assert derived.status_code == 422, derived.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('media', [False, True])
+async def test_rederive_preserves_saved_edits_and_independent_approval(media):
+    from uuid import UUID
+    from app.infrastructure.database.models import ArtifactModel
+    artifact_id = await (_seed_media_artifact('original media caption') if media else _seed_text_artifact('original text'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        await client.post(f'/api/artifacts/{artifact_id}/approve', json={})
+        first = (await client.post(f'/api/artifacts/{artifact_id}/platform-variant',json={'platform':'x'})).json()
+        uid = first['id']
+        edited = 'تعليق مستقل عُدّل بيد المستخدم'
+        body = {'metadata':{**first['metadata'],'caption':edited}} if media else {'content':edited}
+        update = await client.patch(f'/api/artifacts/{uid}',json=body)
+        assert update.status_code == 200, update.text
+        assert update.json()['metadata']['caption'] == edited
+        repeat = await client.post(f'/api/artifacts/{artifact_id}/platform-variant',json={'platform':'x'})
+        assert repeat.status_code == 201, repeat.text
+        assert repeat.json()['id'] == uid
+        assert repeat.json()['metadata']['caption'] == edited
+        assert repeat.json()['content'] == (None if media else edited)
+        approve = await client.post(f'/api/artifacts/{uid}/approve',json={})
+        assert approve.status_code == 200, approve.text
+        assert approve.json()['metadata']['needs_review'] is False
+        blocked = await client.patch(f'/api/artifacts/{uid}',json=body)
+        assert blocked.status_code == 409
+        async with SessionFactory() as session:
+            original = await session.get(ArtifactModel,UUID(artifact_id))
+            assert (original.artifact_metadata.get('caption') if media else original.content) == ('original media caption' if media else 'original text')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('field,value', [('platform','instagram'),('source_artifact_id','fake'),('constraints',{}),('source_type','OTHER')])
+async def test_variant_provenance_is_immutable(field,value):
+    artifact_id = await _seed_text_artifact('نص معتمد')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        await client.post(f'/api/artifacts/{artifact_id}/approve',json={})
+        first = (await client.post(f'/api/artifacts/{artifact_id}/platform-variant',json={'platform':'x'})).json()
+        change = await client.patch('/api/artifacts/'+first['id'],json={'metadata':{**first['metadata'],field:value}})
+        assert change.status_code == 409, change.text
+
+
+@pytest.mark.asyncio
+async def test_media_variant_rejects_overlength_and_empty_caption():
+    artifact_id = await _seed_media_artifact('تعليق')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        await client.post(f'/api/artifacts/{artifact_id}/approve',json={})
+        first = (await client.post(f'/api/artifacts/{artifact_id}/platform-variant',json={'platform':'x'})).json()
+        for text in ['','ك'*281,'😀'*141]:
+            response = await client.patch('/api/artifacts/'+first['id'],json={'metadata':{**first['metadata'],'caption':text}})
+            assert response.status_code == 409, response.text
+
+
+@pytest.mark.asyncio
+async def test_concurrent_derivation_reuses_one_draft():
+    import asyncio
+    artifact_id = await _seed_text_artifact('نص متزامن')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        await client.post(f'/api/artifacts/{artifact_id}/approve',json={})
+        responses=await asyncio.gather(*[client.post(f'/api/artifacts/{artifact_id}/platform-variant',json={'platform':'x'}) for _ in range(3)])
+        assert all(r.status_code == 201 for r in responses)
+        assert len({r.json()['id'] for r in responses}) == 1
