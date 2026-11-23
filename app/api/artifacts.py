@@ -151,6 +151,41 @@ async def list_platform_variant_drafts(
     return await list_platform_variants(session, limit)
 
 
+class TelegramBatchPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    artifact_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+@router.post("/telegram-batch-preview")
+async def telegram_batch_preview(payload: TelegramBatchPreviewRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.telegram_batch_preview import preview_telegram_batch
+    try:
+        return await preview_telegram_batch(session, payload.artifact_ids)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+class TelegramBatchScheduleRequest(TelegramBatchPreviewRequest):
+    fingerprints: dict[str, str]
+    name: str = Field(min_length=1, max_length=300)
+    timezone: str
+    start_at: datetime
+    interval_minutes: int = Field(ge=1, le=10080)
+    destination: str
+
+
+@router.post("/telegram-batch-schedule", status_code=201)
+async def telegram_batch_schedule(payload: TelegramBatchScheduleRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.telegram_batch_schedule import create_telegram_batch_schedule
+    try:
+        data = payload.model_dump()
+        data['timezone_name'] = data.pop('timezone')
+        return await create_telegram_batch_schedule(session, **data)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+
+
 class DistributionSelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     artifact_ids: list[UUID] = Field(min_length=1, max_length=100)
