@@ -12,7 +12,7 @@ test('selected approved media creates a separate reviewable album without sendin
   if(['/posts','/sources','/api/control/products','/api/control/recipes','/api/control/identities'].some(p=>u.pathname.startsWith(p)))return route.fulfill({json:[]});
   return route.continue();
  });
- await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  await page.getByLabel('تحديد المخرج a',{exact:true}).check();await page.getByLabel('تحديد المخرج b',{exact:true}).check();
  await expect(page.getByRole('button',{name:'إنشاء ألبوم من المحدد (2-10)',exact:true})).toBeEnabled();
  await page.screenshot({path:testInfo.outputPath('album-selection-desktop.png'),fullPage:true});
