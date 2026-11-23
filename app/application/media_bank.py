@@ -48,8 +48,9 @@ def _media_bank_contract(kind: str, mime_type: str) -> dict:
             "definition": {
                 "artifact_kind": kind,
                 "mime_type": mime_type,
-                "content_mode": "STORAGE",
+                "content_mode": "STORAGE_URI",
                 "required_metadata_fields": ["source_type"],
+                "max_content_chars": None,
             },
         }
     }
