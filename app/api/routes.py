@@ -529,6 +529,15 @@ async def posts_console() -> HTMLResponse:
         return frontend
     return HTMLResponse(content=NASHR_POSTS_HTML)
 
+@router.get("/sources/library", response_class=HTMLResponse, include_in_schema=False)
+async def sources_console() -> HTMLResponse:
+    """Serve the React sources library view, with legacy HTML as a local-dev fallback. Kept off /sources to avoid shadowing the sources API."""
+    frontend = frontend_index_response()
+    if frontend is not None:
+        return frontend
+    return HTMLResponse(content=NASHR_POSTS_HTML)
+
+
 @router.get("/bank", response_class=HTMLResponse, include_in_schema=False)
 async def content_bank_console() -> HTMLResponse:
     """Serve the React shared content bank view, with legacy HTML as a local-dev fallback."""
