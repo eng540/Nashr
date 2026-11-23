@@ -57,7 +57,9 @@ class CreateTelegramDraft:
         return await CreateTelegramDraft.execute_for_artifact(session, post_model_to_artifact(post), destination)
 
     @staticmethod
-    async def execute_for_artifact(session: AsyncSession, artifact: Artifact, destination: str) -> Publication:
+    async def execute_for_artifact(
+        session: AsyncSession, artifact: Artifact, destination: str, content_override: str | None = None
+    ) -> Publication:
         is_post = artifact.kind == ArtifactKind.POST
         reference_filter = PublicationModel.post_id == artifact.id if is_post else PublicationModel.artifact_id == artifact.id
         existing_result = await session.execute(
@@ -81,7 +83,7 @@ class CreateTelegramDraft:
             artifact_id=None if is_post else artifact.id,
             platform="telegram",
             destination=destination,
-            content=artifact.content,
+            content=content_override if content_override is not None else artifact.content,
             status=PublicationStatus.DRAFT.value,
         )
         session.add(row)
@@ -213,7 +215,15 @@ class ApproveAndPublish:
                 raise ValueError("QUIZ Artifact question does not match its approved content.")
         post_result = await session.execute(select(PostModel).where(PostModel.id == artifact.id))
         post_row = post_result.scalar_one_or_none()
-        if post_row is not None and post_row.visual_artifact_id is not None:
+        if artifact.kind in {ArtifactKind.IMAGE, ArtifactKind.VIDEO}:
+            if not artifact.storage_uri:
+                raise ValueError("Approved media Artifact has no storage reference.")
+            try:
+                media_bytes = await S3ArtifactStorage.from_environment().get_bytes(artifact.storage_uri)
+            except (ArtifactStorageError, ValueError) as exc:
+                raise ValueError("The approved media Artifact could not be read from private storage.") from exc
+            media_mime_type = artifact.mime_type
+        elif post_row is not None and post_row.visual_artifact_id is not None:
             visual_result = await session.execute(
                 select(ArtifactModel).where(ArtifactModel.id == post_row.visual_artifact_id)
             )
