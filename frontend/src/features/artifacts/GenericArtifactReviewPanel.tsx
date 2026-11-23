@@ -79,6 +79,26 @@ function TelegramMediaDraftPreview({ artifact }: { artifact: GenericReviewableAr
   );
 }
 
+function ArtifactPublicationLedger({id}:{id:string}) {
+  const [open,setOpen]=useState(false);
+  const query=useQuery({queryKey:["artifact-publications",id],queryFn:()=>genericArtifactsApi.publications(id),enabled:open});
+  return <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3" aria-label={`سجل نشر المخرج ${id}`}>
+    <button type="button" className="rounded border bg-white p-2 text-sm font-semibold" onClick={()=>{setOpen(true);if(open)void query.refetch();}}>عرض وتحديث سجل النشر</button>
+    {open ? <><p className="text-xs">قراءة فقط، لا تنشئ مسودة ولا تعيد الإرسال. الاعتماد ليس دليلاً على النشر؛ وPUBLISHING قد تعني نتيجة غير محسومة فلا تعاود الإرسال.</p>
+    {query.isLoading ? <p role="status">تحميل سجل النشر...</p>:null}{query.isError ? <p role="alert">{query.error.message}</p>:null}
+    {query.data?.total===0 ? <p>لا توجد سجلات نشر لهذا العنصر. لا يشمل ذلك نشراً يدوياً خارج النظام.</p>:null}
+    {query.data?.items.map(item=><article key={item.id} className="space-y-2 rounded border bg-white p-3 text-xs">
+      <p className="font-semibold">{item.platform} · {item.status}</p><p className="break-all">الوجهة: <bdi>{item.destination}</bdi></p>
+      <p className="break-all">سجل النشر: <bdi>{item.id}</bdi></p><p className="break-all">معرفات الرسائل: <bdi>{item.external_ids.join(", ") || "لم تُثبت بعد"}</bdi></p>
+      <p>وقت القبول: <bdi>{item.published_at || "لم يُثبت بعد"}</bdi></p>
+      <details><summary className="cursor-pointer">النص المحفوظ في سجل النشر</summary><p dir="auto" className="whitespace-pre-wrap break-words py-2">{item.content}</p></details>
+      {item.schedules.map(schedule=><p key={schedule.schedule_id} className="break-all">{schedule.name} · {schedule.schedule_status} · العنصر {schedule.item_status} · المحاولات {schedule.attempts} · <bdi>{schedule.scheduled_at}</bdi>{schedule.last_error ? ` · ${schedule.last_error}`:""}</p>)}
+      {item.error_message ? <p role="alert">{item.error_message}</p>:null}
+    </article>)}
+    {query.data && query.data.total>query.data.items.length ? <p>أحدث {query.data.items.length} من {query.data.total} سجلاً.</p>:null}</>:null}
+  </section>;
+}
+
 function LiveLocationControls({ artifactId }: { artifactId: string }) {
   const query = useQuery({ queryKey: ['live-locations', artifactId], queryFn: () => genericArtifactsApi.liveLocations(artifactId) });
   const [latitude, setLatitude] = useState('0');
@@ -610,6 +630,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? "")) ? <p role="status" className="text-sm">توجد تعديلات غير محفوظة؛ احفظها قبل الاعتماد.</p> : null}
         </section> : null}
         {artifact.metadata.source_type === "PLATFORM_VARIANT" && variantLength(artifact, drafts[artifact.id]?.content) > Number((artifact.metadata.constraints as Record<string,unknown>)?.max_text ?? Infinity) ? <p role="alert" className="text-sm text-rose-700">تجاوزت النسخة حد المنصة. قصّر النص قبل الحفظ والاعتماد.</p> : null}
+        <ArtifactPublicationLedger id={artifact.id} />
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {typeof artifact.metadata.caption === "string" && artifact.metadata.caption ? <p dir="auto" className="rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p> : null}
         {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
