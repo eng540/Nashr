@@ -7,3 +7,8 @@ POST /api/artifacts/distribution-selection atomically saves explicit platform in
 The bank offers individual and batch controls, selectall/clearall and original preview. Saving a batch replaces only those materials' choices; individual exceptions can then be saved separately. Existing publication and schedule authorization remains unchanged. Distribution intent does not authorize execution, cancel old schedules or connect unsupported platforms. Account, byte-level media and platform-specific final validation still belong to the publishing path.
 
 AI-independent fallback is the unchanged original only when its copy checks pass. This increment does not claim automatic semantic adaptation, SEO generation, media transcoding, provider health or new social connectors. Those remain explicit work, not simulated readiness.
+
+
+## UX and fallback follow-up
+
+Default derivation now rejects an over-limit original without creating a truncated copy. Legacy length-only trimming is available only through an explicit allow_length_trim=true API request, remains a DRAFT requiring review and never replaces an existing edited copy. Existing drafts can still be retrieved without regenerating them. Compact destination choices show preliminary eligibility separately from publishing capability. Detailed blockers and original text are collapsed by default. Schedule time inputs no longer save on blur; an explicit Save time action is required, and failed saves preserve the user's unsaved value.
