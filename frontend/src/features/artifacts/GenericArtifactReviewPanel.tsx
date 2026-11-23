@@ -12,6 +12,7 @@ const LIBRARY_PAGE_SIZE = 12;
 const STORED_MEDIA = ["IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "ANIMATION", "VOICE", "VIDEO_NOTE", "STICKER"];
 const NATIVE_TEMPLATES: Record<string, Record<string, unknown>> = {
   POLL: { type: "POLL", question: "سؤال الاستطلاع", options: ["الخيار الأول", "الخيار الثاني"], allows_multiple_answers: false },
+  LIVE_LOCATION: { type: "LIVE_LOCATION", latitude: 0, longitude: 0, live_period: 60 },
   LOCATION: { type: "LOCATION", latitude: 0, longitude: 0 },
   VENUE: { type: "VENUE", latitude: 0, longitude: 0, title: "اسم المكان", address: "العنوان" },
   CONTACT: { type: "CONTACT", phone_number: "+000000000", first_name: "جهة اتصال تجريبية" },
@@ -68,6 +69,16 @@ function TelegramMediaDraftPreview({ artifact }: { artifact: GenericReviewableAr
       <p className="mt-2 text-xs leading-5 text-slate-300">محاكاة تقريبية لشكل المنشور في تيليجرام (وسيط + تعليق)؛ التنسيق النهائي يعتمد على تيليجرام نفسه.</p>
     </section>
   );
+}
+
+function LiveLocationControls({ artifactId }: { artifactId: string }) {
+  const query = useQuery({ queryKey: ['live-locations', artifactId], queryFn: () => genericArtifactsApi.liveLocations(artifactId) });
+  const [latitude, setLatitude] = useState('0');
+  const [longitude, setLongitude] = useState('0');
+  const create = useMutation({ mutationFn: ({id, action}: {id:string; action:string}) => genericArtifactsApi.locationOperation(id, action === 'STOP' ? {action} : {action, latitude:Number(latitude), longitude:Number(longitude)}), onSuccess: () => { void query.refetch(); } });
+  const cancel = useMutation({ mutationFn: (id:string) => genericArtifactsApi.cancelLocationOperation(id), onSuccess: () => { void query.refetch(); } });
+  const execute = useMutation({ mutationFn: (id:string) => genericArtifactsApi.executeLocationOperation(id), onSuccess: () => { void query.refetch(); } });
+  return <section className="space-y-2 rounded-xl border border-teal-200 bg-teal-50 p-3"><h4 className="font-bold">دورة الموقع الحي</h4><p className="text-xs">إحداثيات مكتوبة فقط،لا اتصال بموقع جهازك. التحديث والإيقاف يُراجعان قبل التنفيذ على نفس الرسالة. مدة محدودة،لا تتبع دائم.</p><button type="button" onClick={() => { void query.refetch(); }} className="rounded border p-2">تحديث حالة الموقع الحي</button>{query.isError ? <p role="alert">{query.error.message}</p> : null}{query.data?.length === 0 ? <p>لم يُنشر هذا الموقع بعد.</p> : null}{query.data?.map(record => <div key={record.publication_id} className="space-y-2 border-t pt-2"><p dir="ltr">Telegram {record.message_id} · {record.active ? 'ACTIVE' : 'STOPPED / EXPIRED'} · {record.expires_at}</p>{record.active ? <><label className="block">خط العرض<input aria-label="خط عرض التحديث" value={latitude} onChange={e=>setLatitude(e.target.value)} className="m-1 w-28 rounded border p-2" /></label><label className="block">خط الطول<input aria-label="خط طول التحديث" value={longitude} onChange={e=>setLongitude(e.target.value)} className="m-1 w-28 rounded border p-2" /></label><button type="button" disabled={create.isPending} onClick={()=>create.mutate({id:record.publication_id,action:'UPDATE'})} className="rounded border p-2">تجهيز تحديث الموقع للمراجعة</button><button type="button" disabled={create.isPending} onClick={()=>create.mutate({id:record.publication_id,action:'STOP'})} className="rounded border p-2">تجهيز إيقاف الموقع للمراجعة</button></> : null}{record.operations.map(operation=><div key={operation.id} className="rounded border bg-white p-2"><p>{operation.action} · {operation.status}</p><pre dir="ltr">{JSON.stringify(operation.payload)}</pre>{operation.status==='DRAFT' ? <button type="button" onClick={()=>cancel.mutate(operation.id)} className="rounded border p-2">إلغاء العملية قبل التنفيذ</button> : null}{operation.status==='DRAFT' && record.active ? <button type="button" disabled={execute.isPending} onClick={()=>execute.mutate(operation.id)} className="rounded bg-teal-700 p-2 text-white">اعتماد وتنفيذ {operation.action === 'STOP' ? 'إيقاف الموقع' : 'تحديث الموقع'}</button> : null}{operation.error_message ? <p role="alert">{operation.error_message}</p>:null}</div>)}</div>)}{create.isError ? <p role="alert">{create.error.message}</p>:null}{execute.isError ? <p role="alert">{execute.error.message}</p>:null}</section>;
 }
 
 function AlbumChildPreview({ id }: { id: string }) {
@@ -306,9 +317,19 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     },
     onError: (error) => setBatchNote(`تعذر إنشاء المسودات: ${error instanceof Error ? error.message : "خطأ غير معروف"}`),
   });
+  const createLivePhoto = useMutation({
+    mutationFn: () => {
+      const selected = allArtifacts.filter(item => selectedMediaIds.includes(item.id));
+      const photo = selected.find(item => item.kind === 'IMAGE');
+      const video = selected.find(item => item.kind === 'VIDEO');
+      if (selected.length !== 2 || !photo || !video) throw new Error('اختر صورة ثابتة وفيديو حركة فقط.');
+      return genericArtifactsApi.livePhotoDraft({ photo_id: photo.id, video_id: video.id, title: 'صورة حية Telegram للمراجعة' });
+    },
+    onSuccess: () => { setSelectedMediaIds([]); setStatus('DRAFT'); setSearch(''); setBatchNote('أُنشئت صورة حية للمراجعة،لا إرسال تلقائي.'); refresh(); },
+  });
   const createAlbum = useMutation({
     mutationFn: () => genericArtifactsApi.albumDraft({ artifact_ids: selectedMediaIds, title: "ألبوم Telegram للمراجعة" }),
-    onSuccess: () => { setSelectedMediaIds([]); setStatus("DRAFT"); setBatchNote("أُنشئ ألبوم قيد المراجعة،لا نشر تلقائي."); refresh(); },
+    onSuccess: () => { setSelectedMediaIds([]); setSearch(""); setStatus("DRAFT"); setBatchNote("أُنشئ ألبوم قيد المراجعة،لا نشر تلقائي."); refresh(); },
   });
   const toggleMediaSelection = (artifactId: string, checked: boolean) => {
     setSelectedMediaIds((current) => checked ? [...new Set([...current, artifactId])] : current.filter((id) => id !== artifactId));
@@ -460,6 +481,9 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-emerald-300"
         >{batchMediaDrafts.isPending ? "جارٍ إنشاء المسودات..." : `إنشاء مسودات Telegram للمحدد (${eligibleSelectedCount})`}</button>
         <button type="button" disabled={selectedMediaIds.length < 2 || selectedMediaIds.length > 10 || createAlbum.isPending} onClick={() => createAlbum.mutate()} className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء ألبوم من المحدد (2-10)</button>
+        <button type="button" disabled={selectedMediaIds.length !== 2 || createLivePhoto.isPending} onClick={() => createLivePhoto.mutate()} className="rounded-xl bg-violet-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء صورة حية (صورة وفيديو)</button>
+        {createLivePhoto.isError ? <p role="alert">{createLivePhoto.error.message}</p> : null}
+        <p className="w-full text-xs">الألبوم:2-10عناصر،حتى100MiBإجمالاً. الصورة الحية:صورة وفيديوMP4حتى10ثوانٍ و10MiB. تُراجع العناصر ولا يرسلها التحديد وحده.</p>
         {createAlbum.isError ? <p role="alert">{createAlbum.error.message}</p> : null}
         {eligibleSelectedCount > 0 ? <button type="button" onClick={() => { setSelectedMediaIds([]); setBatchNote(""); }} className="text-sm font-bold text-slate-500 hover:text-slate-700">مسح التحديد</button> : null}
         <span className="w-full text-xs leading-5 text-slate-500">ينشئ مسودة نشر Telegram لكل وسيط معتمد محدد مع نص تعليقه للمراجعة؛ تجهيز فقط ولا يُنشر أو يُجدول شيء خارجيًا.</span>
@@ -488,6 +512,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
+        {(artifact.metadata.telegram_native as Record<string, unknown> | undefined)?.type === 'LIVE_LOCATION' ? <LiveLocationControls artifactId={artifact.id} /> : null}
+        {artifact.metadata.telegram_live_photo ? <section className="rounded-xl border border-violet-200 bg-violet-50 p-3"><h4 className="font-bold">صورة حية،الصورة الثابتة ثم فيديو الحركة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(artifact.metadata.live_photo_preview, null, 2)}</pre>{(Array.isArray(artifact.metadata.live_photo_preview) ? artifact.metadata.live_photo_preview : []).map(value => <AlbumChildPreview key={(value as {id:string}).id} id={(value as {id:string}).id} />)}<p className="text-xs">يُرسلان كصورة حية واحدة،وليست ألبوماً أو فيديو منفرداً.</p></section> : null}
         {artifact.metadata.telegram_album ? <section className="rounded-xl border border-sky-200 bg-sky-50 p-3"><h4 className="font-bold">ألبوم Telegram،الترتيب والتعليقات المعتمدة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-sm">{JSON.stringify(artifact.metadata.album_preview, null, 2)}</pre><div className="grid gap-2 sm:grid-cols-2">{(Array.isArray(artifact.metadata.album_preview) ? artifact.metadata.album_preview : []).map((value) => { const item = value as { id: string }; return <AlbumChildPreview key={item.id} id={item.id} />; })}</div><p className="text-xs">الصور والفيديو معًا،أو صوت فقط،أو مستندات فقط. تتوقف العملية إذا تغيّر اعتماد أو محتوى أي عنصر.</p></section> : null}
         {artifact.metadata.telegram_native ? <section className="rounded-lg border bg-sky-50 p-3"><h4 className="font-bold">معاينة بيانات Telegram</h4><pre dir="ltr" className="whitespace-pre-wrap break-all text-xs">{JSON.stringify(artifact.metadata.telegram_native, null, 2)}</pre></section> : null}
         {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
@@ -514,7 +540,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             <p className="text-xs leading-5 text-slate-500">تحافظ المعاينة على فواصل الأسطر والفقرات كما هي في النص. وهي معاينة للنص العادي، وليست محاكاة كاملة لتنسيقات القناة المستهدفة.</p>
           </section>
         </div> : <GenericArtifactMediaPreview artifact={artifact} />}
-        {status === "APPROVED" && artifact.kind === "TEXT" && !artifact.metadata.telegram_album && !artifact.metadata.telegram_native && artifact.content ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+        {status === "APPROVED" && artifact.kind === "TEXT" && !artifact.metadata.telegram_album && !artifact.metadata.telegram_live_photo && !artifact.metadata.telegram_native && artifact.content ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
           <label className="w-full text-sm font-semibold sm:w-auto">إنشاء بطاقة من هذا النص المعتمد
             <select aria-label={`منتج البطاقة ${artifact.id}`} value={cardProducts[artifact.id] ?? ""} onChange={(event) => setCardProducts((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal sm:mt-0 sm:w-auto sm:max-w-md">
               <option value="">اختر منتج بطاقات منشورًا</option>
@@ -540,7 +566,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <span className="text-xs text-slate-600">تُقصّ النسخة عند حد المنصة على حدود آمنة (جملة أو كلمة، دون قطع الروابط) وتُحفظ قيد المراجعة؛ تجهيز طول فقط وليس إعادة صياغة، ولا يُنشر شيء خارجيًا.</span>
         </div> : null}
         {status === "APPROVED" && STORED_MEDIA.includes(artifact.kind) && artifact.storage_uri ? <TelegramMediaDraftPreview artifact={artifact} /> : null}
-        {status === "APPROVED" && (STORED_MEDIA.includes(artifact.kind) || artifact.kind === "TEXT") ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+        {status === "APPROVED" && (STORED_MEDIA.includes(artifact.kind) || ["TEXT", "QUIZ"].includes(artifact.kind)) ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
           <p className="text-sm font-semibold">محتوى معتمد جاهز لمسودة Telegram</p>
           {mediaDrafts[artifact.id] ? <p role="status" className="text-xs">سجل نشر Telegram: {mediaDrafts[artifact.id].id} · الحالة {mediaDrafts[artifact.id].status} · المسودة جاهزة للمراجعة في سجل النشر.</p> : null}
           {!mediaDrafts[artifact.id] ? <button type="button" onClick={() => createMediaDraft.mutate(artifact.id)} disabled={createMediaDraft.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{createMediaDraft.isPending ? "جارٍ إنشاء المسودة..." : "إنشاء مسودة نشر Telegram"}</button> : null}
@@ -597,7 +623,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       <div className="mt-3 space-y-3">
     <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
       <h3 className="font-bold">نص أو اختبار تفاعلي</h3>
-      <select aria-label="نوع المسودة اليدوية" value={manualKind} onChange={e => { setManualKind(e.target.value); if (NATIVE_TEMPLATES[e.target.value]) setNativeJson(JSON.stringify(NATIVE_TEMPLATES[e.target.value], null, 2)); }} className="w-full rounded-lg border p-2"><option value="TEXT">نص</option><option value="QUIZ">اختبار</option><option value="POLL">استطلاع</option><option value="LOCATION">موقع</option><option value="VENUE">مكان</option><option value="CONTACT">جهة اتصال</option><option value="DICE">نرد تفاعلي</option></select>
+      <select aria-label="نوع المسودة اليدوية" value={manualKind} onChange={e => { setManualKind(e.target.value); if (NATIVE_TEMPLATES[e.target.value]) setNativeJson(JSON.stringify(NATIVE_TEMPLATES[e.target.value], null, 2)); }} className="w-full rounded-lg border p-2"><option value="TEXT">نص</option><option value="QUIZ">اختبار</option><option value="POLL">استطلاع</option><option value="LOCATION">موقع</option><option value="LIVE_LOCATION">موقع حي محدود المدة</option><option value="VENUE">مكان</option><option value="CONTACT">جهة اتصال</option><option value="DICE">نرد تفاعلي</option></select>
       <input aria-label="عنوان المسودة اليدوية" value={manualTitle} onChange={e => setManualTitle(e.target.value)} placeholder="عنوان داخلي" className="w-full rounded-lg border p-2" />
       <textarea aria-label="نص المسودة اليدوية" value={manualContent} onChange={e => setManualContent(e.target.value)} placeholder={manualKind === "QUIZ" ? "سؤال الاختبار" : "النص الكامل"} className="min-h-32 w-full rounded-lg border p-2" />
       {NATIVE_TEMPLATES[manualKind] ? <label className="block text-sm">البيانات المنظمة(JSON)،عدّل القيم قبل الحفظ<textarea aria-label="بيانات Telegram المنظمة" value={nativeJson} onChange={e => setNativeJson(e.target.value)} dir="ltr" className="min-h-48 w-full rounded-lg border p-3 font-mono text-xs" /></label> : null}
@@ -655,4 +681,4 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     {jobStatus}
     {mutationError}
   </section>;
-}
+                                                                                                               }
