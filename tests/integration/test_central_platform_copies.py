@@ -28,6 +28,9 @@ async def test_copies_prepare_on_approval_preserve_edits_and_enforce_version_and
         with patch.dict('os.environ', {'TELEGRAM_DESTINATION_ID':'synthetic-only'}):
             blocked=await client.post(f'/api/artifacts/{uid}/telegram-media-draft',json={})
             assert blocked.status_code==409 and 'نسخة Telegram' in blocked.json()['detail']
+            from datetime import datetime,timedelta,timezone
+            scheduled=await client.post(f'/api/artifacts/{uid}/schedule',json={'name':'لا يختار الأصل بصمت','timezone':'Asia/Riyadh','scheduled_at':(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()})
+            assert scheduled.status_code==409 and 'نسخة Telegram' in scheduled.json()['detail']
         selected=await client.post('/api/artifacts/distribution-selection',json={'artifact_ids':[uid],'platforms':['telegram'],'fingerprints':{uid:telegram['current_source_fingerprint']}})
         assert selected.status_code==200
         selected_telegram=next(target for target in selected.json()['items'][0]['targets'] if target['platform']=='telegram')
