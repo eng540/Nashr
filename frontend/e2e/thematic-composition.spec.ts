@@ -38,7 +38,7 @@ test("thematic product selects source materials across books and submits one ord
       audience: "قراء الأدب العربي", experience: "نص موضوعي قابل للمراجعة مع إحالات المصادر",
     } }],
   }] }));
-  await page.route("**/sources**", (route) => {
+  await page.route("**/api/sources**", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/book-map")) {
       const isA = url.pathname.includes(sourceA);
