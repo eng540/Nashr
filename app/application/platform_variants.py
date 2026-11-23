@@ -471,6 +471,7 @@ async def list_platform_variants(session: AsyncSession, limit: int = 50) -> list
                 "source_kind_ar": meta.get("source_kind_ar"),
                 "source_artifact_id": meta.get("source_artifact_id"),
                 "source_post_id": meta.get("source_post_id"),
+                "manual_publication": meta.get("manual_publication"),
                 "constraints": {
                     "max_text": constraints.get("max_text"),
                     "measure": constraints.get("measure"),
