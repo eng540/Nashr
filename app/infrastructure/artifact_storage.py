@@ -101,7 +101,7 @@ class S3ArtifactStorage:
             raise ArtifactStorageError("Unable to store Artifact media.") from exc
         return f"s3://{self.bucket}/{safe_key}"
 
-    async def get_bytes(self, storage_uri: str) -> bytes:
+    async def get_bytes(self, storage_uri: str, *, max_bytes: int | None = None) -> bytes:
         """Read private Artifact bytes for a trusted publishing adapter."""
         bucket, key = self._parse_uri(storage_uri)
         if bucket != self.bucket:
@@ -111,7 +111,9 @@ class S3ArtifactStorage:
             response = self.client.get_object(Bucket=self.bucket, Key=key)
             body = response["Body"]
             try:
-                content = body.read()
+                content = body.read(max_bytes + 1) if max_bytes is not None else body.read()
+                if max_bytes is not None and len(content) > max_bytes:
+                    raise ArtifactStorageError("Stored media exceeds the bounded read limit.")
             finally:
                 close = getattr(body, "close", None)
                 if callable(close):
