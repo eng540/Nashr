@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.generic_artifact_review import GenericArtifactReviewService
 from app.application.artifacts import load_artifact
-from app.application.media_bank import IngestReadyMedia
+from app.application.media_bank import IngestReadyMedia, MEDIA_KINDS
 from app.application.publications import CreateTelegramDraft
 from app.domain.artifacts import ArtifactKind
 from app.application.scheduling import validate_timezone, validate_scheduled_at
@@ -79,6 +79,26 @@ async def list_generic_artifacts(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+class ManualArtifactRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str
+    title: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=100000)
+    quiz: dict[str, Any] | None = None
+    native: dict[str, Any] | None = None
+
+
+@router.post("/manual-draft", status_code=201)
+async def create_manual_draft(payload: ManualArtifactRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.manual_artifacts import create_manual_artifact
+    try:
+        artifact = await create_manual_artifact(session, **payload.model_dump())
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except (ValueError, TypeError) as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+
+
 @router.get("/platform-variants")
 async def list_platform_variant_drafts(
     limit: int = Query(default=50, ge=1, le=100),
@@ -98,7 +118,8 @@ async def list_platform_variant_drafts(
 @router.post("/ingest-media", status_code=201)
 async def ingest_ready_media(
     file: UploadFile = File(...),
-    caption: str | None = Form(default=None, max_length=1024),
+    caption: str | None = Form(default=None, max_length=100000),
+    media_kind: str | None = Form(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Ingest a ready-made image/video into the media bank as a DRAFT Artifact.
@@ -106,14 +127,16 @@ async def ingest_ready_media(
     No generation provider is involved; the upload is stored in private media
     storage and enters the standard generic artifact review flow.
     """
-    data = await file.read()
+    ingester = IngestReadyMedia()
+    data = await file.read(ingester.max_bytes + 1)
     try:
-        artifact = await IngestReadyMedia().execute(
+        artifact = await ingester.execute(
             session,
             filename=file.filename or "media",
             content_type=file.content_type or "",
             data=data,
             caption=caption,
+            media_kind=media_kind,
         )
         return await GenericArtifactReviewService(session).get(artifact.id)
     except ArtifactStorageConfigurationError as exc:
@@ -186,10 +209,11 @@ async def get_generic_artifact_media_url(
 ) -> dict[str, Any]:
     try:
         artifact = await GenericArtifactReviewService(session).get(artifact_id)
-        if artifact["kind"] not in {"IMAGE", "VIDEO", "AUDIO"} or not artifact["storage_uri"]:
+        if artifact["kind"] not in MEDIA_KINDS or not artifact["storage_uri"]:
             raise ValueError("Artifact does not contain storage-backed media.")
         storage = S3ArtifactStorage.from_environment()
-        url = await storage.presign_get(artifact["storage_uri"], expires_seconds=300)
+        url = await storage.presign_get(artifact["storage_uri"], expires_seconds=300,
+            **({"attachment_filename": str((artifact.get("metadata") or {}).get("original_filename") or "attachment.bin")} if artifact["kind"] == "DOCUMENT" else {}))
         return {"url": url, "expires_in": 300}
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -262,8 +286,8 @@ async def create_telegram_draft_for_artifact(
         raise HTTPException(status_code=503, detail="TELEGRAM_DESTINATION_ID is required.")
     try:
         review = await GenericArtifactReviewService(session).get(artifact_id)
-        if review.get("kind") != ArtifactKind.QUIZ.value:
-            raise ValueError("Only QUIZ Artifacts can use this native poll publication route.")
+        if review.get("kind") not in {"QUIZ", "TEXT"}:
+            raise ValueError("Only QUIZ or TEXT Artifacts can use this inline publication route.")
         if review.get("review_status") != "APPROVED":
             raise ValueError("QUIZ Artifact must be approved before creating a publication draft.")
         artifact = await load_artifact(session, artifact_id)
@@ -301,13 +325,13 @@ async def create_telegram_media_draft_for_artifact(
         raise HTTPException(status_code=503, detail="TELEGRAM_DESTINATION_ID is required.")
     try:
         review = await GenericArtifactReviewService(session).get(artifact_id)
-        if review.get("kind") not in {ArtifactKind.IMAGE.value, ArtifactKind.VIDEO.value}:
-            raise ValueError("Only IMAGE or VIDEO Artifacts can use this media publication route.")
+        if review.get("kind") not in MEDIA_KINDS | {"TEXT"}:
+            raise ValueError("Only supported media or TEXT Artifacts can use this publication route.")
         if review.get("review_status") != "APPROVED":
             raise ValueError("Media Artifact must be approved before creating a publication draft.")
-        if not review.get("storage_uri"):
+        if review.get("kind") in MEDIA_KINDS and not review.get("storage_uri"):
             raise ValueError("Media Artifact has no stored media to publish.")
-        caption = str((review.get("metadata") or {}).get("caption") or "").strip()
+        caption = str(review.get("content") or "").strip() if review.get("kind") == "TEXT" else str((review.get("metadata") or {}).get("caption") or "").strip()
         if not caption:
             raise ValueError("Media Artifact needs a non-empty caption before creating a publication draft.")
         artifact = await load_artifact(session, artifact_id)
@@ -340,11 +364,11 @@ async def schedule_approved_quiz(
     try:
         artifact_review = await GenericArtifactReviewService(session).get(artifact_id)
         kind = artifact_review.get("kind")
-        if kind not in {ArtifactKind.QUIZ.value, ArtifactKind.IMAGE.value, ArtifactKind.VIDEO.value}:
-            raise ValueError("Only QUIZ, IMAGE or VIDEO Artifacts can be scheduled through this route.")
+        if kind not in MEDIA_KINDS | {"QUIZ", "TEXT"}:
+            raise ValueError("Only supported Telegram Artifacts can be scheduled through this route.")
         if artifact_review.get("review_status") != "APPROVED":
             raise ValueError("Artifact must be approved before scheduling.")
-        if kind in {ArtifactKind.IMAGE.value, ArtifactKind.VIDEO.value}:
+        if kind in MEDIA_KINDS:
             if not artifact_review.get("storage_uri"):
                 raise ValueError("Media Artifact has no stored media to schedule.")
             if not str((artifact_review.get("metadata") or {}).get("caption") or "").strip():
