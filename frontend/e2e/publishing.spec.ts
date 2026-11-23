@@ -27,6 +27,12 @@ test("approved post can be scheduled through the real API", async ({ page }) => 
   expect(request.post_ids).toHaveLength(1);
   expect(request.name).toBe("E2E خطة نشر");
   await expect(page.getByRole("status")).toContainText("تم إنشاء الخطة بنجاح");
+
+  // Isolation: a DRAFT schedule makes its post ineligible for other tests;
+  // cancel it so shared seeded state is restored.
+  const created = (await response.json()) as { id: string };
+  const cancel = await page.request.post(`/schedules/${created.id}/cancel`);
+  expect(cancel.ok()).toBeTruthy();
 });
 
 
@@ -72,7 +78,7 @@ test("publishing can attach and preview an approved visual artifact without publ
   });
   await page.route("**/posts?**", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [post()], total: 1, limit: 20, offset: 0 }) }));
   await page.route("**/posts/filter-options**", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kinds: [], topics: [], sources: [] }) }));
-  await page.route("**/api/artifacts?review_status=APPROVED", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{
+  await page.route("**/api/artifacts?review_status=APPROVED*", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{
     id: "image-visual-e2e", source_knowledge_unit_id: "unit-visual-e2e", kind: "IMAGE", status: "AVAILABLE",
     content: null, storage_uri: "s3://test/card.png", mime_type: "image/png", output_contract_key: "IMAGE_ARTIFACT",
     output_contract_version: 1, metadata: { title: "بطاقة الاختبار" }, review_status: "APPROVED",
