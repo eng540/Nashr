@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.domain.telegram_copy import telegram_publish_text
 
 import hashlib
 import io
@@ -305,7 +306,10 @@ class ApproveAndPublish:
                 raise ValueError("The approved visual Artifact could not be read from private storage.") from exc
             media_mime_type = visual.mime_type
 
-        if content is None and artifact.content is not None:
+        if content is None and artifact.kind != ArtifactKind.POST:
+            current_row.content = telegram_publish_text(artifact)
+            await session.commit()
+        elif content is None and artifact.content is not None:
             current_row.content = artifact.content
             await session.commit()
 
