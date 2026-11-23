@@ -225,3 +225,31 @@ async def test_post_variant_requires_approved_post():
         assert resp.status_code == 422
         missing = await client.post(f"/api/artifacts/post-source/{uuid4()}/platform-variant", json={"platform": "x"})
         assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_platform_variants_listing_surfaces_drafts_with_honest_metadata():
+    artifact_id = await _seed_text_artifact(LONG_ARABIC)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        approve = await client.post(f"/api/artifacts/{artifact_id}/approve", json={"review_note": None})
+        assert approve.status_code == 200, approve.text
+        derived = await client.post(
+            f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "tiktok"}
+        )
+        assert derived.status_code == 201, derived.text
+
+        listing = await client.get("/api/artifacts/platform-variants")
+        assert listing.status_code == 200, listing.text
+        items = listing.json()
+        match = [item for item in items if item["source_artifact_id"] == artifact_id]
+        assert len(match) == 1
+        item = match[0]
+        assert item["platform"] == "tiktok"
+        assert item["adaptation"] == "length_only"
+        assert item["needs_review"] is True
+        assert item["review_status"] == "DRAFT"
+        assert item["constraints"]["max_text"] == PLATFORM_PROFILES["tiktok"]["max_text"]
+        assert item["excerpt"]
+        # The approved seed artifact itself is not a variant and must not appear.
+        assert all(entry["id"] != artifact_id for entry in items)
