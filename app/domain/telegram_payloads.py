@@ -13,7 +13,7 @@ def native_payload(value):
         "CONTACT": {"type", "phone_number", "first_name", "last_name"},
         "DICE": {"type", "emoji"},
     }
-    if kind not in fields or set(value) - fields[kind]:
+    if not isinstance(kind, str) or kind not in fields or set(value) - fields[kind]:
         raise ValueError("Unsupported native content type or fields.")
     data = {k: v for k, v in value.items() if k != "type"}
     if kind in {"LOCATION", "VENUE"}:
@@ -36,7 +36,7 @@ def native_payload(value):
             raise ValueError("Multiple answers must be true or false.")
         data["options"] = [{"text": o} for o in options]
         data.update(type="regular", is_anonymous=True)
-    if kind == "DICE" and data.get("emoji", "🎲") not in {"🎲", "🎯", "🏀", "⚽", "🎳", "🎰"}:
+    if kind == "DICE" and (not isinstance(data.get("emoji", "🎲"), str) or data.get("emoji", "🎲") not in {"🎲", "🎯", "🏀", "⚽", "🎳", "🎰"}):
         raise ValueError("Unsupported dice emoji.")
     method = {"POLL": "sendPoll", "LOCATION": "sendLocation", "VENUE": "sendVenue", "CONTACT": "sendContact", "DICE": "sendDice"}[kind]
     return method, data
