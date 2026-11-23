@@ -260,6 +260,15 @@ async def get_generic_artifact_media_url(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/{artifact_id}/publications")
+async def artifact_publication_ledger(artifact_id: UUID, limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), session: AsyncSession = Depends(get_session)):
+    from app.application.publication_ledger import artifact_publications
+    try:
+        return await artifact_publications(session, artifact_id, limit, offset)
+    except (LookupError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
 @router.patch("/{artifact_id}")
 async def update_generic_artifact(
     artifact_id: UUID, payload: ArtifactReviewUpdate, session: AsyncSession = Depends(get_session)
