@@ -520,6 +520,18 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         </div> : null}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {typeof artifact.metadata.caption === "string" && artifact.metadata.caption ? <p dir="auto" className="rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p> : null}
+        {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+          <summary className="cursor-pointer text-sm font-bold text-indigo-900">النص الأصلي ونسخ المنصات</summary>
+          {([
+            ["source_original", "النص الأصلي الكامل"],
+            ["tiktok_text", "وصف تيك توك الكامل"],
+            ["telegram_caption", "تعليق Telegram المقترح"],
+          ] as const).map(([key, label]) => <section key={key} className="mt-3 space-y-1">
+            <h4 className="text-xs font-bold text-indigo-900">{label}</h4>
+            <p dir="auto" className="max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-white p-3 text-sm leading-7 text-slate-800">{String((artifact.metadata.video_library as Record<string, unknown>)[key] ?? "")}</p>
+          </section>)}
+          <p className="mt-3 text-xs leading-6 text-indigo-800">نسخ منفصلة للمراجعة. حفظها لا يغيّر تعليق النشر الحالي ولا ينشر شيئاً. تعليمات التحرير محفوظة مع الأصل ولا تضاف تلقائياً إلى نسخ المنصات.</p>
+        </details> : null}
         {Object.keys(artifact.metadata).length > 0 ? <details className="rounded-lg bg-slate-50 p-3 text-xs"><summary className="cursor-pointer font-semibold text-slate-600">تفاصيل تقنية</summary><pre dir="ltr" className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-left">{JSON.stringify(artifact.metadata, null, 2)}</pre></details> : null}
         <input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>
         {status === "DRAFT" ? <div className="flex flex-wrap gap-2">
