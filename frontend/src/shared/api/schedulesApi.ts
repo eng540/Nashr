@@ -6,6 +6,9 @@ export interface ScheduleDetail extends Schedule {
     id: string;
     position: number;
     post_id: string;
+    artifact_id?: string | null;
+    publication_external_id?: string | null;
+    publication_external_ids?: string[] | null;
     title: string;
     status: string;
     scheduled_at: string;
