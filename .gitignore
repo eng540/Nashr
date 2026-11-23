@@ -4,3 +4,8 @@ __pycache__/
 .venv/
 .env
 storage/
+
+frontend/test-results/
+frontend/playwright-report/
+frontend/dist/
+frontend/node_modules/
