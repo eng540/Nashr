@@ -302,6 +302,10 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
     errors: list[str] = []
     warnings: list[str] = []
     blocked_items: list[dict[str, object]] = []
+    from app.application.telegram_batch_schedule import reviewed_batch_blocker
+    review_error = await reviewed_batch_blocker(session, schedule)
+    if review_error:
+        errors.append(review_error)
     items = sorted(schedule.items, key=lambda item: item.position)
 
     if not items:
@@ -657,6 +661,22 @@ async def _execute_claimed_item(
         probe = (await probe_session.execute(
             select(ScheduleItemModel.post_id, ScheduleItemModel.artifact_id).where(ScheduleItemModel.id == item_id)
         )).one_or_none()
+    # New reviewed batch schedules pin destination/content/intent. Legacy plans
+    # remain unchanged; an edited batch never silently executes new content.
+    async with SessionFactory() as review_session:
+        review_item = await review_session.get(ScheduleItemModel, item_id)
+        if review_item:
+            review_schedule = await review_session.get(ScheduleModel, review_item.schedule_id)
+            from app.application.telegram_batch_schedule import reviewed_batch_blocker
+            review_error = await reviewed_batch_blocker(review_session, review_schedule)
+            if review_error:
+                review_item.status = ScheduleItemStatus.FAILED.value
+                review_item.last_error = review_error
+                review_item.processing_started_at = None
+                await review_session.commit()
+                await _finish_schedule_if_complete(review_session, review_item.schedule_id)
+                await review_session.commit()
+                return
     if probe is not None and probe.post_id is None and probe.artifact_id is not None:
         from app.application.quiz_scheduling import execute_quiz_schedule_item
         await execute_quiz_schedule_item(item_id, publisher=publisher, destination=destination)
