@@ -101,6 +101,30 @@ async def ingest_ready_media(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.post("/post-source/{post_id}/platform-variant", status_code=201)
+async def derive_platform_variant_from_post(
+    post_id: UUID,
+    input: PlatformVariantRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Derive a DRAFT per-platform TEXT variant from an APPROVED editorial Post.
+
+    Registered before the parameterized artifact route so the literal path wins.
+    Preparation only: the Post is never modified; the variant is a separate
+    review copy trimmed at safe boundaries with provenance metadata. No external
+    publishing happens here.
+    """
+    from app.application.platform_variants import DerivePlatformVariant
+
+    try:
+        artifact = await DerivePlatformVariant().execute_post(session, post_id=post_id, platform=input.platform)
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/{artifact_id}/platform-variant", status_code=201)
 async def derive_platform_variant(
     artifact_id: UUID,
