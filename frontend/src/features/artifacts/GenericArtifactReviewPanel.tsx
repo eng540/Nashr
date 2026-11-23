@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
 import { Badge, EmptyState, Input, Select } from "../../shared/components/ui";
 import { productionJobsApi, type ProductionProductOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
+import { artifactSearchText, artifactSeriesKey } from "../../shared/utils/artifactLibrary";
 import { postsApi } from "../../shared/api/postsApi";
 
 
@@ -105,6 +106,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("ALL");
   const [sourceFilter, setSourceFilter] = useState("ALL");
+  const [seriesFilter, setSeriesFilter] = useState("ALL");
   const [sortMode, setSortMode] = useState<ArtifactSortMode>("newest");
   const [page, setPage] = useState(0);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
@@ -146,14 +148,16 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   }, [activeJob.data?.status, queryClient]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
   const allArtifacts = useMemo(() => artifacts.data?.items ?? [], [artifacts.data]);
+  const seriesOptions = useMemo(() => [...new Set(allArtifacts.map(artifactSeriesKey))].sort((a,b) => a.localeCompare(b, "ar")), [allArtifacts]);
   const filteredArtifacts = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const matches = allArtifacts.filter((artifact) => {
       if (kindFilter !== "ALL" && artifact.kind !== kindFilter) return false;
       const sourceType = typeof artifact.metadata.source_type === "string" ? artifact.metadata.source_type : "GENERATED";
       if (sourceFilter !== "ALL" && sourceType !== sourceFilter) return false;
+      if (seriesFilter !== "ALL" && artifactSeriesKey(artifact) !== seriesFilter) return false;
       if (!needle) return true;
-      const haystack = [artifactTitle(artifact), typeof artifact.metadata.caption === "string" ? artifact.metadata.caption : "", typeof artifact.metadata.original_filename === "string" ? artifact.metadata.original_filename : "", artifact.id].join(" ").toLowerCase();
+      const haystack = artifactSearchText(artifact);
       return haystack.includes(needle);
     });
     const sorted = [...matches];
@@ -162,7 +166,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     else if (sortMode === "kind") sorted.sort((a, b) => a.kind.localeCompare(b.kind) || b.created_at.localeCompare(a.created_at));
     else sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
     return sorted;
-  }, [allArtifacts, search, kindFilter, sourceFilter, sortMode]);
+  }, [allArtifacts, search, kindFilter, sourceFilter, seriesFilter, sortMode]);
   const pageCount = Math.max(1, Math.ceil(filteredArtifacts.length / LIBRARY_PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pagedArtifacts = filteredArtifacts.slice(safePage * LIBRARY_PAGE_SIZE, safePage * LIBRARY_PAGE_SIZE + LIBRARY_PAGE_SIZE);
@@ -370,8 +374,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {artifacts.data ? `${filteredArtifacts.length} من ${artifacts.data.total} عنصرًا في هذه الحالة` : ""}
         </p>
       </div>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        <Input aria-label="بحث في المخرجات" value={search} onChange={(event) => updateFilters(() => setSearch(event.target.value))} placeholder="ابحث بالعنوان أو النص أو اسم الملف..." />
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <Input aria-label="بحث في المخرجات" value={search} onChange={(event) => updateFilters(() => setSearch(event.target.value))} placeholder="ابحث بالعنوان أو الأصل أو نسخ المنصات أو اسم الملف..." />
         <Select aria-label="تصفية حسب نوع المخرج" value={kindFilter} onChange={(event) => updateFilters(() => setKindFilter(event.target.value))}>
           <option value="ALL">كل الأنواع</option>
           <option value="VIDEO">فيديو</option>
@@ -385,6 +389,10 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <option value="MEDIA_BANK_UPLOAD">رفع يدوي</option>
           <option value="GENERATED">مخرج مولّد</option>
           <option value="PLATFORM_VARIANT">نسخة منصة</option>
+        </Select>
+        <Select aria-label="تصفية حسب السلسلة" value={seriesFilter} onChange={(event) => updateFilters(() => setSeriesFilter(event.target.value))}>
+          <option value="ALL">كل السلاسل</option>
+          {seriesOptions.map((series) => <option key={series} value={series}>{series}</option>)}
         </Select>
         <Select aria-label="ترتيب المخرجات" value={sortMode} onChange={(event) => setSortMode(event.target.value as ArtifactSortMode)}>
           <option value="newest">الأحدث أولًا</option>
@@ -425,8 +433,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
     {!artifacts.isLoading && !artifacts.isError && filteredArtifacts.length === 0 ? <EmptyState title={allArtifacts.length === 0 ? "لا توجد مخرجات في هذه الحالة." : "لا توجد نتائج مطابقة للبحث أو الفلاتر الحالية."} /> : null}
-    <div className="grid gap-3 xl:grid-cols-2">
-      {pagedArtifacts.map((artifact) => <article key={artifact.id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="grid min-w-0 gap-3 xl:grid-cols-2">
+      {pagedArtifacts.map((artifact) => <article key={artifact.id} className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
           {status === "APPROVED" && isTelegramMediaEligible(artifact) ? <input
             type="checkbox"
@@ -594,4 +602,4 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     {jobStatus}
     {mutationError}
   </section>;
-    }
+}
