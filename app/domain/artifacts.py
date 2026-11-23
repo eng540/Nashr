@@ -12,6 +12,12 @@ class ArtifactKind(StrEnum):
     VIDEO = "VIDEO"
     AUDIO = "AUDIO"
     QUIZ = "QUIZ"
+    DOCUMENT = "DOCUMENT"
+    ANIMATION = "ANIMATION"
+    VOICE = "VOICE"
+    VIDEO_NOTE = "VIDEO_NOTE"
+    STICKER = "STICKER"
+
 
 
 class ArtifactStatus(StrEnum):
@@ -110,6 +116,11 @@ def validate_production_artifact(
         ArtifactKind.IMAGE: "image/",
         ArtifactKind.VIDEO: "video/",
         ArtifactKind.AUDIO: "audio/",
+        ArtifactKind.DOCUMENT: "",
+        ArtifactKind.ANIMATION: "",
+        ArtifactKind.VOICE: "audio/",
+        ArtifactKind.VIDEO_NOTE: "video/",
+        ArtifactKind.STICKER: "",
     }.get(kind)
     if expected_mime_prefix is None:
         raise ValueError("Production Artifact kind is not supported by the shared contract.")
