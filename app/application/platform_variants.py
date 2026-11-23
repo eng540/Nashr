@@ -1,6 +1,6 @@
 """Derive per-platform content variants from approved Artifacts and Posts.
 
-Preparation-only: variants are new DRAFT Artifacts whose text is trimmed to the
+Preparation-only: variants are separate DRAFT Artifacts whose text is trimmed to the
 target platform's verified constraints at safe boundaries (sentence first, then
 whitespace; URLs and Arabic combining clusters are never split). The original
 text is never altered: trimming produces a separate review copy, and metadata
@@ -227,16 +227,12 @@ def _build_metadata(
     }
 
 
-async def _refresh_existing(
+async def _reuse_existing(
     session: AsyncSession,
     *,
     contract_key: str,
     source_field: str,
     source_id: str,
-    trimmed_content: str,
-    content_inline: bool,
-    metadata: dict,
-    now: datetime,
 ) -> Artifact | None:
     existing = (
         await session.execute(
@@ -249,17 +245,13 @@ async def _refresh_existing(
     for candidate in existing:
         meta = candidate.artifact_metadata or {}
         if meta.get(source_field) == source_id:
-            candidate.content = trimmed_content if content_inline else None
-            candidate.artifact_metadata = metadata
-            candidate.updated_at = now
-            await session.commit()
-            refreshed = await session.get(ArtifactModel, candidate.id)
-            return _row_to_artifact(refreshed)
+            # Re-derivation is a lookup, never a destructive refresh of user edits.
+            return _row_to_artifact(candidate)
     return None
 
 
 class DerivePlatformVariant:
-    """Create or refresh a DRAFT platform-variant Artifact from an APPROVED Artifact or Post."""
+    """Create or reuse a DRAFT platform-variant Artifact from an APPROVED Artifact or Post."""
 
     async def execute(
         self,
@@ -270,7 +262,7 @@ class DerivePlatformVariant:
     ) -> Artifact:
         key, profile = _resolve_profile(platform)
         row = (
-            await session.execute(select(ArtifactModel).where(ArtifactModel.id == artifact_id))
+            await session.execute(select(ArtifactModel).where(ArtifactModel.id == artifact_id).with_for_update())
         ).scalar_one_or_none()
         if row is None:
             raise LookupError("المخرج المصدر غير موجود.")
@@ -303,15 +295,11 @@ class DerivePlatformVariant:
         )
 
         contract_key = f"PLATFORM_VARIANT_{key.upper()}"
-        refreshed = await _refresh_existing(
+        refreshed = await _reuse_existing(
             session,
             contract_key=contract_key,
             source_field="source_artifact_id",
             source_id=str(row.id),
-            trimmed_content=trimmed_content,
-            content_inline=kind.value == "TEXT",
-            metadata=metadata,
-            now=now,
         )
         if refreshed is not None:
             return refreshed
@@ -355,7 +343,7 @@ class DerivePlatformVariant:
         """
         key, profile = _resolve_profile(platform)
         row = (
-            await session.execute(select(PostModel).where(PostModel.id == post_id))
+            await session.execute(select(PostModel).where(PostModel.id == post_id).with_for_update())
         ).scalar_one_or_none()
         if row is None:
             raise LookupError("المنشور المصدر غير موجود.")
@@ -378,15 +366,11 @@ class DerivePlatformVariant:
         )
 
         contract_key = f"PLATFORM_VARIANT_{key.upper()}"
-        refreshed = await _refresh_existing(
+        refreshed = await _reuse_existing(
             session,
             contract_key=contract_key,
             source_field="source_post_id",
             source_id=str(row.id),
-            trimmed_content=trimmed_content,
-            content_inline=True,
-            metadata=metadata,
-            now=now,
         )
         if refreshed is not None:
             return refreshed
