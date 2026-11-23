@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.adapters.publishing.telegram import TelegramPublisher
 from app.application.artifacts import load_artifact
+from app.application.media_bank import MEDIA_KINDS
 from app.application.publications import ApproveAndPublish, CreateTelegramDraft
 from app.domain.scheduling import ScheduleItemStatus, ScheduleStatus
 from app.infrastructure.database.models import ArtifactModel, PublicationModel, ScheduleItemModel, ScheduleModel
@@ -20,7 +21,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         if item is None or item.artifact_id is None:
             return
         artifact_row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == item.artifact_id))).scalar_one_or_none()
-        if artifact_row is None or artifact_row.kind not in ("QUIZ", "IMAGE", "VIDEO"):
+        if artifact_row is None or artifact_row.kind not in MEDIA_KINDS | {"QUIZ", "TEXT"}:
             item.status = ScheduleItemStatus.FAILED.value
             item.last_error = "Scheduled Artifact is missing or is not a QUIZ, IMAGE or VIDEO."
             item.processing_started_at = None
@@ -78,7 +79,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
             publication_id = existing.id
         else:
             content_override = None
-            if artifact.kind.value in ("IMAGE", "VIDEO"):
+            if artifact.kind.value in MEDIA_KINDS:
                 content_override = str((artifact.metadata or {}).get("caption") or "").strip() or None
                 if content_override is None:
                     item.status = ScheduleItemStatus.FAILED.value
