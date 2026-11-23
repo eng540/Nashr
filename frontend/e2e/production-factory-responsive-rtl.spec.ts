@@ -39,7 +39,7 @@ async function mockFactoryApi(page: Page, failSources = false) {
       audience: "readers", experience: "post",
     } }],
   }] }));
-  await page.route("**/sources**", (route) => {
+  await page.route("**/api/sources**", (route) => {
     if (failSources) return route.fulfill({ status: 503, json: { detail: "visual test source failure" } });
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/book-map")) return route.fulfill({ json: {
