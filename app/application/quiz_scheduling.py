@@ -1,3 +1,4 @@
+from app.domain.telegram_copy import telegram_publish_text
 """Execution path for scheduled native Telegram quiz and media Artifacts."""
 import os
 from datetime import datetime, timezone
@@ -78,15 +79,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         elif existing is not None:
             publication_id = existing.id
         else:
-            content_override = None
-            if artifact.kind.value in MEDIA_KINDS:
-                content_override = str((artifact.metadata or {}).get("caption") or "").strip() or None
-                if content_override is None:
-                    item.status = ScheduleItemStatus.FAILED.value
-                    item.last_error = "Media Artifact needs a non-empty caption before publication."
-                    item.processing_started_at = None
-                    await session.commit()
-                    return
+            content_override = telegram_publish_text(artifact)
             publication_id = (await CreateTelegramDraft.execute_for_artifact(
                 session, artifact, destination, content_override=content_override
             )).id
