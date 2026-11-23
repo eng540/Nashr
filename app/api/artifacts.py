@@ -72,6 +72,22 @@ async def list_generic_artifacts(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/platform-variants")
+async def list_platform_variant_drafts(
+    limit: int = Query(default=50, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """List platform-variant drafts for the publishing workspace.
+
+    Preparation-only: variants are never auto-scheduled or published; this
+    listing only surfaces what has been prepared per platform for human
+    review. Registered before "/{artifact_id}" so the literal path wins.
+    """
+    from app.application.platform_variants import list_platform_variants
+
+    return await list_platform_variants(session, limit)
+
+
 @router.post("/ingest-media", status_code=201)
 async def ingest_ready_media(
     file: UploadFile = File(...),
