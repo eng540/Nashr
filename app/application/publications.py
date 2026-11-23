@@ -210,6 +210,7 @@ class ApproveAndPublish:
             raise ValueError("Publication is not a DRAFT.")
 
         album_media = None
+        live_photo_media = None
         media_bytes = None
         media_mime_type = None
         quiz_payload = None
@@ -229,6 +230,17 @@ class ApproveAndPublish:
                 media_request(child.kind, child.mime_type, data, meta.get("original_filename"))
                 album_media.append({"kind": child.kind, "mime_type": child.mime_type, "data": data,
                     "filename": meta.get("original_filename"), "caption": str(meta.get("caption") or "")})
+        if (artifact.metadata or {}).get('telegram_live_photo') is not None:
+            from app.application.telegram_live_photos import resolve_live_photo
+            from app.domain.telegram_live_photo import validate_live_motion
+            from app.domain.telegram_media import media_request
+            children, _ = await resolve_live_photo(session, artifact.metadata)
+            storage = S3ArtifactStorage.from_environment()
+            photo = await storage.get_bytes(children[0].storage_uri, max_bytes=10 * 1024 * 1024)
+            motion = await storage.get_bytes(children[1].storage_uri, max_bytes=10 * 1024 * 1024)
+            media_request('IMAGE', children[0].mime_type, photo)
+            validate_live_motion(motion)
+            live_photo_media = {'photo': photo, 'photo_mime': children[0].mime_type, 'motion': motion}
         if artifact.kind == ArtifactKind.QUIZ:
             metadata = artifact.metadata or {}
             quiz_data = metadata.get("quiz")
@@ -320,7 +332,9 @@ class ApproveAndPublish:
         # The provider call must never hold an open database transaction.
         await session.commit()
         try:
-            if album_media is not None:
+            if live_photo_media is not None:
+                published = await self.publisher.publish(destination=row.destination, content=row.content, live_photo=live_photo_media)
+            elif album_media is not None:
                 published = await self.publisher.publish(destination=row.destination, content=row.content, album=album_media)
             elif quiz_payload is not None:
                 if row.content != quiz_payload.question:
@@ -345,7 +359,7 @@ class ApproveAndPublish:
             await session.execute(
                 update(PublicationModel)
                 .where(PublicationModel.id == publication_id)
-                .values(status=PublicationStatus.PUBLISHING.value if album_media is not None else PublicationStatus.FAILED.value, error_message=str(exc))
+                .values(status=PublicationStatus.PUBLISHING.value if album_media is not None or live_photo_media is not None or (artifact.metadata or {}).get("telegram_native", {}).get("type") == "LIVE_LOCATION" else PublicationStatus.FAILED.value, error_message=str(exc))
             )
             await session.commit()
             result = await session.execute(select(PublicationModel).where(PublicationModel.id == publication_id))
