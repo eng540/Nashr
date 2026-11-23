@@ -176,12 +176,31 @@ class TelegramPublisher(IPublisher):
         media_kind: str | None = None,
         media_filename: str | None = None,
         native: dict | None = None,
+        album: list[dict] | None = None,
     ) -> PublishResult:
         """Send text, an approved visual card, or a native Telegram quiz poll."""
         if quiz is not None and media is not None:
             raise ValueError("A Telegram quiz cannot be combined with image media.")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            if native is not None:
+            if album is not None:
+                if native is not None or quiz is not None or media is not None:
+                    raise ValueError("An album cannot be combined with other content.")
+                from app.domain.telegram_albums import validate_album_group
+                from app.domain.telegram_media import media_request
+                import json
+                validate_album_group([item["kind"] for item in album])
+                entries, files = [], {}
+                for index, item in enumerate(album):
+                    _, _, filename = media_request(item["kind"], item["mime_type"], item["data"], item.get("filename"))
+                    key = "media" + str(index)
+                    files[key] = (filename, item["data"], item["mime_type"])
+                    entry = {"type": {"IMAGE": "photo", "VIDEO": "video", "AUDIO": "audio", "DOCUMENT": "document"}[item["kind"]], "media": "attach://" + key}
+                    if item.get("caption"):
+                        entry.update(caption=telegram_html_content(item["caption"], max_visible_characters=1024), parse_mode="HTML")
+                    entries.append(entry)
+                response = await client.post(f"https://api.telegram.org/bot{self.token}/sendMediaGroup",
+                    data={"chat_id": destination, "media": json.dumps(entries)}, files=files)
+            elif native is not None:
                 if quiz is not None or media is not None:
                     raise ValueError("Native content cannot be combined with quiz or media.")
                 from app.domain.telegram_payloads import native_payload
@@ -212,6 +231,12 @@ class TelegramPublisher(IPublisher):
                 response = await client.post(url, data=data, files={field: (filename, media, media_mime_type)})
             response.raise_for_status()
             payload = response.json()
+        if album is not None:
+            results = payload.get("result")
+            if not payload.get("ok") or not isinstance(results, list) or len(results) != len(album) or any(not isinstance(x, dict) or not x.get("message_id") for x in results):
+                raise RuntimeError("Telegram returned an ambiguous album response; do not retry automatically.")
+            ids = tuple(str(item["message_id"]) for item in results)
+            return PublishResult(external_id=ids[0], external_ids=ids)
         if not payload.get("ok") or "result" not in payload or "message_id" not in payload["result"]:
             raise RuntimeError("Telegram returned an invalid publish response.")
         return PublishResult(external_id=str(payload["result"]["message_id"]))
