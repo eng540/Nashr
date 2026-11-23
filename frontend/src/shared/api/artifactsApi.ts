@@ -38,6 +38,9 @@ export interface ManualPublicationRecord {
 
 export interface PlatformVariantDraft {
   id: string;
+  kind: string | null;
+  mime_type: string | null;
+  content: string;
   platform: string | null;
   platform_label_ar: string | null;
   review_status: GenericArtifactReviewStatus | null;

@@ -113,6 +113,9 @@ test("bank review view keeps the document inside the mobile viewport", async ({ 
 
 const variantListItem = {
   id: variantId,
+  kind: "TEXT",
+  mime_type: "text/plain",
+  content: longText,
   platform: "x",
   platform_label_ar: "إكس",
   review_status: "DRAFT",
@@ -190,6 +193,44 @@ test("approved platform variant can be recorded as manually published without mo
   await expect(section.getByText("منشورة يدويًا (1)")).toBeVisible();
   expect(state.recorded?.published_at).toContain("2026-10-17");
   expect(state.recorded?.external_url).toBe("https://x.com/example/status/1");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBe(0);
+});
+
+test("media platform variant exposes full text copy and on-demand media preview without mobile overflow", async ({ page }) => {
+  const mediaVariant = {
+    ...variantListItem,
+    id: "variant-media-preview-e2e",
+    kind: "VIDEO",
+    mime_type: "video/mp4",
+    platform: "tiktok",
+    platform_label_ar: "تيك توك",
+    content: longText.slice(0, 200),
+    full_length: 200,
+    source_kind_ar: "مخرج معتمد",
+  };
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(/\/api\/artifacts\?review_status=APPROVED.*/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/api\/artifacts\/platform-variants$/, (route) => route.fulfill({ json: [mediaVariant] }));
+  await page.route(/\/api\/artifacts\/[^/]+\/media-url$/, (route) => route.fulfill({ json: { url: "https://example.com/media/episode.mp4", expires_in: 300 } }));
+  await page.route(/\/posts\?/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } }));
+  await page.route(/\/posts\/filter-options/, (route) => route.fulfill({ json: { kinds: [], topics: [], sources: [] } }));
+  await page.route(/\/schedules\?limit=/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 50, offset: 0 } }));
+  await page.route(/\/schedules\/upcoming/, (route) => route.fulfill({ json: { items: [], days: 7, limit: 100 } }));
+  await page.route(/\/schedules\/calendar/, (route) => route.fulfill({ json: { date: "2026-10-17", timezone: "Asia/Aden", items: [] } }));
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => route.fulfill({ json: [] }));
+  await page.goto("/publishing");
+  await page.getByRole("button", { name: /مسودات المنصات/ }).click();
+  const card = page.getByTestId("publishing-platforms").getByTestId("platform-variant-card");
+  await expect(card).toHaveCount(1);
+  await expect(card.getByText("تيك توك")).toBeVisible();
+  await card.getByRole("button", { name: "عرض النص الكامل" }).click();
+  await expect(card.getByText(longText.slice(0, 200))).toBeVisible();
+  await card.getByRole("button", { name: "نسخ النص للنشر اليدوي" }).click();
+  await expect(card.getByRole("button", { name: "نُسخ النص" })).toBeVisible();
+  await card.getByRole("button", { name: "عرض الوسيط" }).click();
+  await expect(card.getByTestId("variant-media-preview").locator("video")).toBeVisible();
+  await expect(card.getByRole("link", { name: "فتح الوسيط في تبويب" })).toHaveAttribute("href", "https://example.com/media/episode.mp4");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBe(0);
 });
