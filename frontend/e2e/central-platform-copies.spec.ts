@@ -15,6 +15,9 @@ test('central copies preserve original, edit one platform and keep execution sep
  await panel.getByLabel('وصف نسخة copy-source',{exact:true}).fill('نسخة Telegram مختلفة');await expect(panel.getByLabel('منصة النسخة copy-source',{exact:true})).toBeDisabled();
  await panel.getByRole('button',{name:'حفظ النسخة وفحص حقولها',exact:true}).click();await expect(panel.getByRole('status')).toContainText('حقول النسخة فقط');expect(saves).toBe(1);expect(unsafe).toBe(0);
  await panel.getByLabel('منصة النسخة copy-source',{exact:true}).selectOption('youtube');await expect(panel.getByLabel('وصف نسخة copy-source',{exact:true})).toHaveValue(item.content);
+ await panel.getByLabel('منصة النسخة copy-source',{exact:true}).selectOption('telegram');
+ await panel.getByRole('button',{name:'معاينة وجدولة نسخة Telegram هذه',exact:true}).click();
+ await expect(page.getByLabel('معاينة دفعة Telegram',{exact:true})).toBeVisible();
  await panel.getByText('ما الذي لم يُتحقق بعد؟',{exact:true}).click();await expect(panel.getByText('لا إذن تنفيذ من الحفظ.',{exact:true})).toBeVisible();
  await page.addStyleTag({content:'header {visibility:hidden}'});
  await page.setViewportSize({width:390,height:844});await panel.screenshot({path:info.outputPath('central-copies-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
