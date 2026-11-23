@@ -48,6 +48,9 @@ export const genericArtifactsApi = {
   derivePlatformVariant(id: string, platform: string): Promise<GenericReviewableArtifact> {
     return post<GenericReviewableArtifact>(`/api/artifacts/${id}/platform-variant`, { platform });
   },
+  derivePlatformVariantFromPost(postId: string, platform: string): Promise<GenericReviewableArtifact> {
+    return post<GenericReviewableArtifact>(`/api/artifacts/post-source/${postId}/platform-variant`, { platform });
+  },
   createTelegramMediaDraft(id: string): Promise<{ id: string; status: string; external_id?: string | null }> {
     return post<{ id: string; status: string; external_id?: string | null }>(`/api/artifacts/${id}/telegram-media-draft`);
   },
