@@ -114,6 +114,9 @@ export const genericArtifactsApi = {
   createTelegramMediaDraft(id: string): Promise<{ id: string; status: string; external_id?: string | null }> {
     return post<{ id: string; status: string; external_id?: string | null }>(`/api/artifacts/${id}/telegram-media-draft`);
   },
+  scheduleArtifact(id: string, input: { name: string; timezone: string; scheduled_at: string }): Promise<{ id: string; name: string; status: string; timezone: string; items: Array<{ id: string; artifact_id: string | null; post_id: string | null; scheduled_at: string; status: string }> }> {
+    return post(`/api/artifacts/${id}/schedule`, input);
+  },
   publishQuiz(publicationId: string, content: string): Promise<{ id: string; status: string; external_id: string | null; error_message: string | null }> {
     return post<{ id: string; status: string; external_id: string | null; error_message: string | null }>(`/publications/${publicationId}/publish`, { content });
   },
