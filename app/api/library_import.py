@@ -133,3 +133,37 @@ async def library_import_page():
 <label for="archives">حزم المكتبة</label><br><input id="archives" type="file" accept=".zip" multiple><br>
 <button id="start">بدء الاستيراد</button><pre id="result" role="status" aria-live="polite"></pre></section>
 <script>const start=document.getElementById('start'),out=document.getElementById('result');start.onclick=async()=>{const files=[...document.getElementById('archives').files];if(!files.length){out.textContent='اختر حزمة أولاً';return}start.disabled=true;out.textContent='';try{for(const file of files){out.textContent+='جارٍ: '+file.name+'\\n';const form=new FormData();form.append('file',file);const r=await fetch('/api/library/import',{method:'POST',body:form}),d=await r.json();if(!r.ok)throw Error(d.detail||r.status);for(const [name,v] of Object.entries(d.collections)){out.textContent+=name+': جديد '+v.imported.length+'، سابق '+v.skipped.length+'، تعذر '+v.failed.length+'\\n';if(v.failed.length)throw Error(v.failed.join('\\n'))}}out.textContent+='اكتمل. جميع المواد مسودات.'}catch(e){out.textContent+='توقف: '+e.message+'\\nيمكن إعادة الحزم المكتملة بأمان.'}finally{start.disabled=false}};</script></html>''')
+
+
+@router.post("/api/library/video-metadata", status_code=201)
+async def import_video_metadata(file: UploadFile = File(...)):
+    """Owner-authenticated, all-or-nothing metadata restoration, without sends."""
+    import json
+    from app.application.video_library_metadata import restore_video_metadata
+    from app.infrastructure.database.session import SessionFactory
+    if not os.getenv("NASHR_AUTH_PASSWORD"):
+        raise HTTPException(503, "Configure authentication before using browser imports.")
+    data = await file.read(2 * 1024 * 1024 + 1)
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(422, "Metadata file exceeds 2 MiB.")
+    try:
+        entries = json.loads(data)
+        if not isinstance(entries, list) or any(not isinstance(e, dict) for e in entries):
+            raise ValueError("Expected a list of video entries.")
+        async with SessionFactory() as session:
+            return await restore_video_metadata(session, entries)
+    except (ValueError, KeyError, TypeError, UnicodeError) as exc:
+        raise HTTPException(422, "Invalid or mismatched video metadata; no changes applied.") from exc
+
+
+@router.get("/library/video-metadata", response_class=HTMLResponse)
+async def video_metadata_page():
+    return HTMLResponse('''<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>استعادة أصول الفيديوهات</title>
+<style>body{font:16px system-ui;background:#10151f;color:#e7ebf2;max-width:850px;margin:60px auto;padding:24px}section{padding:30px;border:1px solid #354157;border-radius:18px;background:#192334}button,input{padding:14px;margin:12px 0;max-width:100%}button{background:#a2edce;color:#102a20;border:0;border-radius:8px;font-weight:700}pre{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}a{color:#a2edce}</style>
+<a href="/bank">العودة إلى البنك</a><h1>استعادة أصول الفيديوهات</h1><section>
+<p>يربط ملف JSON النص الأصلي ونسخ المنصات بكل فيديو موجود باستخدام المعرّف واسم الملف معاً.</p>
+<p>لا يغير الوسيط ولا حالة المراجعة ولا تعليق النشر الحالي، ولا ينشئ منشوراً أو جدولة.</p>
+<label for="metadata">ملف البيانات</label><br><input id="metadata" type="file" accept=".json"><br>
+<button id="restore">استعادة البيانات</button><pre id="result" role="status" aria-live="polite"></pre></section>
+<script>const b=document.getElementById('restore'),o=document.getElementById('result');b.onclick=async()=>{const f=document.getElementById('metadata').files[0];if(!f){o.textContent='اختر ملفاً أولاً';return}b.disabled=true;o.textContent='جارٍ التحقق والحفظ...';try{const form=new FormData();form.append('file',f);const r=await fetch('/api/library/video-metadata',{method:'POST',body:form}),d=await r.json();if(!r.ok)throw Error(d.detail||r.status);o.textContent='تم تحديث '+d.updated.length+'، محفوظ سابقاً '+d.skipped.length+'. لم يتم نشر شيء.'}catch(e){o.textContent='توقف: '+e.message}finally{b.disabled=false}};</script></html>''')
