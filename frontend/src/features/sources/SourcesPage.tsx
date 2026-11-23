@@ -71,7 +71,7 @@ export function SourcesPage() {
       if (!uploadFile) throw new Error("اختر ملف PDF أولًا.");
       const form = new FormData();
       form.append("file", uploadFile);
-      return postForm<{ id: string; status: string; filename: string }>("/api/sources", form);
+      return postForm<{ id: string; status: string; filename: string }>("/sources", form);
     },
     onSuccess: () => {
       setUploadFile(null);
