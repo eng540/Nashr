@@ -44,6 +44,11 @@ class QuizScheduleRequest(BaseModel):
     scheduled_at: datetime
 
 
+class PlatformVariantRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    platform: str = Field(min_length=1, max_length=30)
+
+
 class ArtifactRejectDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     review_note: str = Field(min_length=1, max_length=2000)
@@ -94,6 +99,29 @@ async def ingest_ready_media(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{artifact_id}/platform-variant", status_code=201)
+async def derive_platform_variant(
+    artifact_id: UUID,
+    input: PlatformVariantRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Derive a DRAFT per-platform variant from an APPROVED generic Artifact.
+
+    Preparation only: text is trimmed to the target platform's documented
+    constraints and the constraint provenance is stored in metadata. No
+    external publishing happens here.
+    """
+    from app.application.platform_variants import DerivePlatformVariant
+
+    try:
+        artifact = await DerivePlatformVariant().execute(session, artifact_id=artifact_id, platform=input.platform)
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/{artifact_id}")
