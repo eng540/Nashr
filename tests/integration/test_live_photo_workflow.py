@@ -34,3 +34,32 @@ async def test_live_photo_pair_is_reviewed_deduplicated_and_snapshot_bound(tmp_p
         children,_=await resolve_live_photo(session,pair.metadata)
         children[0].review_status='REJECTED';await session.commit()
         with pytest.raises(ValueError,match='approved'):await resolve_live_photo(session,pair.metadata)
+
+
+@pytest.mark.asyncio
+async def test_live_photo_real_adapter_pipeline_stays_single_send(monkeypatch,tmp_path):
+    from app.application.publications import CreateTelegramDraft, ApproveAndPublish
+    from app.adapters.publishing.telegram import TelegramPublisher
+    from tests.unit.test_telegram_publisher_media import FakeAsyncClient
+    class Client(_FakeS3Client):
+        def get_object(self, **kwargs):return {'Body':io.BytesIO(super().get_object(**kwargs)['Body'].read())}
+    storage=S3ArtifactStorage(client=Client(),bucket='fixture')
+    monkeypatch.setattr(S3ArtifactStorage,'from_environment',lambda:storage)
+    monkeypatch.setattr('app.adapters.publishing.telegram.httpx.AsyncClient',FakeAsyncClient)
+    FakeAsyncClient.calls=[]
+    async with SessionFactory() as session:
+        output=io.BytesIO();Image.new('RGB',(64,64),'orange').save(output,format='PNG')
+        photo=await IngestReadyMedia(storage=storage).execute(session,filename='static.png',content_type='image/png',data=output.getvalue(),caption='Static test')
+        video=await IngestReadyMedia(storage=storage).execute(session,filename='motion.mp4',content_type='video/mp4',data=motion_fixture(tmp_path),caption='Reviewed outgoing caption')
+        for child in (photo,video):await GenericArtifactReviewService(session).approve(child.id)
+        pair=await create_live_photo(session,photo_id=str(photo.id),video_id=str(video.id),title='Live photo',storage=storage)
+        await GenericArtifactReviewService(session).approve(pair.id)
+        publication=await CreateTelegramDraft.execute_for_artifact(session,pair,'private-fixture')
+        result=await ApproveAndPublish(TelegramPublisher(token='fixture')).execute(session,publication.id)
+        assert result.status.value=='PUBLISHED'
+        assert len(FakeAsyncClient.calls)==1
+        assert FakeAsyncClient.calls[0][0].endswith('/sendLivePhoto')
+        assert FakeAsyncClient.calls[0][1]['data']['caption']=='Reviewed outgoing caption'
+        with pytest.raises(ValueError,match='DRAFT'):
+            await ApproveAndPublish(TelegramPublisher(token='fixture')).execute(session,publication.id)
+        assert len(FakeAsyncClient.calls)==1
