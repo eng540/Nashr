@@ -537,6 +537,11 @@ async def schedule_approved_quiz(
         if kind in MEDIA_KINDS:
             if not artifact_review.get("storage_uri"):
                 raise ValueError("Media Artifact has no stored media to schedule.")
+        from app.infrastructure.database.models import PlatformCopyModel
+        original = await session.get(ArtifactModel, artifact_id)
+        copy = await session.get(PlatformCopyModel, (artifact_id, 'telegram'))
+        if copy and copy.fields.get('description') != telegram_publish_text(original):
+            raise ValueError('توجد نسخة Telegram مستقلة تختلف عن الأصل. استخدم معاينة الدفعة لحفظ خطة تثبت النسخة المراجعة.')
         timezone_name = validate_timezone(payload.timezone)
         scheduled_at = validate_scheduled_at(payload.scheduled_at)
         already_published = (await session.execute(select(PublicationModel.id).where(
