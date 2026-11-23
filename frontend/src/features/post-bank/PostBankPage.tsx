@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { postsApi } from "../../shared/api/postsApi";
 import { productionJobsApi, type ProductionLineFilter, type ProductionScope, type ProductionProductOption, type EditorialIdentityOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
@@ -182,6 +182,11 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   const [message, setMessage] = useState("");
   const [productionStep, setProductionStep] = useState<1 | 2 | 3>(1);
   const [workspaceView, setWorkspaceView] = useState<"production" | "job" | "review">(() => initialView ?? (searchParams.get("status") ? "review" : "production"));
+  const location = useLocation();
+  useEffect(() => {
+    if (location.pathname === "/bank") setWorkspaceView("review");
+    else if (location.pathname === "/production") setWorkspaceView((view) => (view === "review" ? "production" : view));
+  }, [location.pathname]);
 
   const identities = useQuery({ queryKey: ["control-plane", "identities"], queryFn: productionJobsApi.identities });
   const products = useQuery({ queryKey: ["control-plane", "products"], queryFn: productionJobsApi.products });
