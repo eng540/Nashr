@@ -41,6 +41,9 @@ export function GenericArtifactReviewPanel() {
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
   const [quizDrafts, setQuizDrafts] = useState<Record<string, { id: string; status: string; external_id?: string | null }>>({});
+  const [mediaDrafts, setMediaDrafts] = useState<Record<string, { id: string; status: string }>>({});
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadCaption, setUploadCaption] = useState("");
   const [selectedPostId, setSelectedPostId] = useState("");
   const [postProductKey, setPostProductKey] = useState("");
   const [activeCardJob, setActiveCardJob] = useState("");
@@ -103,6 +106,22 @@ export function GenericArtifactReviewPanel() {
     mutationFn: (id: string) => genericArtifactsApi.createQuizDraft(id),
     onSuccess: (publication, artifactId) => setQuizDrafts((current) => ({ ...current, [artifactId]: { id: publication.id, status: publication.status } })),
   });
+  const ingestMedia = useMutation({
+    mutationFn: () => {
+      if (!uploadFile) throw new Error("اختر ملف صورة أو فيديو أولًا.");
+      return genericArtifactsApi.ingestReadyMedia({ file: uploadFile, caption: uploadCaption });
+    },
+    onSuccess: () => {
+      setUploadFile(null);
+      setUploadCaption("");
+      setStatus("DRAFT");
+      refresh();
+    },
+  });
+  const createMediaDraft = useMutation({
+    mutationFn: (id: string) => genericArtifactsApi.createTelegramMediaDraft(id),
+    onSuccess: (publication, artifactId) => setMediaDrafts((current) => ({ ...current, [artifactId]: { id: publication.id, status: publication.status } })),
+  });
   const publishQuiz = useMutation({
     mutationFn: ({ publicationId, content }: { artifactId: string; publicationId: string; content: string }) => genericArtifactsApi.publishQuiz(publicationId, content),
     onSuccess: (publication, input) => setQuizDrafts((current) => ({ ...current, [input.artifactId]: { id: publication.id, status: publication.status, external_id: publication.external_id } })),
@@ -142,6 +161,21 @@ export function GenericArtifactReviewPanel() {
           <option value="REJECTED">مرفوض</option>
         </select>
       </label>
+    </div>
+    <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+      <h3 className="font-bold">بنك الوسائط الجاهزة</h3>
+      <p className="text-sm text-slate-600">ارفع صورة (JPEG/PNG/WebP) أو فيديو (MP4) جاهزًا للنشر. يدخل الملف حالة «قيد المراجعة» ولا يُنشر شيء دون اعتمادك.</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm font-semibold">ملف الوسيط
+          <input aria-label="ملف الوسيط الجاهز" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" />
+        </label>
+        <label className="text-sm font-semibold">التعليق (يظهر نصًا مع الوسيط عند النشر)
+          <input aria-label="تعليق الوسيط الجاهز" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" placeholder="نص يرافق الوسيط عند النشر" />
+        </label>
+      </div>
+      <button type="button" onClick={() => ingestMedia.mutate()} disabled={!uploadFile || ingestMedia.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{ingestMedia.isPending ? "جارٍ الرفع..." : "رفع إلى بنك الوسائط"}</button>
+      {ingestMedia.isError ? <p role="alert" className="text-sm text-rose-700">{ingestMedia.error.message}</p> : null}
+      {ingestMedia.isSuccess ? <p role="status" className="text-sm text-emerald-800">تم الرفع؛ الوسيط الآن قيد المراجعة.</p> : null}
     </div>
     <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-3">
       <h3 className="font-bold">إنتاج تصميم من منشور معتمد</h3>
@@ -214,6 +248,12 @@ export function GenericArtifactReviewPanel() {
           <button type="button" onClick={() => createCard.mutate({ artifact, productKey: cardProducts[artifact.id] ?? "" })} disabled={!cardProducts[artifact.id] || createCard.isPending} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">إنتاج البطاقة</button>
           {products.isLoading || recipes.isLoading ? <span className="text-xs">تحميل منتجات البطاقات...</span> : null}
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
+        </div> : null}
+        {status === "APPROVED" && ["IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+          <p className="text-sm font-semibold">وسيط معتمد من بنك الوسائط</p>
+          {mediaDrafts[artifact.id] ? <p role="status" className="text-xs">سجل نشر Telegram: {mediaDrafts[artifact.id].id} · الحالة {mediaDrafts[artifact.id].status}</p> : null}
+          <button type="button" onClick={() => createMediaDraft.mutate(artifact.id)} disabled={createMediaDraft.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{createMediaDraft.isPending ? "جارٍ إنشاء المسودة..." : "إنشاء مسودة نشر Telegram"}</button>
+          {createMediaDraft.isError ? <p role="alert" className="text-sm text-rose-700">{createMediaDraft.error.message}</p> : null}
         </div> : null}
         {status === "APPROVED" && artifact.kind === "QUIZ" ? <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 space-y-2">
           <p className="text-sm font-semibold">اختبار تفاعلي معتمد</p>
