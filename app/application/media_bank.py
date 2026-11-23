@@ -88,7 +88,11 @@ class IngestReadyMedia:
         storage = self.storage or S3ArtifactStorage.from_environment()
         artifact_id = uuid4()
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", clean_filename).strip("-") or "media"
-        storage_uri = await storage.put(f"artifacts/media-bank/{artifact_id}/{safe_name}", payload, mime_type)
+        storage_uri = await storage.put(
+            key=f"artifacts/media-bank/{artifact_id}/{safe_name}",
+            content=payload,
+            content_type=mime_type,
+        )
 
         now = datetime.now(timezone.utc)
         source_id, unit_id = uuid4(), uuid4()
