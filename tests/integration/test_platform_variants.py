@@ -253,3 +253,86 @@ async def test_platform_variants_listing_surfaces_drafts_with_honest_metadata():
         assert item["excerpt"]
         # The approved seed artifact itself is not a variant and must not appear.
         assert all(entry["id"] != artifact_id for entry in items)
+
+
+def _media_contract():
+    return {
+        "output_contract": {
+            "contract_id": str(uuid4()),
+            "version_id": str(uuid4()),
+            "key": "TEST_MEDIA_UPLOAD",
+            "version": 1,
+            "definition": {
+                "artifact_kind": "IMAGE",
+                "mime_type": "image/png",
+                "content_mode": "STORAGE_URI",
+                "required_metadata_fields": ["source_type"],
+                "max_content_chars": None,
+            },
+        }
+    }
+
+
+async def _seed_media_artifact(caption: str | None) -> str:
+    now = datetime.now(timezone.utc)
+    async with SessionFactory() as session:
+        source_id, unit_id = uuid4(), uuid4()
+        session.add(SourceModel(
+            id=source_id, filename="variant-media.png", mime_type="image/png",
+            storage_path="s3://test/variant-media.png", size_bytes=179,
+            status="STORED", content_sha256="b" * 64,
+        ))
+        session.add(KnowledgeUnitModel(
+            id=unit_id, source_id=source_id, position=1, title="مادة وسائط اختبار النسخ",
+            kind="IMAGE", content=(caption or "")[:500], source_reference="variant-media.png",
+        ))
+        metadata = {"source_type": "MEDIA_BANK_UPLOAD"}
+        if caption is not None:
+            metadata["caption"] = caption
+        artifact = Artifact(
+            id=uuid4(), source_knowledge_unit_id=unit_id, kind=ArtifactKind.IMAGE,
+            content=None, status=ArtifactStatus.AVAILABLE.value,
+            created_at=now, updated_at=now, mime_type="image/png",
+            storage_uri="s3://test-bucket/variant-media.png",
+            metadata=metadata,
+        )
+        saved = await persist_generic_artifact(session, artifact, resolved_context=_media_contract())
+        await session.commit()
+        return str(saved.id)
+
+
+@pytest.mark.asyncio
+async def test_media_variant_uses_caption_and_preserves_storage_reference():
+    caption = "وصف عربي طويل لصورة مرفوعة في بنك الوسائط مخصص لاختبار اشتقاق نسخة منصة إكس. " * 8
+    artifact_id = await _seed_media_artifact(caption)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        approve = await client.post(f"/api/artifacts/{artifact_id}/approve", json={})
+        assert approve.status_code == 200, approve.text
+        derived = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
+        assert derived.status_code == 201, derived.text
+        variant = derived.json()
+        assert variant["kind"] == "IMAGE"
+        assert variant["storage_uri"] == "s3://test-bucket/variant-media.png"
+        assert variant["content"] is None
+        assert variant["metadata"]["source_type"] == "PLATFORM_VARIANT"
+        assert variant["metadata"]["constraints"]["trimmed"] is True
+
+        listing = await client.get("/api/artifacts/platform-variants")
+        match = [i for i in listing.json() if i["source_artifact_id"] == artifact_id]
+        assert len(match) == 1
+        assert match[0]["kind"] == "IMAGE"
+        assert match[0]["mime_type"] == "image/png"
+        assert match[0]["content"].strip()
+        assert match[0]["full_length"] == len(match[0]["content"])
+
+
+@pytest.mark.asyncio
+async def test_media_variant_requires_nonempty_caption():
+    artifact_id = await _seed_media_artifact(None)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        approve = await client.post(f"/api/artifacts/{artifact_id}/approve", json={})
+        assert approve.status_code == 200, approve.text
+        derived = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
+        assert derived.status_code == 422, derived.text
