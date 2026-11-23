@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -111,6 +111,36 @@ class GenericArtifactReviewService:
         row.review_note = review_note.strip() if review_note and review_note.strip() else None
         row.reviewed_at = datetime.now(timezone.utc)
         row.updated_at = row.reviewed_at
+        await self.session.commit()
+        await self.session.refresh(row)
+        return _payload(row)
+
+    async def record_manual_publication(
+        self, artifact_id: UUID, published_at: datetime, external_url: str | None = None
+    ) -> dict[str, Any]:
+        row = await self._get_row(artifact_id, for_update=True)
+        if row.kind == "POST":
+            raise ValueError("POST artifacts must use the canonical Post publication workflow.")
+        if row.review_status != "APPROVED":
+            raise ValueError("Only APPROVED artifacts can be recorded as manually published.")
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if published_at > now + timedelta(minutes=5):
+            raise ValueError("Manual publication date cannot be in the future.")
+        cleaned_url = external_url.strip() if external_url else None
+        if cleaned_url == "":
+            cleaned_url = None
+        if cleaned_url is not None and not cleaned_url.startswith(("http://", "https://")):
+            raise ValueError("External URL must start with http:// or https://.")
+        metadata = dict(row.artifact_metadata or {})
+        metadata["manual_publication"] = {
+            "published_at": published_at.isoformat(),
+            "external_url": cleaned_url,
+            "recorded_at": now.isoformat(),
+        }
+        row.artifact_metadata = metadata
+        row.updated_at = now
         await self.session.commit()
         await self.session.refresh(row)
         return _payload(row)

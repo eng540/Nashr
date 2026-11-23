@@ -54,6 +54,12 @@ class ArtifactRejectDecision(BaseModel):
     review_note: str = Field(min_length=1, max_length=2000)
 
 
+class ArtifactManualPublication(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    published_at: datetime
+    external_url: str | None = Field(default=None, max_length=2048)
+
+
 def _handle_error(exc: Exception) -> HTTPException:
     if isinstance(exc, LookupError):
         return HTTPException(status_code=404, detail=str(exc))
@@ -220,6 +226,26 @@ async def reject_generic_artifact(
 ) -> dict[str, Any]:
     try:
         return await GenericArtifactReviewService(session).reject(artifact_id, payload.review_note)
+    except (LookupError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/{artifact_id}/manual-publication")
+async def record_manual_publication(
+    artifact_id: UUID,
+    payload: ArtifactManualPublication,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Record that a human manually published an APPROVED artifact outside the app.
+
+    Tracking only: no external call is made and nothing is auto-published. The
+    record lives in artifact metadata so the publishing area can show the
+    preparation-to-manual-publication pipeline truthfully.
+    """
+    try:
+        return await GenericArtifactReviewService(session).record_manual_publication(
+            artifact_id, payload.published_at, payload.external_url
+        )
     except (LookupError, ValueError) as exc:
         raise _handle_error(exc) from exc
 

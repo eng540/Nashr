@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 import { useMemo, useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
-import { genericArtifactsApi } from "../../shared/api/artifactsApi";
+import { genericArtifactsApi, type PlatformVariantDraft } from "../../shared/api/artifactsApi";
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime } from "../../shared/utils/timezone";
@@ -32,6 +32,7 @@ export function PublishingPage() {
   const [planStatus, setPlanStatus] = useState("");
   const [planPage, setPlanPage] = useState(0);
   const [calendarDate, setCalendarDate] = useState(new Date().toISOString().slice(0, 10));
+  const [manualPub, setManualPub] = useState<{ id: string; date: string; url: string } | null>(null);
   const [form, setForm] = useState({ name: "خطة نشر", timezone: DEFAULT_TIMEZONE, startAt: "", interval: "60" });
 
   const posts = useQuery({
@@ -67,6 +68,75 @@ export function PublishingPage() {
   });
 
   const eligibility = useMutation({ mutationFn: () => schedulesApi.eligibility(selectedIds) });
+  const recordManual = useMutation({
+    mutationFn: (input: { id: string; published_at: string; external_url: string | null }) =>
+      genericArtifactsApi.recordManualPublication(input.id, { published_at: input.published_at, external_url: input.external_url }),
+    onSuccess: () => {
+      setManualPub(null);
+      void client.invalidateQueries({ queryKey: ["publishing", "platform-variants"] });
+    },
+    onError: (error) => setMessage(error instanceof Error ? error.message : "تعذر تسجيل النشر اليدوي."),
+  });
+
+  const variantGroups = useMemo(() => {
+    const items = platformVariants.data ?? [];
+    return {
+      drafts: items.filter((v) => !v.manual_publication && v.review_status === "DRAFT"),
+      approved: items.filter((v) => !v.manual_publication && v.review_status === "APPROVED"),
+      published: items.filter((v) => Boolean(v.manual_publication)),
+      rejected: items.filter((v) => !v.manual_publication && v.review_status === "REJECTED"),
+    };
+  }, [platformVariants.data]);
+
+  const submitManualPublication = (id: string) => {
+    if (!manualPub || manualPub.id !== id || !manualPub.date) return;
+    const publishedAt = new Date(`${manualPub.date}T12:00:00`).toISOString();
+    const url = manualPub.url.trim();
+    recordManual.mutate({ id, published_at: publishedAt, external_url: url ? url : null });
+  };
+
+  const renderVariantCard = (v: PlatformVariantDraft) => (
+    <article key={v.id} data-testid="platform-variant-card" className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong>{v.platform_label_ar ?? v.platform ?? "منصة"}</strong>
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{v.manual_publication ? "منشورة يدويًا" : v.review_status === "APPROVED" ? "معتمدة" : v.review_status === "REJECTED" ? "مرفوضة" : "مسودة"}</span>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{v.excerpt}{v.full_length > v.excerpt.length ? "…" : ""}</p>
+      <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+        <div><dt className="inline">المصدر: </dt><dd className="inline">{v.source_kind_ar ?? "غير محدد"}</dd></div>
+        {v.constraints.max_text != null && <div><dt className="inline">الطول الحالي: </dt><dd className="inline"><bdi>{v.constraints.measured_length ?? "؟"}</bdi> من <bdi>{v.constraints.max_text}</bdi>{v.constraints.measure ? <span className="mr-1 text-slate-400" dir="ltr">({v.constraints.measure})</span> : null}</dd></div>}
+        {v.constraints.trimmed && <div><dt className="inline">القص: </dt><dd className="inline">عند حد {v.constraints.trim_boundary === "sentence" ? "جملة" : v.constraints.trim_boundary === "whitespace" ? "كلمة" : "ثابت"}</dd></div>}
+      </dl>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {v.needs_review && v.review_status !== "APPROVED" && !v.manual_publication && <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">تتطلب مراجعة</span>}
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">ضبط طول فقط، ليست صياغة مخصصة</span>
+        {v.constraints.provenance && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">مصدر القيود: {v.constraints.provenance === "primary" ? "وثائق رسمية" : "مصادر ثانوية"}</span>}
+      </div>
+      {v.manual_publication ? (
+        <div className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs leading-6 text-emerald-800" data-testid="manual-publication-record">
+          <div>نُشرت يدويًا خارج التطبيق في <bdi>{new Date(v.manual_publication.published_at).toLocaleDateString("ar")}</bdi></div>
+          {v.manual_publication.external_url && <a href={v.manual_publication.external_url} target="_blank" rel="noreferrer" dir="ltr" className="break-all font-semibold underline">رابط المنشور</a>}
+        </div>
+      ) : v.review_status === "APPROVED" ? (
+        manualPub?.id === v.id ? (
+          <form className="mt-3 space-y-2 rounded-xl border p-3" data-testid="manual-publication-form" onSubmit={(e) => { e.preventDefault(); submitManualPublication(v.id); }}>
+            <label className="block text-xs font-semibold">تاريخ النشر اليدوي
+              <input aria-label="تاريخ النشر اليدوي" type="date" required max={new Date().toISOString().slice(0, 10)} value={manualPub.date} onChange={(e) => setManualPub({ ...manualPub, date: e.target.value })} className="mt-1 w-full rounded-lg border p-2 font-normal" />
+            </label>
+            <label className="block text-xs font-semibold">رابط المنشور (اختياري)
+              <input aria-label="رابط المنشور" type="url" inputMode="url" dir="ltr" placeholder="https://…" value={manualPub.url} onChange={(e) => setManualPub({ ...manualPub, url: e.target.value })} className="mt-1 w-full rounded-lg border p-2 font-normal" />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" disabled={recordManual.isPending} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white">حفظ التسجيل</button>
+              <button type="button" onClick={() => setManualPub(null)} className="rounded-lg border px-4 py-2 text-xs">إلغاء</button>
+            </div>
+          </form>
+        ) : (
+          <button type="button" onClick={() => setManualPub({ id: v.id, date: new Date().toISOString().slice(0, 10), url: "" })} className="mt-3 rounded-xl border border-emerald-300 px-4 py-2 text-xs font-bold text-emerald-700">تسجيل نشر يدوي</button>
+        )
+      ) : null}
+    </article>
+  );
   const attachVisual = useMutation({
     mutationFn: ({ postId, artifactId }: { postId: string; artifactId: string }) => postsApi.attachVisualArtifact(postId, artifactId),
     onSuccess: async () => {
@@ -341,34 +411,31 @@ export function PublishingPage() {
               <div><h3 className="text-xl font-bold">مسودات المنصات الاجتماعية</h3><p className="mt-1 text-sm text-slate-500">نسخ معدّة من المخرجات والمنشورات المعتمدة للمراجعة اليدوية لكل منصة.</p></div>
               <button type="button" onClick={() => void platformVariants.refetch()} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث</button>
             </div>
-            <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs leading-6 text-amber-800">تحضير فقط: هذه المسودات لا تدخل الجدولة الآلية ولا تُنشر تلقائيًا. الاقتصار هنا على ضبط الطول عند حدود آمنة مع الحفاظ على المعنى والروابط، والنص الأصلي محفوظ دون تغيير في المصدر، وكل مسودة تتطلب مراجعة يدوية قبل أي استخدام.</p>
+            <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs leading-6 text-amber-800">تحضير فقط: هذه المسودات لا تدخل الجدولة الآلية ولا تُنشر تلقائيًا. الاقتصار هنا على ضبط الطول عند حدود آمنة مع الحفاظ على المعنى والروابط، والنص الأصلي محفوظ دون تغيير في المصدر، وكل مسودة تتطلب مراجعة يدوية قبل أي استخدام. تسجيل النشر اليدوي يوثّق ما نشرته بنفسك خارج التطبيق فقط، وليس نشرًا عبر واجهات المنصات.</p>
           </div>
           {platformVariants.isLoading ? (
             <Status title="جارٍ تحميل مسودات المنصات..." />
           ) : !(platformVariants.data?.length) ? (
             <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد مسودات منصات بعد</h3><p className="mt-2 text-sm text-slate-500">اشتق نسخة منصة من مخرج معتمد أو منشور معتمد من بنك المحتوى.</p></div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {platformVariants.data.map((v) => (
-                <article key={v.id} data-testid="platform-variant-card" className="rounded-2xl border bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <strong>{v.platform_label_ar ?? v.platform ?? "منصة"}</strong>
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{v.review_status === "APPROVED" ? "معتمدة" : v.review_status === "REJECTED" ? "مرفوضة" : "مسودة"}</span>
+            <>
+              <div className="rounded-2xl border bg-white p-4 text-sm text-slate-600" data-testid="variant-pipeline-summary">
+                مسار التحضير: مسودة <bdi>{variantGroups.drafts.length}</bdi> · معتمدة بانتظار النشر اليدوي <bdi>{variantGroups.approved.length}</bdi> · منشورة يدويًا <bdi>{variantGroups.published.length}</bdi>
+              </div>
+              {([
+                { key: "drafts", title: "مسودات قيد المراجعة", items: variantGroups.drafts },
+                { key: "approved", title: "معتمدة بانتظار النشر اليدوي", items: variantGroups.approved },
+                { key: "published", title: "منشورة يدويًا", items: variantGroups.published },
+                { key: "rejected", title: "مرفوضة", items: variantGroups.rejected },
+              ] as const).filter((group) => group.items.length > 0).map((group) => (
+                <div key={group.key} className="space-y-3">
+                  <h4 className="text-sm font-bold text-slate-600">{group.title} (<bdi>{group.items.length}</bdi>)</h4>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {group.items.map((v) => renderVariantCard(v))}
                   </div>
-                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{v.excerpt}{v.full_length > v.excerpt.length ? "…" : ""}</p>
-                  <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                    <div><dt className="inline">المصدر: </dt><dd className="inline">{v.source_kind_ar ?? "غير محدد"}</dd></div>
-                    {v.constraints.max_text != null && <div><dt className="inline">الطول الحالي: </dt><dd className="inline"><bdi>{v.constraints.measured_length ?? "؟"}</bdi> من <bdi>{v.constraints.max_text}</bdi>{v.constraints.measure ? <span className="mr-1 text-slate-400" dir="ltr">({v.constraints.measure})</span> : null}</dd></div>}
-                    {v.constraints.trimmed && <div><dt className="inline">القص: </dt><dd className="inline">عند حد {v.constraints.trim_boundary === "sentence" ? "جملة" : v.constraints.trim_boundary === "whitespace" ? "كلمة" : "ثابت"}</dd></div>}
-                  </dl>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {v.needs_review && <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">تتطلب مراجعة</span>}
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">ضبط طول فقط، ليست صياغة مخصصة</span>
-                    {v.constraints.provenance && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">مصدر القيود: {v.constraints.provenance === "primary" ? "وثائق رسمية" : "مصادر ثانوية"}</span>}
-                  </div>
-                </article>
+                </div>
               ))}
-            </div>
+            </>
           )}
         </section>
       )}

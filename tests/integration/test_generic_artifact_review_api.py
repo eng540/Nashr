@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import httpx
@@ -112,3 +112,54 @@ async def test_card_job_api_rejects_unapproved_text_and_requires_card_product():
         })
         assert no_product_request.status_code == 400
         assert "explicit approved source_artifact_id" in no_product_request.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_manual_publication_tracking_requires_approval_and_valid_input():
+    artifact_id = await _create_text_artifact("source-grounded draft for manual publication")
+    now = datetime.now(timezone.utc)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        early = await client.post(
+            f"/api/artifacts/{artifact_id}/manual-publication",
+            json={"published_at": now.isoformat()},
+        )
+        assert early.status_code == 409
+
+        approved = await client.post(f"/api/artifacts/{artifact_id}/approve", json={})
+        assert approved.status_code == 200, approved.text
+
+        bad_url = await client.post(
+            f"/api/artifacts/{artifact_id}/manual-publication",
+            json={"published_at": now.isoformat(), "external_url": "not-a-url"},
+        )
+        assert bad_url.status_code == 409
+
+        future = await client.post(
+            f"/api/artifacts/{artifact_id}/manual-publication",
+            json={"published_at": (now + timedelta(days=1)).isoformat()},
+        )
+        assert future.status_code == 409
+
+        recorded = await client.post(
+            f"/api/artifacts/{artifact_id}/manual-publication",
+            json={"published_at": now.isoformat(), "external_url": "https://x.com/example/status/1"},
+        )
+        assert recorded.status_code == 200, recorded.text
+        record = recorded.json()["metadata"]["manual_publication"]
+        assert record["external_url"] == "https://x.com/example/status/1"
+        assert record["published_at"].startswith(now.date().isoformat())
+        assert record["recorded_at"]
+
+        corrected = await client.post(
+            f"/api/artifacts/{artifact_id}/manual-publication",
+            json={"published_at": now.isoformat()},
+        )
+        assert corrected.status_code == 200, corrected.text
+        assert corrected.json()["metadata"]["manual_publication"]["external_url"] is None
+
+        missing = await client.post(
+            f"/api/artifacts/{uuid4()}/manual-publication",
+            json={"published_at": now.isoformat()},
+        )
+        assert missing.status_code == 404
