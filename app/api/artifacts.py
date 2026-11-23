@@ -152,6 +152,47 @@ async def list_platform_variant_drafts(
     return await list_platform_variants(session, limit)
 
 
+class PlatformCopyUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    fields: dict[str, Any]
+    version: int = Field(ge=1)
+    current_source_fingerprint: str
+
+
+@router.get("/{artifact_id}/platform-copies")
+async def platform_copies(artifact_id: UUID, session: AsyncSession = Depends(get_session)):
+    from app.application.central_platform_copies import get_copies
+    try:
+        return await get_copies(session, artifact_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/{artifact_id}/platform-copies/prepare")
+async def prepare_platform_copies(artifact_id: UUID, session: AsyncSession = Depends(get_session)):
+    from app.application.central_platform_copies import prepare_copies
+    row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == artifact_id).with_for_update())).scalar_one_or_none()
+    if row is None or row.review_status != 'APPROVED':
+        raise HTTPException(422, 'اعتمد المادة الأصلية أولاً.')
+    try:
+        items = await prepare_copies(session, row)
+        await session.commit()
+        return {'artifact_id':str(artifact_id),'items':items}
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.patch("/{artifact_id}/platform-copies/{platform}")
+async def update_platform_copy(artifact_id: UUID, platform: str, payload: PlatformCopyUpdateRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.central_platform_copies import update_copy
+    try:
+        return await update_copy(session, artifact_id, platform, payload.fields, payload.version, payload.current_source_fingerprint)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
 class TelegramBatchPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     artifact_ids: list[UUID] = Field(min_length=1, max_length=100)
@@ -167,6 +208,7 @@ async def telegram_batch_preview(payload: TelegramBatchPreviewRequest, session: 
 
 
 class TelegramBatchScheduleRequest(TelegramBatchPreviewRequest):
+    copy_versions: dict[str, int | None] = Field(default_factory=dict)
     fingerprints: dict[str, str]
     name: str = Field(min_length=1, max_length=300)
     timezone: str
