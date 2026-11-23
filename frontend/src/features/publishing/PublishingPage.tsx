@@ -24,6 +24,7 @@ export function PublishingPage() {
   const [visualArtifactSelections, setVisualArtifactSelections] = useState<Record<string, string>>({});
   const [visualPreviewUrls, setVisualPreviewUrls] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<ScheduleDetail | null>(null);
+  const [itemTimes, setItemTimes] = useState<Record<string,string>>({});
   const [readyQuery, setReadyQuery] = useState("");
   const [readySort, setReadySort] = useState<"created" | "title" | "kind" | "topic">("created");
   const [readySourceId, setReadySourceId] = useState("");
@@ -192,6 +193,7 @@ export function PublishingPage() {
     if (!detail) return;
     try {
       setDetail(await schedulesApi.updateItemTime(detail.id, itemId, localDateTimeToUtcISOString(value, detail.timezone)));
+      setItemTimes(current=>{const next={...current};delete next[itemId];return next;});
       setMessage("تم تحديث وقت العنصر.");
       void refresh();
     } catch (e) {
@@ -340,13 +342,14 @@ export function PublishingPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><p className="text-xs font-semibold text-indigo-600">تفاصيل الخطة</p><h3 className="mt-1 text-xl font-bold">{detail.name}</h3><p className="text-sm text-slate-500">{detail.status} · {detail.timezone} · {detail.total_items} عناصر</p></div>
             <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={()=>void openDetail(detail.id)} className="rounded-lg border px-3 py-2 text-sm">تحديث تفاصيل الخطة</button>
               {(detail.status === "DRAFT" || detail.status === "PAUSED") && <button type="button" onClick={() => void action.mutateAsync({ type: "activate", id: detail.id })} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white">تفعيل النشر الآلي</button>}
               {detail.status === "ACTIVE" && <button type="button" onClick={() => action.mutate({ type: "pause", id: detail.id })} className="rounded-lg border px-3 py-2 text-sm font-semibold">إيقاف مؤقت</button>}
               {!["COMPLETED", "CANCELLED"].includes(detail.status) && <button type="button" onClick={() => action.mutate({ type: "cancel", id: detail.id })} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-bold text-white">إلغاء الخطة</button>}
               {detail.failed_items > 0 && <button type="button" onClick={() => action.mutate({ type: "retry", id: detail.id })} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">إعادة محاولة الفاشل</button>}
             </div>
           </div>
-          <div className="mt-4 space-y-2">{detail.items.map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{item.position}. {item.title}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{item.status}</span></div><p className="mt-1 text-sm text-slate-600">{item.content_preview}</p><div className="mt-2 flex flex-wrap gap-2"><input aria-label={`وقت نشر ${item.title}`} type="datetime-local" defaultValue={utcISOStringToLocalDateTime(item.scheduled_at, detail.timezone)} onBlur={(e) => void updateItemTime(item.id, e.target.value)} className="rounded-lg border p-2 text-sm"/><button type="button" disabled={!item.post_id} onClick={() => void preview(item.post_id)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">{item.post_id ? "معاينة Telegram" : "المعاينة في بنك المحتوى"}</button>{item.status === "FAILED" && <button type="button" onClick={() => void schedulesApi.retryItem(detail.id, item.id).then((r) => { setDetail(r.schedule); void refresh(); })} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold">إعادة المحاولة</button>}</div>{item.publication_external_id && <p className="mt-2 text-xs text-emerald-700">معرّفات Telegram: {(item.publication_external_ids?.length ? item.publication_external_ids : [item.publication_external_id]).join(", ")}</p>}{item.last_error && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{item.last_error}</p>}</div>)}</div>
+          <div className="mt-4 space-y-2">{detail.items.map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{item.position}. {item.title}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{item.status}</span></div><p className="mt-1 text-sm text-slate-600">{item.content_preview}</p><div className="mt-2 flex flex-wrap gap-2"><input aria-label={`وقت نشر ${item.title}`} type="datetime-local" value={itemTimes[item.id] ?? utcISOStringToLocalDateTime(item.scheduled_at, detail.timezone)} onChange={(e) => setItemTimes(current=>({...current,[item.id]:e.target.value}))} disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING"} className="rounded-lg border p-2 text-sm"/><button type="button" disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING" || !itemTimes[item.id] || itemTimes[item.id]===utcISOStringToLocalDateTime(item.scheduled_at,detail.timezone)} onClick={()=>void updateItemTime(item.id,itemTimes[item.id])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">حفظ الموعد</button><button type="button" disabled={!item.post_id} onClick={() => void preview(item.post_id)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">{item.post_id ? "معاينة Telegram" : "المعاينة في بنك المحتوى"}</button>{item.status === "FAILED" && <button type="button" onClick={() => void schedulesApi.retryItem(detail.id, item.id).then((r) => { setDetail(r.schedule); void refresh(); })} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold">إعادة المحاولة</button>}</div>{item.publication_external_id && <p className="mt-2 text-xs text-emerald-700">معرّفات Telegram: {(item.publication_external_ids?.length ? item.publication_external_ids : [item.publication_external_id]).join(", ")}</p>}{item.last_error && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{item.last_error}</p>}</div>)}</div>
         </section>
       )}
 
