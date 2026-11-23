@@ -28,6 +28,8 @@ async def test_copies_prepare_on_approval_preserve_edits_and_enforce_version_and
         with patch.dict('os.environ', {'TELEGRAM_DESTINATION_ID':'synthetic-only'}):
             blocked=await client.post(f'/api/artifacts/{uid}/telegram-media-draft',json={})
             assert blocked.status_code==409 and 'نسخة Telegram' in blocked.json()['detail']
+            inline=await client.post(f'/api/artifacts/{uid}/telegram-draft',json={})
+            assert inline.status_code==409 and 'نسخة Telegram' in inline.json()['detail']
             from datetime import datetime,timedelta,timezone
             scheduled=await client.post(f'/api/artifacts/{uid}/schedule',json={'name':'لا يختار الأصل بصمت','timezone':'Asia/Riyadh','scheduled_at':(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()})
             assert scheduled.status_code==409 and 'نسخة Telegram' in scheduled.json()['detail']

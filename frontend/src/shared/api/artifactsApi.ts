@@ -70,7 +70,9 @@ export interface DistributionReadiness { artifact_id:string; source_fingerprint:
 export interface TelegramBatchPreview { destination:string|null;ready_count:number;blocked_count:number;caveat:string;items:Array<{artifact_id:string;title:string;kind:string;content:string;source_fingerprint:string;copy_version:number|null;ready:boolean;blockers:string[];publications:Array<{id:string;status:string;external_ids:string[]}>;schedules:Array<{name:string;schedule_status:string;item_status:string}>}>; }
 
 export interface CentralPlatformCopy {platform:string;label:string;fields:{title:string;description:string;tags:string[];alt_text:string};version:number;source_fingerprint:string;current_source_fingerprint:string;origin:string;source_stale:boolean;central_approval:string;field_status:string;blockers:string[];warnings:string[];media_checks_pending:string[];execution_blockers:string[];sources:string[];}
+export interface PlatformMediaInspection {source_fingerprint:string;copy_version:number;status:string;measurements:Record<string,unknown>;blockers:string[];pending:string[];}
 export const genericArtifactsApi = {
+  inspectMedia(id:string,platform:string):Promise<PlatformMediaInspection>{return post(`/api/artifacts/${id}/platform-copies/${platform}/inspect-media`,{});},
   prepareBatchCopies(ids:string[]):Promise<{prepared:number;items:Array<{artifact_id:string;items:CentralPlatformCopy[]}>}>{return post('/api/artifacts/platform-copies/prepare-batch',{artifact_ids:ids});},
   platformCopies(id:string):Promise<{items:CentralPlatformCopy[]}>{return get(`/api/artifacts/${id}/platform-copies`);},
   prepareCopies(id:string):Promise<{items:CentralPlatformCopy[]}>{return post(`/api/artifacts/${id}/platform-copies/prepare`,{});},
