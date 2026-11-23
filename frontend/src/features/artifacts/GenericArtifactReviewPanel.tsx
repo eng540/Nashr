@@ -35,6 +35,29 @@ function artifactSeries(artifact: GenericReviewableArtifact): string | null {
 
 type ArtifactSortMode = "newest" | "oldest" | "title" | "kind";
 
+function TelegramMediaDraftPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
+  const media = useQuery({
+    queryKey: ["generic-artifact-media-url", artifact.id],
+    queryFn: () => genericArtifactsApi.mediaUrl(artifact.id),
+    enabled: Boolean(artifact.storage_uri) && ["IMAGE", "VIDEO"].includes(artifact.kind),
+    staleTime: 4 * 60 * 1000,
+  });
+  const caption = typeof artifact.metadata.caption === "string" ? artifact.metadata.caption : "";
+  return (
+    <section aria-label={`معاينة مسودة تيليجرام ${artifact.id}`} className="rounded-xl border border-sky-200 bg-[#0e1621] p-3">
+      <div className="mx-auto max-w-sm rounded-2xl bg-white p-2 shadow">
+        {media.isLoading ? <p role="status" className="p-3 text-sm text-slate-500">تحميل الوسيط للمعاينة...</p> : null}
+        {media.isError ? <p role="alert" className="p-3 text-sm text-rose-700">تعذر تحميل الوسيط: {media.error?.message ?? "رابط غير متاح"}</p> : null}
+        {media.data?.url && artifact.kind === "IMAGE" ? <img src={media.data.url} alt={caption || "معاينة الوسيط"} className="max-h-72 w-full rounded-xl object-contain" /> : null}
+        {media.data?.url && artifact.kind === "VIDEO" ? <video src={media.data.url} controls preload="metadata" className="max-h-72 w-full rounded-xl bg-black object-contain" /> : null}
+        {caption ? <p dir="auto" className="whitespace-pre-wrap break-words p-3 text-sm leading-6 text-slate-900">{caption}</p> : null}
+        <p dir="ltr" className="px-3 pb-2 text-left text-[11px] text-slate-400">قناة المعاينة · الآن</p>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-slate-300">محاكاة تقريبية لشكل المنشور في تيليجرام (وسيط + تعليق)؛ التنسيق النهائي يعتمد على تيليجرام نفسه.</p>
+    </section>
+  );
+}
+
 function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
   const media = useQuery({
     queryKey: ["generic-artifact-media-url", artifact.id],
@@ -72,6 +95,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
   const [quizDrafts, setQuizDrafts] = useState<Record<string, { id: string; status: string; external_id?: string | null }>>({});
   const [mediaDrafts, setMediaDrafts] = useState<Record<string, { id: string; status: string }>>({});
+  const [mediaSchedules, setMediaSchedules] = useState<Record<string, { id: string; status: string; at: string }>>({});
+  const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
   const [variantPlatform, setVariantPlatform] = useState<Record<string, string>>({});
   const [variantNotes, setVariantNotes] = useState<Record<string, string>>({});
   const [variantPostId, setVariantPostId] = useState("");
@@ -200,6 +225,20 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const createMediaDraft = useMutation({
     mutationFn: (id: string) => genericArtifactsApi.createTelegramMediaDraft(id),
     onSuccess: (publication, artifactId) => setMediaDrafts((current) => ({ ...current, [artifactId]: { id: publication.id, status: publication.status } })),
+  });
+  const scheduleMediaDraft = useMutation({
+    mutationFn: ({ id, scheduledAt }: { id: string; scheduledAt: string }) => {
+      // datetime-local carries no timezone; interpret the entered wall time as
+      // Asia/Riyadh (fixed UTC+3) so the saved instant is browser-independent.
+      const when = new Date(`${scheduledAt}:00+03:00`);
+      if (Number.isNaN(when.getTime())) throw new Error("الموعد المحدد غير صالح.");
+      return genericArtifactsApi.scheduleArtifact(id, {
+        name: `جدولة مسودة ${id.slice(0, 8)}`,
+        timezone: "Asia/Riyadh",
+        scheduled_at: when.toISOString(),
+      });
+    },
+    onSuccess: (schedule, input) => setMediaSchedules((current) => ({ ...current, [input.id]: { id: schedule.id, status: schedule.status, at: schedule.items[0]?.scheduled_at ?? "" } })),
   });
   const isTelegramMediaEligible = (artifact: GenericReviewableArtifact) =>
     ["IMAGE", "VIDEO"].includes(artifact.kind) && Boolean(artifact.storage_uri) && artifact.metadata.source_type === "MEDIA_BANK_UPLOAD";
@@ -454,11 +493,20 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {deriveVariant.isError ? <span role="alert" className="text-xs text-rose-700">{deriveVariant.error.message}</span> : null}
           <span className="text-xs text-slate-600">تُقصّ النسخة عند حد المنصة على حدود آمنة (جملة أو كلمة، دون قطع الروابط) وتُحفظ قيد المراجعة؛ تجهيز طول فقط وليس إعادة صياغة، ولا يُنشر شيء خارجيًا.</span>
         </div> : null}
+        {status === "APPROVED" && ["IMAGE", "VIDEO"].includes(artifact.kind) && artifact.storage_uri ? <TelegramMediaDraftPreview artifact={artifact} /> : null}
         {status === "APPROVED" && ["IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
           <p className="text-sm font-semibold">وسيط معتمد من بنك الوسائط</p>
           {mediaDrafts[artifact.id] ? <p role="status" className="text-xs">سجل نشر Telegram: {mediaDrafts[artifact.id].id} · الحالة {mediaDrafts[artifact.id].status} · المسودة جاهزة للمراجعة في سجل النشر.</p> : null}
           {!mediaDrafts[artifact.id] ? <button type="button" onClick={() => createMediaDraft.mutate(artifact.id)} disabled={createMediaDraft.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{createMediaDraft.isPending ? "جارٍ إنشاء المسودة..." : "إنشاء مسودة نشر Telegram"}</button> : null}
           {createMediaDraft.isError ? <p role="alert" className="text-sm text-rose-700">{createMediaDraft.error.message}</p> : null}
+          <div className="flex flex-wrap items-center gap-2 border-t border-emerald-100 pt-2">
+            <label className="text-sm font-semibold">موعد الجدولة (بتوقيت الرياض)
+              <input type="datetime-local" aria-label={`موعد جدولة المخرج ${artifact.id}`} value={scheduleInputs[artifact.id] ?? ""} onChange={(event) => setScheduleInputs((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal sm:mt-0 sm:w-auto" />
+            </label>
+            <button type="button" onClick={() => scheduleMediaDraft.mutate({ id: artifact.id, scheduledAt: scheduleInputs[artifact.id] ?? "" })} disabled={!scheduleInputs[artifact.id] || scheduleMediaDraft.isPending} className="rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white">{scheduleMediaDraft.isPending ? "جارٍ إنشاء مسودة الجدولة..." : "جدولة المسودة"}</button>
+          </div>
+          {mediaSchedules[artifact.id] ? <p role="status" className="text-xs">مسودة جدولة: <span dir="ltr">{mediaSchedules[artifact.id].id}</span> · الحالة {mediaSchedules[artifact.id].status} · الموعد <span dir="ltr">{mediaSchedules[artifact.id].at}</span> · تبقى مسودة؛ التفعيل والتنفيذ يتمان باعتمادك من صفحة النشر.</p> : null}
+          {scheduleMediaDraft.isError ? <p role="alert" className="text-sm text-rose-700">{scheduleMediaDraft.error.message}</p> : null}
         </div> : null}
         {status === "APPROVED" && artifact.kind === "QUIZ" ? <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 space-y-2">
           <p className="text-sm font-semibold">اختبار تفاعلي معتمد</p>
