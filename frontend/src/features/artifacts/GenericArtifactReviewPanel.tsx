@@ -681,4 +681,4 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     {jobStatus}
     {mutationError}
   </section>;
-                                                                                                               }
+}
