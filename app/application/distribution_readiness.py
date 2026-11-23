@@ -46,10 +46,8 @@ def readiness(row, selection=None):
             if platform == "x":
                 blockers.append("قياس X تقريبي ولم تُتحقق صلاحية النسخة النهائية.")
         elif platform == "telegram":
-            if row.kind not in {"TEXT", "QUIZ", "IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "ANIMATION", "VOICE", "VIDEO_NOTE", "STICKER"}:
-                blockers.append("نوع المادة غير مدعوم في مسار Telegram الحالي.")
-            if row.kind == "TEXT" and len(text.encode("utf-16-le")) // 2 > 4096:
-                blockers.append("النص يتجاوز4096وحدة؛ الأصل محفوظ دون قص.")
+            from app.application.telegram_copy_readiness import telegram_copy_blockers
+            blockers.extend(telegram_copy_blockers(row))
         else:
             blockers.append("ملف متطلبات النسخة لهذه المنصة لم يكتمل التحقق منه بعد.")
         execution = []
