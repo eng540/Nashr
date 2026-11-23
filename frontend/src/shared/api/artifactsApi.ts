@@ -5,7 +5,7 @@ export type GenericArtifactReviewStatus = "DRAFT" | "APPROVED" | "REJECTED";
 export interface GenericReviewableArtifact {
   id: string;
   source_knowledge_unit_id: string;
-  kind: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "QUIZ";
+  kind: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "QUIZ" | "DOCUMENT" | "ANIMATION" | "VOICE" | "VIDEO_NOTE" | "STICKER";
   status: string;
   content: string | null;
   storage_uri: string | null;
@@ -64,6 +64,9 @@ export interface GenericArtifactPage {
 }
 
 export const genericArtifactsApi = {
+  manualDraft(input: { kind: string; title: string; content: string; quiz?: Record<string, unknown>; native?: Record<string, unknown> }): Promise<GenericReviewableArtifact> {
+    return post<GenericReviewableArtifact>("/api/artifacts/manual-draft", input);
+  },
   async list(status: GenericArtifactReviewStatus = "DRAFT", offset = 0, limit = 100): Promise<GenericArtifactPage> {
     const data = await get<GenericArtifactPage | GenericReviewableArtifact[]>(`/api/artifacts?review_status=${status}&limit=${limit}&offset=${offset}`);
     if (Array.isArray(data)) return { items: data, total: data.length, limit, offset };
@@ -93,9 +96,10 @@ export const genericArtifactsApi = {
   createQuizDraft(id: string): Promise<{ id: string; artifact_id: string | null; status: string; content: string }> {
     return post<{ id: string; artifact_id: string | null; status: string; content: string }>(`/api/artifacts/${id}/telegram-draft`, {});
   },
-  ingestReadyMedia(input: { file: File; caption?: string }): Promise<GenericReviewableArtifact> {
+  ingestReadyMedia(input: { file: File; caption?: string; media_kind?: string }): Promise<GenericReviewableArtifact> {
     const form = new FormData();
     form.append("file", input.file);
+    if (input.media_kind) form.append("media_kind", input.media_kind);
     if (input.caption?.trim()) form.append("caption", input.caption.trim());
     return postForm<GenericReviewableArtifact>("/api/artifacts/ingest-media", form);
   },
