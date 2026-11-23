@@ -97,7 +97,7 @@ test("approved text Artifact can start a card job only through a published card 
       }],
     }]),
   }));
-  await page.route("**/api/artifacts?review_status=APPROVED", async (route) => route.fulfill({
+  await page.route("**/api/artifacts?review_status=APPROVED*", async (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify([{
