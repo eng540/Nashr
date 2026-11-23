@@ -17,7 +17,7 @@ test('central approval and untouched preview with explicit non-executing platfor
  await panel.getByRole('button',{name:'تحديد جميع المنصات',exact:true}).click();await expect(panel.getByRole('checkbox',{checked:true})).toHaveCount(6);
  await panel.getByRole('button',{name:'إلغاء جميع المنصات',exact:true}).click();await panel.getByLabel('telegram',{exact:true}).check();
  await panel.getByRole('button',{name:'حفظ اختيار الوجهات فقط',exact:true}).click();await expect(panel.getByRole('status')).toContainText('لم تُنشأ مسودات');expect(saves).toBe(1);expect(unsafe).toBe(0);
- await page.addStyleTag({content:'header, body > div > header {visibility:hidden}'});await panel.screenshot({path:info.outputPath('readiness-desktop.png')});
+ await page.addStyleTag({content:'header, body > div > header {visibility:hidden}'});await panel.getByText('اعتماد مركزي محفوظ',{exact:false}).click();await panel.screenshot({path:info.outputPath('readiness-desktop.png')});
  await page.setViewportSize({width:390,height:844});await panel.scrollIntoViewIfNeeded();await panel.screenshot({path:info.outputPath('readiness-mobile.png')});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
 });
