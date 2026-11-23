@@ -7,6 +7,7 @@ import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime } from "../../shared/utils/timezone";
 import { TelegramPreview } from "../post-bank/PostBankPage";
+import { PageHeader } from "../../shared/components/ui";
 
 const DEFAULT_TIMEZONE = "Asia/Aden";
 const PAGE_SIZE = 20;
@@ -51,7 +52,7 @@ export function PublishingPage() {
   });
   const approvedImages = useQuery({
     queryKey: ["publishing", "approved-image-artifacts"],
-    queryFn: async () => (await genericArtifactsApi.list("APPROVED")).filter(
+    queryFn: async () => (await genericArtifactsApi.listAll("APPROVED")).items.filter(
       (artifact) => artifact.kind === "IMAGE" && artifact.status === "AVAILABLE" && Boolean(artifact.storage_uri) && ["image/png", "image/jpeg", "image/webp"].includes(artifact.mime_type ?? ""),
     ),
   });
@@ -241,14 +242,12 @@ export function PublishingPage() {
 
   return (
     <section data-testid="publishing-workspace" className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-indigo-600">Workspace 03</p>
-          <h2 className="mt-1 text-3xl font-bold">مساحة النشر</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">منطقة مرتبة للجاهز، خطط النشر، والتقويم. كل خطوة تظهر عندما تكون منطقية للحالة الحالية.</p>
-        </div>
-        <Link to="/bank" className="rounded-xl border px-4 py-2 text-sm font-semibold">العودة إلى بنك المحتوى</Link>
-      </header>
+      <PageHeader
+        eyebrow="مساحة العمل"
+        title="مساحة النشر"
+        description="منطقة مرتبة للجاهز، خطط النشر، والتقويم. كل خطوة تظهر عندما تكون منطقية للحالة الحالية."
+        actions={<Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">العودة إلى بنك المحتوى</Link>}
+      />
 
       <nav aria-label="أقسام مساحة النشر" className="grid gap-2 rounded-2xl border bg-slate-50 p-2 sm:grid-cols-2 lg:grid-cols-4">
         {([
