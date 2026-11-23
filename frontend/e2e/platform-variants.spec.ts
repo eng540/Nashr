@@ -1,44 +1,61 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-test("approved text artifact derives an X platform variant into the DRAFT queue", async ({ page }) => {
-  const sourceId = "unit-platform-variant-e2e";
-  const textId = "text-platform-variant-e2e";
-  const variantId = "variant-platform-variant-e2e";
-  const longText = "نص عربي معتمد طويل لاختبار اشتقاق نسخة منصة إكس من بنك المحتوى. ".repeat(10);
-  let derived = false;
+const sourceId = "unit-platform-variant-e2e";
+const textId = "text-platform-variant-e2e";
+const variantId = "variant-platform-variant-e2e";
+const longText = "نص عربي معتمد طويل لاختبار اشتقاق نسخة منصة إكس من بنك المحتوى. ".repeat(10);
 
-  const textArtifact = {
-    id: textId, source_knowledge_unit_id: sourceId, kind: "TEXT", status: "AVAILABLE",
-    content: longText, storage_uri: null, mime_type: "text/plain",
-    output_contract_key: "TEST_TEXT_SOURCE", output_contract_version: 1,
-    metadata: { source_type: "TEST_SEED", title: "النص المعتمد" },
-    review_status: "APPROVED", review_note: null, reviewed_at: "2026-10-17T00:00:00Z",
-    created_at: "2026-10-17T00:00:00Z", updated_at: "2026-10-17T00:00:00Z",
-  };
-  const variantArtifact = () => ({
-    ...textArtifact,
-    id: variantId,
-    content: longText.slice(0, 280),
-    output_contract_key: "PLATFORM_VARIANT_X",
-    metadata: {
-      source_type: "PLATFORM_VARIANT", platform: "x", platform_label_ar: "إكس",
-      source_artifact_id: textId, caption: longText.slice(0, 280),
-      constraints: { max_text: 280, measure: "x_weighted", measured_length: 280, trimmed: true, provenance: "secondary" },
-      notes_ar: ["المنشور 280 حرفًا موزونًا للحسابات غير المدفوعة."],
-    },
-    review_status: "DRAFT", reviewed_at: null,
-  });
+const textArtifact = {
+  id: textId, source_knowledge_unit_id: sourceId, kind: "TEXT", status: "AVAILABLE",
+  content: longText, storage_uri: null, mime_type: "text/plain",
+  output_contract_key: "TEST_TEXT_SOURCE", output_contract_version: 1,
+  metadata: { source_type: "TEST_SEED", title: "النص المعتمد" },
+  review_status: "APPROVED", review_note: null, reviewed_at: "2026-10-17T00:00:00Z",
+  created_at: "2026-10-17T00:00:00Z", updated_at: "2026-10-17T00:00:00Z",
+};
 
+const variantArtifact = () => ({
+  ...textArtifact,
+  id: variantId,
+  content: longText.slice(0, 280),
+  output_contract_key: "PLATFORM_VARIANT_X",
+  metadata: {
+    source_type: "PLATFORM_VARIANT", platform: "x", platform_label_ar: "إكس",
+    source_artifact_id: textId, caption: longText.slice(0, 280),
+    adaptation: "length_only", needs_review: true,
+    constraints: { max_text: 280, measure: "x_weighted", measured_length: 280, original_length: longText.length, trimmed: true, trim_boundary: "sentence", provenance: "secondary" },
+    notes_ar: ["المنشور 280 حرفًا موزونًا للحسابات غير المدفوعة.", "تجهيز طول فقط."],
+  },
+  review_status: "DRAFT", reviewed_at: null,
+});
+
+const cardProducts = [
+  {
+    id: "prod-card-e2e", key: "arabic-cards", name: "بطاقات عربية باسم طويل جدًا مخصص لاختبار عرض القائمة على الجوال", purpose: "اختبار", active_version: 1,
+    versions: [{ version: 1, status: "PUBLISHED", definition: { recipe_key: "card-recipe", output_contract_key: "CARD", policy_key: "POLICY", audience: "عام", experience: "بطاقة", component_versions: { recipe: { key: "card-recipe", version: 1 }, identity: { key: "identity-e2e", version: 1 } } } }],
+  },
+];
+const cardRecipes = [
+  { id: "recipe-card-e2e", key: "card-recipe", name: "وصفة البطاقات", purpose: "اختبار", active_version: 1, versions: [{ version: 1, status: "PUBLISHED", stages: [{ key: "render", capability_key: "render_approved_text_card", capability_version: 1 }] }] },
+];
+
+async function mockBankRoutes(page: Page, state: { derived: boolean }) {
   await page.route(/\/api\/artifacts\?review_status=APPROVED.*/, (route) => route.fulfill({ json: [textArtifact] }));
-  await page.route(/\/api\/artifacts\?review_status=DRAFT.*/, (route) => route.fulfill({ json: derived ? [variantArtifact()] : [] }));
+  await page.route(/\/api\/artifacts\?review_status=DRAFT.*/, (route) => route.fulfill({ json: state.derived ? [variantArtifact()] : [] }));
   await page.route(/\/api\/artifacts\?review_status=REJECTED.*/, (route) => route.fulfill({ json: [] }));
-  await page.route("**/api/control/products", (route) => route.fulfill({ json: [] }));
-  await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/control/products", (route) => route.fulfill({ json: cardProducts }));
+  await page.route("**/api/control/recipes", (route) => route.fulfill({ json: cardRecipes }));
+  await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
   await page.route(/\/posts\?/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } }));
   await page.route(/\/posts\/filter-options/, (route) => route.fulfill({ json: { kinds: [], topics: [], sources: [] } }));
   await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => route.fulfill({ json: [] }));
+}
+
+test("approved text artifact derives an X platform variant into the DRAFT queue", async ({ page }) => {
+  const state = { derived: false };
+  await mockBankRoutes(page, state);
   await page.route(new RegExp("/api/artifacts/" + textId + "/platform-variant$"), async (route) => {
-    derived = true;
+    state.derived = true;
     const body = route.request().postDataJSON() as { platform: string };
     expect(body.platform).toBe("x");
     await route.fulfill({ status: 201, json: variantArtifact() });
@@ -49,9 +66,47 @@ test("approved text artifact derives an X platform variant into the DRAFT queue"
   await expect(page.getByLabel(`منصة النسخة ${textId}`)).toBeVisible();
   await page.getByLabel(`منصة النسخة ${textId}`).selectOption("x");
   await page.getByRole("button", { name: "اشتقاق النسخة" }).click();
-  await expect(page.getByText("أُنشئت نسخة إكس وهي الآن قيد المراجعة.")).toBeVisible();
+  await expect(page.getByText("أُنشئت نسخة إكس بحدود الطول وهي الآن قيد المراجعة.")).toBeVisible();
 
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("DRAFT");
-  await expect(page.getByText("نسخة إكس")).toBeVisible();
+  await expect(page.getByText("نسخة إكس · مقصوصة للحد")).toBeVisible();
   await expect(page.getByLabel(`محتوى المخرج ${variantId}`)).toHaveValue(longText.slice(0, 280));
+});
+
+test("approved post derives a platform variant from the bank review view", async ({ page }) => {
+  const postId = "post-platform-variant-e2e";
+  const approvedPost = { post_id: postId, title: "منشور تجريبي معتمد", content: longText, status: "APPROVED" };
+  const state = { derived: false };
+  await mockBankRoutes(page, state);
+  await page.unroute(/\/posts\?/);
+  await page.route(/\/posts\?/, (route) => route.fulfill({ json: { items: [approvedPost], total: 1, limit: 100, offset: 0 } }));
+  await page.route(new RegExp("/api/artifacts/post-source/" + postId + "/platform-variant$"), async (route) => {
+    state.derived = true;
+    const body = route.request().postDataJSON() as { platform: string };
+    expect(body.platform).toBe("tiktok");
+    const variant = { ...variantArtifact(), metadata: { ...variantArtifact().metadata, platform: "tiktok", platform_label_ar: "تيك توك", source_post_id: postId } };
+    await route.fulfill({ status: 201, json: variant });
+  });
+
+  await page.goto("/bank");
+  await expect(page.getByLabel("المنشور المصدر للنسخة")).toBeVisible();
+  await page.getByLabel("المنشور المصدر للنسخة").selectOption(postId);
+  await page.getByLabel("منصة نسخة المنشور").selectOption("tiktok");
+  await page.getByRole("button", { name: "اشتقاق نسخة المنشور" }).click();
+  await expect(page.getByText("أُنشئت نسخة تيك توك بحدود الطول من المنشور وهي الآن قيد المراجعة في قائمة المخرجات.")).toBeVisible();
+});
+
+test("bank review view keeps the document inside the mobile viewport", async ({ page }) => {
+  const state = { derived: false };
+  await mockBankRoutes(page, state);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/bank");
+  const fitsViewport = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
+  await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
+  expect(await fitsViewport()).toBe(true);
+
+  await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
+  await expect(page.getByLabel(`منصة النسخة ${textId}`)).toBeVisible();
+  await expect(page.getByLabel(`منتج البطاقة ${textId}`)).toBeVisible();
+  expect(await fitsViewport()).toBe(true);
 });
