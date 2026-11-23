@@ -37,7 +37,7 @@ test("media draft schedule converts the Riyadh input to UTC independent of brows
   await page.route("**/api/control/products", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [] }));
 
-  await page.goto("/bank");
+  await page.goto("/bank?library_view=expanded");
   await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
 
