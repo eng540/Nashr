@@ -6,7 +6,7 @@ from app.application.telegram_batch_preview import preview_telegram_batch
 from app.infrastructure.database.models import ArtifactModel, ScheduleModel, ScheduleItemModel
 
 
-async def create_telegram_batch_schedule(session, *, artifact_ids, fingerprints, name, timezone_name, start_at, interval_minutes, destination):
+async def create_telegram_batch_schedule(session, *, artifact_ids, fingerprints, name, timezone_name, start_at, interval_minutes, destination, copy_versions=None):
     name = name.strip()
     if not name:
         raise ValueError('اكتب اسماً للخطة.')
@@ -23,7 +23,9 @@ async def create_telegram_batch_schedule(session, *, artifact_ids, fingerprints,
         raise ValueError('الدفعة محجوبة. حدّث المعاينة واقرأ أسباب المواد المحجوبة.')
     if any(fingerprints.get(item['artifact_id']) != item['source_fingerprint'] for item in preview['items']):
         raise ValueError('تغيرت المادة بعد المعاينة. أعد فحص الدفعة قبل حفظ الخطة.')
-    schedule = ScheduleModel(name=name, timezone=timezone_name, status='DRAFT', telegram_review={'destination':destination,'fingerprints':fingerprints})
+    if any((copy_versions or {}).get(item['artifact_id']) != item.get('copy_version') for item in preview['items']):
+        raise ValueError('تغيرت نسخة Telegram بعد المعاينة. أعد الفحص.')
+    schedule = ScheduleModel(name=name, timezone=timezone_name, status='DRAFT', telegram_review={'destination':destination,'fingerprints':fingerprints,'copy_versions':{item['artifact_id']:item.get('copy_version') for item in preview['items']}})
     schedule.items = [ScheduleItemModel(artifact_id=uid, position=index+1, scheduled_at=start_at+timedelta(minutes=index*interval_minutes), status='PENDING') for index,uid in enumerate(artifact_ids)]
     session.add(schedule)
     await session.commit()
@@ -37,7 +39,7 @@ async def reviewed_batch_blocker(session, schedule):
         return None
     import os
     from app.application.distribution_readiness import source_fingerprint
-    from app.infrastructure.database.models import DistributionSelectionModel
+    from app.infrastructure.database.models import DistributionSelectionModel, PlatformCopyModel
     if review.get('destination') != os.getenv('TELEGRAM_DESTINATION_ID','').strip():
         return 'تغيرت وجهة Telegram منذ مراجعة الدفعة. أنشئ خطة جديدة بعد إعادة المعاينة.'
     for uid, fingerprint in review.get('fingerprints',{}).items():
@@ -45,6 +47,10 @@ async def reviewed_batch_blocker(session, schedule):
         row=await session.get(ArtifactModel,UUID(uid))
         if row is None or source_fingerprint(row) != fingerprint:
             return 'تغير محتوى الدفعة بعد المراجعة. أعد المعاينة في خطة جديدة.'
+        if 'copy_versions' in review:
+            copy=await session.get(PlatformCopyModel,(UUID(uid),'telegram'))
+            if (copy.version if copy else None) != review['copy_versions'].get(uid):
+                return 'تغيرت نسخة Telegram بعد مراجعة الخطة. أعد المعاينة في خطة جديدة.'
         selection=await session.get(DistributionSelectionModel,UUID(uid))
         if selection and ('telegram' not in selection.platforms or selection.source_fingerprint != fingerprint):
             return 'تغير قرار توزيع Telegram للدفعة. أعد المعاينة في خطة جديدة.'
