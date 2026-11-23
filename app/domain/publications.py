@@ -25,7 +25,7 @@ class IPublisher(Protocol):
     """Define the platform publishing port."""
 
     async def publish(
-        self, *, destination: str, content: str, media: bytes | None = None, media_mime_type: str | None = None, quiz: QuizPayload | None = None
+        self, *, destination: str, content: str, media: bytes | None = None, media_mime_type: str | None = None, quiz: QuizPayload | None = None, media_kind: str | None = None, media_filename: str | None = None, native: dict | None = None
     ) -> PublishResult:
         """Publish text, an optional approved visual attachment, or a native quiz poll."""
 
