@@ -12,3 +12,7 @@ AI-independent fallback is the unchanged original only when its copy checks pass
 ## UX and fallback follow-up
 
 Default derivation now rejects an over-limit original without creating a truncated copy. Legacy length-only trimming is available only through an explicit allow_length_trim=true API request, remains a DRAFT requiring review and never replaces an existing edited copy. Existing drafts can still be retrieved without regenerating them. Compact destination choices show preliminary eligibility separately from publishing capability. Detailed blockers and original text are collapsed by default. Schedule time inputs no longer save on blur; an explicit Save time action is required, and failed saves preserve the user's unsaved value.
+
+## Telegram preliminary payload validation
+
+Readiness reuses the publisher's static text/HTML, media MIME, caption, native payload, album selection and quiz checks. It does not fetch private media, inspect bytes or promise external acceptance. Byte-level validation and current child resolution still run in the authorized publishing path. Invalid1025-character media captions or malformed native payloads must not appear as copy-eligible.
