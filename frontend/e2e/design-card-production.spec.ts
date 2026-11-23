@@ -109,9 +109,7 @@ test("approved text can create a card, receive independent visual approval, and 
   await page.route(/\/(?:api\/)?sources(?:\/[^?]*)?(?:\?.*)?$/, (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
 
-  await page.goto("/posts/workspace?status=DRAFT");
-  // Explicitly select the review workspace instead of relying only on deep-link initialization.
-  await page.getByRole("button", { name: /بنك المحتوى والمراجعة/ }).click();
+  await page.goto("/bank");
   await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
   await expect(page.getByLabel(`منتج البطاقة ${textId}`)).toBeVisible();
@@ -125,6 +123,8 @@ test("approved text can create a card, receive independent visual approval, and 
   });
   expect(String(submittedJob?.idempotency_key).length).toBeLessThanOrEqual(100);
 
+  await page.goto("/production");
+  await expect(page.getByLabel("المنشور المصدر للتصميم")).toBeVisible();
   await page.getByLabel("المنشور المصدر للتصميم").selectOption(postId);
   await page.getByLabel("منتج التصميم من المنشور").selectOption("ARABIC_LITERATURE_DESIGN_CARD");
   await page.getByRole("button", { name: "إنتاج تصميم للمنشور" }).click();
@@ -136,6 +136,8 @@ test("approved text can create a card, receive independent visual approval, and 
   });
   expect(String(submittedJob?.idempotency_key).length).toBeLessThanOrEqual(100);
 
+  await page.goto("/bank");
+  await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("DRAFT");
   await expect(page.getByRole("img", { name: "بطاقة النص المعتمد" })).toBeVisible();
   await expect(page.getByRole("button", { name: "اعتماد المخرج", exact: true })).toBeVisible();
