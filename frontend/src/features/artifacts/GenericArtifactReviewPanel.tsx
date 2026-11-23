@@ -1,3 +1,4 @@
+import { TelegramBatchPreviewPanel } from "./TelegramBatchPreviewPanel";
 import { DistributionReadinessPanel } from "./DistributionReadinessPanel";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -321,6 +322,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const eligibleSelectedCount = selectedMediaIds.length;
   const batchMediaDrafts = useMutation({
     mutationFn: async (ids: string[]) => {
+      const preflight = await genericArtifactsApi.telegramBatchPreview(ids);
+      if (preflight.blocked_count) throw new Error(`تعذر تجهيز الدفعة: ${preflight.blocked_count} مادة محجوبة. افتح معاينة الدفعة لقراءة الأسباب.`);
       const results: Array<{ artifactId: string; id?: string; status?: string; error?: string }> = [];
       for (const artifactId of ids) {
         try {
@@ -521,7 +524,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         <span className="w-full text-xs leading-5 text-slate-500">ينشئ مسودة نشر Telegram لكل وسيط معتمد محدد مع نص تعليقه للمراجعة؛ تجهيز فقط ولا يُنشر أو يُجدول شيء خارجيًا.</span>
         {batchNote ? <p role="status" className="w-full text-sm font-semibold text-emerald-800">{batchNote}</p> : null}
       </div> : null}
-      {status === "APPROVED" && selectedMediaIds.length > 0 ? <DistributionReadinessPanel ids={selectedMediaIds} /> : null}
+      {batchMediaDrafts.isError ? <p role="alert" className="text-sm text-rose-700">{batchMediaDrafts.error.message}</p> : null}
+      {status === "APPROVED" && selectedMediaIds.length > 0 ? <><TelegramBatchPreviewPanel ids={selectedMediaIds} /><DistributionReadinessPanel ids={selectedMediaIds} /></> : null}
     </div>
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
