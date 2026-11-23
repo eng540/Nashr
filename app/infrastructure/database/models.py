@@ -607,3 +607,15 @@ class OutputContractVersionModel(Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class LiveLocationOperationModel(Base):
+    __tablename__ = 'live_location_operations'
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    publication_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey('publications.id'), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='DRAFT')
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

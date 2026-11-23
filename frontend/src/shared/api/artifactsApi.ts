@@ -64,6 +64,11 @@ export interface GenericArtifactPage {
 }
 
 export const genericArtifactsApi = {
+  liveLocations(id: string): Promise<LiveLocationRecord[]> { return get(`/api/artifacts/${id}/live-locations`); },
+  locationOperation(publicationId: string, input: {action: string; latitude?: number; longitude?: number}): Promise<LiveLocationOperation> { return post(`/api/artifacts/live-locations/${publicationId}/operations`, input); },
+  cancelLocationOperation(id: string): Promise<LiveLocationOperation> { return post(`/api/artifacts/live-location-operations/${id}/cancel`); },
+  executeLocationOperation(id: string): Promise<LiveLocationOperation> { return post(`/api/artifacts/live-location-operations/${id}/execute`); },
+  livePhotoDraft(input: { photo_id: string; video_id: string; title: string }): Promise<GenericReviewableArtifact> { return post('/api/artifacts/live-photo-draft', input); },
   get(id: string): Promise<GenericReviewableArtifact> { return get(`/api/artifacts/${id}`); },
   albumDraft(input: { artifact_ids: string[]; title: string }): Promise<GenericReviewableArtifact> {
     return post<GenericReviewableArtifact>("/api/artifacts/album-draft", input);
@@ -129,3 +134,6 @@ export const genericArtifactsApi = {
     return post<{ id: string; status: string; external_id: string | null; error_message: string | null }>(`/publications/${publicationId}/publish`, { content });
   },
 };
+
+export interface LiveLocationOperation { id: string; publication_id: string; action: string; payload: Record<string, number>; status: string; error_message: string | null; }
+export interface LiveLocationRecord { publication_id: string; message_id: string; destination: string; expires_at: string; active: boolean; operations: LiveLocationOperation[]; }

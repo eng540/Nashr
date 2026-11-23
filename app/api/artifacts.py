@@ -116,6 +116,24 @@ async def create_album_draft(payload: AlbumDraftRequest, session: AsyncSession =
         raise HTTPException(422, str(exc)) from exc
 
 
+class LivePhotoDraftRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    photo_id: str
+    video_id: str
+    title: str = Field(min_length=1, max_length=500)
+
+
+@router.post('/live-photo-draft', status_code=201)
+async def create_live_photo_draft(payload: LivePhotoDraftRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.telegram_live_photos import create_live_photo
+    try:
+        artifact = await create_live_photo(session, **payload.model_dump())
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except (ValueError, TypeError) as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+
+
 @router.get("/platform-variants")
 async def list_platform_variant_drafts(
     limit: int = Query(default=50, ge=1, le=100),
@@ -441,5 +459,52 @@ async def schedule_approved_quiz(
             }],
         }
     except (LookupError, ValueError) as exc:
+        await session.rollback()
+        raise _handle_error(exc) from exc
+
+
+class LiveLocationOperationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    action: str
+    latitude: float | None = None
+    longitude: float | None = None
+
+
+@router.get('/{artifact_id}/live-locations')
+async def artifact_live_locations(artifact_id: UUID, session: AsyncSession = Depends(get_session)):
+    from app.application.live_locations import list_live_locations
+    try:
+        return await list_live_locations(session, artifact_id)
+    except ValueError as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post('/live-locations/{publication_id}/operations', status_code=201)
+async def draft_location_operation(publication_id: UUID, payload: LiveLocationOperationRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.live_locations import create_operation
+    try:
+        return await create_operation(session, publication_id, **payload.model_dump())
+    except ValueError as exc:
+        await session.rollback()
+        raise _handle_error(exc) from exc
+
+
+@router.post('/live-location-operations/{operation_id}/execute')
+async def confirm_location_operation(operation_id: UUID, session: AsyncSession = Depends(get_session)):
+    from app.application.live_locations import execute_operation
+    from app.adapters.publishing.telegram import TelegramPublisher
+    try:
+        return await execute_operation(session, operation_id, TelegramPublisher())
+    except ValueError as exc:
+        await session.rollback()
+        raise _handle_error(exc) from exc
+
+
+@router.post('/live-location-operations/{operation_id}/cancel')
+async def cancel_location_operation(operation_id: UUID, session: AsyncSession = Depends(get_session)):
+    from app.application.live_locations import cancel_operation
+    try:
+        return await cancel_operation(session, operation_id)
+    except ValueError as exc:
         await session.rollback()
         raise _handle_error(exc) from exc

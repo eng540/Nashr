@@ -55,6 +55,11 @@ def _validate_review_candidate(row: ArtifactModel, content: str | None, metadata
         if row.kind != "TEXT" or metadata.get("telegram_native") is not None:
             raise ValueError("Album must be a dedicated TEXT wrapper.")
         album_ids(metadata["telegram_album"])
+    if metadata.get('telegram_live_photo') is not None:
+        from app.application.telegram_live_photos import pair_ids
+        if row.kind != 'TEXT' or metadata.get('telegram_native') is not None or metadata.get('telegram_album') is not None:
+            raise ValueError('Live Photo requires a dedicated TEXT wrapper.')
+        pair_ids(metadata)
     if row.kind == "QUIZ":
         payload = metadata.get("quiz")
         if not isinstance(payload, dict):
@@ -117,6 +122,12 @@ class GenericArtifactReviewService:
                 raise ValueError("Album selection and preview are immutable; create a new album.")
         elif candidate_metadata.get("telegram_album") is not None:
             raise ValueError("Use the dedicated album creation workflow.")
+        if (row.artifact_metadata or {}).get('telegram_live_photo') is not None:
+            keys = ('telegram_live_photo', 'live_photo_fingerprints', 'live_photo_preview')
+            if any(candidate_metadata.get(key) != row.artifact_metadata.get(key) for key in keys):
+                raise ValueError('Live Photo pair and preview are immutable.')
+        elif candidate_metadata.get('telegram_live_photo') is not None:
+            raise ValueError('Use the dedicated Live Photo creation workflow.')
         _validate_review_candidate(row, candidate_content, candidate_metadata)
         row.content = candidate_content
         row.artifact_metadata = candidate_metadata
@@ -133,6 +144,9 @@ class GenericArtifactReviewService:
         if (row.artifact_metadata or {}).get("telegram_album") is not None:
             from app.application.telegram_albums import resolve_album
             await resolve_album(self.session, row.artifact_metadata)
+        if (row.artifact_metadata or {}).get('telegram_live_photo') is not None:
+            from app.application.telegram_live_photos import resolve_live_photo
+            await resolve_live_photo(self.session, row.artifact_metadata)
         row.review_status = "APPROVED"
         row.review_note = review_note.strip() if review_note and review_note.strip() else None
         row.reviewed_at = datetime.now(timezone.utc)

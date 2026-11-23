@@ -334,6 +334,12 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
                     await resolve_album(session, artifact_row.artifact_metadata)
                 except ValueError as exc:
                     blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_ALBUM", "message": str(exc)})
+            if (artifact_row.artifact_metadata or {}).get('telegram_live_photo') is not None:
+                from app.application.telegram_live_photos import resolve_live_photo
+                try:
+                    await resolve_live_photo(session, artifact_row.artifact_metadata)
+                except ValueError as exc:
+                    blocked_items.append({'item_id': str(item.id), 'artifact_id': str(item.artifact_id), 'position': item.position, 'reason_code': 'INVALID_LIVE_PHOTO', 'message': str(exc)})
             if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_TIME", "message": "Quiz schedule time is invalid."})
             already_published = (await session.execute(select(PublicationModel.id).where(PublicationModel.artifact_id == item.artifact_id, PublicationModel.platform == "telegram", PublicationModel.status == "PUBLISHED").limit(1))).scalar_one_or_none()

@@ -177,12 +177,23 @@ class TelegramPublisher(IPublisher):
         media_filename: str | None = None,
         native: dict | None = None,
         album: list[dict] | None = None,
+        live_photo: dict | None = None,
     ) -> PublishResult:
         """Send text, an approved visual card, or a native Telegram quiz poll."""
         if quiz is not None and media is not None:
             raise ValueError("A Telegram quiz cannot be combined with image media.")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            if album is not None:
+            if live_photo is not None:
+                if any(value is not None for value in (album, native, quiz, media)):
+                    raise ValueError('Live Photo cannot be combined with other content.')
+                from app.domain.telegram_live_photo import validate_live_motion
+                from app.domain.telegram_media import media_request
+                validate_live_motion(live_photo['motion'])
+                _, _, photo_name = media_request('IMAGE', live_photo['photo_mime'], live_photo['photo'])
+                response = await client.post(f'https://api.telegram.org/bot{self.token}/sendLivePhoto',
+                    data={'chat_id': destination, 'caption': telegram_html_content(content, max_visible_characters=1024), 'parse_mode': 'HTML'},
+                    files={'photo': (photo_name, live_photo['photo'], live_photo['photo_mime']), 'live_photo': ('motion.mp4', live_photo['motion'], 'video/mp4')})
+            elif album is not None:
                 if native is not None or quiz is not None or media is not None:
                     raise ValueError("An album cannot be combined with other content.")
                 from app.domain.telegram_albums import validate_album_group
@@ -240,3 +251,23 @@ class TelegramPublisher(IPublisher):
         if not payload.get("ok") or "result" not in payload or "message_id" not in payload["result"]:
             raise RuntimeError("Telegram returned an invalid publish response.")
         return PublishResult(external_id=str(payload["result"]["message_id"]))
+
+    async def update_live_location(self, *, destination, message_id, action, payload):
+        if action not in {'UPDATE', 'STOP'}:
+            raise ValueError('Unsupported live location action.')
+        if action == 'UPDATE':
+            from app.domain.telegram_payloads import native_payload
+            _, data = native_payload({'type': 'LOCATION', **payload})
+            method = 'editMessageLiveLocation'
+        else:
+            if payload:
+                raise ValueError('Stop does not accept coordinates.')
+            method, data = 'stopMessageLiveLocation', {}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(f'https://api.telegram.org/bot{self.token}/{method}', json={'chat_id': destination, 'message_id': int(message_id), **data})
+            response.raise_for_status()
+            result = response.json()
+        message = result.get('result')
+        if not result.get('ok') or not isinstance(message, dict) or str(message.get('message_id')) != str(message_id):
+            raise RuntimeError('Live location update result is uncertain; do not retry automatically.')
+        return message
