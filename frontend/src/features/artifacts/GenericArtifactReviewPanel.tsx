@@ -20,6 +20,14 @@ const NATIVE_TEMPLATES: Record<string, Record<string, unknown>> = {
 };
 const MEDIA_LABELS: Record<string, string> = { IMAGE: "صورة", VIDEO: "فيديو", AUDIO: "ملف صوتي", DOCUMENT: "ملف", ANIMATION: "صورة متحركة", VOICE: "رسالة صوتية", VIDEO_NOTE: "رسالة فيديو دائرية", STICKER: "ملصق" };
 
+function variantLength(artifact: GenericReviewableArtifact, draft: string | undefined): number {
+  const text = draft ?? artifact.content ?? String(artifact.metadata.caption ?? "");
+  const measure = (artifact.metadata.constraints as Record<string,unknown> | undefined)?.measure;
+  if (measure === "chars") return Array.from(text).length;
+  if (measure === "x_weighted") return text.replace(/https?:\/\/\S+/g, "x".repeat(23)).length;
+  return text.length;
+}
+
 function artifactTitle(artifact: GenericReviewableArtifact): string {
   const title = artifact.metadata.title;
   if (typeof title === "string" && title.trim()) return title.trim();
@@ -209,6 +217,9 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     mutationFn: (id: string) => {
       const artifact = (artifacts.data?.items ?? []).find((item) => item.id === id);
       const content = drafts[id]?.content;
+      if (artifact?.metadata.source_type === "PLATFORM_VARIANT" && artifact.content === null && content !== undefined) {
+        return genericArtifactsApi.update(id, { metadata: { ...artifact.metadata, caption: content } });
+      }
       if (artifact?.kind === "QUIZ" && content !== undefined) {
         const quiz = artifact.metadata.quiz && typeof artifact.metadata.quiz === "object" && !Array.isArray(artifact.metadata.quiz)
           ? artifact.metadata.quiz as Record<string, unknown>
@@ -220,7 +231,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       }
       return genericArtifactsApi.update(id, { content });
     },
-    onSuccess: refresh,
+    onSuccess: (_, id) => { setDrafts(current => { const next = {...current}; delete next[id]; return next; }); return refresh(); },
   });
   const approve = useMutation({
     mutationFn: (id: string) => genericArtifactsApi.approve(id, drafts[id]?.review_note),
@@ -255,7 +266,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const deriveVariant = useMutation({
     mutationFn: ({ id, platform }: { id: string; platform: string }) => genericArtifactsApi.derivePlatformVariant(id, platform),
     onSuccess: (variant, input) => {
-      setVariantNotes((current) => ({ ...current, [input.id]: `أُنشئت نسخة ${String(variant.metadata.platform_label_ar ?? input.platform)} بحدود الطول وهي الآن قيد المراجعة.` }));
+      setVariantNotes((current) => ({ ...current, [input.id]: `نسخة ${String(variant.metadata.platform_label_ar ?? input.platform)} جاهزة للمراجعة؛ إن كانت موجودة فقد حُفظت تعديلاتك دون استبدالها.` }));
       refresh();
     },
   });
@@ -590,6 +601,15 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {createQuizDraft.isError ? <p role="alert" className="text-sm text-rose-700">{createQuizDraft.error.message}</p> : null}
           {publishQuiz.isError ? <p role="alert" className="text-sm text-rose-700">{publishQuiz.error.message}</p> : null}
         </div> : null}
+        {artifact.metadata.source_type === "PLATFORM_VARIANT" ? <section aria-label={`نسخة منصة ${artifact.id}`} className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+          <h4 className="font-bold">نسخة {String(artifact.metadata.platform_label_ar ?? artifact.metadata.platform)} مستقلة</h4>
+          <p className="text-xs">تعديل النسخة لا يغيّر الأصل. احفظ التعديلات قبل الاعتماد. إعادة الاشتقاق لا تستبدل المسودة الموجودة.</p>
+          {artifact.content === null ? <textarea aria-label={`تعليق نسخة المنصة ${artifact.id}`} value={drafts[artifact.id]?.content ?? String(artifact.metadata.caption ?? "")} onChange={e=>setDrafts(current=>({...current,[artifact.id]:{...current[artifact.id],content:e.target.value}}))} disabled={status!=="DRAFT"} dir="auto" className="min-h-40 w-full rounded border bg-white p-3" /> : null}
+          <p className="text-xs">الحد: {String((artifact.metadata.constraints as Record<string,unknown>)?.max_text ?? "غير محدد")} · القياس: {String((artifact.metadata.constraints as Record<string,unknown>)?.measure ?? "")} · الحالي: {variantLength(artifact, drafts[artifact.id]?.content)}</p>
+          {artifact.content === null && status === "DRAFT" ? <button type="button" onClick={()=>save.mutate(artifact.id)} disabled={save.isPending} className="rounded border bg-white p-2">حفظ تعليق النسخة</button> : null}
+          {drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? "")) ? <p role="status" className="text-sm">توجد تعديلات غير محفوظة؛ احفظها قبل الاعتماد.</p> : null}
+        </section> : null}
+        {artifact.metadata.source_type === "PLATFORM_VARIANT" && variantLength(artifact, drafts[artifact.id]?.content) > Number((artifact.metadata.constraints as Record<string,unknown>)?.max_text ?? Infinity) ? <p role="alert" className="text-sm text-rose-700">تجاوزت النسخة حد المنصة. قصّر النص قبل الحفظ والاعتماد.</p> : null}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {typeof artifact.metadata.caption === "string" && artifact.metadata.caption ? <p dir="auto" className="rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p> : null}
         {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
@@ -608,7 +628,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         <input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>
         {status === "DRAFT" ? <div className="flex flex-wrap gap-2">
           {artifact.content !== null ? <button type="button" onClick={() => save.mutate(artifact.id)} disabled={save.isPending} className="rounded-lg border px-3 py-2 text-sm font-semibold">حفظ التعديل</button> : null}
-          <button type="button" onClick={() => approve.mutate(artifact.id)} disabled={approve.isPending} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">اعتماد المخرج</button>
+          <button type="button" onClick={() => approve.mutate(artifact.id)} disabled={approve.isPending || drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? ""))} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">اعتماد المخرج</button>
           <button type="button" onClick={() => reject.mutate(artifact.id)} disabled={reject.isPending || !(drafts[artifact.id]?.review_note ?? "").trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white">رفض المخرج</button>
         </div> : null}
       </article>)}
