@@ -110,3 +110,42 @@ test("bank review view keeps the document inside the mobile viewport", async ({ 
   await expect(page.getByLabel(`منتج البطاقة ${textId}`)).toBeVisible();
   expect(await fitsViewport()).toBe(true);
 });
+
+const variantListItem = {
+  id: variantId,
+  platform: "x",
+  platform_label_ar: "إكس",
+  review_status: "DRAFT",
+  excerpt: longText.slice(0, 160),
+  full_length: 280,
+  adaptation: "length_only",
+  needs_review: true,
+  source_kind_ar: "مخرج معتمد",
+  source_artifact_id: textId,
+  source_post_id: null,
+  constraints: { max_text: 280, measure: "x_weighted", measured_length: 280, original_length: longText.length, trimmed: true, trim_boundary: "sentence", provenance: "secondary" },
+  created_at: "2026-10-17T00:00:00Z",
+};
+
+test("publishing workspace lists platform variants as preparation-only drafts without mobile overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(/\/api\/artifacts\?review_status=APPROVED.*/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/api\/artifacts\/platform-variants$/, (route) => route.fulfill({ json: [variantListItem] }));
+  await page.route(/\/posts\?/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } }));
+  await page.route(/\/posts\/filter-options/, (route) => route.fulfill({ json: { kinds: [], topics: [], sources: [] } }));
+  await page.route(/\/schedules\?limit=/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 50, offset: 0 } }));
+  await page.route(/\/schedules\/upcoming/, (route) => route.fulfill({ json: { items: [], days: 7, limit: 100 } }));
+  await page.route(/\/schedules\/calendar/, (route) => route.fulfill({ json: { date: "2026-10-17", timezone: "Asia/Aden", items: [] } }));
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => route.fulfill({ json: [] }));
+  await page.goto("/publishing");
+  await page.getByRole("button", { name: /مسودات المنصات/ }).click();
+  const section = page.getByTestId("publishing-platforms");
+  await expect(section).toBeVisible();
+  await expect(section.getByTestId("platform-variant-card")).toHaveCount(1);
+  await expect(section.getByText(/تحضير فقط/)).toBeVisible();
+  await expect(section.getByTestId("platform-variant-card").getByText("تتطلب مراجعة")).toBeVisible();
+  await expect(section.getByText("ضبط طول فقط، ليست صياغة مخصصة")).toBeVisible();
+  await expect(section.getByText(/عند حد جملة/)).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBe(0);
+});
