@@ -219,7 +219,7 @@ export function PublishingPage() {
           <h2 className="mt-1 text-3xl font-bold">مساحة النشر</h2>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">منطقة مرتبة للجاهز، خطط النشر، والتقويم. كل خطوة تظهر عندما تكون منطقية للحالة الحالية.</p>
         </div>
-        <Link to="/posts/workspace" className="rounded-xl border px-4 py-2 text-sm font-semibold">العودة إلى مصنع المحتوى</Link>
+        <Link to="/bank" className="rounded-xl border px-4 py-2 text-sm font-semibold">العودة إلى بنك المحتوى</Link>
       </header>
 
       <nav aria-label="أقسام مساحة النشر" className="grid gap-2 rounded-2xl border bg-slate-50 p-2 sm:grid-cols-3">
@@ -262,7 +262,7 @@ export function PublishingPage() {
           </div>
 
           {readyItems.length === 0
-            ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد منشورات جاهزة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير عبارة البحث، أو عد إلى مصنع المحتوى لاعتماد منشورات جديدة.</p></div>
+            ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد منشورات جاهزة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير عبارة البحث، أو عد إلى بنك المحتوى لاعتماد منشورات جديدة.</p></div>
             : <div className="space-y-3">{readyItems.map((post) => {
               const matchingImages = (approvedImages.data ?? []).filter((image) => image.source_knowledge_unit_id === post.knowledge_unit_id);
               return <article key={post.post_id} className="rounded-2xl border bg-white p-4 shadow-sm" data-testid={`ready-post-${post.post_id}`}>
