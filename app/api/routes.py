@@ -1089,7 +1089,6 @@ def _schedule_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
             "attempts": item.attempts,
             "publication_id": str(item.publication_id) if item.publication_id else None,
             "publication_external_id": publication.external_id if publication is not None else None,
-        "publication_external_id": publication.external_id if publication is not None else None,
             "published_at": item.published_at,
             "last_error": item.last_error,
             "published": bool(publication and publication.status == "PUBLISHED"),
@@ -1114,6 +1113,7 @@ def _schedule_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
         "scheduled_at": item.scheduled_at,
         "attempts": item.attempts,
         "publication_id": str(item.publication_id) if item.publication_id else None,
+        "publication_external_id": publication.external_id if publication is not None else None,
         "published_at": item.published_at,
         "last_error": item.last_error,
         "published": bool(publication and publication.status == "PUBLISHED"),
@@ -2655,7 +2655,6 @@ def _schedule_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
             "attempts": item.attempts,
             "publication_id": str(item.publication_id) if item.publication_id else None,
             "publication_external_id": publication.external_id if publication is not None else None,
-        "publication_external_id": publication.external_id if publication is not None else None,
             "published_at": item.published_at,
             "last_error": item.last_error,
             "published": bool(publication and publication.status == "PUBLISHED"),
@@ -2669,6 +2668,31 @@ def _schedule_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
     post = item.post
     unit = post.knowledge_unit
     topic = unit.topic
+    source = topic.source if topic is not None else unit.source
+    return {
+        "id": str(item.id),
+        "position": item.position,
+        "post_id": str(post.id),
+        "artifact_id": None,
+        "title": unit.title,
+        "status": item.status,
+        "scheduled_at": item.scheduled_at,
+        "attempts": item.attempts,
+        "publication_id": str(item.publication_id) if item.publication_id else None,
+        "publication_external_id": publication.external_id if publication is not None else None,
+        "published_at": item.published_at,
+        "last_error": item.last_error,
+        "published": bool(publication and publication.status == "PUBLISHED"),
+        "content_preview": post.content[:300],
+        "knowledge_unit_id": str(unit.id),
+        "topic_id": str(topic.id) if topic is not None else None,
+        "topic_title": topic.title if topic is not None else None,
+        "source_id": str(source.id),
+        "source_title": source.book_title or source.filename,
+    }
+
+
+def _schedule_payload(schedule: ScheduleModel, detail: bool = False) -> dict[str, Any]:
     items = sorted(schedule.items, key=lambda x: x.position)
     payload = {
         "id": str(schedule.id),
