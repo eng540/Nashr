@@ -61,7 +61,7 @@ async def test_generic_artifact_review_validates_edits_and_supports_approve_reje
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         drafts = await client.get("/api/artifacts?review_status=DRAFT")
         assert drafts.status_code == 200
-        assert any(row["id"] == str(approved_id) for row in drafts.json())
+        assert any(row["id"] == str(approved_id) for row in drafts.json()["items"])
 
         invalid = await client.patch(f"/api/artifacts/{approved_id}", json={"content": "fabricated source"})
         assert invalid.status_code == 409
