@@ -1,3 +1,4 @@
+from app.domain.telegram_copy import telegram_publish_text
 """Reuse the publisher's static payload checks without network or media reads."""
 from app.adapters.publishing.telegram import telegram_html_content
 from app.domain.telegram_payloads import native_payload
@@ -9,7 +10,7 @@ from app.domain.telegram_media import MEDIA_METHODS, NO_CAPTION
 
 def telegram_copy_blockers(row):
     meta = row.artifact_metadata or {}
-    text = row.content if row.content is not None else str(meta.get('caption') or '')
+    text = telegram_publish_text(row)
     try:
         if meta.get('telegram_native') is not None:
             if row.kind != 'TEXT':

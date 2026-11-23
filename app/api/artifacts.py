@@ -1,3 +1,4 @@
+from app.domain.telegram_copy import telegram_publish_text
 from typing import Any
 from datetime import datetime
 import os
@@ -437,12 +438,10 @@ async def create_telegram_media_draft_for_artifact(
             raise ValueError("Media Artifact must be approved before creating a publication draft.")
         if review.get("kind") in MEDIA_KINDS and not review.get("storage_uri"):
             raise ValueError("Media Artifact has no stored media to publish.")
-        caption = str(review.get("content") or "").strip() if review.get("kind") in {"TEXT", "QUIZ"} else str((review.get("metadata") or {}).get("caption") or "").strip()
-        if not caption:
-            raise ValueError("Media Artifact needs a non-empty caption before creating a publication draft.")
         artifact = await load_artifact(session, artifact_id)
         if artifact is None:
             raise LookupError("Artifact not found.")
+        caption = telegram_publish_text(artifact)
         publication = await CreateTelegramDraft.execute_for_artifact(
             session, artifact, destination, content_override=caption
         )
@@ -477,8 +476,6 @@ async def schedule_approved_quiz(
         if kind in MEDIA_KINDS:
             if not artifact_review.get("storage_uri"):
                 raise ValueError("Media Artifact has no stored media to schedule.")
-            if not str((artifact_review.get("metadata") or {}).get("caption") or "").strip():
-                raise ValueError("Media Artifact needs a non-empty caption before scheduling.")
         timezone_name = validate_timezone(payload.timezone)
         scheduled_at = validate_scheduled_at(payload.scheduled_at)
         already_published = (await session.execute(select(PublicationModel.id).where(
