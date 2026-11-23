@@ -596,7 +596,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <button type="button" onClick={() => deriveVariant.mutate({ id: artifact.id, platform: variantPlatform[artifact.id] ?? "" })} disabled={!variantPlatform[artifact.id] || deriveVariant.isPending} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white">{deriveVariant.isPending ? "جارٍ الاشتقاق..." : "اشتقاق النسخة"}</button>
           {variantNotes[artifact.id] ? <span role="status" className="text-xs text-sky-900">{variantNotes[artifact.id]}</span> : null}
           {deriveVariant.isError ? <span role="alert" className="text-xs text-rose-700">{deriveVariant.error.message}</span> : null}
-          <span className="text-xs text-slate-600">تُقصّ النسخة عند حد المنصة على حدود آمنة (جملة أو كلمة، دون قطع الروابط) وتُحفظ قيد المراجعة؛ تجهيز طول فقط وليس إعادة صياغة، ولا يُنشر شيء خارجيًا.</span>
+          <span className="text-xs text-slate-600">نحتفظ بالنص الأصلي. إذا تجاوز حد المنصة تتوقف العملية بسبب واضح، دون قص أو تغيير معنى. النسخ القديمة محفوظة ولا تُستبدل. لا يُنشر شيء من هنا.</span>
         </div> : null}
         {status === "APPROVED" && STORED_MEDIA.includes(artifact.kind) && artifact.storage_uri ? <TelegramMediaDraftPreview artifact={artifact} /> : null}
         {status === "APPROVED" && (STORED_MEDIA.includes(artifact.kind) || ["TEXT", "QUIZ"].includes(artifact.kind)) ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
