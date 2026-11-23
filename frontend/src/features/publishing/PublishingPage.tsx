@@ -358,7 +358,7 @@ export function PublishingPage() {
                   <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{v.excerpt}{v.full_length > v.excerpt.length ? "…" : ""}</p>
                   <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                     <div><dt className="inline">المصدر: </dt><dd className="inline">{v.source_kind_ar ?? "غير محدد"}</dd></div>
-                    {v.constraints.max_text != null && <div><dt className="inline">الطول: </dt><dd className="inline">{v.constraints.measured_length ?? "؟"} / {v.constraints.max_text}{v.constraints.measure ? ` (${v.constraints.measure})` : ""}</dd></div>}
+                    {v.constraints.max_text != null && <div><dt className="inline">الطول الحالي: </dt><dd className="inline"><bdi>{v.constraints.measured_length ?? "؟"}</bdi> من <bdi>{v.constraints.max_text}</bdi>{v.constraints.measure ? <span className="mr-1 text-slate-400" dir="ltr">({v.constraints.measure})</span> : null}</dd></div>}
                     {v.constraints.trimmed && <div><dt className="inline">القص: </dt><dd className="inline">عند حد {v.constraints.trim_boundary === "sentence" ? "جملة" : v.constraints.trim_boundary === "whitespace" ? "كلمة" : "ثابت"}</dd></div>}
                   </dl>
                   <div className="mt-3 flex flex-wrap gap-2">
