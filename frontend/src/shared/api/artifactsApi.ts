@@ -1,4 +1,4 @@
-import { get, patch, post } from "./client";
+import { get, patch, post, postForm } from "./client";
 
 export type GenericArtifactReviewStatus = "DRAFT" | "APPROVED" | "REJECTED";
 
@@ -38,6 +38,15 @@ export const genericArtifactsApi = {
   },
   createQuizDraft(id: string): Promise<{ id: string; artifact_id: string | null; status: string; content: string }> {
     return post<{ id: string; artifact_id: string | null; status: string; content: string }>(`/api/artifacts/${id}/telegram-draft`, {});
+  },
+  ingestReadyMedia(input: { file: File; caption?: string }): Promise<GenericReviewableArtifact> {
+    const form = new FormData();
+    form.append("file", input.file);
+    if (input.caption?.trim()) form.append("caption", input.caption.trim());
+    return postForm<GenericReviewableArtifact>("/api/artifacts/ingest-media", form);
+  },
+  createTelegramMediaDraft(id: string): Promise<{ id: string; status: string; external_id?: string | null }> {
+    return post<{ id: string; status: string; external_id?: string | null }>(`/api/artifacts/${id}/telegram-media-draft`);
   },
   publishQuiz(publicationId: string, content: string): Promise<{ id: string; status: string; external_id: string | null; error_message: string | null }> {
     return post<{ id: string; status: string; external_id: string | null; error_message: string | null }>(`/publications/${publicationId}/publish`, { content });
