@@ -56,7 +56,7 @@ async def test_media_bank_ingest_review_and_telegram_draft(monkeypatch):
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         drafts = await client.get("/api/artifacts?review_status=DRAFT")
         assert drafts.status_code == 200
-        draft_row = next((row for row in drafts.json() if row["id"] == str(artifact_id)), None)
+        draft_row = next((row for row in drafts.json()["items"] if row["id"] == str(artifact_id)), None)
         assert draft_row is not None
         assert draft_row["kind"] == "VIDEO"
         assert draft_row["mime_type"] == "video/mp4"
