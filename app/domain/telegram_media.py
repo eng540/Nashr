@@ -42,12 +42,9 @@ def validate_special_media(kind, mime_type, data):
     if kind not in {"VIDEO_NOTE", "STICKER", "ANIMATION"}:
         return
     if kind == "STICKER" and mime_type == "image/webp":
-        import io
-        from PIL import Image
-        with Image.open(io.BytesIO(data)) as image:
-            width, height = image.size
-            if max(width, height) != 512 or min(width, height) > 512 or len(data) > 512 * 1024:
-                raise ValueError("Static stickers need one512px side, at most512px on the other and512KiB.")
+        width, height = webp_dimensions(data)
+        if max(width, height) != 512 or min(width, height) > 512 or len(data) > 512 * 1024:
+            raise ValueError("Static stickers need one512px side, at most512px on the other and512KiB.")
         return
     if kind == "STICKER" and mime_type == "application/x-tgsticker":
         import gzip
@@ -94,3 +91,28 @@ def validate_special_media(kind, mime_type, data):
         raise ValueError("MP4 animations must be H.264 without audio.")
     if kind == "STICKER" and (duration > 3 or audio or video.get("codec_name") != "vp9" or max(video.get("width", 0), video.get("height", 0)) != 512 or len(data) > 256 * 1024):
         raise ValueError("Video stickers must be silent VP9 WebM up to3seconds,512px side and256KiB.")
+
+
+def webp_dimensions(data):
+    """Read bounded WebP container headers without optional image codecs."""
+    if len(data) < 20 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+        raise ValueError("Invalid WebP sticker container.")
+    declared = int.from_bytes(data[4:8], "little") + 8
+    if declared != len(data):
+        raise ValueError("Invalid WebP sticker length.")
+    offset = 12
+    while offset + 8 <= len(data):
+        tag = data[offset:offset + 4]
+        size = int.from_bytes(data[offset + 4:offset + 8], "little")
+        chunk = data[offset + 8:offset + 8 + size]
+        if len(chunk) != size:
+            raise ValueError("Truncated WebP sticker chunk.")
+        if tag == b"ANIM" or (tag == b"VP8X" and size >= 10 and chunk[0] & 2):
+            raise ValueError("Animated WebP is not a static sticker; use TGS or WebM.")
+        if tag == b"VP8 " and size >= 10 and chunk[3:6] == b"\x9d\x01\x2a":
+            return int.from_bytes(chunk[6:8], "little") & 16383, int.from_bytes(chunk[8:10], "little") & 16383
+        if tag == b"VP8L" and size >= 5 and chunk[0] == 47:
+            bits = int.from_bytes(chunk[1:5], "little")
+            return (bits & 16383) + 1, ((bits >> 14) & 16383) + 1
+        offset += 8 + size + (size % 2)
+    raise ValueError("WebP sticker has no supported image header.")

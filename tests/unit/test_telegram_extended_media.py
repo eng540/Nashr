@@ -43,3 +43,16 @@ def test_video_note_and_sticker_geometry(tmp_path):
     subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=green:s=128x96:d=1','-c:v','libx264',str(file2)],check=True)
     with pytest.raises(ValueError,match='square'):
         validate_special_media('VIDEO_NOTE','video/mp4',file2.read_bytes())
+
+
+@pytest.mark.parametrize("lossless", [False, True])
+def test_webp_dimensions_without_optional_decoder(lossless):
+    import io
+    from PIL import Image
+    from app.domain.telegram_media import webp_dimensions, validate_special_media
+    output = io.BytesIO()
+    Image.new("RGBA", (512, 480), (60, 90, 120, 100)).save(output, format="WEBP", lossless=lossless)
+    assert webp_dimensions(output.getvalue()) == (512, 480)
+    validate_special_media("STICKER", "image/webp", output.getvalue())
+    with pytest.raises(ValueError):
+        webp_dimensions(output.getvalue()[:-2])
