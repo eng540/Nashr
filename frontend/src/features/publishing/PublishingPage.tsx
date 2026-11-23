@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
 import { genericArtifactsApi, type PlatformVariantDraft } from "../../shared/api/artifactsApi";
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
@@ -16,7 +16,7 @@ type Section = "ready" | "plans" | "calendar" | "platforms";
 export function PublishingPage() {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [section, setSection] = useState<Section>("ready");
+  const [section, setSection] = useState<Section>(searchParams.get("schedule_id")?"plans":"ready");
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
@@ -164,6 +164,13 @@ export function PublishingPage() {
       setMessage(e instanceof Error ? e.message : "تعذر تحميل الخطة.");
     }
   };
+  const linkedScheduleId=searchParams.get('schedule_id');
+  useEffect(()=>{
+    if(!linkedScheduleId)return;
+    let active=true;
+    void schedulesApi.get(linkedScheduleId).then(value=>{if(active){setDetail(value);setSection('plans');}}).catch(error=>{if(active)setMessage(error instanceof Error?error.message:'تعذر تحميل الخطة.');});
+    return ()=>{active=false;};
+  },[linkedScheduleId]);
   const setSelection = (id: string, checked: boolean) => {
     const next = toggleSelection(selectedIds, id, checked);
     setSelectedIds(next);
@@ -251,6 +258,7 @@ export function PublishingPage() {
         actions={<Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">العودة إلى بنك المحتوى</Link>}
       />
 
+      <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-7"><p>الصور والفيديوهات والنصوص المستوردة تُجهز من المكتبة. الخطط المحفوظة منها تظهر هنا في «خطط النشر». قائمة «الجاهز للنشر» أدناه خاصة بمنشورات النصوص القديمة وليست كل المخرجات المعتمدة.</p><Link to="/bank?artifact_status=APPROVED" className="font-bold text-indigo-700 underline">فتح مكتبة المخرجات المعتمدة والتجهيز</Link></div>
       <nav aria-label="أقسام مساحة النشر" className="grid gap-2 rounded-2xl border bg-slate-50 p-2 sm:grid-cols-2 lg:grid-cols-4">
         {([
           ["ready", "الجاهز للنشر", readyTotal, "منشورات معتمدة ومؤهلة"],
@@ -349,7 +357,7 @@ export function PublishingPage() {
               {detail.failed_items > 0 && <button type="button" onClick={() => action.mutate({ type: "retry", id: detail.id })} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">إعادة محاولة الفاشل</button>}
             </div>
           </div>
-          <div className="mt-4 space-y-2">{detail.items.map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{item.position}. {item.title}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{item.status}</span></div><p className="mt-1 text-sm text-slate-600">{item.content_preview}</p><div className="mt-2 flex flex-wrap gap-2"><input aria-label={`وقت نشر ${item.title}`} type="datetime-local" value={itemTimes[item.id] ?? utcISOStringToLocalDateTime(item.scheduled_at, detail.timezone)} onChange={(e) => setItemTimes(current=>({...current,[item.id]:e.target.value}))} disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING"} className="rounded-lg border p-2 text-sm"/><button type="button" disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING" || !itemTimes[item.id] || itemTimes[item.id]===utcISOStringToLocalDateTime(item.scheduled_at,detail.timezone)} onClick={()=>void updateItemTime(item.id,itemTimes[item.id])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">حفظ الموعد</button><button type="button" disabled={!item.post_id} onClick={() => void preview(item.post_id)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">{item.post_id ? "معاينة Telegram" : "المعاينة في بنك المحتوى"}</button>{item.status === "FAILED" && <button type="button" onClick={() => void schedulesApi.retryItem(detail.id, item.id).then((r) => { setDetail(r.schedule); void refresh(); })} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold">إعادة المحاولة</button>}</div>{item.publication_external_id && <p className="mt-2 text-xs text-emerald-700">معرّفات Telegram: {(item.publication_external_ids?.length ? item.publication_external_ids : [item.publication_external_id]).join(", ")}</p>}{item.last_error && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{item.last_error}</p>}</div>)}</div>
+          <div className="mt-4 space-y-2">{detail.items.map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{item.position}. {item.title}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{item.status}</span></div><p className="mt-1 text-sm text-slate-600">{item.content_preview}</p><div className="mt-2 flex flex-wrap gap-2"><input aria-label={`وقت نشر ${item.title}`} type="datetime-local" value={itemTimes[item.id] ?? utcISOStringToLocalDateTime(item.scheduled_at, detail.timezone)} onChange={(e) => setItemTimes(current=>({...current,[item.id]:e.target.value}))} disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING"} className="rounded-lg border p-2 text-sm"/><button type="button" disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING" || !itemTimes[item.id] || itemTimes[item.id]===utcISOStringToLocalDateTime(item.scheduled_at,detail.timezone)} onClick={()=>void updateItemTime(item.id,itemTimes[item.id])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">حفظ الموعد</button>{item.post_id?<button type="button" onClick={() => void preview(item.post_id)} className="rounded-lg border px-3 py-2 text-sm">معاينة Telegram</button>:item.artifact_id?<Link to={`/bank?artifact_status=APPROVED&artifact_id=${encodeURIComponent(item.artifact_id)}`} className="rounded-lg border px-3 py-2 text-sm">فتح المادة ونسخها وسجلها</Link>:null}{item.status === "FAILED" && <button type="button" onClick={() => void schedulesApi.retryItem(detail.id, item.id).then((r) => { setDetail(r.schedule); void refresh(); })} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold">إعادة المحاولة</button>}</div>{item.publication_external_id && <p className="mt-2 text-xs text-emerald-700">معرّفات Telegram: {(item.publication_external_ids?.length ? item.publication_external_ids : [item.publication_external_id]).join(", ")}</p>}{item.last_error && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{item.last_error}</p>}</div>)}</div>
         </section>
       )}
 
