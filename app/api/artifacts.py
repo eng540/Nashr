@@ -70,10 +70,11 @@ def _handle_error(exc: Exception) -> HTTPException:
 async def list_generic_artifacts(
     review_status: str = Query(default="DRAFT"),
     limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     try:
-        return await GenericArtifactReviewService(session).list(review_status, limit)
+        return await GenericArtifactReviewService(session).list(review_status, limit, offset)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
