@@ -85,7 +85,8 @@ def validate_special_media(kind, mime_type, data):
         duration = float(info.get("format", {}).get("duration", video.get("duration", 0)))
     except (TypeError, ValueError) as exc:
         raise ValueError("The video duration is unknown.") from exc
-    if duration <= 0:
+    import math
+    if not math.isfinite(duration) or duration <= 0:
         raise ValueError("The video duration is unknown.")
     if kind == "VIDEO_NOTE" and (video.get("width") != video.get("height") or duration > 60 or video.get("codec_name") != "h264"):
         raise ValueError("Video notes must be square H.264 MP4 and at most60seconds.")
