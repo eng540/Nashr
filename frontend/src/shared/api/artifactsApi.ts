@@ -64,6 +64,10 @@ export interface GenericArtifactPage {
 }
 
 export const genericArtifactsApi = {
+  get(id: string): Promise<GenericReviewableArtifact> { return get(`/api/artifacts/${id}`); },
+  albumDraft(input: { artifact_ids: string[]; title: string }): Promise<GenericReviewableArtifact> {
+    return post<GenericReviewableArtifact>("/api/artifacts/album-draft", input);
+  },
   manualDraft(input: { kind: string; title: string; content: string; quiz?: Record<string, unknown>; native?: Record<string, unknown> }): Promise<GenericReviewableArtifact> {
     return post<GenericReviewableArtifact>("/api/artifacts/manual-draft", input);
   },

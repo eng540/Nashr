@@ -99,6 +99,23 @@ async def create_manual_draft(payload: ManualArtifactRequest, session: AsyncSess
         raise HTTPException(422, str(exc)) from exc
 
 
+class AlbumDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    artifact_ids: list[str] = Field(min_length=2, max_length=10)
+    title: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/album-draft", status_code=201)
+async def create_album_draft(payload: AlbumDraftRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.telegram_albums import create_album
+    try:
+        artifact = await create_album(session, **payload.model_dump())
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except (ValueError, TypeError) as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+
+
 @router.get("/platform-variants")
 async def list_platform_variant_drafts(
     limit: int = Query(default=50, ge=1, le=100),
@@ -325,13 +342,13 @@ async def create_telegram_media_draft_for_artifact(
         raise HTTPException(status_code=503, detail="TELEGRAM_DESTINATION_ID is required.")
     try:
         review = await GenericArtifactReviewService(session).get(artifact_id)
-        if review.get("kind") not in MEDIA_KINDS | {"TEXT"}:
+        if review.get("kind") not in MEDIA_KINDS | {"TEXT", "QUIZ"}:
             raise ValueError("Only supported media or TEXT Artifacts can use this publication route.")
         if review.get("review_status") != "APPROVED":
             raise ValueError("Media Artifact must be approved before creating a publication draft.")
         if review.get("kind") in MEDIA_KINDS and not review.get("storage_uri"):
             raise ValueError("Media Artifact has no stored media to publish.")
-        caption = str(review.get("content") or "").strip() if review.get("kind") == "TEXT" else str((review.get("metadata") or {}).get("caption") or "").strip()
+        caption = str(review.get("content") or "").strip() if review.get("kind") in {"TEXT", "QUIZ"} else str((review.get("metadata") or {}).get("caption") or "").strip()
         if not caption:
             raise ValueError("Media Artifact needs a non-empty caption before creating a publication draft.")
         artifact = await load_artifact(session, artifact_id)

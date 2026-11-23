@@ -328,6 +328,12 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "QUIZ_NOT_APPROVED", "message": "Quiz must be available and approved."})
             if (artifact_row.kind == "QUIZ" and (not artifact_row.content or not isinstance((artifact_row.artifact_metadata or {}).get("quiz"), dict))) or (artifact_row.kind == "TEXT" and not artifact_row.content) or (artifact_row.kind in MEDIA_KINDS and not artifact_row.storage_uri):
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_QUIZ_PAYLOAD", "message": "Quiz payload is incomplete."})
+            if (artifact_row.artifact_metadata or {}).get("telegram_album") is not None:
+                from app.application.telegram_albums import resolve_album
+                try:
+                    await resolve_album(session, artifact_row.artifact_metadata)
+                except ValueError as exc:
+                    blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_ALBUM", "message": str(exc)})
             if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_TIME", "message": "Quiz schedule time is invalid."})
             already_published = (await session.execute(select(PublicationModel.id).where(PublicationModel.artifact_id == item.artifact_id, PublicationModel.platform == "telegram", PublicationModel.status == "PUBLISHED").limit(1))).scalar_one_or_none()

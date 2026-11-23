@@ -18,7 +18,8 @@ Technical validation is not editorial approval. All new drafts require Nashr app
 |Location/venue|Implemented via typed JSON|sendLocation/sendVenue|Static coordinates only|
 |Contact|Implemented via typed JSON|sendContact|Explicit phone/name fields|
 |Dice|Implemented via typed JSON|sendDice|Allowlisted emoji|
-|Albums|Not implemented yet|sendMediaGroup|Must not claim supported|
+|Albums|Implemented, awaiting deployment and real delivery verification|sendMediaGroup|2-10 approved images/videos, or audio only, or documents only; child approval and fingerprints rechecked|
+|Live Photo|Not implemented|sendLivePhoto|Separate specialized type, not a video alias|
 |Live location lifecycle|Not implemented|sendLocation/editMessageLiveLocation|Requires stop/update workflow|
 |Paid media/invoices|Out of current scope|sendPaidMedia/sendInvoice|Money requires separate authority|
 

@@ -70,6 +70,11 @@ function TelegramMediaDraftPreview({ artifact }: { artifact: GenericReviewableAr
   );
 }
 
+function AlbumChildPreview({ id }: { id: string }) {
+  const child = useQuery({ queryKey: ["album-child", id], queryFn: () => genericArtifactsApi.get(id) });
+  return child.data ? <TelegramMediaDraftPreview artifact={child.data} /> : <p className="text-xs">{child.isError ? "تعذر تحميل عنصر الألبوم،راجع اعتماده." : "تحميل معاينة عنصر الألبوم..."}</p>;
+}
+
 function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
   const media = useQuery({
     queryKey: ["generic-artifact-media-url", artifact.id],
@@ -269,7 +274,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     onSuccess: (schedule, input) => setMediaSchedules((current) => ({ ...current, [input.id]: { id: schedule.id, status: schedule.status, at: schedule.items[0]?.scheduled_at ?? "" } })),
   });
   const isTelegramMediaEligible = (artifact: GenericReviewableArtifact) =>
-    (STORED_MEDIA.includes(artifact.kind) && Boolean(artifact.storage_uri) || artifact.kind === "TEXT") && artifact.review_status === "APPROVED";
+    (STORED_MEDIA.includes(artifact.kind) && Boolean(artifact.storage_uri) || ["TEXT", "QUIZ"].includes(artifact.kind)) && artifact.review_status === "APPROVED";
   const eligibleSelectedCount = selectedMediaIds.length;
   const batchMediaDrafts = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -300,6 +305,10 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       if (failed === 0) setSelectedMediaIds([]);
     },
     onError: (error) => setBatchNote(`تعذر إنشاء المسودات: ${error instanceof Error ? error.message : "خطأ غير معروف"}`),
+  });
+  const createAlbum = useMutation({
+    mutationFn: () => genericArtifactsApi.albumDraft({ artifact_ids: selectedMediaIds, title: "ألبوم Telegram للمراجعة" }),
+    onSuccess: () => { setSelectedMediaIds([]); setStatus("DRAFT"); setBatchNote("أُنشئ ألبوم قيد المراجعة،لا نشر تلقائي."); refresh(); },
   });
   const toggleMediaSelection = (artifactId: string, checked: boolean) => {
     setSelectedMediaIds((current) => checked ? [...new Set([...current, artifactId])] : current.filter((id) => id !== artifactId));
@@ -440,7 +449,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             }}
             className="h-4 w-4 rounded border-slate-300"
           />
-          تحديد كل وسائط الصفحة
+          تحديد كل عناصر الصفحة
         </label>
         <span className="text-xs font-semibold text-slate-500" data-testid="media-selection-count">{eligibleSelectedCount} محدد</span>
         <button
@@ -450,6 +459,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           onClick={() => batchMediaDrafts.mutate(selectedMediaIds)}
           className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-emerald-300"
         >{batchMediaDrafts.isPending ? "جارٍ إنشاء المسودات..." : `إنشاء مسودات Telegram للمحدد (${eligibleSelectedCount})`}</button>
+        <button type="button" disabled={selectedMediaIds.length < 2 || selectedMediaIds.length > 10 || createAlbum.isPending} onClick={() => createAlbum.mutate()} className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء ألبوم من المحدد (2-10)</button>
+        {createAlbum.isError ? <p role="alert">{createAlbum.error.message}</p> : null}
         {eligibleSelectedCount > 0 ? <button type="button" onClick={() => { setSelectedMediaIds([]); setBatchNote(""); }} className="text-sm font-bold text-slate-500 hover:text-slate-700">مسح التحديد</button> : null}
         <span className="w-full text-xs leading-5 text-slate-500">ينشئ مسودة نشر Telegram لكل وسيط معتمد محدد مع نص تعليقه للمراجعة؛ تجهيز فقط ولا يُنشر أو يُجدول شيء خارجيًا.</span>
         {batchNote ? <p role="status" className="w-full text-sm font-semibold text-emerald-800">{batchNote}</p> : null}
@@ -477,6 +488,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
+        {artifact.metadata.telegram_album ? <section className="rounded-xl border border-sky-200 bg-sky-50 p-3"><h4 className="font-bold">ألبوم Telegram،الترتيب والتعليقات المعتمدة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-sm">{JSON.stringify(artifact.metadata.album_preview, null, 2)}</pre><div className="grid gap-2 sm:grid-cols-2">{(Array.isArray(artifact.metadata.album_preview) ? artifact.metadata.album_preview : []).map((value) => { const item = value as { id: string }; return <AlbumChildPreview key={item.id} id={item.id} />; })}</div><p className="text-xs">الصور والفيديو معًا،أو صوت فقط،أو مستندات فقط. تتوقف العملية إذا تغيّر اعتماد أو محتوى أي عنصر.</p></section> : null}
         {artifact.metadata.telegram_native ? <section className="rounded-lg border bg-sky-50 p-3"><h4 className="font-bold">معاينة بيانات Telegram</h4><pre dir="ltr" className="whitespace-pre-wrap break-all text-xs">{JSON.stringify(artifact.metadata.telegram_native, null, 2)}</pre></section> : null}
         {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
           <section aria-label={`تحرير المخرج ${artifact.id}`} className="min-w-0 space-y-2">
@@ -502,7 +514,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             <p className="text-xs leading-5 text-slate-500">تحافظ المعاينة على فواصل الأسطر والفقرات كما هي في النص. وهي معاينة للنص العادي، وليست محاكاة كاملة لتنسيقات القناة المستهدفة.</p>
           </section>
         </div> : <GenericArtifactMediaPreview artifact={artifact} />}
-        {status === "APPROVED" && artifact.kind === "TEXT" && artifact.content ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+        {status === "APPROVED" && artifact.kind === "TEXT" && !artifact.metadata.telegram_album && !artifact.metadata.telegram_native && artifact.content ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
           <label className="w-full text-sm font-semibold sm:w-auto">إنشاء بطاقة من هذا النص المعتمد
             <select aria-label={`منتج البطاقة ${artifact.id}`} value={cardProducts[artifact.id] ?? ""} onChange={(event) => setCardProducts((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal sm:mt-0 sm:w-auto sm:max-w-md">
               <option value="">اختر منتج بطاقات منشورًا</option>
@@ -529,7 +541,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         </div> : null}
         {status === "APPROVED" && STORED_MEDIA.includes(artifact.kind) && artifact.storage_uri ? <TelegramMediaDraftPreview artifact={artifact} /> : null}
         {status === "APPROVED" && (STORED_MEDIA.includes(artifact.kind) || artifact.kind === "TEXT") ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
-          <p className="text-sm font-semibold">وسيط معتمد من بنك الوسائط</p>
+          <p className="text-sm font-semibold">محتوى معتمد جاهز لمسودة Telegram</p>
           {mediaDrafts[artifact.id] ? <p role="status" className="text-xs">سجل نشر Telegram: {mediaDrafts[artifact.id].id} · الحالة {mediaDrafts[artifact.id].status} · المسودة جاهزة للمراجعة في سجل النشر.</p> : null}
           {!mediaDrafts[artifact.id] ? <button type="button" onClick={() => createMediaDraft.mutate(artifact.id)} disabled={createMediaDraft.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{createMediaDraft.isPending ? "جارٍ إنشاء المسودة..." : "إنشاء مسودة نشر Telegram"}</button> : null}
           {createMediaDraft.isError ? <p role="alert" className="text-sm text-rose-700">{createMediaDraft.error.message}</p> : null}
