@@ -8,7 +8,7 @@ test('media copy saves its own caption and blocks approval while unsaved',async(
  if(p==='/api/artifacts/copy/approve'){approved++;item={...item,review_status:'APPROVED'};return route.fulfill({json:item});}
  if(p.endsWith('/media-url'))return route.fulfill({json:{url:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="teal"/></svg>',expires_in:300}});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
- await page.goto('/bank');await page.getByLabel('تعليق نسخة المنصة copy').fill('نص جديد محفوظ للنسخة');
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('تعليق نسخة المنصة copy').fill('نص جديد محفوظ للنسخة');
  await expect(page.getByRole('button',{name:'اعتماد المخرج',exact:true})).toBeDisabled();
  await page.getByRole('button',{name:'حفظ تعليق النسخة',exact:true}).click();
  await expect.poll(()=>patch?.metadata?.caption).toBe('نص جديد محفوظ للنسخة');
