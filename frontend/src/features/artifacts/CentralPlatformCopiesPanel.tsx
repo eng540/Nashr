@@ -1,0 +1,37 @@
+import {useState} from 'react';
+import {useMutation} from '@tanstack/react-query';
+import {genericArtifactsApi,type CentralPlatformCopy} from '../../shared/api/artifactsApi';
+
+export function CentralPlatformCopiesPanel({id}:{id:string}) {
+ const [rows,setRows]=useState<CentralPlatformCopy[]>([]);
+ const [active,setActive]=useState('telegram');
+ const [draft,setDraft]=useState<CentralPlatformCopy|null>(null);
+ const [note,setNote]=useState('');
+ const load=useMutation({mutationFn:()=>genericArtifactsApi.platformCopies(id),onSuccess:data=>{setRows(data.items);setDraft(null);setNote('');}});
+ const prepare=useMutation({mutationFn:()=>genericArtifactsApi.prepareCopies(id),onSuccess:data=>{setRows(data.items);setDraft(null);setNote('جُهزت السجلات الناقصة فقط. النسخ المعدلة لم تُستبدل، والأصل لم يتغير.');}});
+ const save=useMutation({mutationFn:()=>genericArtifactsApi.updateCopy(id,draft!),onSuccess:copy=>{setRows(current=>current.map(row=>row.platform===copy.platform?copy:row));setDraft(null);setNote('حُفظت حقول النسخة فقط. لا مسودة نشر أو جدول أو إرسال من هذا الحفظ.');}});
+ const row=rows.find(item=>item.platform===active);
+ const shown=draft??row;
+ const busy=load.isPending||prepare.isPending||save.isPending;
+ function edit(field:keyof CentralPlatformCopy['fields'],value:string|string[]) {if(shown)setDraft({...shown,fields:{...shown.fields,[field]:value}});setNote('');}
+ return <details className="rounded-xl border border-violet-200 bg-violet-50/50 p-3" aria-label={`نسخ المنصات ${id}`}>
+  <summary className="cursor-pointer text-xs font-bold">نسخ المنصات · حقول مرتبطة بالأصل</summary>
+  <div className="mt-3 space-y-3 text-xs leading-6"><p>اعتماد الأصل واحد. ننسخ النص كما هو دون قص أو توليد؛ نتحقق من الحقول المعروفة ونبين ما ينقص. تعديل نسخة لا يغير الأصل أو بقية المنصات.</p>
+   <div className="flex flex-wrap gap-2"><button type="button" disabled={busy||!!draft} onClick={()=>load.mutate()} className="rounded border bg-white p-2">عرض النسخ المحفوظة</button><button type="button" disabled={busy||!!draft} onClick={()=>prepare.mutate()} className="rounded border bg-white p-2">تجهيز النسخ الناقصة دون استبدال</button></div>
+   {rows.length?<><label className="block">المنصة<select aria-label={`منصة النسخة ${id}`} disabled={!!draft||busy} value={active} onChange={e=>{setActive(e.target.value);setNote('');}} className="block w-full rounded border bg-white p-2">{rows.map(copy=><option key={copy.platform} value={copy.platform}>{copy.label} · {copy.field_status==='FIELDS_VALIDATED'?'الحقول مقبولة مبدئياً':'يلزم استكمال'}</option>)}</select></label>
+    {shown?<><p className="rounded bg-white p-2">{shown.origin==='UNCHANGED_ORIGINAL'?'من الأصل دون تغيير':'حقول معدلة'} · إصدار {shown.version} · {shown.central_approval==='APPROVED'?'اعتماد الأصل محفوظ':'الأصل غير معتمد'}</p>
+     {draft?<p role="status" className="text-amber-800">تعديلات غير محفوظة. الحالات أدناه تخص آخر إصدار محفوظ وتُفحص مجدداً عند الحفظ.</p>:null}
+     {shown.blockers.map(reason=><p key={reason} className="text-amber-900">{reason}</p>)}
+     {active==='youtube'?<label className="block">عنوان المنصة<input aria-label={`عنوان نسخة ${id}`} value={shown.fields.title} onChange={e=>edit('title',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>:null}
+     <label className="block">نص النشر / الوصف<textarea aria-label={`وصف نسخة ${id}`} dir="auto" rows={6} value={shown.fields.description} onChange={e=>edit('description',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>
+     {active==='youtube'?<label className="block">كلمات مفتاحية، واحدة في كل سطر<textarea aria-label={`وسوم نسخة ${id}`} rows={2} value={shown.fields.tags.join('\n')} onChange={e=>edit('tags',e.target.value.split('\n').filter(Boolean))} className="block w-full rounded border bg-white p-2"/></label>:null}
+     {active==='instagram'?<label className="block">نص بديل للصورة، دون اختراع وصف<input aria-label={`نص بديل نسخة ${id}`} value={shown.fields.alt_text} onChange={e=>edit('alt_text',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>:null}
+     <div className="flex flex-wrap gap-2"><button type="button" disabled={!draft||busy} onClick={()=>save.mutate()} className="rounded bg-violet-700 p-2 text-white disabled:opacity-40">حفظ النسخة وفحص حقولها</button>{draft?<button type="button" disabled={busy} onClick={()=>setDraft(null)} className="rounded border p-2">تجاهل التعديلات غير المحفوظة</button>:null}</div>
+     {shown.source_stale?<p className="text-amber-900">الحفظ يربط هذه الحقول بالأصل الحالي بعد مراجعتك. لا يستبدل النص تلقائياً.</p>:null}
+     <details className="rounded border bg-white p-2"><summary className="cursor-pointer">ما الذي لم يُتحقق بعد؟</summary>{[...shown.warnings,...shown.media_checks_pending,...shown.execution_blockers].map(reason=><p key={reason}>{reason}</p>)}<p>نسخة Telegram تُستخدم في معاينة الدفعة وخطتها الجديدة فقط بعد مراجعتها. تغيير النسخة يوقف الخطة السابقة. المنصات الأخرى للتجهيز دون تنفيذ.</p>{shown.sources.map(url=><a key={url} href={url} target="_blank" rel="noreferrer" className="block break-all underline">{url}</a>)}</details>
+    </>:null}</>:null}
+   {load.isError||prepare.isError||save.isError?<p role="alert" className="text-rose-700">{load.error?.message??prepare.error?.message??save.error?.message}</p>:null}
+   {note?<p role="status" className="text-emerald-800">{note}</p>:null}
+  </div>
+ </details>;
+}
