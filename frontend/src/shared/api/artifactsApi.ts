@@ -63,7 +63,10 @@ export interface GenericArtifactPage {
   offset: number;
 }
 
+export interface ArtifactPublicationRecord { id:string; platform:string; destination:string; status:string; content:string; external_id:string|null; external_ids:string[]; error_message:string|null; published_at:string|null; created_at:string; schedules:Array<{schedule_id:string; name:string; schedule_status:string; item_status:string; scheduled_at:string; attempts:number; last_error:string|null}>; }
+
 export const genericArtifactsApi = {
+  publications(id:string):Promise<{items:ArtifactPublicationRecord[];total:number}> { return get(`/api/artifacts/${id}/publications`); },
   liveLocations(id: string): Promise<LiveLocationRecord[]> { return get(`/api/artifacts/${id}/live-locations`); },
   locationOperation(publicationId: string, input: {action: string; latitude?: number; longitude?: number}): Promise<LiveLocationOperation> { return post(`/api/artifacts/live-locations/${publicationId}/operations`, input); },
   cancelLocationOperation(id: string): Promise<LiveLocationOperation> { return post(`/api/artifacts/live-location-operations/${id}/cancel`); },

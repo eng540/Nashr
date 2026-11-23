@@ -1,0 +1,20 @@
+import {test,expect} from '@playwright/test';
+test('read only publication ledger shows destination all message ids and attempts',async({page},info)=>{
+ let writes=0;
+ const item={id:'audit',source_knowledge_unit_id:'u',kind:'TEXT',status:'AVAILABLE',content:'نص اصطناعي',storage_uri:null,mime_type:'text/plain',metadata:{title:'عنصر الاختبار'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'};
+ await page.route('**/*',async route=>{const request=route.request();const p=new URL(request.url()).pathname;
+ if(p.startsWith('/api/')&&request.method()!=='GET')writes++;
+ if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts/audit/publications')return route.fulfill({json:{total:1,items:[{id:'ledger-id',platform:'telegram',destination:'synthetic-private-channel',status:'PUBLISHED',content:'النص المرسل',external_ids:['test-1','test-2'],error_message:null,published_at:'2026-11-23T20:00:00Z',schedules:[{schedule_id:'test-schedule',name:'جدول تجريبي',schedule_status:'COMPLETED',item_status:'PUBLISHED',attempts:1,scheduled_at:'2026-11-23T20:00:00Z'}]}]}});
+ if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
+ await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
+ await page.getByRole('button',{name:'عرض وتحديث سجل النشر',exact:true}).click();
+ const ledger=page.getByLabel('سجل نشر المخرج audit',{exact:true});
+ await expect(ledger.getByText('synthetic-private-channel',{exact:true})).toBeVisible();
+ await expect(ledger.getByText('test-1, test-2',{exact:true})).toBeVisible();
+ await ledger.getByText('النص المحفوظ في سجل النشر',{exact:true}).click();await expect(ledger.getByText('النص المرسل',{exact:true})).toBeVisible();
+ await page.screenshot({path:info.outputPath('ledger-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});await ledger.scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('ledger-mobile.png')});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+ await page.getByRole('button',{name:'عرض وتحديث سجل النشر',exact:true}).click();expect(writes).toBe(0);
+});
