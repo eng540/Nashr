@@ -124,6 +124,7 @@ const variantListItem = {
   source_artifact_id: textId,
   source_post_id: null,
   constraints: { max_text: 280, measure: "x_weighted", measured_length: 280, original_length: longText.length, trimmed: true, trim_boundary: "sentence", provenance: "secondary" },
+  manual_publication: null,
   created_at: "2026-10-17T00:00:00Z",
 };
 
@@ -146,6 +147,49 @@ test("publishing workspace lists platform variants as preparation-only drafts wi
   await expect(section.getByTestId("platform-variant-card").getByText("تتطلب مراجعة")).toBeVisible();
   await expect(section.getByText("ضبط طول فقط، ليست صياغة مخصصة")).toBeVisible();
   await expect(section.getByText(/عند حد جملة/)).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBe(0);
+});
+
+test("approved platform variant can be recorded as manually published without mobile overflow", async ({ page }) => {
+  const approvedId = "variant-manual-publication-e2e";
+  const approvedVariant = { ...variantListItem, id: approvedId, review_status: "APPROVED", needs_review: false };
+  const state: { recorded: { published_at: string; external_url?: string | null } | null } = { recorded: null };
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(/\/api\/artifacts\?review_status=APPROVED.*/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/api\/artifacts\/platform-variants$/, (route) => route.fulfill({
+    json: [state.recorded
+      ? { ...approvedVariant, manual_publication: { published_at: state.recorded.published_at, external_url: state.recorded.external_url ?? null, recorded_at: "2026-10-17T12:00:00Z" } }
+      : approvedVariant],
+  }));
+  await page.route(/\/api\/artifacts\/[^/]+\/manual-publication$/, async (route) => {
+    state.recorded = route.request().postDataJSON() as { published_at: string; external_url?: string | null };
+    await route.fulfill({ json: { id: approvedId, review_status: "APPROVED" } });
+  });
+  await page.route(/\/posts\?/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } }));
+  await page.route(/\/posts\/filter-options/, (route) => route.fulfill({ json: { kinds: [], topics: [], sources: [] } }));
+  await page.route(/\/schedules\?limit=/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 50, offset: 0 } }));
+  await page.route(/\/schedules\/upcoming/, (route) => route.fulfill({ json: { items: [], days: 7, limit: 100 } }));
+  await page.route(/\/schedules\/calendar/, (route) => route.fulfill({ json: { date: "2026-10-17", timezone: "Asia/Aden", items: [] } }));
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => route.fulfill({ json: [] }));
+  await page.goto("/publishing");
+  await page.getByRole("button", { name: /مسودات المنصات/ }).click();
+  const section = page.getByTestId("publishing-platforms");
+  await expect(section).toBeVisible();
+  await expect(section.getByTestId("variant-pipeline-summary")).toContainText("معتمدة بانتظار النشر اليدوي");
+  await expect(section.getByText("معتمدة بانتظار النشر اليدوي (1)")).toBeVisible();
+  const card = section.getByTestId("platform-variant-card");
+  await expect(card).toHaveCount(1);
+  await card.getByRole("button", { name: "تسجيل نشر يدوي" }).click();
+  await card.getByLabel("تاريخ النشر اليدوي").fill("2026-10-17");
+  await card.getByLabel("رابط المنشور").fill("https://x.com/example/status/1");
+  await card.getByRole("button", { name: "حفظ التسجيل" }).click();
+  await expect(card.getByTestId("manual-publication-record")).toBeVisible();
+  await expect(card.getByText(/نُشرت يدويًا خارج التطبيق/)).toBeVisible();
+  await expect(card.getByRole("link", { name: "رابط المنشور" })).toBeVisible();
+  await expect(section.getByText("منشورة يدويًا (1)")).toBeVisible();
+  expect(state.recorded?.published_at).toContain("2026-10-17");
+  expect(state.recorded?.external_url).toBe("https://x.com/example/status/1");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBe(0);
 });
