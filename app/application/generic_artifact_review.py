@@ -50,6 +50,11 @@ def _validate_review_candidate(row: ArtifactModel, content: str | None, metadata
         if row.kind != "TEXT":
             raise ValueError("Native Telegram content must use TEXT.")
         native_payload(metadata["telegram_native"])
+    if metadata.get("telegram_album") is not None:
+        from app.domain.telegram_albums import album_ids
+        if row.kind != "TEXT" or metadata.get("telegram_native") is not None:
+            raise ValueError("Album must be a dedicated TEXT wrapper.")
+        album_ids(metadata["telegram_album"])
     if row.kind == "QUIZ":
         payload = metadata.get("quiz")
         if not isinstance(payload, dict):
@@ -106,6 +111,12 @@ class GenericArtifactReviewService:
             raise ValueError("Only DRAFT generic artifacts can be edited.")
         candidate_content = row.content if content is None else content
         candidate_metadata = dict(row.artifact_metadata or {}) if metadata is None else dict(metadata)
+        if (row.artifact_metadata or {}).get("telegram_album") is not None:
+            keys = ("telegram_album", "album_child_fingerprints", "album_preview")
+            if any(candidate_metadata.get(key) != row.artifact_metadata.get(key) for key in keys):
+                raise ValueError("Album selection and preview are immutable; create a new album.")
+        elif candidate_metadata.get("telegram_album") is not None:
+            raise ValueError("Use the dedicated album creation workflow.")
         _validate_review_candidate(row, candidate_content, candidate_metadata)
         row.content = candidate_content
         row.artifact_metadata = candidate_metadata
@@ -119,6 +130,9 @@ class GenericArtifactReviewService:
         if row.review_status != "DRAFT":
             raise ValueError("Only DRAFT generic artifacts can be approved.")
         _validate_review_candidate(row, row.content, dict(row.artifact_metadata or {}))
+        if (row.artifact_metadata or {}).get("telegram_album") is not None:
+            from app.application.telegram_albums import resolve_album
+            await resolve_album(self.session, row.artifact_metadata)
         row.review_status = "APPROVED"
         row.review_note = review_note.strip() if review_note and review_note.strip() else None
         row.reviewed_at = datetime.now(timezone.utc)
