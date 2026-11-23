@@ -49,8 +49,8 @@ async def test_media_bank_ingest_review_and_telegram_draft(monkeypatch):
     storage = S3ArtifactStorage(client=_FakeS3Client(), bucket="media-bank-test")
     artifact_id = await _ingest(storage)
 
-    assert storage.puts, "Ingest must store the uploaded media bytes."
-    assert storage.puts[0]["Key"].startswith("artifacts/media-bank/")
+    assert storage.client.puts, "Ingest must store the uploaded media bytes."
+    assert storage.client.puts[0]["Key"].startswith("artifacts/media-bank/")
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -92,4 +92,4 @@ async def test_media_bank_ingest_rejects_unsupported_type():
                 data=b"plain text",
                 caption=None,
             )
-    assert not storage.puts
+    assert not storage.client.puts
