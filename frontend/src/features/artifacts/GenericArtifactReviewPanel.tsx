@@ -607,7 +607,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         {status === "APPROVED" && (STORED_MEDIA.includes(artifact.kind) || ["TEXT", "QUIZ"].includes(artifact.kind)) ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
           <p className="text-sm font-semibold">محتوى معتمد جاهز لمسودة Telegram</p>
           {mediaDrafts[artifact.id] ? <p role="status" className="text-xs">سجل نشر Telegram: {mediaDrafts[artifact.id].id} · الحالة {mediaDrafts[artifact.id].status} · المسودة جاهزة للمراجعة في سجل النشر.</p> : null}
-          {!mediaDrafts[artifact.id] ? <button type="button" onClick={() => createMediaDraft.mutate(artifact.id)} disabled={createMediaDraft.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{createMediaDraft.isPending ? "جارٍ إنشاء المسودة..." : "إنشاء مسودة نشر Telegram"}</button> : null}
+          {!mediaDrafts[artifact.id] ? <button type="button" onClick={() => createMediaDraft.mutate(artifact.id)} disabled={createMediaDraft.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{createMediaDraft.isPending ? "جارٍ إنشاء المسودة..." : "إنشاء مسودة Telegram من الأصل"}</button> : null}
           {createMediaDraft.isError ? <p role="alert" className="text-sm text-rose-700">{createMediaDraft.error.message}</p> : null}
           <div className="flex flex-wrap items-center gap-2 border-t border-emerald-100 pt-2">
             <label className="text-sm font-semibold">موعد الجدولة (بتوقيت الرياض)
@@ -639,7 +639,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         {artifact.metadata.source_type === "PLATFORM_VARIANT" && variantLength(artifact, drafts[artifact.id]?.content) > Number((artifact.metadata.constraints as Record<string,unknown>)?.max_text ?? Infinity) ? <p role="alert" className="text-sm text-rose-700">تجاوزت النسخة حد المنصة. قصّر النص قبل الحفظ والاعتماد.</p> : null}
         {artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <DistributionReadinessPanel ids={[artifact.id]} /> : null}
         <ArtifactPublicationLedger id={artifact.id} />
-          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} /> : null}
+          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} onPlan={() => {setSelectedMediaIds([artifact.id]); requestAnimationFrame(() => document.querySelector('[aria-label="معاينة دفعة Telegram"]')?.scrollIntoView({behavior:'smooth',block:'start'}));}} /> : null}
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {typeof artifact.metadata.caption === "string" && artifact.metadata.caption ? <p dir="auto" className="rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p> : null}
         {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">

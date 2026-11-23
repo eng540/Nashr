@@ -484,6 +484,10 @@ async def create_telegram_media_draft_for_artifact(
         if artifact is None:
             raise LookupError("Artifact not found.")
         caption = telegram_publish_text(artifact)
+        from app.infrastructure.database.models import PlatformCopyModel
+        copy = await session.get(PlatformCopyModel, (artifact_id, 'telegram'))
+        if copy and copy.fields.get('description') != caption:
+            raise ValueError('توجد نسخة Telegram مستقلة تختلف عن الأصل. استخدم معاينة الدفعة وحفظ خطتها لتثبيت النص المراجع؛ لم تُنشأ مسودة من نص آخر.')
         publication = await CreateTelegramDraft.execute_for_artifact(
             session, artifact, destination, content_override=caption
         )

@@ -108,4 +108,4 @@ async def save_selection(session, artifact_ids, platforms, fingerprints):
         selection.saved_at = datetime.now(timezone.utc)
         selections[row.id] = selection
     await session.commit()
-    return {"items": [readiness(row, selections[row.id]) for row in rows], "saved": len(rows), "publications_created": 0, "schedules_created": 0}
+    return {"items": [await get_readiness(session, row.id) for row in rows], "saved": len(rows), "publications_created": 0, "schedules_created": 0}
