@@ -150,6 +150,32 @@ async def list_platform_variant_drafts(
     return await list_platform_variants(session, limit)
 
 
+class DistributionSelectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    artifact_ids: list[UUID] = Field(min_length=1, max_length=100)
+    platforms: list[str] = Field(max_length=6)
+    fingerprints: dict[str, str]
+
+
+@router.post("/distribution-selection")
+async def save_distribution_selection(payload: DistributionSelectionRequest, session: AsyncSession = Depends(get_session)):
+    from app.application.distribution_readiness import save_selection
+    try:
+        return await save_selection(session, payload.artifact_ids, payload.platforms, payload.fingerprints)
+    except (ValueError, LookupError) as exc:
+        await session.rollback()
+        raise _handle_error(exc) from exc
+
+
+@router.get("/{artifact_id}/distribution-readiness")
+async def distribution_readiness(artifact_id: UUID, session: AsyncSession = Depends(get_session)):
+    from app.application.distribution_readiness import get_readiness
+    try:
+        return await get_readiness(session, artifact_id)
+    except LookupError as exc:
+        raise _handle_error(exc) from exc
+
+
 @router.post("/ingest-media", status_code=201)
 async def ingest_ready_media(
     file: UploadFile = File(...),

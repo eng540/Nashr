@@ -1,3 +1,4 @@
+import { DistributionReadinessPanel } from "./DistributionReadinessPanel";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -520,6 +521,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         <span className="w-full text-xs leading-5 text-slate-500">ينشئ مسودة نشر Telegram لكل وسيط معتمد محدد مع نص تعليقه للمراجعة؛ تجهيز فقط ولا يُنشر أو يُجدول شيء خارجيًا.</span>
         {batchNote ? <p role="status" className="w-full text-sm font-semibold text-emerald-800">{batchNote}</p> : null}
       </div> : null}
+      {status === "APPROVED" && selectedMediaIds.length > 0 ? <DistributionReadinessPanel ids={selectedMediaIds} /> : null}
     </div>
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
@@ -630,6 +632,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? "")) ? <p role="status" className="text-sm">توجد تعديلات غير محفوظة؛ احفظها قبل الاعتماد.</p> : null}
         </section> : null}
         {artifact.metadata.source_type === "PLATFORM_VARIANT" && variantLength(artifact, drafts[artifact.id]?.content) > Number((artifact.metadata.constraints as Record<string,unknown>)?.max_text ?? Infinity) ? <p role="alert" className="text-sm text-rose-700">تجاوزت النسخة حد المنصة. قصّر النص قبل الحفظ والاعتماد.</p> : null}
+        {artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <DistributionReadinessPanel ids={[artifact.id]} /> : null}
         <ArtifactPublicationLedger id={artifact.id} />
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {typeof artifact.metadata.caption === "string" && artifact.metadata.caption ? <p dir="auto" className="rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p> : null}

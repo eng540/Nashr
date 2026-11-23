@@ -619,3 +619,12 @@ class LiveLocationOperationModel(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DistributionSelectionModel(Base):
+    """Distribution intent is not content metadata or execution permission."""
+    __tablename__ = 'distribution_selections'
+    artifact_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey('artifacts.id', ondelete='CASCADE'), primary_key=True)
+    platforms: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    source_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
