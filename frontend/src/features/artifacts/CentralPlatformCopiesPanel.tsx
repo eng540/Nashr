@@ -2,7 +2,7 @@ import {useState} from 'react';
 import {useMutation} from '@tanstack/react-query';
 import {genericArtifactsApi,type CentralPlatformCopy} from '../../shared/api/artifactsApi';
 
-export function CentralPlatformCopiesPanel({id}:{id:string}) {
+export function CentralPlatformCopiesPanel({id,onPlan}:{id:string;onPlan?:()=>void}) {
  const [rows,setRows]=useState<CentralPlatformCopy[]>([]);
  const [active,setActive]=useState('telegram');
  const [draft,setDraft]=useState<CentralPlatformCopy|null>(null);
@@ -31,6 +31,7 @@ export function CentralPlatformCopiesPanel({id}:{id:string}) {
      <details className="rounded border bg-white p-2"><summary className="cursor-pointer">ما الذي لم يُتحقق بعد؟</summary>{[...shown.warnings,...shown.media_checks_pending,...shown.execution_blockers].map(reason=><p key={reason}>{reason}</p>)}<p>نسخة Telegram تُستخدم في معاينة الدفعة وخطتها الجديدة فقط بعد مراجعتها. تغيير النسخة يوقف الخطة السابقة. المنصات الأخرى للتجهيز دون تنفيذ.</p>{shown.sources.map(url=><a key={url} href={url} target="_blank" rel="noreferrer" className="block break-all underline">{url}</a>)}</details>
     </>:null}</>:null}
    {load.isError||prepare.isError||save.isError?<p role="alert" className="text-rose-700">{load.error?.message??prepare.error?.message??save.error?.message}</p>:null}
+   {active==='telegram'&&row&&!draft&&onPlan?<button type="button" disabled={busy} onClick={onPlan} className="rounded border bg-white p-2 font-bold">معاينة وجدولة نسخة Telegram هذه</button>:null}
    {note?<p role="status" className="text-emerald-800">{note}</p>:null}
   </div>
  </details>;
