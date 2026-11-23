@@ -45,6 +45,11 @@ def _validate_review_candidate(row: ArtifactModel, content: str | None, metadata
     missing = [field for field in definition.required_metadata_fields if field not in metadata]
     if missing:
         raise ValueError("Artifact is missing required metadata fields: " + ", ".join(missing))
+    if metadata.get("telegram_native") is not None:
+        from app.domain.telegram_payloads import native_payload
+        if row.kind != "TEXT":
+            raise ValueError("Native Telegram content must use TEXT.")
+        native_payload(metadata["telegram_native"])
     if row.kind == "QUIZ":
         payload = metadata.get("quiz")
         if not isinstance(payload, dict):
