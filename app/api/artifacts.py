@@ -336,13 +336,19 @@ async def schedule_approved_quiz(
     payload: QuizScheduleRequest,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Create a one-item durable schedule for an approved QUIZ Artifact."""
+    """Create a one-item durable schedule for an approved QUIZ or media Artifact."""
     try:
         artifact_review = await GenericArtifactReviewService(session).get(artifact_id)
-        if artifact_review.get("kind") != ArtifactKind.QUIZ.value:
-            raise ValueError("Only QUIZ Artifacts can be scheduled through this route.")
+        kind = artifact_review.get("kind")
+        if kind not in {ArtifactKind.QUIZ.value, ArtifactKind.IMAGE.value, ArtifactKind.VIDEO.value}:
+            raise ValueError("Only QUIZ, IMAGE or VIDEO Artifacts can be scheduled through this route.")
         if artifact_review.get("review_status") != "APPROVED":
-            raise ValueError("QUIZ Artifact must be approved before scheduling.")
+            raise ValueError("Artifact must be approved before scheduling.")
+        if kind in {ArtifactKind.IMAGE.value, ArtifactKind.VIDEO.value}:
+            if not artifact_review.get("storage_uri"):
+                raise ValueError("Media Artifact has no stored media to schedule.")
+            if not str((artifact_review.get("metadata") or {}).get("caption") or "").strip():
+                raise ValueError("Media Artifact needs a non-empty caption before scheduling.")
         timezone_name = validate_timezone(payload.timezone)
         scheduled_at = validate_scheduled_at(payload.scheduled_at)
         already_published = (await session.execute(select(PublicationModel.id).where(
@@ -351,7 +357,7 @@ async def schedule_approved_quiz(
             PublicationModel.status == "PUBLISHED",
         ).limit(1))).scalar_one_or_none()
         if already_published is not None:
-            raise ValueError("This quiz has already been published.")
+            raise ValueError("This Artifact has already been published.")
         already_scheduled = (await session.execute(select(ScheduleItemModel.id).join(
             ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id
         ).where(
@@ -360,9 +366,11 @@ async def schedule_approved_quiz(
             ScheduleModel.status.in_(("DRAFT", "ACTIVE", "PAUSED")),
         ).limit(1))).scalar_one_or_none()
         if already_scheduled is not None:
-            raise ValueError("This quiz already belongs to an active or draft schedule.")
+            raise ValueError("This Artifact already belongs to an active or draft schedule.")
         artifact_row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == artifact_id))).scalar_one()
-        if artifact_row.status != "AVAILABLE" or not artifact_row.content or not isinstance((artifact_row.artifact_metadata or {}).get("quiz"), dict):
+        if artifact_row.status != "AVAILABLE":
+            raise ValueError("Artifact is unavailable.")
+        if kind == ArtifactKind.QUIZ.value and (not artifact_row.content or not isinstance((artifact_row.artifact_metadata or {}).get("quiz"), dict)):
             raise ValueError("QUIZ Artifact payload is incomplete or unavailable.")
         schedule = ScheduleModel(
             name=payload.name.strip(),
