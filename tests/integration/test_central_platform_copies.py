@@ -81,3 +81,28 @@ async def test_reviewed_telegram_copy_runs_only_from_new_pinned_batch(monkeypatc
         assert publisher.seen=='نسخة Telegram المعدلة'
         async with SessionFactory() as session:
             assert (await session.get(ArtifactModel,UUID(uid))).content=='الأصل المعتمد'
+
+@pytest.mark.asyncio
+async def test_batch_prepares_only_missing_copies_and_rolls_back_invalid_selection():
+    from sqlalchemy import delete
+    ids=[await _seed_text_artifact('مادة أولى'),await _seed_text_artifact('مادة ثانية')]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        for uid in ids:
+            await client.post(f'/api/artifacts/{uid}/approve',json={})
+        async with SessionFactory() as session:
+            await session.execute(delete(PlatformCopyModel).where(PlatformCopyModel.artifact_id.in_([UUID(uid) for uid in ids])))
+            await session.commit()
+        invalid=await _seed_text_artifact('غير معتمدة')
+        failed=await client.post('/api/artifacts/platform-copies/prepare-batch',json={'artifact_ids':[ids[0],invalid]})
+        assert failed.status_code==422
+        assert (await client.get(f'/api/artifacts/{ids[0]}/platform-copies')).json()['items']==[]
+        first=await client.post('/api/artifacts/platform-copies/prepare-batch',json={'artifact_ids':ids})
+        assert first.status_code==200 and first.json()['prepared']==2
+        data=first.json()['items'][0]
+        telegram=next(copy for copy in data['items'] if copy['platform']=='telegram')
+        fields={**telegram['fields'],'description':'تعديل محفوظ'}
+        await client.patch(f"/api/artifacts/{data['artifact_id']}/platform-copies/telegram",json={'fields':fields,'version':telegram['version'],'current_source_fingerprint':telegram['current_source_fingerprint']})
+        second=(await client.post('/api/artifacts/platform-copies/prepare-batch',json={'artifact_ids':ids})).json()
+        changed=next(row for row in second['items'] if row['artifact_id']==data['artifact_id'])
+        assert next(copy for copy in changed['items'] if copy['platform']=='telegram')['fields']['description']=='تعديل محفوظ'
+        assert second['selection_changed'] is False and second['publications_created']==0 and second['schedules_created']==0
