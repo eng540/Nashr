@@ -39,6 +39,7 @@ def _to_domain(row: PublicationModel) -> Publication:
         created_at=row.created_at,
         published_at=row.published_at,
         artifact_id=row.artifact_id,
+        external_ids=tuple(row.external_ids or ()),
     )
 
 
@@ -208,9 +209,26 @@ class ApproveAndPublish:
         if current_row.status != PublicationStatus.DRAFT.value:
             raise ValueError("Publication is not a DRAFT.")
 
+        album_media = None
         media_bytes = None
         media_mime_type = None
         quiz_payload = None
+        if (artifact.metadata or {}).get("telegram_album") is not None:
+            from app.application.telegram_albums import resolve_album
+            children, _ = await resolve_album(session, artifact.metadata)
+            album_media = []
+            total_bytes = 0
+            storage = S3ArtifactStorage.from_environment()
+            from app.domain.telegram_media import media_request
+            for child in children:
+                data = await storage.get_bytes(child.storage_uri, max_bytes=min(50 * 1024 * 1024, 100 * 1024 * 1024 - total_bytes))
+                total_bytes += len(data)
+                if total_bytes > 100 * 1024 * 1024:
+                    raise ValueError("Album exceeds100MiB total upload limit.")
+                meta = child.artifact_metadata or {}
+                media_request(child.kind, child.mime_type, data, meta.get("original_filename"))
+                album_media.append({"kind": child.kind, "mime_type": child.mime_type, "data": data,
+                    "filename": meta.get("original_filename"), "caption": str(meta.get("caption") or "")})
         if artifact.kind == ArtifactKind.QUIZ:
             metadata = artifact.metadata or {}
             quiz_data = metadata.get("quiz")
@@ -302,7 +320,9 @@ class ApproveAndPublish:
         # The provider call must never hold an open database transaction.
         await session.commit()
         try:
-            if quiz_payload is not None:
+            if album_media is not None:
+                published = await self.publisher.publish(destination=row.destination, content=row.content, album=album_media)
+            elif quiz_payload is not None:
                 if row.content != quiz_payload.question:
                     raise ValueError("Publication content no longer matches the approved quiz question.")
                 published = await self.publisher.publish(
@@ -325,7 +345,7 @@ class ApproveAndPublish:
             await session.execute(
                 update(PublicationModel)
                 .where(PublicationModel.id == publication_id)
-                .values(status=PublicationStatus.FAILED.value, error_message=str(exc))
+                .values(status=PublicationStatus.PUBLISHING.value if album_media is not None else PublicationStatus.FAILED.value, error_message=str(exc))
             )
             await session.commit()
             result = await session.execute(select(PublicationModel).where(PublicationModel.id == publication_id))
@@ -337,6 +357,7 @@ class ApproveAndPublish:
             .values(
                 status=PublicationStatus.PUBLISHED.value,
                 external_id=published.external_id,
+                external_ids=list(published.external_ids) or [published.external_id],
                 published_at=datetime.now(timezone.utc),
                 error_message=None,
             )
