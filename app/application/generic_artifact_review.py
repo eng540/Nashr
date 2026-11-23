@@ -177,6 +177,9 @@ class GenericArtifactReviewService:
         row.review_note = review_note.strip() if review_note and review_note.strip() else None
         row.reviewed_at = datetime.now(timezone.utc)
         row.updated_at = row.reviewed_at
+        if (row.artifact_metadata or {}).get("source_type") != "PLATFORM_VARIANT":
+            from app.application.central_platform_copies import prepare_copies
+            await prepare_copies(self.session, row)
         await self.session.commit()
         await self.session.refresh(row)
         return _payload(row)
