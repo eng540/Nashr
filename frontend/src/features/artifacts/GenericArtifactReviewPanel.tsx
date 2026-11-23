@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router";
 import { CentralPlatformCopiesPanel } from "./CentralPlatformCopiesPanel";
 import { TelegramBatchPreviewPanel } from "./TelegramBatchPreviewPanel";
 import { DistributionReadinessPanel } from "./DistributionReadinessPanel";
@@ -149,7 +150,10 @@ function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewable
 
 export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOnly = false }: { showDesignCard?: boolean; designCardOnly?: boolean } = {}) {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<GenericArtifactReviewStatus>("DRAFT");
+  const [libraryParams] = useSearchParams();
+  const [status, setStatus] = useState<GenericArtifactReviewStatus>(libraryParams.get("artifact_status") === "APPROVED" ? "APPROVED" : "DRAFT");
+  const [focusedId,setFocusedId] = useState<string|null>(libraryParams.get("artifact_id"));
+  const [compact,setCompact] = useState(libraryParams.get("library_view")!=="expanded");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
   const [quizDrafts, setQuizDrafts] = useState<Record<string, { id: string; status: string; external_id?: string | null }>>({});
@@ -161,7 +165,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const [variantPostId, setVariantPostId] = useState("");
   const [variantPostPlatform, setVariantPostPlatform] = useState("");
   const [variantPostNote, setVariantPostNote] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(libraryParams.get("artifact_id")??"");
   const [kindFilter, setKindFilter] = useState("ALL");
   const [sourceFilter, setSourceFilter] = useState("ALL");
   const [seriesFilter, setSeriesFilter] = useState("ALL");
@@ -235,7 +239,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const pageCount = Math.max(1, Math.ceil(filteredArtifacts.length / LIBRARY_PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pagedArtifacts = filteredArtifacts.slice(safePage * LIBRARY_PAGE_SIZE, safePage * LIBRARY_PAGE_SIZE + LIBRARY_PAGE_SIZE);
-  const updateFilters = (apply: () => void) => { apply(); setPage(0); };
+  const updateFilters = (apply: () => void) => { apply(); setPage(0); setFocusedId(null); };
   const save = useMutation({
     mutationFn: (id: string) => {
       const artifact = (artifacts.data?.items ?? []).find((item) => item.id === id);
@@ -450,7 +454,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         <p className="mt-1 text-sm text-slate-500">النصوص والوسائط التي لا تمثل منشورات Telegram تمر بمراجعة مستقلة.</p>
       </div>
       <label className="text-sm font-semibold">الحالة
-        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => setStatus(event.target.value as GenericArtifactReviewStatus)} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
+        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => {setFocusedId(null);setStatus(event.target.value as GenericArtifactReviewStatus);}} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
           <option value="DRAFT">قيد المراجعة</option>
           <option value="APPROVED">معتمد</option>
           <option value="REJECTED">مرفوض</option>
@@ -533,8 +537,9 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
     {!artifacts.isLoading && !artifacts.isError && filteredArtifacts.length === 0 ? <EmptyState title={allArtifacts.length === 0 ? "لا توجد مخرجات في هذه الحالة." : "لا توجد نتائج مطابقة للبحث أو الفلاتر الحالية."} /> : null}
-    <div className="grid min-w-0 gap-3 xl:grid-cols-2">
-      {pagedArtifacts.map((artifact) => <article key={artifact.id} className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-slate-50 p-3"><p className="text-sm">تصفح المكتبة ثم افتح مادة للعمل عليها. التحديد مستقل عن فتح المحرر.</p><button type="button" onClick={()=>{setCompact(!compact);setFocusedId(null);}} className="rounded border bg-white p-2 text-xs font-bold">{compact?'عرض أدوات جميع بطاقات الصفحة':'العودة إلى التصفح المختصر'}</button></div>
+    <div className={`grid min-w-0 items-start gap-3 ${pagedArtifacts.length>1&&!focusedId?'xl:grid-cols-2':''}`}>
+      {pagedArtifacts.filter(artifact=>!focusedId||artifact.id===focusedId).map((artifact) => <article key={artifact.id} className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
           {status === "APPROVED" && isTelegramMediaEligible(artifact) ? <input
             type="checkbox"
@@ -553,11 +558,14 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
+        {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button type="button" aria-expanded={focusedId===artifact.id} onClick={()=>setFocusedId(focusedId===artifact.id?null:artifact.id)} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-bold text-white">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
+        {!compact||focusedId===artifact.id?<div className="space-y-3" aria-label={`مساحة المادة ${artifact.id}`}>
+        <nav aria-label="مراحل العمل على المادة" className="flex flex-wrap gap-2 rounded bg-slate-50 p-2 text-xs text-slate-600"><span>1. الأصل والمراجعة</span><span>← 2. نسخ المنصات والوجهات</span><span>← 3. معاينة وخطة</span><span>← 4. سجل النشر</span></nav>
         {(artifact.metadata.telegram_native as Record<string, unknown> | undefined)?.type === 'LIVE_LOCATION' ? <LiveLocationControls artifactId={artifact.id} /> : null}
         {artifact.metadata.telegram_live_photo ? <section className="rounded-xl border border-violet-200 bg-violet-50 p-3"><h4 className="font-bold">صورة حية،الصورة الثابتة ثم فيديو الحركة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(artifact.metadata.live_photo_preview, null, 2)}</pre>{(Array.isArray(artifact.metadata.live_photo_preview) ? artifact.metadata.live_photo_preview : []).map(value => <AlbumChildPreview key={(value as {id:string}).id} id={(value as {id:string}).id} />)}<p className="text-xs">يُرسلان كصورة حية واحدة،وليست ألبوماً أو فيديو منفرداً.</p></section> : null}
         {artifact.metadata.telegram_album ? <section className="rounded-xl border border-sky-200 bg-sky-50 p-3"><h4 className="font-bold">ألبوم Telegram،الترتيب والتعليقات المعتمدة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-sm">{JSON.stringify(artifact.metadata.album_preview, null, 2)}</pre><div className="grid gap-2 sm:grid-cols-2">{(Array.isArray(artifact.metadata.album_preview) ? artifact.metadata.album_preview : []).map((value) => { const item = value as { id: string }; return <AlbumChildPreview key={item.id} id={item.id} />; })}</div><p className="text-xs">الصور والفيديو معًا،أو صوت فقط،أو مستندات فقط. تتوقف العملية إذا تغيّر اعتماد أو محتوى أي عنصر.</p></section> : null}
         {artifact.metadata.telegram_native ? <section className="rounded-lg border bg-sky-50 p-3"><h4 className="font-bold">معاينة بيانات Telegram</h4><pre dir="ltr" className="whitespace-pre-wrap break-all text-xs">{JSON.stringify(artifact.metadata.telegram_native, null, 2)}</pre></section> : null}
-        {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
+        {compact && artifact.content !== null && status !== 'DRAFT' ? <section aria-label={`معاينة قراءة المخرج ${artifact.id}`} className="rounded-xl bg-slate-50 p-4"><h3 className="text-xs font-bold text-slate-500">الأصل للقراءة، تحرير النسخ أدناه</h3><p dir="auto" data-testid={`artifact-text-preview-${artifact.id}`} className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-base leading-8">{artifact.content}</p></section> : artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
           <section aria-label={`تحرير المخرج ${artifact.id}`} className="min-w-0 space-y-2">
             <h3 className="text-sm font-bold text-slate-700">المحرر</h3>
             <textarea
@@ -581,6 +589,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             <p className="text-xs leading-5 text-slate-500">تحافظ المعاينة على فواصل الأسطر والفقرات كما هي في النص. وهي معاينة للنص العادي، وليست محاكاة كاملة لتنسيقات القناة المستهدفة.</p>
           </section>
         </div> : <GenericArtifactMediaPreview artifact={artifact} />}
+        <details open={!compact} className="rounded-xl border p-3"><summary className="cursor-pointer text-xs font-bold">الأصل والمعاينة وأدوات الإنتاج</summary>
         {status === "APPROVED" && artifact.kind === "TEXT" && !artifact.metadata.telegram_album && !artifact.metadata.telegram_live_photo && !artifact.metadata.telegram_native && artifact.content ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
           <label className="w-full text-sm font-semibold sm:w-auto">إنشاء بطاقة من هذا النص المعتمد
             <select aria-label={`منتج البطاقة ${artifact.id}`} value={cardProducts[artifact.id] ?? ""} onChange={(event) => setCardProducts((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal sm:mt-0 sm:w-auto sm:max-w-md">
@@ -592,6 +601,9 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {products.isLoading || recipes.isLoading ? <span className="text-xs">تحميل منتجات البطاقات...</span> : null}
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
         </div> : null}
+        </details>
+          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} onPlan={() => {setSelectedMediaIds([artifact.id]); requestAnimationFrame(() => document.querySelector('[aria-label="معاينة دفعة Telegram"]')?.scrollIntoView({behavior:'smooth',block:'start'}));}} /> : null}
+        <details open={!compact} className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold">أدوات إضافية قديمة: اشتقاق ومسودة من الأصل</summary>
         {status === "APPROVED" && ["TEXT", "IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 p-3">
           <label className="w-full text-sm font-semibold sm:w-auto">اشتقاق نسخة بحدود منصة
             <select aria-label={`منصة النسخة ${artifact.id}`} value={variantPlatform[artifact.id] ?? ""} onChange={(event) => setVariantPlatform((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal sm:mt-0 sm:w-auto">
@@ -631,6 +643,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {createQuizDraft.isError ? <p role="alert" className="text-sm text-rose-700">{createQuizDraft.error.message}</p> : null}
           {publishQuiz.isError ? <p role="alert" className="text-sm text-rose-700">{publishQuiz.error.message}</p> : null}
         </div> : null}
+        </details>
         {artifact.metadata.source_type === "PLATFORM_VARIANT" ? <section aria-label={`نسخة منصة ${artifact.id}`} className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
           <h4 className="font-bold">نسخة {String(artifact.metadata.platform_label_ar ?? artifact.metadata.platform)} مستقلة</h4>
           <p className="text-xs">تعديل النسخة لا يغيّر الأصل. احفظ التعديلات قبل الاعتماد. إعادة الاشتقاق لا تستبدل المسودة الموجودة.</p>
@@ -642,7 +655,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         {artifact.metadata.source_type === "PLATFORM_VARIANT" && variantLength(artifact, drafts[artifact.id]?.content) > Number((artifact.metadata.constraints as Record<string,unknown>)?.max_text ?? Infinity) ? <p role="alert" className="text-sm text-rose-700">تجاوزت النسخة حد المنصة. قصّر النص قبل الحفظ والاعتماد.</p> : null}
         {artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <DistributionReadinessPanel ids={[artifact.id]} /> : null}
         <ArtifactPublicationLedger id={artifact.id} />
-          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} onPlan={() => {setSelectedMediaIds([artifact.id]); requestAnimationFrame(() => document.querySelector('[aria-label="معاينة دفعة Telegram"]')?.scrollIntoView({behavior:'smooth',block:'start'}));}} /> : null}
+
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
         {typeof artifact.metadata.caption === "string" && artifact.metadata.caption ? <p dir="auto" className="rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p> : null}
         {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
@@ -658,18 +671,19 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <p className="mt-3 text-xs leading-6 text-indigo-800">نسخ منفصلة للمراجعة. حفظها لا يغيّر تعليق النشر الحالي ولا ينشر شيئاً. تعليمات التحرير محفوظة مع الأصل ولا تضاف تلقائياً إلى نسخ المنصات.</p>
         </details> : null}
         {Object.keys(artifact.metadata).length > 0 ? <details className="rounded-lg bg-slate-50 p-3 text-xs"><summary className="cursor-pointer font-semibold text-slate-600">تفاصيل تقنية</summary><pre dir="ltr" className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-left">{JSON.stringify(artifact.metadata, null, 2)}</pre></details> : null}
-        <input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>
+        {status==='DRAFT'?<input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>:null}
         {status === "DRAFT" ? <div className="flex flex-wrap gap-2">
           {artifact.content !== null ? <button type="button" onClick={() => save.mutate(artifact.id)} disabled={save.isPending} className="rounded-lg border px-3 py-2 text-sm font-semibold">حفظ التعديل</button> : null}
           <button type="button" onClick={() => approve.mutate(artifact.id)} disabled={approve.isPending || drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? ""))} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">اعتماد المخرج</button>
           <button type="button" onClick={() => reject.mutate(artifact.id)} disabled={reject.isPending || !(drafts[artifact.id]?.review_note ?? "").trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white">رفض المخرج</button>
         </div> : null}
+        </div>:null}
       </article>)}
     </div>
     {pageCount > 1 ? <nav className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3" aria-label="ترقيم صفحات المخرجات">
-      <button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">السابق</button>
+      <button type="button" onClick={() => {setFocusedId(null);setPage((current) => Math.max(0, current - 1));}} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">السابق</button>
       <span className="text-xs font-semibold text-slate-500">صفحة {safePage + 1} من {pageCount} · عرض {pagedArtifacts.length} من {filteredArtifacts.length}</span>
-      <button type="button" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">التالي</button>
+      <button type="button" onClick={() => {setFocusedId(null);setPage((current) => Math.min(pageCount - 1, current + 1));}} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">التالي</button>
     </nav> : null}
     <details className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/40 p-4" open>
       <summary className="cursor-pointer text-sm font-bold text-slate-600">إجراءات إضافية: رفع وسيط جاهز، اشتقاق نسخة منصة، وبطاقة تصميم</summary>

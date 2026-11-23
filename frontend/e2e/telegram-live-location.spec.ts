@@ -14,7 +14,7 @@ test('live location update and stop require a separate reviewed operation',async
   if(['/posts','/sources','/api/control/'].some(p=>u.pathname.startsWith(p)))return route.fulfill({json:[]});
   return route.continue();
  });
- await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  await page.getByLabel('خط عرض التحديث').fill('0.001');await page.getByLabel('خط طول التحديث').fill('0.002');
  await page.getByRole('button',{name:'تجهيز تحديث الموقع للمراجعة',exact:true}).click();
  await expect(page.getByText('UPDATE · DRAFT',{exact:true})).toBeVisible();expect(executed).toBe(0);

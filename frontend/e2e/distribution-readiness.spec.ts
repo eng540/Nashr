@@ -9,7 +9,7 @@ test('central approval and untouched preview with explicit non-executing platfor
  if(p==='/api/artifacts/central/distribution-readiness')return route.fulfill({json:readiness});
  if(p==='/api/artifacts/distribution-selection'){saves++;const input=request.postDataJSON();expect(input.artifact_ids).toEqual(['central']);expect(input.fingerprints).toEqual({central:'version1'});expect(input.platforms).toEqual(['telegram']);return route.fulfill({json:{saved:1,items:[readiness]}});}
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
- await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  const panel=page.getByLabel('جاهزية توزيع central',{exact:true});
  await panel.getByRole('button',{name:'فحص جاهزية واختيار المنصات (1)',exact:true}).click();
  await expect(panel.getByText('اعتماد مركزي محفوظ',{exact:false})).toBeVisible();await panel.getByText('اعتماد مركزي محفوظ',{exact:false}).click();

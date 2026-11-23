@@ -109,7 +109,7 @@ test("approved text can create a card, receive independent visual approval, and 
   await page.route(/^https?:\/\/[^/]+\/(?:api\/)?sources(\/[^?]*)?(\?.*)?$/, (route) => route.fulfill({ json: [] }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
 
-  await page.goto("/bank");
+  await page.goto("/bank?library_view=expanded");
   await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
   await expect(page.getByLabel(`منتج البطاقة ${textId}`)).toBeVisible();
@@ -136,7 +136,7 @@ test("approved text can create a card, receive independent visual approval, and 
   });
   expect(String(submittedJob?.idempotency_key).length).toBeLessThanOrEqual(100);
 
-  await page.goto("/bank");
+  await page.goto("/bank?library_view=expanded");
   await expect(page.getByLabel("حالة مراجعة المخرجات")).toBeVisible();
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("DRAFT");
   await expect(page.getByRole("img", { name: "بطاقة النص المعتمد" })).toBeVisible();

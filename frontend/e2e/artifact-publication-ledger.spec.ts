@@ -7,7 +7,7 @@ test('read only publication ledger shows destination all message ids and attempt
  if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
  if(p==='/api/artifacts/audit/publications')return route.fulfill({json:{total:1,items:[{id:'ledger-id',platform:'telegram',destination:'synthetic-private-channel',status:'PUBLISHED',content:'النص المرسل',external_ids:['test-1','test-2'],error_message:null,published_at:'2026-11-23T20:00:00Z',schedules:[{schedule_id:'test-schedule',name:'جدول تجريبي',schedule_status:'COMPLETED',item_status:'PUBLISHED',attempts:1,scheduled_at:'2026-11-23T20:00:00Z'}]}]}});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
- await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  await page.getByRole('button',{name:'عرض وتحديث سجل النشر',exact:true}).click();
  const ledger=page.getByLabel('سجل نشر المخرج audit',{exact:true});
  await expect(ledger.getByText('synthetic-private-channel',{exact:true})).toBeVisible();

@@ -9,7 +9,7 @@ test('central copies preserve original, edit one platform and keep execution sep
  if(p==='/api/artifacts/copy-source/platform-copies/telegram'){saves++;const payload=req.postDataJSON();expect(payload.version).toBe(1);expect(payload.fields.description).toBe('نسخة Telegram مختلفة');return route.fulfill({json:{...copies[0],fields:payload.fields,version:2,origin:'USER_EDITED'}});}
  if(p.startsWith('/api/')&&req.method()!=='GET')unsafe++;
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
- await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  const panel=page.getByLabel('نسخ المنصات copy-source',{exact:true});await panel.locator('summary').first().click();
  await panel.getByRole('button',{name:'عرض النسخ المحفوظة',exact:true}).click();await expect(panel.getByLabel('وصف نسخة copy-source',{exact:true})).toHaveValue(item.content);
  await panel.getByLabel('وصف نسخة copy-source',{exact:true}).fill('نسخة Telegram مختلفة');await expect(panel.getByLabel('منصة النسخة copy-source',{exact:true})).toBeDisabled();

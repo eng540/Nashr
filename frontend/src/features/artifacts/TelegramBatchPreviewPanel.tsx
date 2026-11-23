@@ -38,7 +38,7 @@ export function TelegramBatchPreviewPanel({ids}:{ids:string[]}) {
     <p>الحفظ لا يرسل شيئاً. راجع الخطة في مساحة النشر وفعّلها هناك بقرار مستقل. تغير المحتوى أو الوجهة أو استبعاد Telegram بعد المراجعة يمنع تنفيذ هذه الخطة.</p>
     <button type="button" disabled={!confirmed||!start||!name.trim()||schedule.isPending} onClick={()=>schedule.mutate()} className="rounded border bg-sky-700 p-2 text-white disabled:opacity-40">{schedule.isPending?'حفظ الخطة...':'حفظ خطة Telegram كمسودة'}</button>
    </div></details>:null}
-   {saved?<p role="status" className="text-xs text-emerald-800">حُفظت الخطة كمسودة دون تفعيل. <a href="/publishing" className="underline">افتح مساحة النشر لمراجعتها</a><br/><bdi>{saved}</bdi></p>:null}
+   {saved?<p role="status" className="text-xs text-emerald-800">حُفظت الخطة كمسودة دون تفعيل. <a href={`/publishing?schedule_id=${encodeURIComponent(saved)}`} className="underline">افتح مساحة النشر لمراجعتها</a><br/><bdi>{saved}</bdi></p>:null}
    {schedule.isError?<p role="alert" className="text-xs text-rose-700">{schedule.error.message}</p>:null}
   </>:null}
   {check.isError?<p role="alert" className="text-xs text-rose-700">{check.error.message}</p>:null}
