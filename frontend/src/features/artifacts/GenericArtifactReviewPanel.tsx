@@ -44,6 +44,9 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const [mediaDrafts, setMediaDrafts] = useState<Record<string, { id: string; status: string }>>({});
   const [variantPlatform, setVariantPlatform] = useState<Record<string, string>>({});
   const [variantNotes, setVariantNotes] = useState<Record<string, string>>({});
+  const [variantPostId, setVariantPostId] = useState("");
+  const [variantPostPlatform, setVariantPostPlatform] = useState("");
+  const [variantPostNote, setVariantPostNote] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState("");
   const [selectedPostId, setSelectedPostId] = useState("");
@@ -124,7 +127,14 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const deriveVariant = useMutation({
     mutationFn: ({ id, platform }: { id: string; platform: string }) => genericArtifactsApi.derivePlatformVariant(id, platform),
     onSuccess: (variant, input) => {
-      setVariantNotes((current) => ({ ...current, [input.id]: `أُنشئت نسخة ${String(variant.metadata.platform_label_ar ?? input.platform)} وهي الآن قيد المراجعة.` }));
+      setVariantNotes((current) => ({ ...current, [input.id]: `أُنشئت نسخة ${String(variant.metadata.platform_label_ar ?? input.platform)} بحدود الطول وهي الآن قيد المراجعة.` }));
+      refresh();
+    },
+  });
+  const derivePostVariant = useMutation({
+    mutationFn: ({ postId, platform }: { postId: string; platform: string }) => genericArtifactsApi.derivePlatformVariantFromPost(postId, platform),
+    onSuccess: (variant, input) => {
+      setVariantPostNote(`أُنشئت نسخة ${String(variant.metadata.platform_label_ar ?? input.platform)} بحدود الطول من المنشور وهي الآن قيد المراجعة في قائمة المخرجات.`);
       refresh();
     },
   });
@@ -163,14 +173,14 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       <h3 className="font-bold">إنتاج تصميم من منشور معتمد</h3>
       <p className="text-sm text-slate-600">يُستخدم نص Post المعتمد مباشرةً دون إنشاء TEXT Artifact وسيط. يظل اعتماد الصورة ومراجعتها مستقلًا.</p>
       <div className="grid gap-3 md:grid-cols-2">
-        <label className="text-sm font-semibold">المنشور المصدر
-          <select aria-label="المنشور المصدر للتصميم" value={selectedPostId} onChange={(event) => setSelectedPostId(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal">
+          <label className="text-sm font-semibold">المنشور المصدر
+          <select aria-label="المنشور المصدر للتصميم" value={selectedPostId} onChange={(event) => setSelectedPostId(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
             <option value="">اختر منشورًا معتمدًا</option>
             {(approvedPosts.data?.items ?? []).filter((post) => post.status === "APPROVED" && post.content.trim()).map((post) => <option key={post.post_id} value={post.post_id}>{post.title} · {post.post_id.slice(0, 8)}</option>)}
           </select>
         </label>
         <label className="text-sm font-semibold">منتج التصميم المنشور
-          <select aria-label="منتج التصميم من المنشور" value={postProductKey} onChange={(event) => setPostProductKey(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal">
+          <select aria-label="منتج التصميم من المنشور" value={postProductKey} onChange={(event) => setPostProductKey(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
             <option value="">اختر منتجًا</option>
             {eligibleCardProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · {product.key}</option>)}
           </select>
@@ -210,7 +220,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         <p className="mt-1 text-sm text-slate-500">النصوص والوسائط التي لا تمثل منشورات Telegram تمر بمراجعة مستقلة.</p>
       </div>
       <label className="text-sm font-semibold">الحالة
-        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => setStatus(event.target.value as GenericArtifactReviewStatus)} className="mr-2 rounded-lg border p-2 font-normal">
+        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => setStatus(event.target.value as GenericArtifactReviewStatus)} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
           <option value="DRAFT">قيد المراجعة</option>
           <option value="APPROVED">معتمد</option>
           <option value="REJECTED">مرفوض</option>
@@ -222,7 +232,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       <p className="text-sm text-slate-600">ارفع صورة (JPEG/PNG/WebP) أو فيديو (MP4) جاهزًا للنشر. يدخل الملف حالة «قيد المراجعة» ولا يُنشر شيء دون اعتمادك.</p>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold">ملف الوسيط
-          <input aria-label="ملف الوسيط الجاهز" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" />
+          <input aria-label="ملف الوسيط الجاهز" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal" />
         </label>
         <label className="text-sm font-semibold">التعليق (يظهر نصًا مع الوسيط عند النشر)
           <input aria-label="تعليق الوسيط الجاهز" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" placeholder="نص يرافق الوسيط عند النشر" />
@@ -231,6 +241,30 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       <button type="button" onClick={() => ingestMedia.mutate()} disabled={!uploadFile || ingestMedia.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{ingestMedia.isPending ? "جارٍ الرفع..." : "رفع إلى بنك الوسائط"}</button>
       {ingestMedia.isError ? <p role="alert" className="text-sm text-rose-700">{ingestMedia.error.message}</p> : null}
       {ingestMedia.isSuccess ? <p role="status" className="text-sm text-emerald-800">تم الرفع؛ الوسيط الآن قيد المراجعة.</p> : null}
+    </div>
+    <div className="space-y-3 rounded-xl border border-sky-100 bg-sky-50/50 p-4">
+      <h3 className="font-bold">اشتقاق نسخة بحدود منصة من منشور معتمد</h3>
+      <p className="text-sm text-slate-600">ينشئ نسخة نصية منفصلة من منشور معتمد، مقصوصة عند حدود آمنة ضمن حد المنصة الموثق. تجهيز طول فقط دون إعادة صياغة؛ المنشور الأصلي لا يتغير، والنسخة تُحفظ قيد المراجعة، ولا يُنشر شيء خارجيًا.</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm font-semibold">المنشور المصدر
+          <select aria-label="المنشور المصدر للنسخة" value={variantPostId} onChange={(event) => setVariantPostId(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
+            <option value="">اختر منشورًا معتمدًا</option>
+            {(approvedPosts.data?.items ?? []).filter((post) => post.status === "APPROVED" && post.content.trim()).map((post) => <option key={post.post_id} value={post.post_id}>{post.title} · {post.post_id.slice(0, 8)}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-semibold">المنصة
+          <select aria-label="منصة نسخة المنشور" value={variantPostPlatform} onChange={(event) => setVariantPostPlatform(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
+            <option value="">اختر المنصة</option>
+            <option value="tiktok">تيك توك</option>
+            <option value="instagram">إنستقرام</option>
+            <option value="x">إكس</option>
+          </select>
+        </label>
+      </div>
+      <button type="button" onClick={() => derivePostVariant.mutate({ postId: variantPostId, platform: variantPostPlatform })} disabled={!variantPostId || !variantPostPlatform || derivePostVariant.isPending} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white">{derivePostVariant.isPending ? "جارٍ الاشتقاق..." : "اشتقاق نسخة المنشور"}</button>
+      {variantPostNote ? <p role="status" className="text-sm text-sky-900">{variantPostNote}</p> : null}
+      {derivePostVariant.isError ? <p role="alert" className="text-sm text-rose-700">تعذر اشتقاق النسخة: {derivePostVariant.error.message}</p> : null}
+      {approvedPosts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المنشورات المعتمدة...</p> : null}
     </div>
     {showDesignCard ? designCard : null}
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
@@ -243,7 +277,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             <strong>{artifact.kind} · {artifact.mime_type ?? "نوع غير محدد"}</strong>
             <p className="mt-1 break-all text-xs text-slate-500">Artifact {artifact.id} · المادة {artifact.source_knowledge_unit_id}</p>
           </div>
-          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? "رفع يدوي" : artifact.metadata.source_type === "PLATFORM_VARIANT" ? `نسخة ${String(artifact.metadata.platform_label_ar ?? artifact.metadata.platform ?? "منصة")}` : "مخرج مولّد"}</span>
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? "رفع يدوي" : artifact.metadata.source_type === "PLATFORM_VARIANT" ? `نسخة ${String(artifact.metadata.platform_label_ar ?? artifact.metadata.platform ?? "منصة")}${(artifact.metadata.constraints as Record<string, unknown> | undefined)?.trimmed ? " · مقصوصة للحد" : ""}` : "مخرج مولّد"}</span>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
         {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
@@ -271,8 +305,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           </section>
         </div> : <GenericArtifactMediaPreview artifact={artifact} />}
         {status === "APPROVED" && artifact.kind === "TEXT" && artifact.content ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
-          <label className="text-sm font-semibold">إنشاء بطاقة من هذا النص المعتمد
-            <select aria-label={`منتج البطاقة ${artifact.id}`} value={cardProducts[artifact.id] ?? ""} onChange={(event) => setCardProducts((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mr-2 rounded-lg border bg-white p-2 font-normal">
+          <label className="w-full text-sm font-semibold sm:w-auto">إنشاء بطاقة من هذا النص المعتمد
+            <select aria-label={`منتج البطاقة ${artifact.id}`} value={cardProducts[artifact.id] ?? ""} onChange={(event) => setCardProducts((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal sm:mt-0 sm:w-auto sm:max-w-md">
               <option value="">اختر منتج بطاقات منشورًا</option>
               {eligibleCardProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · {product.key}</option>)}
             </select>
@@ -282,8 +316,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
         </div> : null}
         {status === "APPROVED" && ["TEXT", "IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 p-3">
-          <label className="text-sm font-semibold">اشتقاق نسخة مهيأة لمنصة
-            <select aria-label={`منصة النسخة ${artifact.id}`} value={variantPlatform[artifact.id] ?? ""} onChange={(event) => setVariantPlatform((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mr-2 rounded-lg border bg-white p-2 font-normal">
+          <label className="w-full text-sm font-semibold sm:w-auto">اشتقاق نسخة بحدود منصة
+            <select aria-label={`منصة النسخة ${artifact.id}`} value={variantPlatform[artifact.id] ?? ""} onChange={(event) => setVariantPlatform((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal sm:mt-0 sm:w-auto">
               <option value="">اختر المنصة</option>
               <option value="tiktok">تيك توك</option>
               <option value="instagram">إنستقرام</option>
@@ -293,7 +327,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <button type="button" onClick={() => deriveVariant.mutate({ id: artifact.id, platform: variantPlatform[artifact.id] ?? "" })} disabled={!variantPlatform[artifact.id] || deriveVariant.isPending} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white">{deriveVariant.isPending ? "جارٍ الاشتقاق..." : "اشتقاق النسخة"}</button>
           {variantNotes[artifact.id] ? <span role="status" className="text-xs text-sky-900">{variantNotes[artifact.id]}</span> : null}
           {deriveVariant.isError ? <span role="alert" className="text-xs text-rose-700">{deriveVariant.error.message}</span> : null}
-          <span className="text-xs text-slate-600">تُقصّ النسخة على حدود المنصة الموثقة وتُحفظ قيد المراجعة؛ لا يُنشر شيء خارجيًا.</span>
+          <span className="text-xs text-slate-600">تُقصّ النسخة عند حد المنصة على حدود آمنة (جملة أو كلمة، دون قطع الروابط) وتُحفظ قيد المراجعة؛ تجهيز طول فقط وليس إعادة صياغة، ولا يُنشر شيء خارجيًا.</span>
         </div> : null}
         {status === "APPROVED" && ["IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
           <p className="text-sm font-semibold">وسيط معتمد من بنك الوسائط</p>
