@@ -434,3 +434,53 @@ def _row_to_artifact(row: ArtifactModel) -> Artifact:
         resolved_context=row.resolved_context,
         metadata=row.artifact_metadata or {},
     )
+
+
+async def list_platform_variants(session: AsyncSession, limit: int = 50) -> list[dict[str, Any]]:
+    """Read-only listing of platform-variant drafts for the publishing workspace.
+
+    Preparation-only: these drafts are never scheduled or published by any
+    automated pipeline. The listing exists so the publishing area can show what
+    has been prepared per platform for human review, with the same honest
+    metadata recorded at derivation time (length-only adaptation, trim
+    decision, review flag, constraint provenance).
+    """
+    rows = (
+        await session.execute(
+            select(ArtifactModel)
+            .where(ArtifactModel.artifact_metadata["source_type"].astext == _SOURCE_TYPE)
+            .order_by(ArtifactModel.created_at.desc(), ArtifactModel.id.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        meta = row.artifact_metadata or {}
+        constraints = meta.get("constraints") or {}
+        text = row.content if row.content is not None else str(meta.get("caption") or "")
+        items.append(
+            {
+                "id": str(row.id),
+                "platform": meta.get("platform"),
+                "platform_label_ar": meta.get("platform_label_ar"),
+                "review_status": row.review_status,
+                "excerpt": text[:160],
+                "full_length": len(text),
+                "adaptation": meta.get("adaptation"),
+                "needs_review": bool(meta.get("needs_review", True)),
+                "source_kind_ar": meta.get("source_kind_ar"),
+                "source_artifact_id": meta.get("source_artifact_id"),
+                "source_post_id": meta.get("source_post_id"),
+                "constraints": {
+                    "max_text": constraints.get("max_text"),
+                    "measure": constraints.get("measure"),
+                    "measured_length": constraints.get("measured_length"),
+                    "original_length": constraints.get("original_length"),
+                    "trimmed": constraints.get("trimmed"),
+                    "trim_boundary": constraints.get("trim_boundary"),
+                    "provenance": constraints.get("provenance"),
+                },
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+        )
+    return items
