@@ -42,6 +42,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
   const [quizDrafts, setQuizDrafts] = useState<Record<string, { id: string; status: string; external_id?: string | null }>>({});
   const [mediaDrafts, setMediaDrafts] = useState<Record<string, { id: string; status: string }>>({});
+  const [variantPlatform, setVariantPlatform] = useState<Record<string, string>>({});
+  const [variantNotes, setVariantNotes] = useState<Record<string, string>>({});
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState("");
   const [selectedPostId, setSelectedPostId] = useState("");
@@ -116,6 +118,13 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       setUploadFile(null);
       setUploadCaption("");
       setStatus("DRAFT");
+      refresh();
+    },
+  });
+  const deriveVariant = useMutation({
+    mutationFn: ({ id, platform }: { id: string; platform: string }) => genericArtifactsApi.derivePlatformVariant(id, platform),
+    onSuccess: (variant, input) => {
+      setVariantNotes((current) => ({ ...current, [input.id]: `أُنشئت نسخة ${String(variant.metadata.platform_label_ar ?? input.platform)} وهي الآن قيد المراجعة.` }));
       refresh();
     },
   });
@@ -234,7 +243,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             <strong>{artifact.kind} · {artifact.mime_type ?? "نوع غير محدد"}</strong>
             <p className="mt-1 break-all text-xs text-slate-500">Artifact {artifact.id} · المادة {artifact.source_knowledge_unit_id}</p>
           </div>
-          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? "رفع يدوي" : "مخرج مولّد"}</span>
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? "رفع يدوي" : artifact.metadata.source_type === "PLATFORM_VARIANT" ? `نسخة ${String(artifact.metadata.platform_label_ar ?? artifact.metadata.platform ?? "منصة")}` : "مخرج مولّد"}</span>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
         {artifact.content !== null ? <div className="grid gap-4 xl:grid-cols-2">
@@ -271,6 +280,20 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <button type="button" onClick={() => createCard.mutate({ artifact, productKey: cardProducts[artifact.id] ?? "" })} disabled={!cardProducts[artifact.id] || createCard.isPending} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">إنتاج البطاقة</button>
           {products.isLoading || recipes.isLoading ? <span className="text-xs">تحميل منتجات البطاقات...</span> : null}
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
+        </div> : null}
+        {status === "APPROVED" && ["TEXT", "IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 p-3">
+          <label className="text-sm font-semibold">اشتقاق نسخة مهيأة لمنصة
+            <select aria-label={`منصة النسخة ${artifact.id}`} value={variantPlatform[artifact.id] ?? ""} onChange={(event) => setVariantPlatform((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mr-2 rounded-lg border bg-white p-2 font-normal">
+              <option value="">اختر المنصة</option>
+              <option value="tiktok">تيك توك</option>
+              <option value="instagram">إنستقرام</option>
+              <option value="x">إكس</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => deriveVariant.mutate({ id: artifact.id, platform: variantPlatform[artifact.id] ?? "" })} disabled={!variantPlatform[artifact.id] || deriveVariant.isPending} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white">{deriveVariant.isPending ? "جارٍ الاشتقاق..." : "اشتقاق النسخة"}</button>
+          {variantNotes[artifact.id] ? <span role="status" className="text-xs text-sky-900">{variantNotes[artifact.id]}</span> : null}
+          {deriveVariant.isError ? <span role="alert" className="text-xs text-rose-700">{deriveVariant.error.message}</span> : null}
+          <span className="text-xs text-slate-600">تُقصّ النسخة على حدود المنصة الموثقة وتُحفظ قيد المراجعة؛ لا يُنشر شيء خارجيًا.</span>
         </div> : null}
         {status === "APPROVED" && ["IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? <div className="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
           <p className="text-sm font-semibold">وسيط معتمد من بنك الوسائط</p>
