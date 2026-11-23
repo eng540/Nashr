@@ -368,7 +368,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     onSuccess: () => { setSelectedMediaIds([]); setSearch(""); setStatus("DRAFT"); setBatchNote("أُنشئ ألبوم قيد المراجعة،لا نشر تلقائي."); refresh(); },
   });
   const toggleMediaSelection = (artifactId: string, checked: boolean) => {
-    setSelectedMediaIds((current) => checked ? [...new Set([...current, artifactId])] : current.filter((id) => id !== artifactId));
+    setSelectedMediaIds((current) => checked ? [...new Set([...current, artifactId])].slice(0,100) : current.filter((id) => id !== artifactId));
   };
   const pageEligibleIds = pagedArtifacts.filter(isTelegramMediaEligible).map((artifact) => artifact.id);
   const allPageSelected = pageEligibleIds.length > 0 && pageEligibleIds.every((id) => selectedMediaIds.includes(id));
@@ -501,13 +501,15 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             onChange={(event) => {
               const checked = event.target.checked;
               setSelectedMediaIds((current) => checked
-                ? [...new Set([...current, ...pageEligibleIds])]
+                ? [...new Set([...current, ...pageEligibleIds])].slice(0,100)
                 : current.filter((id) => !pageEligibleIds.includes(id)));
             }}
             className="h-4 w-4 rounded border-slate-300"
           />
           تحديد كل عناصر الصفحة
         </label>
+        <button type="button" onClick={()=>{const eligible=filteredArtifacts.filter(isTelegramMediaEligible).map(item=>item.id);setSelectedMediaIds(eligible.slice(0,100));setBatchNote(eligible.length>100?`حُدد أول 100 من ${eligible.length} نتيجة بالترتيب المعروض. حد الدفعة 100؛ عالجها ثم اختر دفعة أخرى. لم تُحدّد بقية النتائج.`:`حُددت النتائج المؤهلة وعددها ${eligible.length}.`);}} className="rounded-lg border bg-white px-3 py-2 text-xs font-bold">تحديد النتائج المؤهلة (حتى 100)</button>
+        <p className="w-full text-xs text-slate-600">حد الدفعة 100 مادة. التحديد يحفظ ترتيبك بين الصفحات، ولا يحدد ما يزيد عن 100 تلقائياً.</p>
         <span className="text-xs font-semibold text-slate-500" data-testid="media-selection-count">{eligibleSelectedCount} محدد</span>
         <button
           type="button"
@@ -538,6 +540,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             type="checkbox"
             aria-label={`تحديد المخرج ${artifact.id}`}
             checked={selectedMediaIds.includes(artifact.id)}
+            disabled={!selectedMediaIds.includes(artifact.id) && selectedMediaIds.length >= 100}
             onChange={(event) => toggleMediaSelection(artifact.id, event.target.checked)}
             className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
           /> : null}
