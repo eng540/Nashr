@@ -59,6 +59,19 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
             item.processing_started_at = None
             await session.commit()
             return
+        reviewed_copy_text = None
+        schedule = await session.get(ScheduleModel,item.schedule_id)
+        if schedule and schedule.telegram_review and 'copy_versions' in schedule.telegram_review:
+            from app.application.telegram_batch_schedule import reviewed_batch_blocker
+            error = await reviewed_batch_blocker(session,schedule)
+            if error:
+                item.status='FAILED';item.last_error=error;item.processing_started_at=None
+                await session.commit()
+                return
+            from app.infrastructure.database.models import PlatformCopyModel
+            copy = await session.get(PlatformCopyModel,(artifact.id,'telegram'))
+            if copy:
+                reviewed_copy_text=copy.fields['description']
         existing = (await session.execute(select(PublicationModel).where(
             PublicationModel.artifact_id == artifact.id,
             PublicationModel.platform == "telegram",
@@ -79,7 +92,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         elif existing is not None:
             publication_id = existing.id
         else:
-            content_override = telegram_publish_text(artifact)
+            content_override = reviewed_copy_text if reviewed_copy_text is not None else telegram_publish_text(artifact)
             publication_id = (await CreateTelegramDraft.execute_for_artifact(
                 session, artifact, destination, content_override=content_override
             )).id
@@ -87,7 +100,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
     async with SessionFactory() as session:
         try:
             publication = await ApproveAndPublish(publisher or TelegramPublisher()).execute(
-                session, publication_id, artifact=artifact
+                session, publication_id, artifact=artifact, reviewed_copy_text=reviewed_copy_text
             )
         except Exception as exc:
             publication = None
