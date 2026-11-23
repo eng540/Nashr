@@ -102,3 +102,13 @@ async def test_get_bytes_reads_private_artifact_content_from_configured_bucket()
     assert client.get_calls == [{"Bucket": "nashr-media", "Key": "artifacts/source-1/job-2/image.png"}]
     with pytest.raises(ValueError, match="unexpected bucket"):
         await storage.get_bytes("s3://another-bucket/artifacts/source-1/image.png")
+
+
+@pytest.mark.asyncio
+async def test_document_download_forces_attachment_and_octet_stream():
+    client = FakeS3Client()
+    storage = S3ArtifactStorage(client=client, bucket="nashr-media")
+    await storage.presign_get("s3://nashr-media/artifacts/document.html", attachment_filename='document.html')
+    params = client.presign_calls[0][1]
+    assert params["ResponseContentDisposition"] == 'attachment; filename="document.html"'
+    assert params["ResponseContentType"] == "application/octet-stream"
