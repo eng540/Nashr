@@ -3,12 +3,13 @@ from datetime import datetime
 import os
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.generic_artifact_review import GenericArtifactReviewService
 from app.application.artifacts import load_artifact
+from app.application.media_bank import IngestReadyMedia
 from app.application.publications import CreateTelegramDraft
 from app.domain.artifacts import ArtifactKind
 from app.application.scheduling import validate_timezone, validate_scheduled_at
@@ -43,6 +44,11 @@ class QuizScheduleRequest(BaseModel):
     scheduled_at: datetime
 
 
+class PlatformVariantRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    platform: str = Field(min_length=1, max_length=30)
+
+
 class ArtifactRejectDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     review_note: str = Field(min_length=1, max_length=2000)
@@ -64,6 +70,98 @@ async def list_generic_artifacts(
         return await GenericArtifactReviewService(session).list(review_status, limit)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/platform-variants")
+async def list_platform_variant_drafts(
+    limit: int = Query(default=50, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """List platform-variant drafts for the publishing workspace.
+
+    Preparation-only: variants are never auto-scheduled or published; this
+    listing only surfaces what has been prepared per platform for human
+    review. Registered before "/{artifact_id}" so the literal path wins.
+    """
+    from app.application.platform_variants import list_platform_variants
+
+    return await list_platform_variants(session, limit)
+
+
+@router.post("/ingest-media", status_code=201)
+async def ingest_ready_media(
+    file: UploadFile = File(...),
+    caption: str | None = Form(default=None, max_length=1024),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Ingest a ready-made image/video into the media bank as a DRAFT Artifact.
+
+    No generation provider is involved; the upload is stored in private media
+    storage and enters the standard generic artifact review flow.
+    """
+    data = await file.read()
+    try:
+        artifact = await IngestReadyMedia().execute(
+            session,
+            filename=file.filename or "media",
+            content_type=file.content_type or "",
+            data=data,
+            caption=caption,
+        )
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except ArtifactStorageConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ArtifactStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/post-source/{post_id}/platform-variant", status_code=201)
+async def derive_platform_variant_from_post(
+    post_id: UUID,
+    input: PlatformVariantRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Derive a DRAFT per-platform TEXT variant from an APPROVED editorial Post.
+
+    Registered before the parameterized artifact route so the literal path wins.
+    Preparation only: the Post is never modified; the variant is a separate
+    review copy trimmed at safe boundaries with provenance metadata. No external
+    publishing happens here.
+    """
+    from app.application.platform_variants import DerivePlatformVariant
+
+    try:
+        artifact = await DerivePlatformVariant().execute_post(session, post_id=post_id, platform=input.platform)
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{artifact_id}/platform-variant", status_code=201)
+async def derive_platform_variant(
+    artifact_id: UUID,
+    input: PlatformVariantRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Derive a DRAFT per-platform variant from an APPROVED generic Artifact.
+
+    Preparation only: text is trimmed to the target platform's documented
+    constraints and the constraint provenance is stored in metadata. No
+    external publishing happens here.
+    """
+    from app.application.platform_variants import DerivePlatformVariant
+
+    try:
+        artifact = await DerivePlatformVariant().execute(session, artifact_id=artifact_id, platform=input.platform)
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/{artifact_id}")
@@ -151,6 +249,46 @@ async def create_telegram_draft_for_artifact(
             row.error_message = None
             await session.commit()
             publication = await CreateTelegramDraft.execute_for_artifact(session, artifact, destination)
+        return {
+            "id": str(publication.id),
+            "post_id": str(publication.post_id) if publication.post_id else None,
+            "artifact_id": str(publication.artifact_id) if publication.artifact_id else None,
+            "knowledge_unit_id": str(publication.knowledge_unit_id),
+            "platform": publication.platform,
+            "destination": publication.destination,
+            "status": publication.status.value,
+            "content": publication.content,
+        }
+    except (LookupError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/{artifact_id}/telegram-media-draft", status_code=201)
+async def create_telegram_media_draft_for_artifact(
+    artifact_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Create a durable Telegram publication draft for an approved media bank Artifact."""
+    destination = os.getenv("TELEGRAM_DESTINATION_ID", "").strip()
+    if not destination:
+        raise HTTPException(status_code=503, detail="TELEGRAM_DESTINATION_ID is required.")
+    try:
+        review = await GenericArtifactReviewService(session).get(artifact_id)
+        if review.get("kind") not in {ArtifactKind.IMAGE.value, ArtifactKind.VIDEO.value}:
+            raise ValueError("Only IMAGE or VIDEO Artifacts can use this media publication route.")
+        if review.get("review_status") != "APPROVED":
+            raise ValueError("Media Artifact must be approved before creating a publication draft.")
+        if not review.get("storage_uri"):
+            raise ValueError("Media Artifact has no stored media to publish.")
+        caption = str((review.get("metadata") or {}).get("caption") or "").strip()
+        if not caption:
+            raise ValueError("Media Artifact needs a non-empty caption before creating a publication draft.")
+        artifact = await load_artifact(session, artifact_id)
+        if artifact is None:
+            raise LookupError("Artifact not found.")
+        publication = await CreateTelegramDraft.execute_for_artifact(
+            session, artifact, destination, content_override=caption
+        )
         return {
             "id": str(publication.id),
             "post_id": str(publication.post_id) if publication.post_id else None,

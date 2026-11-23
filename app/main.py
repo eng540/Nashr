@@ -170,6 +170,13 @@ def create_app() -> FastAPI:
     configure_logging()
     application = FastAPI(title="Nashr", lifespan=lifespan)
     application.add_middleware(AuthMiddleware)
+
+    @application.get("/", include_in_schema=False)
+    async def root_redirect():
+        from fastapi.responses import RedirectResponse
+
+        return RedirectResponse("/console", status_code=303)
+
     application.include_router(auth_router)
     register_gemini_error_handlers(application)
     application.include_router(router)

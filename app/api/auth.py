@@ -144,7 +144,7 @@ async def login(request: Request) -> Response:
             LOGIN_PAGE_HTML.replace("__ERROR__", '<p class="error">بيانات الدخول غير صحيحة.</p>'),
             status_code=401,
         )
-    response = RedirectResponse("/", status_code=303)
+    response = RedirectResponse("/console", status_code=303)
     _set_session_cookie(response, username)
     return response
 

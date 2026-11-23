@@ -59,6 +59,27 @@ NASHR_PUBLISHING_HTML = r'''<!doctype html>
   <div class="mt-6"><h3 class="font-bold">القادم</h3><div id="upcoming-list" class="mt-3 space-y-2"></div></div>
 </section>
 
+<section id="media-bank-section" class="mb-8 rounded-3xl border bg-white p-5 shadow-sm sm:p-7">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div><p class="text-xs font-bold text-indigo-600">بنك الوسائط الجاهزة</p><h2 class="mt-1 text-2xl font-bold">رفع ومراجعة الفيديوهات والصور الجاهزة</h2><p class="mt-2 max-w-3xl text-sm leading-7 text-slate-600">ارفع الوسائط الجاهزة للنشر (صورة JPEG/PNG/WebP أو فيديو MP4)، راجعها واعتمدها، ثم أنشئ مسودة نشر Telegram. لا يُنشر شيء دون اعتمادك.</p></div>
+    <button id="media-bank-refresh" class="rounded-lg border px-3 py-2 text-xs font-semibold">تحديث</button>
+  </div>
+  <div class="mt-5 grid gap-3 rounded-2xl border bg-slate-50 p-4">
+    <div class="grid gap-3 md:grid-cols-[2fr_1fr_auto]">
+      <input id="media-caption" maxlength="1024" class="rounded-xl border bg-white p-3 text-sm" placeholder="التسمية / وصف النشر (caption)">
+      <input id="media-file" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" class="rounded-xl border bg-white p-2.5 text-sm">
+      <button id="media-upload" class="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white disabled:opacity-40">رفع إلى البنك</button>
+    </div>
+  </div>
+  <div id="media-bank-message" class="mt-3 hidden rounded-xl border p-3 text-sm" role="status" aria-live="polite"></div>
+  <div class="mt-4 flex items-center gap-2 text-xs font-semibold">
+    <button data-media-tab="DRAFT" class="media-tab rounded-full bg-indigo-600 px-3 py-1.5 text-white">مسودات</button>
+    <button data-media-tab="APPROVED" class="media-tab rounded-full border px-3 py-1.5">معتمدة</button>
+  </div>
+  <div id="media-bank-list" class="mt-4 grid gap-3 lg:grid-cols-2"></div>
+  <div id="media-bank-empty" class="mt-4 hidden rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">لا توجد وسائط في هذه الحالة بعد.</div>
+</section>
+
 <section id="telegram-preview" class="fixed inset-0 z-50 hidden grid place-items-center bg-slate-900/60 p-4"><div class="w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl"><div class="flex items-center justify-between"><div><p class="text-xs font-bold text-indigo-600">Telegram Preview</p><h2 class="text-xl font-bold">المعاينة النهائية</h2></div><button id="telegram-preview-close" class="rounded-xl border px-3 py-2">إغلاق</button></div><p id="telegram-preview-meta" class="mt-3 text-xs text-slate-500"></p><div id="telegram-preview-content" dir="auto" class="mt-4 max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-2xl border bg-slate-50 p-5 text-sm leading-8"></div></div></section>
 </main><script>
 const $=id=>document.getElementById(id);const setText=(id,value)=>{const el=$(id);if(el)el.textContent=value;};const setDisabled=(id,value)=>{const el=$(id);if(el)el.disabled=value;};const state={selectedPostIds:[],selectedPostMeta:{},eligiblePosts:[],scheduleIdempotencyKey:null,activeScheduleId:null,pendingActivationId:null};
@@ -192,5 +213,38 @@ $('schedule-save-create').onclick=async()=>{const ids=state.selectedPostIds,time
 $('activation-confirm-cancel').onclick=()=>{$('activation-confirm').classList.add('hidden');state.pendingActivationId=null;};
 $('activation-confirm-ok').onclick=async()=>{const id=state.pendingActivationId;if(!id)return;$('activation-confirm-ok').disabled=true;try{await request('/schedules/'+id+'/activate',{method:'POST'});$('activation-confirm').classList.add('hidden');state.pendingActivationId=null;await loadSchedules();await loadUpcoming();await openSchedule(id);}catch(e){$('activation-confirm-error').textContent=e.message;}finally{$('activation-confirm-ok').disabled=false;}};
 $('schedule-refresh').onclick=()=>{loadSchedules();loadUpcoming();loadCalendar();};$('calendar-refresh').onclick=loadCalendar;$('calendar-date').value=new Date().toISOString().slice(0,10);$('schedule-start-at').onchange=updateGeneratedScheduleTimes;$('schedule-interval').oninput=updateGeneratedScheduleTimes;$('schedule-timezone').oninput=updateGeneratedScheduleTimes;$('telegram-preview-close').onclick=()=>$('telegram-preview').classList.add('hidden');$('eligible-refresh').onclick=loadEligiblePosts;$('eligible-search').oninput=()=>{clearTimeout(state.eligibleSearchTimer);state.eligibleSearchTimer=setTimeout(loadEligiblePosts,250);};$('eligible-source').onchange=loadEligiblePosts;$('eligible-select-all').onclick=selectAllEligible;$('eligible-clear').onclick=()=>{state.selectedPostIds=[];renderEligiblePosts();renderSelectionCount();};
-Promise.all([loadSourcesForEligibility(),loadSchedules(),loadUpcoming(),loadCalendar(),loadEligiblePosts(),hydrateSelection()]).catch(e=>showEligibleMessage(e.message,'error'));
+const mediaState={tab:'DRAFT'};
+function showMediaMessage(msg,isError){const el=$('media-bank-message');el.textContent=msg;el.className='mt-3 rounded-xl border p-3 text-sm '+(isError?'border-rose-200 bg-rose-50 text-rose-700':'border-emerald-200 bg-emerald-50 text-emerald-700');}
+function syncMediaTabs(){document.querySelectorAll('.media-tab').forEach(b=>{const active=b.dataset.mediaTab===mediaState.tab;b.className='media-tab rounded-full px-3 py-1.5 '+(active?'bg-indigo-600 text-white':'border');});}
+async function loadMediaBank(){
+  try{
+    const d=await request('/api/artifacts?review_status='+mediaState.tab+'&limit=100');
+    const items=(d||[]).filter(a=>(a.metadata||{}).source_type==='MEDIA_BANK_UPLOAD');
+    $('media-bank-empty').classList.toggle('hidden',items.length>0);
+    $('media-bank-list').innerHTML=items.map(a=>{
+      const caption=(a.metadata||{}).caption||a.id;
+      const kindLabel=a.kind==='VIDEO'?'فيديو':'صورة';
+      const actions=mediaState.tab==='DRAFT'
+        ?'<button data-media-approve="'+esc(a.id)+'" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">اعتماد</button><button data-media-reject="'+esc(a.id)+'" class="rounded-lg border px-3 py-1.5 text-xs font-semibold">رفض</button>'
+        :'<button data-media-draft="'+esc(a.id)+'" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white">إنشاء مسودة نشر Telegram</button>';
+      return '<div class="rounded-2xl border bg-white p-4"><div class="flex items-center justify-between gap-3"><span class="min-w-0 flex-1 truncate font-semibold">'+esc(caption)+'</span><span class="rounded-full bg-slate-100 px-2 py-1 text-xs">'+kindLabel+'</span></div><p class="mt-1 truncate text-xs text-slate-400">'+esc((a.metadata||{}).original_filename||'')+'</p><div class="mt-3 flex flex-wrap items-center gap-2">'+actions+'<button data-media-preview="'+esc(a.id)+'" class="rounded-lg border px-3 py-1.5 text-xs font-semibold">معاينة</button></div></div>';
+    }).join('');
+    document.querySelectorAll('[data-media-approve]').forEach(b=>b.onclick=async()=>{try{await request('/api/artifacts/'+b.dataset.mediaApprove+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({review_note:null})});showMediaMessage('تم اعتماد الوسيط.',false);await loadMediaBank();}catch(e){showMediaMessage(e.message,true);}});
+    document.querySelectorAll('[data-media-reject]').forEach(b=>b.onclick=async()=>{const note=prompt('سبب الرفض:');if(!note)return;try{await request('/api/artifacts/'+b.dataset.mediaReject+'/reject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({review_note:note})});showMediaMessage('تم رفض الوسيط.',false);await loadMediaBank();}catch(e){showMediaMessage(e.message,true);}});
+    document.querySelectorAll('[data-media-draft]').forEach(b=>b.onclick=async()=>{try{const d=await request('/api/artifacts/'+b.dataset.mediaDraft+'/telegram-media-draft',{method:'POST'});showMediaMessage('أُنشئت مسودة النشر ('+d.status+'). راجعها من سجل النشر قبل الإرسال.',false);}catch(e){showMediaMessage(e.message,true);}});
+    document.querySelectorAll('[data-media-preview]').forEach(b=>b.onclick=async()=>{try{const d=await request('/api/artifacts/'+b.dataset.mediaPreview+'/media-url');window.open(d.url,'_blank');}catch(e){showMediaMessage(e.message,true);}});
+  }catch(e){$('media-bank-list').textContent=e.message;}
+}
+$('media-upload').onclick=async()=>{
+  const f=$('media-file').files[0];if(!f)return showMediaMessage('اختر ملف صورة أو فيديو أولًا.',true);
+  $('media-upload').disabled=true;
+  try{const fd=new FormData();fd.append('file',f);const cap=$('media-caption').value.trim();if(cap)fd.append('caption',cap);
+    await request('/api/artifacts/ingest-media',{method:'POST',body:fd});
+    $('media-file').value='';$('media-caption').value='';showMediaMessage('تم الرفع إلى بنك الوسائط كمسودة للمراجعة.',false);
+    mediaState.tab='DRAFT';syncMediaTabs();await loadMediaBank();
+  }catch(e){showMediaMessage(e.message,true);}finally{$('media-upload').disabled=false;}
+};
+document.querySelectorAll('.media-tab').forEach(b=>b.onclick=()=>{mediaState.tab=b.dataset.mediaTab;syncMediaTabs();loadMediaBank();});
+$('media-bank-refresh').onclick=loadMediaBank;
+Promise.all([loadSourcesForEligibility(),loadMediaBank(),loadSchedules(),loadUpcoming(),loadCalendar(),loadEligiblePosts(),hydrateSelection()]).catch(e=>showEligibleMessage(e.message,'error'));
 </script></body></html>'''

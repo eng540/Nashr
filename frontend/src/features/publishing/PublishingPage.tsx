@@ -10,7 +10,7 @@ import { TelegramPreview } from "../post-bank/PostBankPage";
 
 const DEFAULT_TIMEZONE = "Asia/Aden";
 const PAGE_SIZE = 20;
-type Section = "ready" | "plans" | "calendar";
+type Section = "ready" | "plans" | "calendar" | "platforms";
 
 export function PublishingPage() {
   const client = useQueryClient();
@@ -60,6 +60,7 @@ export function PublishingPage() {
   });
   const schedules = useQuery({ queryKey: ["publishing", "schedules"], queryFn: schedulesApi.list });
   const upcoming = useQuery({ queryKey: ["publishing", "upcoming"], queryFn: schedulesApi.upcoming });
+  const platformVariants = useQuery({ queryKey: ["publishing", "platform-variants"], queryFn: genericArtifactsApi.listPlatformVariants });
   const calendar = useQuery({
     queryKey: ["publishing", "calendar", calendarDate, DEFAULT_TIMEZONE],
     queryFn: () => schedulesApi.calendar(calendarDate, DEFAULT_TIMEZONE),
@@ -219,14 +220,15 @@ export function PublishingPage() {
           <h2 className="mt-1 text-3xl font-bold">مساحة النشر</h2>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">منطقة مرتبة للجاهز، خطط النشر، والتقويم. كل خطوة تظهر عندما تكون منطقية للحالة الحالية.</p>
         </div>
-        <Link to="/posts/workspace" className="rounded-xl border px-4 py-2 text-sm font-semibold">العودة إلى مصنع المحتوى</Link>
+        <Link to="/bank" className="rounded-xl border px-4 py-2 text-sm font-semibold">العودة إلى بنك المحتوى</Link>
       </header>
 
-      <nav aria-label="أقسام مساحة النشر" className="grid gap-2 rounded-2xl border bg-slate-50 p-2 sm:grid-cols-3">
+      <nav aria-label="أقسام مساحة النشر" className="grid gap-2 rounded-2xl border bg-slate-50 p-2 sm:grid-cols-2 lg:grid-cols-4">
         {([
           ["ready", "الجاهز للنشر", readyTotal, "منشورات معتمدة ومؤهلة"],
           ["plans", "خطط النشر", schedules.data?.total ?? schedules.data?.items.length ?? 0, "الخطط المحفوظة وحالاتها"],
           ["calendar", "التقويم", upcoming.data?.items.length ?? 0, "القادم وجدول اليوم"],
+          ["platforms", "مسودات المنصات", platformVariants.data?.length ?? 0, "تحضير يدوي فقط، بلا نشر آلي"],
         ] as const).map(([key, label, count, hint]) => (
           <button key={key} type="button" onClick={() => switchSection(key)} className={`rounded-xl p-4 text-right transition ${section === key ? "bg-white shadow-sm ring-1 ring-indigo-200" : "hover:bg-white"}`}>
             <div className="flex items-center justify-between gap-3"><strong>{label}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{count}</span></div>
@@ -262,7 +264,7 @@ export function PublishingPage() {
           </div>
 
           {readyItems.length === 0
-            ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد منشورات جاهزة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير عبارة البحث، أو عد إلى مصنع المحتوى لاعتماد منشورات جديدة.</p></div>
+            ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد منشورات جاهزة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير عبارة البحث، أو عد إلى بنك المحتوى لاعتماد منشورات جديدة.</p></div>
             : <div className="space-y-3">{readyItems.map((post) => {
               const matchingImages = (approvedImages.data ?? []).filter((image) => image.source_knowledge_unit_id === post.knowledge_unit_id);
               return <article key={post.post_id} className="rounded-2xl border bg-white p-4 shadow-sm" data-testid={`ready-post-${post.post_id}`}>
@@ -329,6 +331,45 @@ export function PublishingPage() {
           </div>
           <div className="rounded-2xl border bg-white p-5 shadow-sm"><h3 className="font-bold">القادم 7 أيام</h3>{!(upcoming.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد عناصر مجدولة في الأيام القادمة.</p> : <div className="mt-4 space-y-2">{upcoming.data!.items.map((i) => <button key={i.id} type="button" onClick={() => void openDetail(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span className="text-xs text-slate-500">{new Date(i.scheduled_at).toLocaleString("ar", { timeZone: i.timezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}</div>
           <div className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">تقويم اليوم</h3><span className="text-xs text-slate-500">{calendar.data?.timezone ?? DEFAULT_TIMEZONE}</span></div>{!(calendar.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد منشورات مجدولة لهذا اليوم.</p> : <div className="mt-4 space-y-2">{calendar.data!.items.map((i) => <button key={i.id} type="button" onClick={() => void openDetail(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span>{new Date(i.scheduled_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit", timeZone: i.timezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}</div>
+        </section>
+      )}
+
+      {section === "platforms" && (
+        <section className="space-y-4" data-testid="publishing-platforms">
+          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><h3 className="text-xl font-bold">مسودات المنصات الاجتماعية</h3><p className="mt-1 text-sm text-slate-500">نسخ معدّة من المخرجات والمنشورات المعتمدة للمراجعة اليدوية لكل منصة.</p></div>
+              <button type="button" onClick={() => void platformVariants.refetch()} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث</button>
+            </div>
+            <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs leading-6 text-amber-800">تحضير فقط: هذه المسودات لا تدخل الجدولة الآلية ولا تُنشر تلقائيًا. الاقتصار هنا على ضبط الطول عند حدود آمنة مع الحفاظ على المعنى والروابط، والنص الأصلي محفوظ دون تغيير في المصدر، وكل مسودة تتطلب مراجعة يدوية قبل أي استخدام.</p>
+          </div>
+          {platformVariants.isLoading ? (
+            <Status title="جارٍ تحميل مسودات المنصات..." />
+          ) : !(platformVariants.data?.length) ? (
+            <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد مسودات منصات بعد</h3><p className="mt-2 text-sm text-slate-500">اشتق نسخة منصة من مخرج معتمد أو منشور معتمد من بنك المحتوى.</p></div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {platformVariants.data.map((v) => (
+                <article key={v.id} data-testid="platform-variant-card" className="rounded-2xl border bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>{v.platform_label_ar ?? v.platform ?? "منصة"}</strong>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{v.review_status === "APPROVED" ? "معتمدة" : v.review_status === "REJECTED" ? "مرفوضة" : "مسودة"}</span>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{v.excerpt}{v.full_length > v.excerpt.length ? "…" : ""}</p>
+                  <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                    <div><dt className="inline">المصدر: </dt><dd className="inline">{v.source_kind_ar ?? "غير محدد"}</dd></div>
+                    {v.constraints.max_text != null && <div><dt className="inline">الطول الحالي: </dt><dd className="inline"><bdi>{v.constraints.measured_length ?? "؟"}</bdi> من <bdi>{v.constraints.max_text}</bdi>{v.constraints.measure ? <span className="mr-1 text-slate-400" dir="ltr">({v.constraints.measure})</span> : null}</dd></div>}
+                    {v.constraints.trimmed && <div><dt className="inline">القص: </dt><dd className="inline">عند حد {v.constraints.trim_boundary === "sentence" ? "جملة" : v.constraints.trim_boundary === "whitespace" ? "كلمة" : "ثابت"}</dd></div>}
+                  </dl>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {v.needs_review && <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">تتطلب مراجعة</span>}
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">ضبط طول فقط، ليست صياغة مخصصة</span>
+                    {v.constraints.provenance && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">مصدر القيود: {v.constraints.provenance === "primary" ? "وثائق رسمية" : "مصادر ثانوية"}</span>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       )}
 

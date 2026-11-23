@@ -1,4 +1,4 @@
-import { get, patch, post } from "./client";
+import { get, patch, post, postForm } from "./client";
 
 export type GenericArtifactReviewStatus = "DRAFT" | "APPROVED" | "REJECTED";
 
@@ -20,6 +20,32 @@ export interface GenericReviewableArtifact {
   updated_at: string;
 }
 
+export interface PlatformVariantConstraints {
+  max_text: number | null;
+  measure: string | null;
+  measured_length: number | null;
+  original_length: number | null;
+  trimmed: boolean | null;
+  trim_boundary: string | null;
+  provenance: string | null;
+}
+
+export interface PlatformVariantDraft {
+  id: string;
+  platform: string | null;
+  platform_label_ar: string | null;
+  review_status: GenericArtifactReviewStatus | null;
+  excerpt: string;
+  full_length: number;
+  adaptation: string | null;
+  needs_review: boolean;
+  source_kind_ar: string | null;
+  source_artifact_id: string | null;
+  source_post_id: string | null;
+  constraints: PlatformVariantConstraints;
+  created_at: string | null;
+}
+
 export const genericArtifactsApi = {
   list(status: GenericArtifactReviewStatus = "DRAFT"): Promise<GenericReviewableArtifact[]> {
     return get<GenericReviewableArtifact[]>(`/api/artifacts?review_status=${status}`);
@@ -38,6 +64,24 @@ export const genericArtifactsApi = {
   },
   createQuizDraft(id: string): Promise<{ id: string; artifact_id: string | null; status: string; content: string }> {
     return post<{ id: string; artifact_id: string | null; status: string; content: string }>(`/api/artifacts/${id}/telegram-draft`, {});
+  },
+  ingestReadyMedia(input: { file: File; caption?: string }): Promise<GenericReviewableArtifact> {
+    const form = new FormData();
+    form.append("file", input.file);
+    if (input.caption?.trim()) form.append("caption", input.caption.trim());
+    return postForm<GenericReviewableArtifact>("/api/artifacts/ingest-media", form);
+  },
+  listPlatformVariants(): Promise<PlatformVariantDraft[]> {
+    return get<PlatformVariantDraft[]>("/api/artifacts/platform-variants");
+  },
+  derivePlatformVariant(id: string, platform: string): Promise<GenericReviewableArtifact> {
+    return post<GenericReviewableArtifact>(`/api/artifacts/${id}/platform-variant`, { platform });
+  },
+  derivePlatformVariantFromPost(postId: string, platform: string): Promise<GenericReviewableArtifact> {
+    return post<GenericReviewableArtifact>(`/api/artifacts/post-source/${postId}/platform-variant`, { platform });
+  },
+  createTelegramMediaDraft(id: string): Promise<{ id: string; status: string; external_id?: string | null }> {
+    return post<{ id: string; status: string; external_id?: string | null }>(`/api/artifacts/${id}/telegram-media-draft`);
   },
   publishQuiz(publicationId: string, content: string): Promise<{ id: string; status: string; external_id: string | null; error_message: string | null }> {
     return post<{ id: string; status: string; external_id: string | null; error_message: string | null }>(`/publications/${publicationId}/publish`, { content });

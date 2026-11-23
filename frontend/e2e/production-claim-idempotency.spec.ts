@@ -37,7 +37,7 @@ test("React factory reuses the same production claim key after an ambiguous netw
       audience: "readers", experience: "post",
     } }],
   }] }));
-  await page.route("**/sources**", (route) => {
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/book-map")) {
       return route.fulfill({ json: {
@@ -144,7 +144,7 @@ test("manual production selection includes materials that have no topic assignme
       audience: "readers", experience: "post",
     } }],
   }] }));
-  await page.route("**/sources**", (route) => {
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/book-map")) {
       return route.fulfill({ json: {
@@ -183,7 +183,7 @@ test("manual production selection includes materials that have no topic assignme
   await page.getByRole("button", { name: /بنك المحتوى والمراجعة/ }).click();
   await expect(page.getByTestId("post-bank-filters")).toBeVisible();
   await expect(page.getByTestId("production-panel")).toHaveCount(0);
-  await page.getByRole("button", { name: /إعداد الإنتاج/ }).click();
+  await page.getByRole("link", { name: "الإنتاج", exact: true }).click();
   await expect(page.getByTestId("production-summary")).toBeVisible();
 });
 
@@ -222,7 +222,7 @@ test("production wizard selects SOURCE, TOPIC and SELECTION before review and su
       audience: "readers", experience: "post",
     } }],
   }] }));
-  await page.route("**/sources**", (route) => {
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/book-map")) return route.fulfill({ json: {
       source_id: sourceId, book: { title: "Reviewed Book", description: "" }, count: materials.length,
@@ -335,7 +335,7 @@ test("production setup blocks progression when product, identity, or source opti
   await page.route("**/api/control/products", (route) => route.fulfill({ status: 503, json: { detail: "test product failure" } }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ status: 503, json: { detail: "test identity failure" } }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: [] }));
-  await page.route("**/sources**", (route) => route.fulfill({ status: 503, json: { detail: "test source failure" } }));
+  await page.route(/^https?:\/\/[^/]+\/sources(\/|\?|$)/, (route) => route.fulfill({ status: 503, json: { detail: "test source failure" } }));
   await page.goto("/posts/workspace");
   await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل خيارات المنتج أو الهوية أو الوصفة" })).toBeVisible();
   await expect(page.getByRole("button", { name: "متابعة إلى اختيار المصدر" })).toBeDisabled();
