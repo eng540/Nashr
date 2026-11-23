@@ -259,6 +259,7 @@ class DerivePlatformVariant:
         *,
         artifact_id: UUID,
         platform: str,
+        allow_length_trim: bool = False,
     ) -> Artifact:
         key, profile = _resolve_profile(platform)
         row = (
@@ -304,6 +305,9 @@ class DerivePlatformVariant:
         if refreshed is not None:
             return refreshed
 
+        if profile["measure"](base_content or "") > profile["max_text"] and not allow_length_trim:
+            raise ValueError("النص الأصلي يتجاوز حد المنصة. لم يُقص ولم تُنشأ نسخة؛ جهز نصاً مناسباً أو اختر صراحة مسودة قص للمراجعة، فالقص لا يضمن حفظ المعنى.")
+
         content_mode_inline = kind.value in {"TEXT"}
         artifact = Artifact(
             id=uuid4(),
@@ -335,6 +339,7 @@ class DerivePlatformVariant:
         *,
         post_id: UUID,
         platform: str,
+        allow_length_trim: bool = False,
     ) -> Artifact:
         """Derive a DRAFT TEXT variant from an APPROVED editorial Post.
 
@@ -374,6 +379,9 @@ class DerivePlatformVariant:
         )
         if refreshed is not None:
             return refreshed
+
+        if profile["measure"](base_content or "") > profile["max_text"] and not allow_length_trim:
+            raise ValueError("النص الأصلي يتجاوز حد المنصة. لم يُقص ولم تُنشأ نسخة؛ جهز نصاً مناسباً أو اختر صراحة مسودة قص للمراجعة، فالقص لا يضمن حفظ المعنى.")
 
         artifact = Artifact(
             id=uuid4(),
