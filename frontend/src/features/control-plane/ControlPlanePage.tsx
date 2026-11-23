@@ -772,4 +772,4 @@ export function ControlPlanePage() {
       </main>
     </div>
   </section>;
-                }
+}
