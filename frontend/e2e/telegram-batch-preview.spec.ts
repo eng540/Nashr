@@ -8,7 +8,7 @@ test('batch preflight shows actual destination, full text and blockers without w
  if(p.startsWith('/api/')&&req.method()!=='GET')unsafe++;
  if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
- await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  await page.getByLabel('تحديد كل وسائط الصفحة',{exact:true}).check();
  const panel=page.getByLabel('معاينة دفعة Telegram',{exact:true});
  await panel.getByRole('button',{name:'تجهيز نسخ المنصات للمحدد (1)',exact:true}).click();await expect(panel.getByRole('status')).toContainText('دون إرسال أو جدولة');expect(prepared).toBe(1);
@@ -33,7 +33,7 @@ test('reviewed batch saves a draft schedule only with Riyadh time and content fi
  if(p.startsWith('/api/')&&req.method()!=='GET')unsafe++;
  if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
- await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');await page.getByLabel('تحديد كل وسائط الصفحة',{exact:true}).check();
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');await page.getByLabel('تحديد كل وسائط الصفحة',{exact:true}).check();
  const panel=page.getByLabel('معاينة دفعة Telegram',{exact:true});await panel.getByRole('button',{name:'معاينة وفحص دفعة Telegram (1)',exact:true}).click();
  await panel.getByText('حفظ خطة للدفعة دون تفعيل',{exact:true}).click();await page.getByLabel('بداية دفعة Telegram',{exact:true}).fill('2030-01-01T12:00');
  const save=panel.getByRole('button',{name:'حفظ خطة Telegram كمسودة',exact:true});await expect(save).toBeDisabled();await panel.getByRole('checkbox').check();await expect(save).toBeEnabled();
