@@ -61,7 +61,7 @@ async def test_platform_variant_requires_approved_source():
     artifact_id = await _seed_text_artifact("نص قصير غير معتمد بعد")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
+        resp = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert resp.status_code == 422
 
 
@@ -73,7 +73,7 @@ async def test_x_variant_trims_weighted_and_refreshes_idempotently():
         approve = await client.post(f"/api/artifacts/{artifact_id}/approve", json={"review_note": None})
         assert approve.status_code == 200, approve.text
 
-        first = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
+        first = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert first.status_code == 201, first.text
         body = first.json()
         assert body["review_status"] == "DRAFT"
@@ -84,7 +84,7 @@ async def test_x_variant_trims_weighted_and_refreshes_idempotently():
         assert measure(body["content"]) <= PLATFORM_PROFILES["x"]["max_text"]
         assert body["output_contract_key"] == "PLATFORM_VARIANT_X"
 
-        second = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
+        second = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert second.status_code == 201, second.text
         assert second.json()["id"] == body["id"], "Re-derivation must refresh the existing DRAFT variant."
 
@@ -185,7 +185,7 @@ async def test_variant_metadata_marks_length_only_adaptation_and_review_need():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         await client.post(f"/api/artifacts/{artifact_id}/approve", json={"review_note": None})
-        resp = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
+        resp = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert resp.status_code == 201, resp.text
         meta = resp.json()["metadata"]
         assert meta["adaptation"] == "length_only"
@@ -200,7 +200,7 @@ async def test_post_variant_derives_from_approved_post_and_refreshes():
     post_id = await _seed_post(LONG_ARABIC, "APPROVED")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        first = await client.post(f"/api/artifacts/post-source/{post_id}/platform-variant", json={"platform": "x"})
+        first = await client.post(f"/api/artifacts/post-source/{post_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert first.status_code == 201, first.text
         body = first.json()
         assert body["kind"] == "TEXT"
@@ -211,7 +211,7 @@ async def test_post_variant_derives_from_approved_post_and_refreshes():
         assert measure(body["content"]) <= PLATFORM_PROFILES["x"]["max_text"]
         assert body["metadata"]["constraints"]["trimmed"] is True
 
-        second = await client.post(f"/api/artifacts/post-source/{post_id}/platform-variant", json={"platform": "x"})
+        second = await client.post(f"/api/artifacts/post-source/{post_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert second.status_code == 201, second.text
         assert second.json()["id"] == body["id"], "Re-derivation must refresh the existing DRAFT variant."
 
@@ -221,9 +221,9 @@ async def test_post_variant_requires_approved_post():
     post_id = await _seed_post("مسودة منشور قصيرة", "DRAFT")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(f"/api/artifacts/post-source/{post_id}/platform-variant", json={"platform": "x"})
+        resp = await client.post(f"/api/artifacts/post-source/{post_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert resp.status_code == 422
-        missing = await client.post(f"/api/artifacts/post-source/{uuid4()}/platform-variant", json={"platform": "x"})
+        missing = await client.post(f"/api/artifacts/post-source/{uuid4()}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert missing.status_code == 404
 
 
@@ -309,7 +309,7 @@ async def test_media_variant_uses_caption_and_preserves_storage_reference():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         approve = await client.post(f"/api/artifacts/{artifact_id}/approve", json={})
         assert approve.status_code == 200, approve.text
-        derived = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
+        derived = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert derived.status_code == 201, derived.text
         variant = derived.json()
         assert variant["kind"] == "IMAGE"
@@ -334,7 +334,7 @@ async def test_media_variant_requires_nonempty_caption():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         approve = await client.post(f"/api/artifacts/{artifact_id}/approve", json={})
         assert approve.status_code == 200, approve.text
-        derived = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x"})
+        derived = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform": "x", "allow_length_trim": True})
         assert derived.status_code == 422, derived.text
 
 
@@ -399,3 +399,17 @@ async def test_concurrent_derivation_reuses_one_draft():
         responses=await asyncio.gather(*[client.post(f'/api/artifacts/{artifact_id}/platform-variant',json={'platform':'x'}) for _ in range(3)])
         assert all(r.status_code == 201 for r in responses)
         assert len({r.json()['id'] for r in responses}) == 1
+
+
+@pytest.mark.asyncio
+async def test_default_fallback_never_silently_trims_original():
+    artifact_id = await _seed_text_artifact(LONG_ARABIC)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(f"/api/artifacts/{artifact_id}/approve", json={})
+        response = await client.post(f"/api/artifacts/{artifact_id}/platform-variant", json={"platform":"x"})
+        assert response.status_code == 422
+        assert "لم يُقص" in response.json()["detail"]
+        original = (await client.get(f"/api/artifacts/{artifact_id}")).json()
+        assert original["content"] == LONG_ARABIC
+        listing = (await client.get("/api/artifacts/platform-variants")).json()
+        assert not any(row["source_artifact_id"] == artifact_id for row in listing)
