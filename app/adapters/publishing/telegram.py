@@ -193,15 +193,21 @@ class TelegramPublisher(IPublisher):
                     },
                 )
             else:
-                if not media or media_mime_type not in {"image/png", "image/jpeg", "image/webp"}:
-                    raise ValueError("Publishing media must be a non-empty supported image.")
-                extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[media_mime_type]
-                url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
+                image_types = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+                video_types = {"video/mp4": "mp4"}
+                if not media or (media_mime_type not in image_types and media_mime_type not in video_types):
+                    raise ValueError("Publishing media must be a non-empty supported image or MP4 video.")
                 caption = telegram_html_content(content, max_visible_characters=1024)
+                if media_mime_type in image_types:
+                    url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
+                    files = {"photo": (f"nashr-card.{image_types[media_mime_type]}", media, media_mime_type)}
+                else:
+                    url = f"https://api.telegram.org/bot{self.token}/sendVideo"
+                    files = {"video": (f"nashr-media.{video_types[media_mime_type]}", media, media_mime_type)}
                 response = await client.post(
                     url,
                     data={"chat_id": destination, "caption": caption, "parse_mode": "HTML"},
-                    files={"photo": (f"nashr-card.{extension}", media, media_mime_type)},
+                    files=files,
                 )
             response.raise_for_status()
             payload = response.json()
