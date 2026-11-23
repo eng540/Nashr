@@ -270,6 +270,19 @@ async def distribution_readiness(artifact_id: UUID, session: AsyncSession = Depe
         raise _handle_error(exc) from exc
 
 
+@router.post("/{artifact_id}/platform-copies/{platform}/inspect-media")
+async def inspect_platform_copy_media(artifact_id: UUID, platform: str, session: AsyncSession = Depends(get_session)):
+    from app.application.platform_media_probe import probe_platform_media
+    try:
+        return await probe_platform_media(session, artifact_id, platform)
+    except ArtifactStorageConfigurationError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ArtifactStorageError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except ValueError as exc:
+        raise _handle_error(exc) from exc
+
+
 @router.post("/ingest-media", status_code=201)
 async def ingest_ready_media(
     file: UploadFile = File(...),
@@ -457,6 +470,10 @@ async def create_telegram_draft_for_artifact(
         artifact = await load_artifact(session, artifact_id)
         if artifact is None:
             raise LookupError("Artifact not found.")
+        from app.infrastructure.database.models import PlatformCopyModel
+        copy = await session.get(PlatformCopyModel, (artifact_id, 'telegram'))
+        if copy and copy.fields.get('description') != telegram_publish_text(artifact):
+            raise ValueError('توجد نسخة Telegram مستقلة تختلف عن الأصل. استخدم معاينة الدفعة لتثبيت النسخة المراجعة.')
         publication = await CreateTelegramDraft.execute_for_artifact(session, artifact, destination)
         if publication.status.value == "FAILED":
             row = (await session.execute(select(PublicationModel).where(PublicationModel.id == publication.id))).scalar_one()
