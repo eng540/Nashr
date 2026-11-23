@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("Post Bank hands selection to Publishing through URL state only", async ({ page }) => {
-  await page.goto("/posts/workspace?status=APPROVED");
+  await page.goto("/posts/workspace?status=APPROVED&library_view=expanded");
   const checkbox = page.getByRole("checkbox").first();
   await expect(checkbox).toBeVisible();
   await checkbox.check();
@@ -44,7 +44,7 @@ test("generic text artifact review shows a live reader preview that preserves pa
     });
   });
 
-  await page.goto("/posts/workspace?status=DRAFT");
+  await page.goto("/posts/workspace?status=DRAFT&library_view=expanded");
   const preview = page.getByTestId(`artifact-text-preview-${artifactId}`);
   await expect(preview).toBeVisible();
   await expect(preview).toHaveText(original);
@@ -125,7 +125,7 @@ test("approved text Artifact can start a card job only through a published card 
     await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job_id: "e2e-card-job", status: "QUEUED" }) });
   });
 
-  await page.goto("/posts/workspace?status=DRAFT");
+  await page.goto("/posts/workspace?status=DRAFT&library_view=expanded");
   await page.getByLabel("حالة مراجعة المخرجات").selectOption("APPROVED");
   await expect(page.getByLabel(`منتج البطاقة ${artifactId}`)).toBeVisible();
   await page.getByLabel(`منتج البطاقة ${artifactId}`).selectOption("E2E_CARD_PRODUCT");
