@@ -1,0 +1,16 @@
+import {test,expect} from '@playwright/test';
+test('inspect original measurements without changing readiness or sending',async({page},info)=>{
+ let reads=0,unsafe=0;
+ const item={id:'probe-source',source_knowledge_unit_id:'u',kind:'IMAGE',status:'AVAILABLE',content:null,storage_uri:'s3://synthetic/artifacts/probe.jpg',mime_type:'image/jpeg',metadata:{title:'فحص الأصل',caption:'الوصف المعتمد'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'};
+ const copy={platform:'instagram',label:'Instagram',fields:{title:'',description:'الوصف المعتمد',tags:[],alt_text:''},version:1,source_fingerprint:'v1',current_source_fingerprint:'v1',origin:'UNCHANGED_ORIGINAL',source_stale:false,central_approval:'APPROVED',field_status:'FIELDS_VALIDATED',blockers:[],warnings:[],media_checks_pending:['فحص الوسائط النهائي معلق.'],execution_blockers:['لا إذن تنفيذ.'],sources:[]};
+ await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
+ if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p.endsWith('/media-url'))return route.fulfill({json:{url:null}});
+ if(p.endsWith('/platform-copies'))return route.fulfill({json:{items:[copy]}});
+ if(p.endsWith('/inspect-media')){reads++;return route.fulfill({json:{source_fingerprint:'v1',copy_version:1,status:'MEASURED_WITH_PENDING_CHECKS',measurements:{width:640,height:800,size_bytes:12345,format:'JPEG'},blockers:[],pending:['الحساب والصلاحيات وقبول المنصة لم تُفحص.']}});}
+ if(p.startsWith('/api/')&&r.method()!=='GET')unsafe++;
+ if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
+ await page.goto('/bank');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');const panel=page.getByLabel('نسخ المنصات probe-source',{exact:true});await panel.locator('summary').first().click();await panel.getByRole('button',{name:'عرض النسخ المحفوظة',exact:true}).click();await panel.getByLabel('منصة النسخة probe-source').selectOption('instagram');
+ await panel.getByRole('button',{name:'فحص الملف الأصلي (قراءة حتى 50MiB)',exact:true}).click();await expect(panel.getByRole('status')).toContainText('قياسات فقط، لا جاهزية نهائية');await expect(panel.getByText('الحساب والصلاحيات وقبول المنصة لم تُفحص.',{exact:true})).toBeVisible();expect(reads).toBe(1);expect(unsafe).toBe(0);await expect(panel.getByLabel('وصف نسخة probe-source')).toHaveValue(copy.fields.description);
+ await page.addStyleTag({content:'header {visibility:hidden}'});await page.setViewportSize({width:390,height:844});await panel.screenshot({path:info.outputPath('media-inspection-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});
