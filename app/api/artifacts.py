@@ -3,12 +3,13 @@ from datetime import datetime
 import os
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.generic_artifact_review import GenericArtifactReviewService
 from app.application.artifacts import load_artifact
+from app.application.media_bank import IngestReadyMedia
 from app.application.publications import CreateTelegramDraft
 from app.domain.artifacts import ArtifactKind
 from app.application.scheduling import validate_timezone, validate_scheduled_at
@@ -62,6 +63,35 @@ async def list_generic_artifacts(
 ) -> list[dict[str, Any]]:
     try:
         return await GenericArtifactReviewService(session).list(review_status, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/ingest-media", status_code=201)
+async def ingest_ready_media(
+    file: UploadFile = File(...),
+    caption: str | None = Form(default=None, max_length=1024),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Ingest a ready-made image/video into the media bank as a DRAFT Artifact.
+
+    No generation provider is involved; the upload is stored in private media
+    storage and enters the standard generic artifact review flow.
+    """
+    data = await file.read()
+    try:
+        artifact = await IngestReadyMedia().execute(
+            session,
+            filename=file.filename or "media",
+            content_type=file.content_type or "",
+            data=data,
+            caption=caption,
+        )
+        return await GenericArtifactReviewService(session).get(artifact.id)
+    except ArtifactStorageConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ArtifactStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -151,6 +181,46 @@ async def create_telegram_draft_for_artifact(
             row.error_message = None
             await session.commit()
             publication = await CreateTelegramDraft.execute_for_artifact(session, artifact, destination)
+        return {
+            "id": str(publication.id),
+            "post_id": str(publication.post_id) if publication.post_id else None,
+            "artifact_id": str(publication.artifact_id) if publication.artifact_id else None,
+            "knowledge_unit_id": str(publication.knowledge_unit_id),
+            "platform": publication.platform,
+            "destination": publication.destination,
+            "status": publication.status.value,
+            "content": publication.content,
+        }
+    except (LookupError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/{artifact_id}/telegram-media-draft", status_code=201)
+async def create_telegram_media_draft_for_artifact(
+    artifact_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Create a durable Telegram publication draft for an approved media bank Artifact."""
+    destination = os.getenv("TELEGRAM_DESTINATION_ID", "").strip()
+    if not destination:
+        raise HTTPException(status_code=503, detail="TELEGRAM_DESTINATION_ID is required.")
+    try:
+        review = await GenericArtifactReviewService(session).get(artifact_id)
+        if review.get("kind") not in {ArtifactKind.IMAGE.value, ArtifactKind.VIDEO.value}:
+            raise ValueError("Only IMAGE or VIDEO Artifacts can use this media publication route.")
+        if review.get("review_status") != "APPROVED":
+            raise ValueError("Media Artifact must be approved before creating a publication draft.")
+        if not review.get("storage_uri"):
+            raise ValueError("Media Artifact has no stored media to publish.")
+        caption = str((review.get("metadata") or {}).get("caption") or "").strip()
+        if not caption:
+            raise ValueError("Media Artifact needs a non-empty caption before creating a publication draft.")
+        artifact = await load_artifact(session, artifact_id)
+        if artifact is None:
+            raise LookupError("Artifact not found.")
+        publication = await CreateTelegramDraft.execute_for_artifact(
+            session, artifact, destination, content_override=caption
+        )
         return {
             "id": str(publication.id),
             "post_id": str(publication.post_id) if publication.post_id else None,
