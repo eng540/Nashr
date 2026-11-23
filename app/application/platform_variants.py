@@ -286,6 +286,8 @@ class DerivePlatformVariant:
         if base_content is None and row.storage_uri is not None:
             # Media variant: caption lives in metadata for media-bank uploads.
             base_content = str((row.artifact_metadata or {}).get("caption") or "")
+        if not (base_content or "").strip():
+            raise ValueError("المخرج المصدر لا يحتوي نصًا أو وصفًا يمكن اشتقاق نسخة منصة منه.")
         trimmed_content, was_trimmed, boundary = _trim_to_limit(base_content or "", profile)
         now = datetime.now(timezone.utc)
         metadata = _build_metadata(
@@ -461,6 +463,9 @@ async def list_platform_variants(session: AsyncSession, limit: int = 50) -> list
         items.append(
             {
                 "id": str(row.id),
+                "kind": row.kind,
+                "mime_type": row.mime_type,
+                "content": text,
                 "platform": meta.get("platform"),
                 "platform_label_ar": meta.get("platform_label_ar"),
                 "review_status": row.review_status,
