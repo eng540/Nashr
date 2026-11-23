@@ -24,3 +24,9 @@ async def test_native_methods(monkeypatch,value,method):
 ])
 def test_native_payload_is_allowlisted(value):
  with pytest.raises(ValueError):native_payload(value)
+
+
+@pytest.mark.parametrize("value", [{"type": []}, {"type": "DICE", "emoji": []}])
+def test_malformed_native_fields_fail_cleanly(value):
+    with pytest.raises(ValueError):
+        native_payload(value)
