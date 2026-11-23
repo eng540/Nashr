@@ -35,7 +35,7 @@ function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewable
 }
 
 
-export function GenericArtifactReviewPanel() {
+export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOnly = false }: { showDesignCard?: boolean; designCardOnly?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<GenericArtifactReviewStatus>("DRAFT");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
@@ -61,6 +61,7 @@ export function GenericArtifactReviewPanel() {
   const artifacts = useQuery({
     queryKey: ["generic-artifacts", status],
     queryFn: () => genericArtifactsApi.list(status),
+    enabled: !designCardOnly,
   });
   const activeJob = useQuery({
     queryKey: ["design-card-production-job", activeCardJob],
@@ -148,6 +149,51 @@ export function GenericArtifactReviewPanel() {
     },
   });
 
+  const designCard = (
+    <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-3">
+      <h3 className="font-bold">إنتاج تصميم من منشور معتمد</h3>
+      <p className="text-sm text-slate-600">يُستخدم نص Post المعتمد مباشرةً دون إنشاء TEXT Artifact وسيط. يظل اعتماد الصورة ومراجعتها مستقلًا.</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm font-semibold">المنشور المصدر
+          <select aria-label="المنشور المصدر للتصميم" value={selectedPostId} onChange={(event) => setSelectedPostId(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal">
+            <option value="">اختر منشورًا معتمدًا</option>
+            {(approvedPosts.data?.items ?? []).filter((post) => post.status === "APPROVED" && post.content.trim()).map((post) => <option key={post.post_id} value={post.post_id}>{post.title} · {post.post_id.slice(0, 8)}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-semibold">منتج التصميم المنشور
+          <select aria-label="منتج التصميم من المنشور" value={postProductKey} onChange={(event) => setPostProductKey(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal">
+            <option value="">اختر منتجًا</option>
+            {eligibleCardProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · {product.key}</option>)}
+          </select>
+        </label>
+      </div>
+      {selectedPostId ? <div className="rounded-lg bg-white p-3 text-sm leading-7 text-slate-700" dir="auto">{(approvedPosts.data?.items ?? []).find((post) => post.post_id === selectedPostId)?.content ?? "تعذر تحميل نص المنشور المحدد."}</div> : null}
+      {products.isLoading || recipes.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل منتجات التصميم المنشورة...</p> : null}
+      {products.isError || recipes.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل منتجات التصميم أو وصفاته: {(products.error ?? recipes.error)?.message}</p> : null}
+      {!products.isLoading && !recipes.isLoading && !products.isError && !recipes.isError && eligibleCardProducts.length === 0 ? <p role="status" className="text-sm text-amber-800">لا يوجد حاليًا منتج تصميم منشور مرتبط بوصفة تدعم إنتاج البطاقات.</p> : null}
+      <button type="button" onClick={() => createCard.mutate({ postId: selectedPostId, productKey: postProductKey })} disabled={!selectedPostId || !postProductKey || createCard.isPending || products.isLoading || recipes.isLoading} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">{createCard.isPending ? "جارٍ بدء الإنتاج..." : "إنتاج تصميم للمنشور"}</button>
+      {approvedPosts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المنشورات المعتمدة...</p> : null}
+      {approvedPosts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المنشورات المعتمدة: {approvedPosts.error.message}</p> : null}
+    </div>
+  );
+  const jobStatus = activeCardJob ? <div role="status" className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm">
+      <p className="font-semibold">مهمة إنتاج التصميم · {activeCardJob}</p>
+      {activeJob.isLoading ? <p>جارٍ تحميل حالة المهمة...</p> : null}
+      {activeJob.isError ? <p className="text-rose-700">تعذر تحديث حالة الإنتاج: {activeJob.error.message}</p> : null}
+      {activeJob.data?.status === "QUEUED" || activeJob.data?.status === "RUNNING" ? <p>الإنتاج جارٍ · التقدم {activeJob.data.progress_percent ?? 0}% · اكتمل {activeJob.data.completed_items ?? 0} من {activeJob.data.total_items ?? 1}</p> : null}
+      {activeJob.data?.status === "COMPLETED" ? <p className="text-emerald-800">اكتمل الإنتاج. حُدثت قائمة المخرجات؛ انتقل إلى حالة «قيد المراجعة» لمعاينة التصميم.</p> : null}
+      {activeJob.data?.status === "FAILED" ? <p className="text-rose-700">فشل الإنتاج: {activeJob.data.error_message ?? "لم يُرجع النظام تفاصيل إضافية."}</p> : null}
+    </div> : null;
+  const mutationError = (save.isError || approve.isError || reject.isError || createCard.isError) ? <p role="alert" className="text-sm text-rose-700">{(save.error ?? approve.error ?? reject.error ?? createCard.error)?.message}</p> : null;
+  if (designCardOnly) {
+    return (
+      <section className="space-y-3 rounded-2xl border bg-white p-5 shadow-sm" aria-label="إنتاج تصميم من منشور معتمد">
+        {designCard}
+        {jobStatus}
+        {mutationError}
+      </section>
+    );
+  }
   return <section className="space-y-3 rounded-2xl border bg-white p-5 shadow-sm" aria-label="مراجعة المخرجات العامة">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
@@ -177,31 +223,7 @@ export function GenericArtifactReviewPanel() {
       {ingestMedia.isError ? <p role="alert" className="text-sm text-rose-700">{ingestMedia.error.message}</p> : null}
       {ingestMedia.isSuccess ? <p role="status" className="text-sm text-emerald-800">تم الرفع؛ الوسيط الآن قيد المراجعة.</p> : null}
     </div>
-    <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-3">
-      <h3 className="font-bold">إنتاج تصميم من منشور معتمد</h3>
-      <p className="text-sm text-slate-600">يُستخدم نص Post المعتمد مباشرةً دون إنشاء TEXT Artifact وسيط. يظل اعتماد الصورة ومراجعتها مستقلًا.</p>
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="text-sm font-semibold">المنشور المصدر
-          <select aria-label="المنشور المصدر للتصميم" value={selectedPostId} onChange={(event) => setSelectedPostId(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal">
-            <option value="">اختر منشورًا معتمدًا</option>
-            {(approvedPosts.data?.items ?? []).filter((post) => post.status === "APPROVED" && post.content.trim()).map((post) => <option key={post.post_id} value={post.post_id}>{post.title} · {post.post_id.slice(0, 8)}</option>)}
-          </select>
-        </label>
-        <label className="text-sm font-semibold">منتج التصميم المنشور
-          <select aria-label="منتج التصميم من المنشور" value={postProductKey} onChange={(event) => setPostProductKey(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal">
-            <option value="">اختر منتجًا</option>
-            {eligibleCardProducts.map((product) => <option key={product.key} value={product.key}>{product.name} · {product.key}</option>)}
-          </select>
-        </label>
-      </div>
-      {selectedPostId ? <div className="rounded-lg bg-white p-3 text-sm leading-7 text-slate-700" dir="auto">{(approvedPosts.data?.items ?? []).find((post) => post.post_id === selectedPostId)?.content ?? "تعذر تحميل نص المنشور المحدد."}</div> : null}
-      {products.isLoading || recipes.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل منتجات التصميم المنشورة...</p> : null}
-      {products.isError || recipes.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل منتجات التصميم أو وصفاته: {(products.error ?? recipes.error)?.message}</p> : null}
-      {!products.isLoading && !recipes.isLoading && !products.isError && !recipes.isError && eligibleCardProducts.length === 0 ? <p role="status" className="text-sm text-amber-800">لا يوجد حاليًا منتج تصميم منشور مرتبط بوصفة تدعم إنتاج البطاقات.</p> : null}
-      <button type="button" onClick={() => createCard.mutate({ postId: selectedPostId, productKey: postProductKey })} disabled={!selectedPostId || !postProductKey || createCard.isPending || products.isLoading || recipes.isLoading} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">{createCard.isPending ? "جارٍ بدء الإنتاج..." : "إنتاج تصميم للمنشور"}</button>
-      {approvedPosts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المنشورات المعتمدة...</p> : null}
-      {approvedPosts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المنشورات المعتمدة: {approvedPosts.error.message}</p> : null}
-    </div>
+    {showDesignCard ? designCard : null}
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
     {artifacts.data?.length === 0 ? <div className="rounded-xl border border-dashed p-5 text-sm text-slate-500">لا توجد مخرجات في هذه الحالة.</div> : null}
@@ -277,14 +299,7 @@ export function GenericArtifactReviewPanel() {
         </div> : null}
       </article>)}
     </div>
-    {activeCardJob ? <div role="status" className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm">
-      <p className="font-semibold">مهمة إنتاج التصميم · {activeCardJob}</p>
-      {activeJob.isLoading ? <p>جارٍ تحميل حالة المهمة...</p> : null}
-      {activeJob.isError ? <p className="text-rose-700">تعذر تحديث حالة الإنتاج: {activeJob.error.message}</p> : null}
-      {activeJob.data?.status === "QUEUED" || activeJob.data?.status === "RUNNING" ? <p>الإنتاج جارٍ · التقدم {activeJob.data.progress_percent ?? 0}% · اكتمل {activeJob.data.completed_items ?? 0} من {activeJob.data.total_items ?? 1}</p> : null}
-      {activeJob.data?.status === "COMPLETED" ? <p className="text-emerald-800">اكتمل الإنتاج. حُدثت قائمة المخرجات؛ انتقل إلى حالة «قيد المراجعة» لمعاينة التصميم.</p> : null}
-      {activeJob.data?.status === "FAILED" ? <p className="text-rose-700">فشل الإنتاج: {activeJob.data.error_message ?? "لم يُرجع النظام تفاصيل إضافية."}</p> : null}
-    </div> : null}
-    {(save.isError || approve.isError || reject.isError || createCard.isError) ? <p role="alert" className="text-sm text-rose-700">{(save.error ?? approve.error ?? reject.error ?? createCard.error)?.message}</p> : null}
+    {jobStatus}
+    {mutationError}
   </section>;
 }
