@@ -124,6 +124,7 @@ class ApproveAndPublish:
         publication_id: UUID,
         content: str | None = None,
         artifact: Artifact | None = None,
+        reviewed_copy_text: str | None = None,
     ) -> Publication:
         """Persist optional edits, then publish the supplied Artifact.
 
@@ -306,7 +307,10 @@ class ApproveAndPublish:
                 raise ValueError("The approved visual Artifact could not be read from private storage.") from exc
             media_mime_type = visual.mime_type
 
-        if content is None and artifact.kind != ArtifactKind.POST:
+        if reviewed_copy_text is not None and artifact.kind != ArtifactKind.POST:
+            current_row.content = reviewed_copy_text
+            await session.commit()
+        elif content is None and artifact.kind != ArtifactKind.POST:
             current_row.content = telegram_publish_text(artifact)
             await session.commit()
         elif content is None and artifact.content is not None:
