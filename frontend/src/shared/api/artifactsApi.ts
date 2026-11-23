@@ -30,6 +30,12 @@ export interface PlatformVariantConstraints {
   provenance: string | null;
 }
 
+export interface ManualPublicationRecord {
+  published_at: string;
+  external_url: string | null;
+  recorded_at: string;
+}
+
 export interface PlatformVariantDraft {
   id: string;
   platform: string | null;
@@ -43,6 +49,7 @@ export interface PlatformVariantDraft {
   source_artifact_id: string | null;
   source_post_id: string | null;
   constraints: PlatformVariantConstraints;
+  manual_publication: ManualPublicationRecord | null;
   created_at: string | null;
 }
 
@@ -73,6 +80,9 @@ export const genericArtifactsApi = {
   },
   listPlatformVariants(): Promise<PlatformVariantDraft[]> {
     return get<PlatformVariantDraft[]>("/api/artifacts/platform-variants");
+  },
+  recordManualPublication(id: string, input: { published_at: string; external_url?: string | null }): Promise<GenericReviewableArtifact> {
+    return post<GenericReviewableArtifact>(`/api/artifacts/${id}/manual-publication`, input);
   },
   derivePlatformVariant(id: string, platform: string): Promise<GenericReviewableArtifact> {
     return post<GenericReviewableArtifact>(`/api/artifacts/${id}/platform-variant`, { platform });
