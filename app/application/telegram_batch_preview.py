@@ -1,3 +1,4 @@
+from app.domain.telegram_copy import telegram_publish_text
 """Read-only batch preflight for approved generic Telegram originals."""
 import os
 from sqlalchemy import select
@@ -43,7 +44,7 @@ async def preview_telegram_batch(session, artifact_ids):
         if not destination:
             blockers.append('لم تُضبط وجهة Telegram في الخادم.')
         items.append({'artifact_id':str(uid),'title':str(meta.get('title') or meta.get('original_filename') or row.kind),'kind':row.kind,
-                      'content':row.content if row.content is not None else str(meta.get('caption') or ''),
+                      'content':telegram_publish_text(row),
                       'source_fingerprint':source_fingerprint(row),'ready':not blockers,'blockers':blockers,
                       'publications':[{'id':str(p.id),'status':p.status,'external_ids':p.external_ids or ([p.external_id] if p.external_id else [])} for p in pubs], 'schedules':planned})
     return {'destination':destination or None,'items':items,'ready_count':sum(item['ready'] for item in items),
