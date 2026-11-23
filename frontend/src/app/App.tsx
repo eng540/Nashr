@@ -10,6 +10,8 @@ export function App() {
       <Routes>
         <Route path="/control" element={<ControlPlanePage />} />
         <Route path="/publishing" element={<PublishingPage />} />
+        <Route path="/production" element={<PostBankPage initialView="production" />} />
+        <Route path="/bank" element={<PostBankPage initialView="review" />} />
         <Route path="/posts/workspace" element={<PostBankPage />} />
         <Route path="*" element={<Navigate to="/publishing" replace />} />
       </Routes>
