@@ -183,7 +183,7 @@ test("manual production selection includes materials that have no topic assignme
   await page.getByRole("button", { name: /بنك المحتوى والمراجعة/ }).click();
   await expect(page.getByTestId("post-bank-filters")).toBeVisible();
   await expect(page.getByTestId("production-panel")).toHaveCount(0);
-  await page.getByRole("button", { name: /إعداد الإنتاج/ }).click();
+  await page.getByRole("link", { name: "الإنتاج", exact: true }).click();
   await expect(page.getByTestId("production-summary")).toBeVisible();
 });
 
