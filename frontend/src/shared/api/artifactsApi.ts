@@ -67,10 +67,14 @@ export interface ArtifactPublicationRecord { id:string; platform:string; destina
 
 export interface DistributionReadiness { artifact_id:string; source_fingerprint:string; central_approval:string; original_text:string; selection_stale:boolean; targets:Array<{platform:string; label:string; selected:boolean; copy_status:string; copy_blockers:string[]; execution_blockers:string[]}>; }
 
-export interface TelegramBatchPreview { destination:string|null;ready_count:number;blocked_count:number;caveat:string;items:Array<{artifact_id:string;title:string;kind:string;content:string;source_fingerprint:string;ready:boolean;blockers:string[];publications:Array<{id:string;status:string;external_ids:string[]}>;schedules:Array<{name:string;schedule_status:string;item_status:string}>}>; }
+export interface TelegramBatchPreview { destination:string|null;ready_count:number;blocked_count:number;caveat:string;items:Array<{artifact_id:string;title:string;kind:string;content:string;source_fingerprint:string;copy_version:number|null;ready:boolean;blockers:string[];publications:Array<{id:string;status:string;external_ids:string[]}>;schedules:Array<{name:string;schedule_status:string;item_status:string}>}>; }
 
+export interface CentralPlatformCopy {platform:string;label:string;fields:{title:string;description:string;tags:string[];alt_text:string};version:number;source_fingerprint:string;current_source_fingerprint:string;origin:string;source_stale:boolean;central_approval:string;field_status:string;blockers:string[];warnings:string[];media_checks_pending:string[];execution_blockers:string[];sources:string[];}
 export const genericArtifactsApi = {
-  telegramBatchSchedule(input:{artifact_ids:string[];fingerprints:Record<string,string>;name:string;timezone:string;start_at:string;interval_minutes:number;destination:string}):Promise<{id:string;status:string;items:Array<{artifact_id:string;scheduled_at:string}>}> {return post('/api/artifacts/telegram-batch-schedule',input);},
+  platformCopies(id:string):Promise<{items:CentralPlatformCopy[]}>{return get(`/api/artifacts/${id}/platform-copies`);},
+  prepareCopies(id:string):Promise<{items:CentralPlatformCopy[]}>{return post(`/api/artifacts/${id}/platform-copies/prepare`,{});},
+  updateCopy(id:string,copy:CentralPlatformCopy):Promise<CentralPlatformCopy>{return patch(`/api/artifacts/${id}/platform-copies/${copy.platform}`,{fields:copy.fields,version:copy.version,current_source_fingerprint:copy.current_source_fingerprint});},
+  telegramBatchSchedule(input:{artifact_ids:string[];fingerprints:Record<string,string>;name:string;timezone:string;start_at:string;interval_minutes:number;destination:string;copy_versions:Record<string,number|null>}):Promise<{id:string;status:string;items:Array<{artifact_id:string;scheduled_at:string}>}> {return post('/api/artifacts/telegram-batch-schedule',input);},
   telegramBatchPreview(ids:string[]):Promise<TelegramBatchPreview> { return post('/api/artifacts/telegram-batch-preview',{artifact_ids:ids}); },
   readiness(id:string):Promise<DistributionReadiness> { return get(`/api/artifacts/${id}/distribution-readiness`); },
   saveDistribution(input:{artifact_ids:string[];platforms:string[];fingerprints:Record<string,string>}):Promise<{saved:number;items:DistributionReadiness[]}> { return post('/api/artifacts/distribution-selection',input); },
