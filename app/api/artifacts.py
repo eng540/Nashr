@@ -365,14 +365,16 @@ class SavedInspectionRequest(BaseModel):
 @router.get("/{artifact_id}/platform-copies/{platform}/media-inspections")
 async def saved_media_inspections(artifact_id: UUID,platform: str,session: AsyncSession=Depends(get_session)):
     from app.application.media_inspection_history import list_inspections
-    try:return await list_inspections(session,artifact_id,platform)
+    from fastapi.responses import JSONResponse
+    try:return JSONResponse(await list_inspections(session,artifact_id,platform),headers={"Cache-Control":"no-store"})
     except ValueError as exc:raise _handle_error(exc) from exc
 
 
 @router.post("/{artifact_id}/platform-copies/{platform}/media-inspections")
 async def save_media_inspection(artifact_id: UUID,platform: str,payload: SavedInspectionRequest,session: AsyncSession=Depends(get_session)):
     from app.application.media_inspection_history import record_inspection
-    try:return await record_inspection(session,artifact_id,platform,fingerprint=payload.source_fingerprint,version=payload.copy_version,selected=payload.selected)
+    from fastapi.responses import JSONResponse
+    try:return JSONResponse(await record_inspection(session,artifact_id,platform,fingerprint=payload.source_fingerprint,version=payload.copy_version,selected=payload.selected),headers={"Cache-Control":"no-store"})
     except ArtifactStorageConfigurationError as exc:raise HTTPException(503,str(exc)) from exc
     except ArtifactStorageError as exc:raise HTTPException(502,str(exc)) from exc
     except ValueError as exc:
