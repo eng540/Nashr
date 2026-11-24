@@ -1,4 +1,5 @@
 import {useState} from 'react';
+import {CopySuggestionsPanel} from './CopySuggestionsPanel';
 import {MediaInspectionHistoryPanel} from './MediaInspectionHistoryPanel';
 import {PlatformCopyMediaPanel} from './PlatformCopyMediaPanel';
 import {useMutation} from '@tanstack/react-query';
@@ -29,6 +30,7 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan}:{id:string;kind:stri
     {shown?<><p className="rounded bg-white p-2">{shown.origin==='UNCHANGED_ORIGINAL'?'من الأصل دون تغيير':'حقول معدلة'} · إصدار {shown.version} · {shown.central_approval==='APPROVED'?'اعتماد الأصل محفوظ':'الأصل غير معتمد'}</p>
      {draft?<p role="status" className="text-amber-800">تعديلات غير محفوظة. الحالات أدناه تخص آخر إصدار محفوظ وتُفحص مجدداً عند الحفظ.</p>:null}
      {shown.blockers.map(reason=><p key={reason} className="text-amber-900">{reason}</p>)}
+     {['telegram','youtube','instagram'].includes(active)?<CopySuggestionsPanel key={`${id}:${active}:${shown.version}`} id={id} copy={shown} disabled={busy||!!draft} onApplied={()=>load.mutate()}/>:null}
      {active==='instagram'&&kind==='IMAGE'&&shown?<PlatformCopyMediaPanel key={`${id}:${active}`} id={id} copy={shown} preview={jpeg.data} background={background} disabled={busy||!!draft} onChanged={()=>{jpeg.reset();setJpegOpen(false);inspect.reset();load.mutate();}}/>:null}
      {active==='youtube'?<label className="block">عنوان المنصة<input aria-label={`عنوان نسخة ${id}`} value={shown.fields.title} onChange={e=>edit('title',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>:null}
      <label className="block">نص النشر / الوصف<textarea aria-label={`وصف نسخة ${id}`} dir="auto" rows={6} value={shown.fields.description} onChange={e=>edit('description',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>
