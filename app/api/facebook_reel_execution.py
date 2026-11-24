@@ -62,7 +62,8 @@ async def provider_status(jid:UUID,request:Request,session:AsyncSession=Depends(
         try:
             provider=await service.provider(session,j,client)
             result=await provider._request('GET',j.remote_session['video_id'],params={'fields':'status'})
-            return JSONResponse({'video_id':j.remote_session['video_id'],'status':result.get('status'),'read_only':True},headers=HEADERS)
+            details=await provider._request('GET',j.remote_session['video_id'],params={'fields':'id,description,from,permalink_url'})
+            return JSONResponse({'video_id':j.remote_session['video_id'],'status':result.get('status'),'details':details,'read_only':True},headers=HEADERS)
         except FacebookProviderError as e:
             return JSONResponse({'video_id':j.remote_session['video_id'],'error_code':e.code,'read_only':True},headers=HEADERS,status_code=409)
 
