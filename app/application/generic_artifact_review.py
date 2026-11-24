@@ -122,7 +122,9 @@ class GenericArtifactReviewService:
             .offset(offset)
             .limit(limit)
         )).scalars().all()
-        return {"items": [_payload(row) for row in rows], "total": total, "limit": limit, "offset": offset}
+        from app.application.content_organization import for_ids
+        labels=await for_ids(self.session,[row.id for row in rows])
+        return {"items": [{**_payload(row),"organization":labels.get(str(row.id))} for row in rows], "total": total, "limit": limit, "offset": offset}
 
     async def get(self, artifact_id: UUID) -> dict[str, Any]:
         row = await self._get_row(artifact_id)
