@@ -34,3 +34,17 @@ def test_exif_orientation_applied_and_sensitive_metadata_stripped():
     data,info=jpeg_preview(out.getvalue(),'#ffffff')
     assert (info['width'],info['height'])==(640,800)
     with Image.open(io.BytesIO(data)) as image:assert not image.getexif()
+
+
+def test_preview_hash_is_stable_across_profile_creation_times(monkeypatch):
+    import time
+    from PIL import ImageCms
+    original=ImageCms.ImageCmsProfile.tobytes
+    calls=0
+    def timestamped(self):
+        nonlocal calls
+        calls+=1
+        result=bytearray(original(self));result[24:36]=bytes([0,0,0,0,0,0,0,0,0,0,0,calls])
+        return bytes(result)
+    monkeypatch.setattr(ImageCms.ImageCmsProfile,'tobytes',timestamped)
+    assert jpeg_preview(png(),'#ffffff')[0]==jpeg_preview(png(),'#ffffff')[0]
