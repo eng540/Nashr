@@ -1,3 +1,4 @@
+import {FacebookReelPanel} from './FacebookReelPanel';
 import {useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {get,post} from '../../shared/api/client';
@@ -33,5 +34,6 @@ export function FacebookPageConnectionPanel({ready}:{ready:boolean}){
  {save.isSuccess?<p role="status">حُفظ إعداد Facebook مشفراً، لم يتغير Instagram ولم تُربط صفحة بعد.</p>:null}
  {select.isSuccess||action.isSuccess?<p role="status">اكتملت العملية دون نشر أو رسائل أو رفع وسائط.</p>:null}
  {state.error||save.error||start.error||select.error||action.error?<p role="alert">{state.error?.message??save.error?.message??start.error?.message??select.error?.message??action.error?.message}</p>:null}
+ <FacebookReelPanel/>
  </section>;
 }
