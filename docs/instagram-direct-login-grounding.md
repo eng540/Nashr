@@ -1,3 +1,21 @@
+# Eligibility correction,24November2026
+
+The current official migration guide states newly created apps cannot configure
+Instagram API with Instagram Login. Existing integrations continue working with
+no announced end date. Older business-login/get-started pages still describe
+setup without this restriction and are insufficient eligibility evidence.
+
+https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/migration-guide
+
+The Nashr app screen currently exposes Unified Login and Facebook Login, not
+the legacy direct setup. Do not request new direct credentials or create a new
+app as a workaround. Unified is a different token/host/permission flow and needs
+its own source-grounded permission decision, including mandatory messaging.
+
+The direct UI now warns it is legacy-only and requires an explicit eligibility
+acknowledgment before configuration save or starting OAuth. Existing saved
+connections and settings are preserved. No automatic migration or fallback.
+
 # Instagram Login, independent connection
 
 Reviewed 2026-11-24. This is distinct from Unified and Facebook Page login.
