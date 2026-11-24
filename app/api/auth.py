@@ -115,6 +115,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Redirect browsers to /login and reject unauthenticated API calls."""
 
     async def dispatch(self, request: Request, call_next):
+        if request.url.path == '/instagram-media':
+            request.state.instagram_media_capability=request.query_params.get('capability','')
+            request.scope['query_string']=b''
+            response=await call_next(request)
+            response.headers['Cache-Control']='no-store'
+            response.headers['Referrer-Policy']='no-referrer'
+            return response
         if request.url.path in {'/api/connections/instagram/callback','/api/connections/instagram-page/callback','/api/connections/instagram-direct/callback'}:
             # OAuth codes must not land in Uvicorn access-log query strings.
             request.state.instagram_oauth_query = dict(request.query_params)

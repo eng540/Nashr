@@ -40,9 +40,7 @@ async def _locked(session,job_id):
 
 async def _valid(session,job,provider,media_sha256):
     if job.connection_binding:
-        from app.application.instagram_direct_execution import validate_binding
-        if getattr(provider,'graph_base',None)!='https://graph.instagram.com/v27.0':raise ValueError('Direct Instagram provider required; no Facebook fallback')
-        await validate_binding(session,job)
+        await validate_provider_binding(session,job,provider)
     if provider.account_id!=job.account_id or media_sha256!=job.media_sha256:raise ValueError('Pinned account or media changed')
     from app.application.instagram_media_pin import recheck_pinned_bytes
     await recheck_pinned_bytes(session,job)
@@ -89,7 +87,7 @@ async def publish(session,job_id,*,provider,media_sha256,authorized=False,public
 async def reconcile(session,job_id,*,provider):
     job=await _locked(session,job_id)
     if job.state in {'CREATING','PUBLISHING'}:raise ValueError('An active or crashed claim needs operator reconciliation; no overlapping provider action')
-    if job.connection_binding and getattr(provider,'graph_base',None)!='https://graph.instagram.com/v27.0':raise ValueError('Direct Instagram provider required')
+    if job.connection_binding:await validate_provider_binding(session,job,provider)
     if provider.account_id!=job.account_id:raise ValueError('Pinned account mismatch')
     if job.state=='CANCELLED':raise ValueError('Cancelled draft has no provider result to reconcile')
     if job.media_id:
@@ -122,3 +120,15 @@ async def mark_interrupted_claim_unknown(session,job_id,*,expected_state,expecte
     if job.state!=expected_state or job.updated_at!=expected_updated_at:raise ValueError('Claim changed; reread before reconciliation')
     job.state='CREATE_UNKNOWN' if expected_state=='CREATING' else 'PUBLISH_UNKNOWN'
     job.error_code='INSTAGRAM_INTERRUPTED_CLAIM_UNKNOWN';job.updated_at=now();await session.commit();return job
+
+async def validate_provider_binding(session,job,provider):
+    mode=job.connection_binding.get('login_mode')
+    if mode=='INSTAGRAM_LOGIN':
+        from app.application.instagram_direct_execution import validate_binding
+        host='https://graph.instagram.com/v27.0'
+    elif mode=='UNIFIED':
+        from app.application.instagram_unified_execution import validate_binding
+        host='https://graph.facebook.com/v27.0'
+    else:raise ValueError('Explicit supported connection provenance required')
+    if getattr(provider,'graph_base',None)!=host:raise ValueError('Provider host does not match pinned connection; no fallback')
+    await validate_binding(session,job)

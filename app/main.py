@@ -24,6 +24,7 @@ from app.api.artifacts import router as generic_artifacts_router
 from app.api.library_import import router as library_import_router
 from app.api.connections import router as connections_router
 from app.api.instagram_connections import router as instagram_connections_router
+from app.api.instagram_execution import router as instagram_execution_router
 from app.api.instagram_page_connections import router as instagram_page_connections_router
 from app.api.instagram_direct_connections import router as instagram_direct_connections_router
 from app.api.youtube_reviews import router as youtube_reviews_router
@@ -72,6 +73,13 @@ async def run_schedule_trigger() -> None:
     interval = schedule_trigger_interval()
     while True:
         try:
+            try:
+                from app.application.instagram_runtime import process_approved
+                await process_approved()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("event=INSTAGRAM_TRIGGER_FAILED")
             processed = await process_due_schedule_items(limit=20)
             if processed:
                 logger.info("event=SCHEDULE_TRIGGER_PROCESSED count=%s", processed)
@@ -198,6 +206,7 @@ def create_app() -> FastAPI:
     application.include_router(library_import_router)
     application.include_router(publishing_queue_router)
     application.include_router(instagram_connections_router)
+    application.include_router(instagram_execution_router)
     application.include_router(instagram_page_connections_router)
     application.include_router(instagram_direct_connections_router)
     application.include_router(youtube_reviews_router)

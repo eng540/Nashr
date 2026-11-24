@@ -911,3 +911,41 @@ class InstagramDirectOAuthFlowModel(Base):
     consumed:Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
     token_ciphertext:Mapped[str|None]=mapped_column(Text,nullable=True)
     accounts:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
+
+
+class InstagramPublishDecisionModel(Base):
+    """Exact owner decision. A draft or central approval is never this record."""
+    __tablename__='instagram_publish_decisions'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    execution_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_executions.id'),nullable=False,index=True)
+    snapshot_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    evidence_ref:Mapped[str]=mapped_column(Text,nullable=False)
+    state:Mapped[str]=mapped_column(String(20),nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class InstagramMediaGrantModel(Base):
+    """Revocable capability digest only. No public URL or secret is saved."""
+    __tablename__='instagram_media_grants'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    execution_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_executions.id'),nullable=False,index=True)
+    decision_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_publish_decisions.id'),nullable=False)
+    capability_hash:Mapped[str]=mapped_column(String(64),nullable=False,unique=True)
+    sha256:Mapped[str]=mapped_column(String(64),nullable=False)
+    state:Mapped[str]=mapped_column(String(20),nullable=False)
+    reads:Mapped[int]=mapped_column(Integer,nullable=False,default=0)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class InstagramDispatchModel(Base):
+    """Dormant due-time claim. Not registered with the production scheduler."""
+    __tablename__='instagram_dispatches'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    execution_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_executions.id'),nullable=False,unique=True)
+    decision_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_publish_decisions.id'),nullable=False)
+    due_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    state:Mapped[str]=mapped_column(String(30),nullable=False)
+    updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)

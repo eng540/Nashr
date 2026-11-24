@@ -3,7 +3,7 @@ import logging,re
 
 def redact(message):
     message=re.sub(r'(api\.telegram\.org/bot)[^/\s]+',r'\1[REDACTED]',message)
-    return re.sub(r'([?&](?:access_token|input_token|client_secret|code|state|upload_id)=)[^&\s"\']+',r'\1[REDACTED]',message)
+    return re.sub(r'([?&](?:capability|access_token|input_token|client_secret|code|state|upload_id)=)[^&\s"\']+',r'\1[REDACTED]',message)
 
 class CredentialFilter(logging.Filter):
     def filter(self,record):
