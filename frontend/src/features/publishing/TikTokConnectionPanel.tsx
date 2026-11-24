@@ -1,3 +1,4 @@
+import {TikTokRequirementsPanel} from './TikTokRequirementsPanel';
 import {useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {get,post} from '../../shared/api/client';
@@ -19,5 +20,6 @@ export function TikTokConnectionPanel(){
  {d.pending?<div><label>اختر الهوية التي أذن بها TikTok<select aria-label="هوية TikTok" value={choice} onChange={e=>setChoice(e.target.value)} className="block w-full rounded border p-2"><option value="">اختر صراحةً</option>{d.pending.accounts.map(x=><option key={x.open_id} value={x.open_id}>{x.display_name} · {x.open_id}</option>)}</select></label><button disabled={!choice||busy} className="workspace-secondary" onClick={()=>select.mutate()}>تحقق واحفظ هوية TikTok دون نشر</button></div>:null}
  <button disabled={!d.configured||busy} className="workspace-secondary" onClick={()=>start.mutate()}>المتابعة إلى TikTok لربط الهوية فقط</button></>:null}
  {state.error||save.error||start.error||select.error||action.error?<p role="alert">{state.error?.message??save.error?.message??start.error?.message??select.error?.message??action.error?.message}</p>:null}
+ <TikTokRequirementsPanel/>
  </section>;
 }
