@@ -89,3 +89,33 @@ async def test_video_feed_choice_required_for_save(config):
         p=await flow.preview(s,uid,share_to_feed=False)
         draft=await flow.save_draft(s,uid,preview_hash=p['preview_hash'],share_to_feed=False)
         assert draft['snapshot']['share_to_feed'] is False and not draft['execution_enabled']
+
+@pytest.mark.asyncio
+async def test_explicit_page_review_pins_identity_without_unified_fallback(config,monkeypatch):
+    from datetime import datetime,timezone
+    from app.application import instagram_page_oauth as page
+    from app.infrastructure.database.models import InstagramPageConnectionModel as PageConnection
+    from app.adapters.publishing.instagram_page_login import PageCandidate
+    from tests.integration.test_instagram_page_oauth import clear,setup
+    await clear();uid,_=await seed()
+    async def exchange(code,c):return [PageCandidate('222','page_creator','333','صفحة مختارة',('MANAGE',),'private-page',None)]
+    async def facts(c,candidate):return {**candidate.public(),'expires_at':None}
+    monkeypatch.setattr(page,'exchange',exchange);monkeypatch.setattr(page,'selected_facts',facts)
+    async with browser() as client:
+        state=await setup(client);await client.get(page.BASE+'/callback',params={'state':state,'code':'synthetic'});assert (await client.post(page.BASE+'/select',json={'account_id':'222'})).status_code==200
+        base=f'/api/connections/instagram/materials/{uid}'
+        result=await client.post(base+'/preview',json={'login_mode':'FACEBOOK_PAGE_LOGIN'});assert result.status_code==200,result.text
+        p=result.json();assert p['login_mode']=='FACEBOOK_PAGE_LOGIN' and p['account']['account_id']=='222' and p['account']['page_id']=='333'
+        assert 'private-page' not in result.text and 'scopes' not in result.text
+        assert not p['execution_enabled'] and not p['media_exposure_enabled']
+        saved=await client.post(base+'/drafts',json={'login_mode':'FACEBOOK_PAGE_LOGIN','preview_hash':p['preview_hash']});assert saved.status_code==200,saved.text
+        assert not saved.json()['stale']
+        # Omitting the selected mode never silently saves under another mode.
+        assert (await client.post(base+'/drafts',json={'preview_hash':p['preview_hash']})).status_code==409
+        async with SessionFactory() as s:
+            row=await s.get(PageConnection,1);row.page_name='تغير الاسم';await s.commit()
+        assert (await client.get(base+'/drafts')).json()['items'][0]['stale']
+        await client.post(page.BASE+'/disconnect')
+        p=(await client.post(base+'/preview',json={'login_mode':'FACEBOOK_PAGE_LOGIN'})).json();assert p['account'] is None
+        assert (await client.post(base+'/preview',json={'login_mode':'AUTO'})).status_code==422
+    await clear()
