@@ -22,6 +22,7 @@ from app.api.policies import router as policies_router
 from app.api.products import router as products_router
 from app.api.artifacts import router as generic_artifacts_router
 from app.api.library_import import router as library_import_router
+from app.api.publishing_queue import router as publishing_queue_router
 from app.api.routes import router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 from app.application.production_jobs import recover_stale_production_jobs, run_production_job
@@ -186,6 +187,7 @@ def create_app() -> FastAPI:
     application.include_router(products_router)
     application.include_router(generic_artifacts_router)
     application.include_router(library_import_router)
+    application.include_router(publishing_queue_router)
     application.include_router(benchmark_router)  # <--- أضف هذا السطر فقط
     log_gemini_startup_config()
     return application
