@@ -155,3 +155,9 @@ async def state_update(uid:UUID,payload:EnabledInput,request:Request,session:Asy
     try:result=await service.set_enabled(session,uid,payload.enabled)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse(result,headers=HEADERS)
+
+@router.get('/api/connections/tiktok/requirements')
+async def tiktok_requirements(request:Request):
+    owner(request)
+    from app.application.tiktok_policy import requirements
+    return JSONResponse(requirements(),headers=HEADERS)
