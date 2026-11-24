@@ -373,10 +373,11 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   return <section data-testid="post-bank-workspace" className="space-y-6">
     <PageHeader
       eyebrow={workspaceView === "review" ? "بنك المحتوى" : "الإنتاج"}
-      title={workspaceView === "review" ? "بنك المحتوى والمراجعة" : "الإنتاج من المصادر"}
-      description={workspaceView === "review" ? "مساحة واحدة تجمع المخرجات المولّدة والوسائط المرفوعة يدويًا للتحرير والمراجعة والاعتماد قبل النشر." : "حوّل المواد من المصادر إلى منشورات ومخرجات، ثم راجعها واعتمدها في بنك المحتوى قبل نقلها إلى مساحة النشر."}
+      title={workspaceView === "review" ? "بنك المحتوى" : "الإنتاج من المصادر"}
+      description={workspaceView === "review" ? "كل موادك في مكان واحد. راجع الأصل، اعتمد المحتوى، ثم جهّز نسخ المنصات." : "حوّل المواد من المصادر إلى منشورات ومخرجات، ثم راجعها واعتمدها في بنك المحتوى قبل نقلها إلى مساحة النشر."}
       actions={<>
         {workspaceView !== "review" ? <Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">بنك المحتوى</Link> : null}
+        {workspaceView === "review" ? <a className="workspace-secondary" href="#editorial-posts">المنشورات التحريرية والاعتماد الجماعي</a> : null}
         <Link to="/publishing" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">مساحة النشر</Link>
       </>}
     />
@@ -388,7 +389,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
       <button type="button" onClick={() => navigate("/bank")} className="rounded-xl px-4 py-3 text-right text-sm font-bold hover:bg-slate-50"><span className="block">بنك المحتوى والمراجعة</span><span className="mt-1 block text-xs font-normal text-slate-500">إدارة المحتوى ومراجعته واعتماده في مساحة مستقلة</span></button>
     </nav> : null}
 
-    {workspaceView === "review" && <section className="rounded-2xl border bg-white p-5 shadow-sm" data-testid="post-bank-filters">
+    {workspaceView === "review" && <section id="editorial-posts" className="scroll-mt-24 rounded-2xl border bg-white p-5 shadow-sm" data-testid="post-bank-filters">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-bold">مكتبة المنشورات التحريرية</h3><p className="mt-1 text-sm text-slate-500">تصفح المنشورات التحريرية وحررها واعتمدها. اختر نطاق العمل أولًا؛ لن يتم تحميل القائمة كاملة تلقائيًا.</p></div>{hasLoaded && <button type="button" onClick={loadBank} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث النتائج</button>}</div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <label className="text-sm font-semibold">الكتاب<select aria-label="كتاب بنك المنشورات" value={filterSourceId} onChange={(e) => { setFilterSourceId(e.target.value); setTopicId(""); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value={ALL_SOURCES}>كل الكتب</option>{(sources.data ?? []).map((source) => <option key={source.id} value={source.id}>{source.book_title || source.filename}</option>)}</select></label>
