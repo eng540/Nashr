@@ -40,7 +40,7 @@ async def test_not_configured_never_emits_fake_url_or_network(config,monkeypatch
 async def test_state_session_replay_selection_encryption_and_disconnect(config,monkeypatch):
     await clear();calls=[]
     async def exchange(code,c):
-        calls.append(code);return 'server-only-token',[{'account_id':'123','username':'chosen'},{'account_id':'456','username':'other'}],['instagram_basic','instagram_content_publish'],service.now()+timedelta(days=3)
+        calls.append(code);return 'server-only-token',[{'account_id':'123','username':'chosen'},{'account_id':'456','username':'other'}],['instagram_basic','instagram_content_publish'],service.now()+timedelta(days=3),'555'
     monkeypatch.setattr(service,'exchange',exchange)
     async with browser() as c:
         state=await start(c)
@@ -83,10 +83,12 @@ async def test_exchange_validates_app_scopes_and_fixed_hosts(config,monkeypatch)
         seen.append(request)
         if request.url.path.endswith('/oauth/access_token'):return httpx.Response(200,json={'access_token':'private-token'})
         if request.url.path.endswith('/debug_token'):return httpx.Response(200,json={'data':{'app_id':'123456','is_valid':True,'scopes':['instagram_basic'] if fail else ['instagram_basic','instagram_content_publish'],'expires_at':int((service.now()+timedelta(days=2)).timestamp())}})
+        if request.url.path.endswith('/me'):return httpx.Response(200,json={'client_business_id':'555'})
         return httpx.Response(200,json={'data':[{'id':'111','username':'chosen'}]})
     real=httpx.AsyncClient
     monkeypatch.setattr(service.httpx,'AsyncClient',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
-    token,accounts,scopes,expiry=await service.exchange('single-use-code',service.configuration())
+    token,accounts,scopes,expiry,business_id=await service.exchange('single-use-code',service.configuration())
+    assert business_id=='555'
     assert token=='private-token' and accounts==[{'account_id':'111','username':'chosen'}] and expiry
     assert all(r.url.host=='graph.facebook.com' for r in seen)
     assert seen[-1].headers['authorization']=='Bearer private-token'
@@ -99,7 +101,7 @@ async def test_concurrent_callback_only_exchanges_once_and_disconnect_wins(confi
     await clear();started=asyncio.Event();release=asyncio.Event();calls=[]
     async def exchange(code,c):
         calls.append(code);started.set();await release.wait()
-        return 'transient-token',[{'account_id':'111','username':'test'}],['instagram_basic','instagram_content_publish'],None
+        return 'transient-token',[{'account_id':'111','username':'test'}],['instagram_basic','instagram_content_publish'],None,'555'
     monkeypatch.setattr(service,'exchange',exchange)
     async with browser() as c:
         state=await start(c)
@@ -123,3 +125,38 @@ async def test_configuration_safety_and_session_isolation(config,monkeypatch):
     monkeypatch.delenv('NASHR_AUTH_PASSWORD')
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://test',headers={'Origin':'https://test'}) as c:
         assert (await c.post(service.BASE+'/start')).status_code==401
+
+@pytest.mark.asyncio
+async def test_saved_account_check_does_not_reenable_and_wrong_business_blocks(config):
+    await clear();c=service.configuration()
+    async with SessionFactory() as s:
+        s.add(Connection(id=1,account_id='111',username='chosen',token_ciphertext=service.cipher(c).encrypt(b'synthetic-token').decode(),scopes=['instagram_basic','instagram_content_publish'],config_hash=c['fingerprint'],token_expires_at=service.now()+timedelta(days=1),connected_at=service.now(),client_business_id='555',enabled=False));await s.commit()
+        class Provider:
+            def __init__(self,**kwargs):assert kwargs['account_id']=='111'
+            async def verify_account(self,**kwargs):return {'account_id':'111','username':'chosen','client_business_id':'555','scopes':['instagram_basic','instagram_content_publish'],'expires_at':None}
+        result=await service.verify_saved_connection(s,provider_factory=Provider);assert result['state']=='DISABLED' and result['last_check_ok'] is True
+        await service.set_connection_enabled(s,True)
+        row=await s.get(Connection,1);assert row.enabled
+        class Wrong(Provider):
+            async def verify_account(self,**kwargs):return {**await super().verify_account(**kwargs),'client_business_id':'999'}
+        with pytest.raises(ValueError):await service.verify_saved_connection(s,provider_factory=Wrong)
+        await s.refresh(row);assert row.last_check_ok is False and row.client_business_id=='555' and row.account_id=='111'
+        with pytest.raises(ValueError):await service.set_connection_enabled(s,True)
+
+@pytest.mark.asyncio
+async def test_lifecycle_routes_require_owner_same_origin_and_strict_state(config,monkeypatch):
+    calls=[]
+    async def verify(session):calls.append('verify');return {'account_id':'111','execution_authorized':False}
+    async def toggle(session,enabled):calls.append(enabled)
+    monkeypatch.setattr(service,'verify_saved_connection',verify);monkeypatch.setattr(service,'set_connection_enabled',toggle)
+    async with browser() as c:
+        assert (await c.post(service.BASE+'/verify',headers={'Origin':'https://evil.invalid'})).status_code==403
+        r=await c.post(service.BASE+'/verify');assert r.status_code==200 and r.json()['sent_messages']==0
+        assert r.headers['cache-control']=='no-store'
+        assert (await c.post(service.BASE+'/state',json={'enabled':'true'})).status_code==422
+        assert (await c.post(service.BASE+'/state',json={'enabled':False,'token':'not-accepted'})).status_code==422
+        assert (await c.post(service.BASE+'/state',json={'enabled':False})).json()['remote_changed'] is False
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://test',headers={'Origin':'https://test'}) as c:
+        assert (await c.post(service.BASE+'/verify')).status_code==401
+        assert (await c.post(service.BASE+'/state',json={'enabled':True})).status_code==401
+    assert calls==['verify',False]

@@ -71,3 +71,21 @@ async def disconnect(request:Request,session:AsyncSession=Depends(get_session)):
     token=mutation_owner(request);await service.disconnect(session,token)
     response=JSONResponse({'disconnected_locally':True,'remote_revoked':False},headers=HEADERS);response.delete_cookie(service.COOKIE,path=service.BASE)
     return response
+
+@router.post('/verify')
+async def verify_connection(request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    try:result=await service.verify_saved_connection(session)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse({'connection':result,'sent_messages':0,'execution_authorized':False},headers=HEADERS)
+
+class LocalState(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    enabled:bool
+
+@router.post('/state')
+async def local_state(payload:LocalState,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    try:await service.set_connection_enabled(session,payload.enabled)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse({'enabled':payload.enabled,'remote_changed':False,'sent_messages':0,'execution_authorized':False},headers=HEADERS)
