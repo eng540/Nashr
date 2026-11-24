@@ -37,13 +37,13 @@ def decode_status(body,*,size_bytes):
         if not isinstance(value,dict) or value.get('status') not in {'not_started','in_progress','complete','completed','error'}:
             raise FacebookProviderError('FACEBOOK_REEL_STATUS_UNVERIFIED')
         phases[key]={**value,'status':'complete' if value['status']=='completed' else value['status']}
-    offset=phases['uploading_phase'].get('bytes_transfered')
+    offset=phases['uploading_phase'].get('bytes_transfered',phases['uploading_phase'].get('bytes_transferred'))
     if offset is None and phases['uploading_phase']['status']=='not_started':offset=0
     if offset is not None and (type(offset) is not int or not 0<=offset<=size_bytes):raise FacebookProviderError('FACEBOOK_REEL_OFFSET_UNVERIFIED')
     failed=any(p.get('error') or p['status']=='error' for p in phases.values()) or s.get('video_status')=='error'
     complete=all(p['status']=='complete' for p in phases.values())
     return dict(state='REMOTE_ERROR' if failed else 'REMOTE_PHASES_COMPLETE_NOT_PUBLICATION_VERIFIED' if complete else 'REMOTE_PROCESSING',
-        received_bytes=offset,upload_complete=not failed and phases['uploading_phase']['status']=='complete',
+        video_status=s.get('video_status'),processing_not_started=phases['processing_phase']['status']=='not_started',received_bytes=offset,upload_complete=not failed and phases['uploading_phase']['status']=='complete',
         processing_complete=not failed and phases['processing_phase']['status']=='complete',
         publishing_complete=not failed and phases['publishing_phase']['status']=='complete',
         publishing_not_started=not failed and phases['publishing_phase']['status']=='not_started',
@@ -114,7 +114,7 @@ class FacebookReelsEdge(FacebookPagePublisher):
         self.validate_message(description,allow_empty=True)
         if not isinstance(title,str) or len(title)>200:raise ValueError('Exact title within conservative local limit required')
         current=await self.status(session)
-        if current['state']=='REMOTE_ERROR' or not current['upload_complete'] or not current['processing_complete'] or not current['publishing_not_started']:
+        if current['state']=='REMOTE_ERROR' or not current['upload_complete'] or not (current['processing_complete'] or (current.get('video_status')=='upload_complete' and current.get('processing_not_started') and current['received_bytes']==session.size_bytes)) or not current['publishing_not_started']:
             raise FacebookProviderError('FACEBOOK_REEL_NOT_READY_OR_FINISH_ALREADY_OBSERVED')
         await self.verify_page()
         body=await self._request('POST',self.page_id+'/video_reels',json={'upload_phase':'finish','video_id':session.video_id,'video_state':'PUBLISHED','description':description,'title':title})
