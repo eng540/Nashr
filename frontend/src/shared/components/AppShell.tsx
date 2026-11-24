@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router";
 
 const navItems = [
+  { to: "/connections", label: "الحسابات والاتصالات" },
   { to: "/sources/library", label: "المصادر" },
   { to: "/production", label: "الإنتاج" },
   { to: "/bank", label: "بنك المحتوى" },
