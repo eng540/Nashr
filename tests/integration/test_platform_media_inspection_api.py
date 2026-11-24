@@ -64,3 +64,31 @@ async def test_jpeg_preview_is_ephemeral_version_checked_and_read_only(monkeypat
         assert row.storage_uri==original and copy.version==3 and copy.fields['description']=='نص نسخة معدل'
         assert not (await session.execute(select(PublicationModel).where(PublicationModel.artifact_id==row.id))).scalars().all()
         assert not (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.artifact_id==row.id))).scalars().all()
+
+@pytest.mark.asyncio
+async def test_video_probe_streams_to_private_file_and_keeps_state(monkeypatch,tmp_path):
+    import hashlib,subprocess
+    from app.infrastructure.artifact_storage import S3ArtifactStorage
+    from app.application.distribution_readiness import source_fingerprint
+    from app.infrastructure.database.models import PlatformCopyModel
+    uid=await _media_artifact();path=tmp_path/'video.mp4'
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=blue:s=160x120:r=25','-t','3','-c:v','libx264','-an','-y',str(path)],check=True,timeout=15)
+    class Storage:
+        async def get_bytes(self,*a,**kw):raise AssertionError('video must not use whole-object reads')
+        async def inspect_local_file(self,uri,inspector,*,max_bytes):
+            assert max_bytes==300_000_000
+            return inspector(str(path)),hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(S3ArtifactStorage,'from_environment',lambda:Storage())
+    async with SessionFactory() as session:
+        row=await session.get(ArtifactModel,uid);row.kind='VIDEO';row.mime_type='video/mp4';fp=source_fingerprint(row)
+        session.add(PlatformCopyModel(artifact_id=uid,platform='instagram',fields={'title':'','description':'وصف خاص','tags':[],'alt_text':''},source_fingerprint=fp,origin='USER_EDITED',version=1));await session.commit();original=row.storage_uri
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        result=await client.post(f'/api/artifacts/{uid}/platform-copies/instagram/inspect-media',json={})
+        assert result.status_code==200,result.text
+        assert result.json()['sha256']==hashlib.sha256(path.read_bytes()).hexdigest()
+        assert result.json()['measurements']['inspection_input_limit_bytes']==300_000_000
+    async with SessionFactory() as session:
+        row=await session.get(ArtifactModel,uid);copy=await session.get(PlatformCopyModel,(uid,'instagram'))
+        assert row.storage_uri==original and copy.version==1 and copy.fields['description']=='وصف خاص'
+        assert not (await session.execute(select(PublicationModel).where(PublicationModel.artifact_id==uid))).scalars().all()
+        assert not (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.artifact_id==uid))).scalars().all()
