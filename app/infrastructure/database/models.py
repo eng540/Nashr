@@ -733,3 +733,19 @@ class ArtifactOrganizationModel(Base):
     category: Mapped[str]=mapped_column(String(200),nullable=False,default='')
     version: Mapped[int]=mapped_column(Integer,nullable=False,default=1)
     updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class CopySuggestionModel(Base):
+    """Draft proposals, never execution permission or original approval."""
+    __tablename__='copy_suggestions'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id',ondelete='CASCADE'),nullable=False)
+    platform:Mapped[str]=mapped_column(String(30),nullable=False)
+    source_fingerprint:Mapped[str]=mapped_column(String(64),nullable=False)
+    copy_version:Mapped[int]=mapped_column(Integer,nullable=False)
+    fields_digest:Mapped[str]=mapped_column(String(64),nullable=False)
+    fields:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    prompt_version:Mapped[str]=mapped_column(String(100),nullable=False)
+    state:Mapped[str]=mapped_column(String(30),nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    applied_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
