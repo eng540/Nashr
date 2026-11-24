@@ -7,6 +7,7 @@ import tempfile
 from fractions import Fraction
 from PIL import Image
 from app.domain.mp4_structure import inspect_mp4_structure
+from app.domain.video_bitstream_evidence import inspect_video_headers
 
 
 def inspect_media(data, kind, mime):
@@ -21,6 +22,7 @@ def inspect_media(data, kind, mime):
     with tempfile.NamedTemporaryFile() as file:
         file.write(data);file.flush()
         result=subprocess.run(['ffprobe','-f','mov','-protocol_whitelist','file,pipe','-v','error','-show_streams','-show_format','-of','json',file.name],capture_output=True,timeout=15,check=True)
+        header_evidence=inspect_video_headers(file.name,next((stream.get('codec_name') for stream in json.loads(result.stdout).get('streams',[]) if stream.get('codec_type')=='video'),None))
     structure=inspect_mp4_structure(data)
     info=json.loads(result.stdout)
     videos=[s for s in info.get('streams',[]) if s.get('codec_type')=='video']
@@ -29,7 +31,7 @@ def inspect_media(data, kind, mime):
     duration=float(info.get('format',{}).get('duration',video.get('duration',0)))
     fps=float(Fraction(video.get('avg_frame_rate','0')))
     if not math.isfinite(duration) or not math.isfinite(fps) or duration<=0 or fps<=0: raise ValueError('تعذر قياس المدة أو معدل الإطارات.')
-    return {**structure,'format':'MOV/MP4','size_bytes':len(data),'width':int(video.get('width',0)),'height':int(video.get('height',0)),'duration_seconds':duration,'fps':fps,'video_codec':video.get('codec_name'),'pixel_format':video.get('pix_fmt'),'field_order':video.get('field_order'),'video_bitrate':int(video.get('bit_rate') or 0),'audio':[{'codec':s.get('codec_name'),'sample_rate':int(s.get('sample_rate') or 0),'channels':int(s.get('channels') or 0),'bitrate':int(s.get('bit_rate') or 0)} for s in info.get('streams',[]) if s.get('codec_type')=='audio']}
+    return {**structure,'header_evidence':header_evidence,'format':'MOV/MP4','size_bytes':len(data),'width':int(video.get('width',0)),'height':int(video.get('height',0)),'duration_seconds':duration,'fps':fps,'video_codec':video.get('codec_name'),'pixel_format':video.get('pix_fmt'),'field_order':video.get('field_order'),'video_bitrate':int(video.get('bit_rate') or 0),'audio':[{'codec':s.get('codec_name'),'sample_rate':int(s.get('sample_rate') or 0),'channels':int(s.get('channels') or 0),'bitrate':int(s.get('bit_rate') or 0)} for s in info.get('streams',[]) if s.get('codec_type')=='audio']}
 
 
 def media_findings(platform,kind,info):
@@ -54,7 +56,10 @@ def media_findings(platform,kind,info):
         if info.get('has_edit_lists',True): blockers.append('Reel لا يقبل edit lists. الأصل لم يُعدّل.')
         if any(s.get('bitrate',0)>128_000 for s in info['audio']): blockers.append('معدل الصوت يتجاوز128kbps.')
         if any(not s.get('bitrate') for s in info['audio']): pending.append('لم يصرح الملف بمعدل الصوت لكل المسارات.')
-        pending.extend(['closed GOP ونمط VBR لم يُتحققا بفحص البنية.','الفحص محدود 50MiB ولا يدعي قبول حد رفع المنصة 300MB.'])
+        headers=info.get('header_evidence',{})
+        if headers.get('closed_gop')!='REFRESH_BOUNDARIES_VERIFIED':pending.append('closed GOP غير متحقق. ترويسات غير مكتملة أو حدود داخلية دون IDR؛ لا نستنتج أنه مفتوح من ذلك وحده.')
+        pending.append('نمط VBR غير متحقق. أعلام HRD أو تغير أحجام الحزم لا تثبت نمط تحكم المشفّر.')
+        pending.append('الفحص محدود 50MiB ولا يدعي قبول حد رفع المنصة 300MB.')
         if not info['video_bitrate']: pending.append('لم يصرح الملف بمعدل تدفق الفيديو.')
         if info['field_order'] in {None,'unknown'}: pending.append('نوع المسح لم يصرح به الملف.')
     elif platform=='telegram':
