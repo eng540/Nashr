@@ -34,9 +34,24 @@ async def callback(request:Request,session:AsyncSession=Depends(get_session)):
     query=getattr(request.state,'instagram_oauth_query',{})
     try:
         await service.finish(session,token,request.cookies.get(service.COOKIE),query.get('state',''),query.get('code',''),error=bool(query.get('error')))
-    except ValueError:
-        # Fixed error only, never reflect provider query text or the code.
-        return HTMLResponse('<html lang="ar" dir="rtl"><meta name="referrer" content="no-referrer"><p>لم يكتمل الربط أو انتهت جلسته. لم يتغير الربط السابق.</p><a href="/connections">العودة إلى Nashr وبدء محاولة جديدة</a></html>',status_code=400,headers=HEADERS)
+    except ValueError as exc:
+        # Only our allowlisted reason is rendered/logged. Never provider text,
+        # query values, exception strings, tokens, account IDs or secrets.
+        reason=exc.reason if isinstance(exc,service.OAuthFailure) else 'CONFIGURATION'
+        messages={
+            'SESSION':'جلسة الربط غير صالحة أو مستخدمة أو انتهت. ابدأ من Nashr في المتصفح نفسه.',
+            'CANCELLED':'أُلغي الإذن أو لم يصل رمز الموافقة من Meta.',
+            'TOKEN_EXCHANGE':'وصل الرجوع من Meta لكن لم ينجح استبدال رمز الموافقة. راجع إعداد التطبيق وسره وعنوان العودة.',
+            'NO_ELIGIBLE_ACCOUNT':'تم التحقق من الرمز، لكن لم نجد صفحة Facebook بصلاحية إنشاء محتوى مرتبطة بحساب Instagram احترافي ضمن الوصول الممنوح.',
+            'PERMISSIONS':'رمز Meta لا يحتوي جميع الصلاحيات الأربع المطلوبة لمسار الصفحة.',
+            'TOKEN_IDENTITY':'نوع رمز Meta أو التطبيق المصدر لا يطابق مسار User token المحدد.',
+            'DISCOVERY':'لم يكتمل فحص الصفحات والحسابات لدى Meta. لا يثبت ذلك انتهاء الجلسة.',
+            'CONFIG_CHANGED':'انتهت مهلة المحاولة أو تغير إعداد التطبيق أثناء التحقق.',
+            'CONFIGURATION':'تعذر التحقق من إعداد التطبيق المحفوظ.'}
+        import logging
+        logging.getLogger(__name__).warning('Instagram Page OAuth callback failed: %s',reason)
+        text=messages.get(reason,messages['DISCOVERY'])
+        return HTMLResponse('<html lang="ar" dir="rtl"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width, initial-scale=1"><p>'+text+'</p><p>لم يتغير الربط السابق. لا نشر أو إذن تنفيذ.</p><p>مرجع التشخيص: '+reason+'</p><a href="/connections">العودة إلى Nashr</a></html>',status_code=400,headers=HEADERS)
     return RedirectResponse('/connections',status_code=303,headers=HEADERS)
 
 class Selection(BaseModel):
