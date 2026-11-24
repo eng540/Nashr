@@ -62,7 +62,8 @@ def connection_payload(row,c):
     expired=row.token_expires_at is not None and row.token_expires_at<=now()
     return {'account_id':row.account_id,'username':row.username,'connected_at':row.connected_at.isoformat(),
         'expires_at':row.token_expires_at.isoformat() if row.token_expires_at else None,
-        'state':'RECONNECT_REQUIRED' if stale or expired else 'CONNECTED_AT_LAST_CHECK',
+        'state':'DISABLED' if row.enabled is False else 'RECONNECT_REQUIRED' if stale or expired or row.last_check_ok is False else 'CONNECTED_AT_LAST_CHECK',
+        'enabled':row.enabled,'client_business_id':row.client_business_id,'token_type':row.token_type,'last_check_at':row.last_check_at.isoformat() if row.last_check_at else None,'last_check_ok':row.last_check_ok,'last_check_error':row.last_check_error,
         'scopes':row.scopes,'execution_authorized':False,
         'caveat':'آخر تحقق وقت الربط فقط؛ قد تُلغى الصلاحية خارج Nashr. لا موصل نشر أو إذن تنفيذ من هذا الربط.'}
 
@@ -109,9 +110,13 @@ async def exchange(code,c):
         if not isinstance(scopes,list) or not all(isinstance(s,str) for s in scopes) or info.get('is_valid') is not True or str(info.get('app_id'))!=c['META_APP_ID'] or not REQUIRED.issubset(scopes):
             raise ValueError('صلاحيات Meta أو التطبيق لا تطابق متطلبات الربط. لم يُربط أي حساب.')
         headers={'Authorization':'Bearer '+token}
+        business=await _json(client,'https://graph.facebook.com/v27.0/me',params={'fields':'client_business_id'},headers=headers)
+        business_id=str(business.get('client_business_id',''))
+        if not re.fullmatch(r'[0-9]{1,100}',business_id):raise ValueError('لم يرجع Meta معرف النشاط التجاري للربط. لم يتغير الحساب السابق.')
         data=await _json(client,'https://graph.facebook.com/v27.0/me/assigned_instagram_accounts',params={'fields':'id,username','limit':100},headers=headers)
         accounts=data.get('data')
-        if data.get('paging',{}).get('next'):raise ValueError('قائمة الحسابات أكبر من حد المعاينة. حدّد أصولاً أقل لدى Meta.')
+        paging=data.get('paging',{})
+        if not isinstance(paging,dict) or paging.get('next'):raise ValueError('قائمة الحسابات غير مكتملة. حدّد أصولاً أقل لدى Meta ثم أعد الربط.')
         if not isinstance(accounts,list) or not accounts or len(accounts)>100:raise ValueError('لم يرجع Meta حساب Instagram احترافياً متاحاً. لم يتغير حسابك.')
         clean=[]
         for a in accounts:
@@ -123,7 +128,7 @@ async def exchange(code,c):
             if isinstance(value,int) and value>0:expires.append(datetime.fromtimestamp(value,timezone.utc))
         expiry=min(expires) if expires else None
         if expiry and expiry<=now():raise ValueError('انتهت صلاحية Meta. أعد الربط.')
-        return token,clean,sorted(set(scopes)),expiry
+        return token,clean,sorted(set(scopes)),expiry,business_id
 
 async def finish(session,session_token,browser,state,code,error=False):
     c=await configuration_for(session,True)
@@ -132,11 +137,11 @@ async def finish(session,session_token,browser,state,code,error=False):
     flow_id=result.scalar_one_or_none();await session.commit()
     if not flow_id:raise ValueError('جلسة الربط مستخدمة أو منتهية أو تخص متصفحاً آخر.')
     if error or not code or len(code)>8000:raise ValueError('أُلغي ربط Meta أو لم يكتمل. لم يتغير الربط السابق.')
-    token,accounts,scopes,expiry=await exchange(code,c)
+    token,accounts,scopes,expiry,business_id=await exchange(code,c)
     await session.execute(text('SELECT pg_advisory_xact_lock(606024)'))
     flow=await session.get(Flow,flow_id)
     if flow is None or flow.expires_at<=now():raise ValueError('انتهت جلسة الربط أو ألغيت. أعد المحاولة.')
-    flow.token_ciphertext=cipher(c).encrypt(token.encode()).decode();flow.accounts=accounts;flow.scopes=scopes;flow.token_expires_at=expiry
+    flow.token_ciphertext=cipher(c).encrypt(token.encode()).decode();flow.accounts=accounts;flow.scopes=scopes;flow.token_expires_at=expiry;flow.client_business_id=business_id
     await session.commit()
 
 async def select_account(session,session_token,browser,account_id):
@@ -153,6 +158,7 @@ async def select_account(session,session_token,browser,account_id):
     await session.execute(text('SELECT pg_advisory_xact_lock(606024)'))
     row=await session.get(Connection,1)
     if not row:row=Connection(id=1);session.add(row)
+    row.client_business_id=flow.client_business_id;row.token_type='BUSINESS_INTEGRATION_SYSTEM_USER';row.enabled=True;row.last_check_at=now();row.last_check_ok=True;row.last_check_error=None
     row.account_id=account['account_id'];row.username=account['username'];row.token_ciphertext=flow.token_ciphertext;row.scopes=flow.scopes;row.config_hash=c['fingerprint'];row.token_expires_at=flow.token_expires_at;row.connected_at=now()
     await session.execute(delete(Flow).where(Flow.session_hash==digest(session_token)))
     await session.commit()
@@ -163,3 +169,39 @@ async def disconnect(session,session_token):
     await session.execute(delete(Connection).where(Connection.id==1))
     await session.execute(delete(Flow))
     await session.commit()
+
+async def verify_saved_connection(session,*,provider_factory=None):
+    """Explicit read-only Meta check. Caller must authenticate the owner first."""
+    await session.execute(text('SELECT pg_advisory_xact_lock(606024)'))
+    c=await configuration_for(session,True)
+    row=await session.get(Connection,1,populate_existing=True)
+    if row is None:raise ValueError('لا يوجد حساب Instagram محفوظ للتحقق منه.')
+    if row.config_hash!=c['fingerprint']:raise ValueError('تغير إعداد التطبيق. أعد ربط الحساب دون استخدام الإعداد السابق.')
+    if row.token_expires_at and row.token_expires_at<=now():raise ValueError('انتهت الصلاحية المسجلة. أعد ربط الحساب.')
+    try:token=cipher(c).decrypt(row.token_ciphertext.encode()).decode()
+    except InvalidToken:raise ValueError('تعذر فتح الرمز المحمي. أعد ربط الحساب.') from None
+    from app.adapters.publishing.instagram import InstagramPublisher,InstagramProviderError
+    async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
+        provider=(provider_factory or InstagramPublisher)(client=client,token=token,account_id=row.account_id)
+        try:
+            facts=await provider.verify_account(app_access_token=c['META_APP_ID']+'|'+c['META_APP_SECRET'],expected_app_id=c['META_APP_ID'])
+            if row.client_business_id and row.client_business_id!=facts['client_business_id']:raise InstagramProviderError('INSTAGRAM_BUSINESS_MISMATCH')
+        except InstagramProviderError as exc:
+            row.last_check_at=now();row.last_check_ok=False;row.last_check_error=exc.code;await session.commit()
+            raise ValueError('تعذر التحقق من صلاحية حساب Instagram المحفوظ. لا نشر أو تبديل للحساب؛ راجع الربط ثم أعد التحقق.') from None
+    row.client_business_id=facts['client_business_id'];row.username=facts['username'];row.scopes=facts['scopes'];row.token_type='BUSINESS_INTEGRATION_SYSTEM_USER'
+    checked_expiry=datetime.fromtimestamp(facts['expires_at'],timezone.utc) if facts['expires_at'] else None
+    # Unknown expiry cannot erase a previously recorded earlier deadline.
+    known=[value for value in (row.token_expires_at,checked_expiry) if value is not None]
+    row.token_expires_at=min(known) if known else None
+    row.last_check_at=now();row.last_check_ok=True;row.last_check_error=None
+    await session.commit();return connection_payload(row,c)
+
+async def set_connection_enabled(session,enabled):
+    await session.execute(text('SELECT pg_advisory_xact_lock(606024)'))
+    row=await session.get(Connection,1,populate_existing=True)
+    if row is None:raise ValueError('لا يوجد حساب Instagram محفوظ.')
+    if enabled:
+        c=await configuration_for(session,True)
+        if row.config_hash!=c['fingerprint'] or row.last_check_ok is not True or row.last_check_at is None or row.last_check_at<now()-timedelta(minutes=5) or row.token_expires_at and row.token_expires_at<=now():raise ValueError('تحقق من الحساب الآن قبل إعادة تفعيله محلياً. لن نطلب صلاحيات جديدة.')
+    row.enabled=enabled;await session.commit()
