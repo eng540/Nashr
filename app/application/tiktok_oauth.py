@@ -91,3 +91,19 @@ async def verify(s):
     r.display_name=who['display_name'];r.last_check_at=now();r.last_check_ok=True;await s.commit();return payload(r,c)
 async def disconnect(s,owner):
     await lock(s);await s.execute(delete(Connection));await s.execute(delete(Flow));await s.commit()
+
+
+async def cleanup_expired_flows():
+    """Remove expired temporary candidates, never the selected connection.
+
+    Use the lifecycle lock without waiting, so an active OAuth operation cannot
+    hold up publishing. A later scheduler cycle retries a busy database.
+    """
+    from app.infrastructure.database.session import SessionFactory
+    async with SessionFactory() as session:
+        acquired = await session.scalar(text('SELECT pg_try_advisory_xact_lock(606030)'))
+        if not acquired:
+            return 0
+        result = await session.execute(delete(Flow).where(Flow.expires_at <= now()))
+        await session.commit()
+        return result.rowcount
