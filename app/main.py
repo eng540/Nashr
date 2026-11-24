@@ -73,8 +73,13 @@ async def run_schedule_trigger() -> None:
     interval = schedule_trigger_interval()
     while True:
         try:
-            from app.application.instagram_runtime import process_approved
-            await process_approved()
+            try:
+                from app.application.instagram_runtime import process_approved
+                await process_approved()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("event=INSTAGRAM_TRIGGER_FAILED")
             processed = await process_due_schedule_items(limit=20)
             if processed:
                 logger.info("event=SCHEDULE_TRIGGER_PROCESSED count=%s", processed)
