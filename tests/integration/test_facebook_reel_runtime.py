@@ -127,3 +127,22 @@ async def test_provider_evidence_requires_owner(config):
     import httpx
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://test') as c:
         assert (await c.get('/api/connections/facebook/reels/00000000-0000-0000-0000-000000000000/provider-status')).status_code==401
+
+@pytest.mark.asyncio
+async def test_retirement_preserves_status_and_rejects_publishing(monkeypatch):
+    from types import SimpleNamespace
+    j=SimpleNamespace(state='OUTCOME_UNKNOWN',remote_session={'video_id':'456'},updated_at=r.now())
+    st={'video_status':'uploading','processing_phase':{'status':'not_started'},'publishing_phase':{'status':'not_started'}}
+    class P:
+        async def _request(self,*a,**k):return {'status':st}
+    async def provider(*a):return P()
+    monkeypatch.setattr(r,'provider',provider);monkeypatch.setattr(r,'describe',lambda j:{'state':j.state})
+    class S:
+        async def commit(self):pass
+    st['publishing_phase']['status']='in_progress'
+    with pytest.raises(ValueError):await r.retire_unfinished(S(),j)
+    assert j.state=='OUTCOME_UNKNOWN'
+    st['publishing_phase']['status']='not_started'
+    await r.retire_unfinished(S(),j)
+    assert j.state=='RETIRED_UNPUBLISHED' and j.remote_session['never_resume'] is True and j.remote_session['retired_status_evidence']==st
+    with pytest.raises(ValueError):await r.retire_unfinished(S(),j)
