@@ -112,9 +112,10 @@ async def reconcile(s,j,p):
     if status['state']=='REMOTE_ERROR':j.state='REMOTE_ERROR'
     elif status['publishing_complete']:
         d=await p._request('GET',rs.video_id,params={'fields':'id,description,from,permalink_url'})
-        u=urlsplit(d.get('permalink_url',''))
+        link=normalize_permalink(d.get('permalink_url',''),rs.video_id)
+        u=urlsplit(link or '')
         if d.get('id')==rs.video_id and d.get('from',{}).get('id')==rs.page_id and d.get('description','')==j.snapshot['caption'] and status.get('publish_status')=='published' and u.scheme=='https' and u.hostname in {'www.facebook.com','facebook.com','m.facebook.com'} and not u.username and not u.password:
-            j.permalink=d['permalink_url'];j.state='PUBLISHED';j.error_code=None
+            j.permalink=link;j.state='PUBLISHED';j.error_code=None
     j.updated_at=now();await s.commit()
 
 async def process_one(s,j):
@@ -171,3 +172,11 @@ async def retire_unfinished(s,j):
         if st.get('video_status')!='uploading' or st.get('processing_phase',{}).get('status')!='not_started' or st.get('publishing_phase',{}).get('status')!='not_started':raise ValueError('Remote session changed; do not replace')
         j.remote_session={**j.remote_session,'retired_status_evidence':st,'retired_at':now().isoformat(),'never_resume':True}
         j.state='RETIRED_UNPUBLISHED';j.updated_at=now();await s.commit();return describe(j)
+
+
+def normalize_permalink(value,video_id):
+    # Meta returns a relative /reel/ID/ path. Bind it to the exact known video.
+    if value=='/reel/'+video_id+'/':return 'https://www.facebook.com'+value
+    if not isinstance(value,str):return None
+    u=urlsplit(value)
+    return value if u.scheme=='https' and u.hostname in {'www.facebook.com','facebook.com','m.facebook.com'} and not u.username and not u.password else None

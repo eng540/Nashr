@@ -146,3 +146,9 @@ async def test_retirement_preserves_status_and_rejects_publishing(monkeypatch):
     await r.retire_unfinished(S(),j)
     assert j.state=='RETIRED_UNPUBLISHED' and j.remote_session['never_resume'] is True and j.remote_session['retired_status_evidence']==st
     with pytest.raises(ValueError):await r.retire_unfinished(S(),j)
+
+def test_relative_permalink_bound_to_known_video():
+    assert r.normalize_permalink('/reel/456/','456')=='https://www.facebook.com/reel/456/'
+    assert r.normalize_permalink('/reel/999/','456') is None
+    assert r.normalize_permalink('//evil.invalid/reel/456/','456') is None
+    assert r.normalize_permalink('https://evil.invalid/reel/456/','456') is None
