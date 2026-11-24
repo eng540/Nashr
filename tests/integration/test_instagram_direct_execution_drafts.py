@@ -106,3 +106,18 @@ async def test_direct_concurrent_stage_is_one_private_draft(config,monkeypatch):
         async with SessionFactory() as s:return await direct.stage(s,uid,rid)
     a,b=await asyncio.gather(call(),call())
     assert a['id']==b['id']
+
+@pytest.mark.asyncio
+async def test_direct_factory_read_only_identity_never_exposes_token(config,monkeypatch):
+    import httpx
+    uid,rid=await setup(monkeypatch);seen=[]
+    def route(r):
+        seen.append(r);assert r.method=='GET' and r.url.host=='graph.instagram.com' and r.url.path=='/v27.0/me'
+        assert r.headers['authorization']=='Bearer private-token'
+        return httpx.Response(200,json={'id':'456','user_id':'100','username':'creator'})
+    async with SessionFactory() as s:
+        result=await direct.stage(s,uid,rid);job=await s.get(Job,UUID(result['id']))
+        async with httpx.AsyncClient(transport=httpx.MockTransport(route)) as client:
+            provider=await direct.verified_provider(s,job,client)
+            assert provider.account_id=='100' and 'private-token' not in str(direct.describe(job))
+    assert len(seen)==1
