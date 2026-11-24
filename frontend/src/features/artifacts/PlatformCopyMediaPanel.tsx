@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import {useMutation,useQuery} from '@tanstack/react-query';
 import {genericArtifactsApi,type CentralPlatformCopy,type JpegPreview} from '../../shared/api/artifactsApi';
 export function PlatformCopyMediaPanel({id,copy,preview,background,disabled,onChanged}:{id:string;copy:CentralPlatformCopy;preview:JpegPreview|undefined;background:string;disabled:boolean;onChanged:()=>void}){
@@ -9,6 +9,7 @@ export function PlatformCopyMediaPanel({id,copy,preview,background,disabled,onCh
  const select=useMutation({mutationFn:(media_id:string|null)=>genericArtifactsApi.selectCopyMedia(id,copy.platform,{source_fingerprint:copy.current_source_fingerprint,copy_version:copy.version,media_id}),onSuccess:changed});
  const view=useMutation({mutationFn:(mediaId:string)=>genericArtifactsApi.copyMediaUrl(id,copy.platform,mediaId),onSuccess:setImage});
  const inspect=useMutation({mutationFn:()=>genericArtifactsApi.inspectSelectedMedia(id,copy.platform)});
+ useEffect(()=>{setImage(null);inspect.reset();view.reset();},[copy.version,copy.current_source_fingerprint]);
  const busy=disabled||save.isPending||select.isPending||view.isPending||inspect.isPending;
  return <section className="rounded border bg-white p-2" aria-label="وسيط نسخة المنصة"><p>الاختيار الحالي: {copy.selected_media_id?'وسيط مشتق محفوظ لهذه المنصة':'الملف الأصلي'}. لا يغير هذا الاختيار جدولة Telegram القائمة.</p>
  {preview?<button type="button" disabled={busy||copy.source_stale||preview.copy_version!==copy.version} onClick={()=>save.mutate()} className="rounded border bg-violet-100 p-2">حفظ JPEG المعروضة واختيارها لهذه المنصة</button>:null}
