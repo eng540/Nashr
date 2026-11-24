@@ -61,7 +61,7 @@ class CreateTelegramDraft:
 
     @staticmethod
     async def execute_for_artifact(
-        session: AsyncSession, artifact: Artifact, destination: str, content_override: str | None = None
+        session: AsyncSession, artifact: Artifact, destination: str, content_override: str | None = None, connection_id: UUID | None = None
     ) -> Publication:
         is_post = artifact.kind == ArtifactKind.POST
         reference_filter = PublicationModel.post_id == artifact.id if is_post else PublicationModel.artifact_id == artifact.id
@@ -77,6 +77,7 @@ class CreateTelegramDraft:
         )
         existing = existing_result.scalar_one_or_none()
         if existing is not None:
+            if connection_id is not None and existing.connection_id!=connection_id:raise ValueError("Existing publication belongs to a different bot binding; review it before continuing.")
             return _to_domain(existing)
 
         row = PublicationModel(
@@ -85,6 +86,7 @@ class CreateTelegramDraft:
             post_id=artifact.id if is_post else None,
             artifact_id=None if is_post else artifact.id,
             platform="telegram",
+            connection_id=connection_id,
             destination=destination,
             content=content_override if content_override is not None else artifact.content,
             status=PublicationStatus.DRAFT.value,
@@ -148,6 +150,10 @@ class ApproveAndPublish:
             else:
                 raise ValueError("Publication must reference a Post or generic Artifact.")
 
+        bound_publication=await session.get(PublicationModel,publication_id)
+        if bound_publication and bound_publication.connection_id:
+            from app.application.managed_connections import publication_publisher
+            self.publisher=await publication_publisher(session,bound_publication)
         artifact_review_status = None
         if artifact.kind != ArtifactKind.POST:
             artifact_row = (await session.execute(
