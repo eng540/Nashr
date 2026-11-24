@@ -949,3 +949,33 @@ class InstagramDispatchModel(Base):
     due_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
     state:Mapped[str]=mapped_column(String(30),nullable=False)
     updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class FacebookPageConnectionModel(Base):
+    """Isolated Page connection, never an execution or publishing grant."""
+    __tablename__='facebook_page_connections'
+    id:Mapped[int]=mapped_column(Integer,primary_key=True)
+    page_id:Mapped[str]=mapped_column(String(100),nullable=False)
+    page_name:Mapped[str]=mapped_column(String(500),nullable=False)
+    token_ciphertext:Mapped[str]=mapped_column(Text,nullable=False)
+    config_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    tasks:Mapped[list]=mapped_column(JSONB,nullable=False)
+    scopes:Mapped[list]=mapped_column(JSONB,nullable=False)
+    token_type:Mapped[str]=mapped_column(String(50),nullable=False)
+    token_expires_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    connected_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    last_check_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    last_check_ok:Mapped[bool|None]=mapped_column(Boolean,nullable=True)
+    enabled:Mapped[bool]=mapped_column(Boolean,nullable=False,default=True)
+
+
+class FacebookPageOAuthFlowModel(Base):
+    __tablename__='facebook_page_oauth_flows'
+    id:Mapped[str]=mapped_column(String(64),primary_key=True)
+    session_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    browser_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    config_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    consumed:Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    token_ciphertext:Mapped[str|None]=mapped_column(Text,nullable=True)
+    accounts:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)

@@ -4,6 +4,7 @@ test('official Instagram connection is honest when unconfigured and explicit whe
  const status=()=>({configured,missing_configuration:configured?[]:['META_APP_ID','META_INSTAGRAM_CONFIG_ID'],connection:selected?{username:'test_owner',state:'CONNECTED_AT_LAST_CHECK',expires_at:null,caveat:'لا موصل نشر أو إذن تنفيذ من هذا الربط.'}:null,pending:pending?{accounts:[{account_id:'123',username:'test_owner'},{account_id:'456',username:'another'}]}:null,requirements:['حساب احترافي وإعداد تطبيق Meta مطلوبان.'],source:'https://developers.facebook.com/documentation/instagram-platform/overview/'});
  await page.route('**/*',async route=>{const path=new URL(route.request().url()).pathname;
  if(path==='/api/connections')return route.fulfill({json:{telegram:{source:'ENVIRONMENT',legacy_configured:true,credential_storage_ready:true,items:[]},platforms:[]}});
+ if(path==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
  if(path==='/api/connections/instagram-direct')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,source:'https://developers.facebook.com'}});
  if(path==='/api/connections/instagram-page')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
  if(path==='/api/connections/instagram')return route.fulfill({json:status()});

@@ -4,7 +4,8 @@ test('legacy import and lifecycle keep history and hide write-only token',async(
  const channel=()=>({id:'synthetic',label:'قناة الربط السابق',details:{destination:'-100123456',channel_title:'قناة محلية للاختبار',bot_username:'synthetic_bot'},verified_at:'2026-11-24T05:00:00Z',enabled,last_check_ok:true,last_check_at:'2026-11-24T05:00:00Z'});
  await page.route('**/api/connections**',async route=>{
   const p=new URL(route.request().url()).pathname;
-  if(p==='/api/connections/instagram-direct')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,source:'https://developers.facebook.com'}});
+  if(p==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
+ if(p==='/api/connections/instagram-direct')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,source:'https://developers.facebook.com'}});
  if(p==='/api/connections/instagram-page')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[]}});
   if(p==='/api/connections/instagram')return route.fulfill({json:{configured:false,missing_configuration:['META_APP_ID'],connection:null,pending:null,requirements:[]}});
   if(p==='/api/connections'&&route.request().method()==='GET')return route.fulfill({json:{telegram:{legacy_configured:true,legacy_imported:imported,legacy_connection_id:imported?'synthetic':null,credential_storage_ready:true,items:imported?[channel()]:[]},platforms:[]}});
