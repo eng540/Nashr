@@ -2,6 +2,7 @@
 import io
 import re
 import warnings
+import struct
 from PIL import Image, ImageCms, ImageOps, features
 
 def jpeg_preview(data,background):
@@ -30,7 +31,11 @@ def jpeg_preview(data,background):
             target=max(320,min(1440,width))
             if target!=width:composite=composite.resize((target,round(height*target/width)),Image.Resampling.LANCZOS)
             out=io.BytesIO()
-            composite.save(out,format='JPEG',quality=90,optimize=True,icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes())
+            profile_bytes=bytearray(ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes())
+            # LittleCMS stamps new profiles with wall time. Normalize only the ICC
+            # creation-date header so a reviewed conversion hashes identically later.
+            profile_bytes[24:36]=struct.pack('>6H',2000,1,1,0,0,0)
+            composite.save(out,format='JPEG',quality=90,optimize=True,icc_profile=bytes(profile_bytes))
             content=out.getvalue()
             if len(content)>8_000_000:raise ValueError('النسخة تتجاوز8MB بجودة90. لم نخفض الجودة تلقائياً.')
             return content,{'width':composite.width,'height':composite.height,'format':'JPEG','size_bytes':len(content),'quality':90,'background':background,'color_space':'sRGB','assumed_srgb_without_profile':not bool(profile),'orientation_applied':True,'metadata_removed':True,'cropped':False}
