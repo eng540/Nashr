@@ -17,6 +17,13 @@ BASE='/api/connections/instagram-page'
 COOKIE='nashr_instagram_page_oauth'
 SOURCE='https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/get-started'
 
+class OAuthFailure(ValueError):
+    """Fixed, secret-free reason safe for callback UI and logs."""
+    def __init__(self,reason):
+        allowed={'SESSION','CANCELLED','TOKEN_EXCHANGE','NO_ELIGIBLE_ACCOUNT','PERMISSIONS','TOKEN_IDENTITY','DISCOVERY','CONFIG_CHANGED'}
+        self.reason=reason if reason in allowed else 'DISCOVERY'
+        super().__init__(self.reason)
+
 def now():return datetime.now(timezone.utc)
 
 async def configuration(session,required=False):
@@ -69,22 +76,24 @@ async def exchange(code,c):
             r=await client.get('https://graph.facebook.com/v27.0/oauth/access_token',params=dict(client_id=c['app_id'],client_secret=c['app_secret'],redirect_uri=c['redirect_uri'],code=code),follow_redirects=False)
             d=r.json();token=d.get('access_token') if isinstance(d,dict) else None
             if r.status_code!=200 or not isinstance(token,str) or not token or len(token)>16000:raise ValueError()
-        except (ValueError,TypeError,httpx.HTTPError):raise ValueError('لم يكتمل التحقق من رمز Meta. لم يتغير الحساب المحفوظ.') from None
+        except (ValueError,TypeError,httpx.HTTPError):raise OAuthFailure('TOKEN_EXCHANGE') from None
         return await PageLinkedLogin(client=client,app_id=c['app_id'],app_secret=c['app_secret']).discover(token)
 
 async def finish(session,session_token,browser,state,code,error=False):
     c=await configuration(session,True)
-    if not browser or not state or len(state)>256:raise ValueError('جلسة الربط غير صالحة أو انتهت.')
+    if not browser or not state or len(state)>256:raise OAuthFailure('SESSION')
     await lock(session)
     flow=(await session.execute(select(Flow).where(Flow.id==digest(state),Flow.session_hash==digest(session_token),Flow.browser_hash==digest(browser),Flow.config_hash==c['fingerprint'],Flow.expires_at>now(),Flow.consumed.is_(False)).with_for_update())).scalar_one_or_none()
-    if not flow:raise ValueError('جلسة مستخدمة أو منتهية أو تخص متصفحاً آخر.')
+    if not flow:raise OAuthFailure('SESSION')
     flow.consumed=True;await session.commit()
-    if error or not code or len(code)>8000:raise ValueError('ألغي الربط أو لم يكتمل. لم يتغير الحساب المحفوظ.')
+    if error or not code or len(code)>8000:raise OAuthFailure('CANCELLED')
     try:candidates=await exchange(code,c)
-    except PageLoginError:raise ValueError('لم نجد صفحة وحساباً مرتبطاً صالحين ضمن الإذن المحدد. لم يتغير الربط السابق.') from None
+    except PageLoginError as exc:
+        reason={'META_PAGE_LOGIN_NO_ELIGIBLE_ACCOUNT':'NO_ELIGIBLE_ACCOUNT','META_PAGE_LOGIN_PERMISSION_REQUIRED':'PERMISSIONS','META_PAGE_LOGIN_TOKEN_MISMATCH':'TOKEN_IDENTITY'}.get(str(exc),'DISCOVERY')
+        raise OAuthFailure(reason) from None
     await lock(session)
     flow=await session.get(Flow,digest(state),populate_existing=True)
-    if not flow or flow.expires_at<=now() or flow.config_hash!=(await configuration(session,True))['fingerprint']:raise ValueError('انتهت الجلسة أو تغير الإعداد أثناء التحقق.')
+    if not flow or flow.expires_at<=now() or flow.config_hash!=(await configuration(session,True))['fingerprint']:raise OAuthFailure('CONFIG_CHANGED')
     from dataclasses import asdict
     flow.accounts=[x.public() for x in candidates]
     flow.token_ciphertext=key().encrypt(json.dumps([asdict(x) for x in candidates]).encode()).decode()
