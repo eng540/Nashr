@@ -24,6 +24,8 @@ async def test_saved_inspection_survives_read_and_marks_copy_source_probe_stale(
         payload={'source_fingerprint':fp,'copy_version':1,'selected':True}
         assert (await client.post(base,json={**payload,'copy_version':9})).status_code==409 and not reads
         saved=await client.post(base,json=payload);assert saved.status_code==200,saved.text
+        assert saved.headers['cache-control']=='no-store'
+        assert (await client.get(base)).headers['cache-control']=='no-store'
         assert not saved.json()['stale'] and not saved.json()['execution_authorized']
         history=(await client.get(base)).json();assert len(history['items'])==1 and len(reads)==1
         assert history['items'][0]['result']['pending'] and history['items'][0]['sha256']==saved.json()['sha256']
