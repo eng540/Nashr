@@ -2,6 +2,7 @@
 import asyncio
 import os
 import re
+import threading
 from urllib.parse import unquote, urlsplit
 
 import boto3
@@ -15,6 +16,8 @@ class ArtifactStorageConfigurationError(RuntimeError):
 class ArtifactStorageError(RuntimeError):
     """An object-storage operation failed without exposing provider details."""
 
+
+_VIDEO_INSPECTION_SLOTS=threading.BoundedSemaphore(2)
 
 _MIME_TYPE = re.compile(r"^[A-Za-z0-9._+-]+/[A-Za-z0-9._+-]+$")
 
@@ -128,6 +131,51 @@ class S3ArtifactStorage:
             raise
         except Exception as exc:
             raise ArtifactStorageError("Unable to read an Artifact media object.") from exc
+
+    async def inspect_local_file(self, storage_uri: str, inspector, *, max_bytes: int = 300_000_000):
+        """Download to a private temporary file with bounded chunks, inspect, then unlink.
+
+        The worker owns the file for its whole lifetime, including cancellation of
+        its caller. It never returns a path or signed URL and never writes S3.
+        """
+        import hashlib
+        import tempfile
+        import time
+        bucket,key=self._parse_uri(storage_uri)
+        if bucket!=self.bucket:raise ValueError("Artifact storage URI points to an unexpected bucket.")
+        if not isinstance(max_bytes,int) or isinstance(max_bytes,bool) or not 1<=max_bytes<=300_000_000:
+            raise ValueError("Local inspection limit must be at most 300MB.")
+        def download_and_inspect():
+            try:
+                response=self.client.get_object(Bucket=bucket,Key=key)
+                body=response["Body"]
+                try:
+                    set_timeout=getattr(body,"set_socket_timeout",None)
+                    if callable(set_timeout):set_timeout(15)
+                    if response.get("ContentLength",0)>max_bytes:raise ArtifactStorageError("Stored video exceeds the 300MB inspection limit.")
+                    with tempfile.NamedTemporaryFile(prefix="nashr-video-",suffix=".mp4") as file:
+                        size=0;digest=hashlib.sha256();deadline=time.monotonic()+60
+                        while True:
+                            if time.monotonic()>deadline:raise ArtifactStorageError("Video download exceeded the bounded inspection time.")
+                            chunk=body.read(min(1024*1024,max_bytes-size+1))
+                            if time.monotonic()>deadline:raise ArtifactStorageError("Video download exceeded the bounded inspection time.")
+                            if not chunk:break
+                            size+=len(chunk)
+                            if size>max_bytes:raise ArtifactStorageError("Stored video exceeds the 300MB inspection limit.")
+                            file.write(chunk);digest.update(chunk)
+                        if not size:raise ArtifactStorageError("Stored Artifact media is empty.")
+                        file.flush()
+                        return inspector(file.name),digest.hexdigest()
+                finally:
+                    body.close()
+            except ArtifactStorageError:raise
+            except Exception as exc:raise ArtifactStorageError("Unable to inspect the private video file locally.") from exc
+        def guarded_inspect():
+            if not _VIDEO_INSPECTION_SLOTS.acquire(blocking=False):
+                raise ArtifactStorageError("Video inspection is busy. Try again shortly; no media changed.")
+            try:return download_and_inspect()
+            finally:_VIDEO_INSPECTION_SLOTS.release()
+        return await asyncio.to_thread(guarded_inspect)
 
     async def presign_get(self, storage_uri: str, *, expires_seconds: int = 300, attachment_filename: str | None = None) -> str:
         bucket, key = self._parse_uri(storage_uri)
