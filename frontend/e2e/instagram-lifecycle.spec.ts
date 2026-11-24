@@ -2,6 +2,8 @@ import {test,expect} from '@playwright/test';
 test('Instagram verification stays read only and local state has explicit confirmation',async({page},info)=>{
  let enabled=false,verified=false;const writes:string[]=[];
  await page.route('**/api/connections**',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
+ if(p==='/api/connections/tiktok')return route.fulfill({json:{configured:false,connection:null,pending:null}});
+ if(p==='/api/connections/tiktok/requirements')return route.fulfill({json:{reviewed_on:'2026-11-24',modes:[],media_requirements:[],sources:[]}});
  if(p==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
  if(p==='/api/connections/instagram-direct')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,source:'https://developers.facebook.com'}});
  if(p==='/api/connections/instagram-page')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
