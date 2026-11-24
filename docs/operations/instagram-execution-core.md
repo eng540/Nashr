@@ -6,10 +6,9 @@ schedulers, previews or media inspections. No account or token is assumed, and
 no signed or publicly readable user-media URL is minted by this implementation.
 
 The existing connection handoff uses Unified Login, with Business Integration
-System User access tokens, not the Instagram Login token-refresh recipe. Required
-subsequent work includes storing client_business_id and token type/expiry/check
-state, safe connection lifecycle, and matching actual permissions without silent
-scope expansion. Token management requiring business_management must not be
+System User access tokens, not the Instagram Login token-refresh recipe. The connection controls store client_business_id, token type/expiry/check
+state and local enabled state. Actual account acceptance and permission matching
+remain unverified; the controls do not expand scopes. Token management requiring business_management must not be
 assumed from the current instagram_basic and instagram_content_publish grant.
 
 ## Implemented core
@@ -70,8 +69,8 @@ The dormant provider also has a read-only selected-account check. It validates
 token validity, app identity, required existing scopes, expiry, client business
 identity and exact membership in assigned Instagram accounts. It refuses an
 incomplete paginated list and never follows upstream pagination URLs. It returns
-no publishing grant, performs no refresh and requests no new scope. Production
-connection lifecycle and token fact persistence remain separate unfinished work.
+no publishing grant, performs no refresh and requests no new scope. Production connection controls and token fact persistence are described below;
+actual account acceptance remains unverified.
 
 ## Owner connection controls
 
@@ -83,3 +82,26 @@ Owner-authenticated same-origin verify and local-state endpoints send no content
 A check does not re-enable a disabled connection. Re-enabling requires a successful
 check within five minutes. No credentials are returned, and input_token is
 redacted from standard HTTP diagnostics. Neither endpoint enables publishing.
+
+
+## Private inspected-byte pinning
+
+New drafts require a saved inspection of the currently selected Instagram media,
+including explicit original selection. The inspection must match the original
+fingerprint, copy version, selected asset, current probe version and measured
+hash, with no media blockers. Pending checks remain pending, not platform
+acceptance. Existing synthetic drafts without evidence fail closed.
+
+Before either provider mutation the dormant core re-reads the private file with
+the bounded local probe. It compares the current hash to both saved inspection
+and attempt, checks the selected path and validates the outgoing fields again.
+Private media reads occur only after the internal authorization/account checks.
+No presigned URL is minted and no media is made provider-readable by these reads.
+
+This closes the supplied-digest-only gap, but it does not prove that an arbitrary
+caller-supplied provider URL serves those bytes. A future immutable grant must bind
+the provider-readable bytes to the exact digest and publishing permission, with
+expiry and retention rules. No production route, scheduler or UI enables this
+core before that binding, owner publishing authority, unresolved media checks
+and actual external acceptance are complete. The internal boolean is still not
+an owner-permission record. This implementation does not authorize live calls.

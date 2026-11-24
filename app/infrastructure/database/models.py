@@ -763,6 +763,7 @@ class InstagramExecutionModel(Base):
     __tablename__='instagram_executions'
     id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
     artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id'),nullable=False)
+    inspection_id:Mapped[UUID|None]=mapped_column(PGUUID(as_uuid=True),ForeignKey('platform_media_inspections.id'),nullable=True)
     account_id:Mapped[str]=mapped_column(String(100),nullable=False)
     source_fingerprint:Mapped[str]=mapped_column(String(64),nullable=False)
     copy_version:Mapped[int]=mapped_column(Integer,nullable=False)
