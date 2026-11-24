@@ -790,3 +790,24 @@ class InstagramPlanDraftModel(Base):
     snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
     state:Mapped[str]=mapped_column(String(20),nullable=False)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class YouTubeUploadModel(Base):
+    """Pinned dormant upload. Session capability encrypted, never in API payloads."""
+    __tablename__='youtube_uploads'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id'),nullable=False)
+    channel_id:Mapped[str]=mapped_column(String(100),nullable=False)
+    source_fingerprint:Mapped[str]=mapped_column(String(64),nullable=False)
+    copy_version:Mapped[int]=mapped_column(Integer,nullable=False)
+    media_sha256:Mapped[str]=mapped_column(String(64),nullable=False)
+    total_bytes:Mapped[int]=mapped_column(BigInteger,nullable=False)
+    metadata_snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    state:Mapped[str]=mapped_column(String(40),nullable=False)
+    session_ciphertext:Mapped[str|None]=mapped_column(Text,nullable=True)
+    received_bytes:Mapped[int]=mapped_column(BigInteger,nullable=False,default=0)
+    retry_not_before:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    video_id:Mapped[str|None]=mapped_column(String(20),nullable=True)
+    error_code:Mapped[str|None]=mapped_column(String(100),nullable=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
