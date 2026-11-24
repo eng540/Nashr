@@ -34,9 +34,9 @@ def decode_status(body,*,size_bytes):
     phases={}
     for key in ['uploading_phase','processing_phase','publishing_phase']:
         value=s.get(key)
-        if not isinstance(value,dict) or value.get('status') not in {'not_started','in_progress','complete','error'}:
+        if not isinstance(value,dict) or value.get('status') not in {'not_started','in_progress','complete','completed','error'}:
             raise FacebookProviderError('FACEBOOK_REEL_STATUS_UNVERIFIED')
-        phases[key]=value
+        phases[key]={**value,'status':'complete' if value['status']=='completed' else value['status']}
     offset=phases['uploading_phase'].get('bytes_transfered')
     if offset is None and phases['uploading_phase']['status']=='not_started':offset=0
     if offset is not None and (type(offset) is not int or not 0<=offset<=size_bytes):raise FacebookProviderError('FACEBOOK_REEL_OFFSET_UNVERIFIED')
@@ -85,7 +85,7 @@ class FacebookReelsEdge(FacebookPagePublisher):
         body=await self._request('GET',session.video_id,params={'fields':'status'})
         return decode_status(body,size_bytes=session.size_bytes)
 
-    async def upload(self,session,*,content,offset=0,authorized=False,public_page_acknowledged=False,media_transfer_authorized=False):
+    async def upload(self,session,*,content,offset=0,initial_transfer=False,authorized=False,public_page_acknowledged=False,media_transfer_authorized=False):
         self._consent(authorized,public_page_acknowledged,media_transfer_authorized)
         self._session(session);self._bytes(content,session.sha256)
         if len(content)!=session.size_bytes or type(offset) is not int or not 0<=offset<session.size_bytes:raise ValueError('Pinned complete bytes and explicit offset required')
@@ -93,6 +93,11 @@ class FacebookReelsEdge(FacebookPagePublisher):
         # from zero, and never accept an offset merely supplied by a caller.
         current=await self.status(session)
         remote=current['received_bytes']
+        # Only a never-transferred durable session may start at zero without an offset.
+        if initial_transfer is True and offset==0 and remote is None and not current['processing_complete'] and current['publishing_not_started']:
+            raw=await self._request('GET',session.video_id,params={'fields':'status'})
+            st=raw.get('status',{})
+            if st.get('video_status')=='uploading' and st.get('uploading_phase',{}).get('status')=='in_progress' and st.get('processing_phase',{}).get('status')=='not_started' and st.get('publishing_phase',{}).get('status')=='not_started':remote=0
         if current['state']=='REMOTE_ERROR' or current['upload_complete'] or remote is None or (remote is not None and remote!=offset):raise FacebookProviderError('FACEBOOK_REEL_OFFSET_RECONCILIATION_REQUIRED')
         await self.verify_page()
         try:
