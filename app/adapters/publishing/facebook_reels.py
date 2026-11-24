@@ -38,6 +38,7 @@ def decode_status(body,*,size_bytes):
             raise FacebookProviderError('FACEBOOK_REEL_STATUS_UNVERIFIED')
         phases[key]=value
     offset=phases['uploading_phase'].get('bytes_transfered')
+    if offset is None and phases['uploading_phase']['status']=='not_started':offset=0
     if offset is not None and (type(offset) is not int or not 0<=offset<=size_bytes):raise FacebookProviderError('FACEBOOK_REEL_OFFSET_UNVERIFIED')
     failed=any(p.get('error') or p['status']=='error' for p in phases.values()) or s.get('video_status')=='error'
     complete=all(p['status']=='complete' for p in phases.values())

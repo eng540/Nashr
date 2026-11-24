@@ -24,6 +24,7 @@ from app.api.artifacts import router as generic_artifacts_router
 from app.api.library_import import router as library_import_router
 from app.api.connections import router as connections_router
 from app.api.facebook_page_connections import router as facebook_page_connections_router
+from app.api.facebook_reel_execution import router as facebook_reel_execution_router
 from app.api.instagram_connections import router as instagram_connections_router
 from app.api.instagram_execution import router as instagram_execution_router
 from app.api.instagram_page_connections import router as instagram_page_connections_router
@@ -77,6 +78,8 @@ async def run_schedule_trigger() -> None:
             try:
                 from app.application.instagram_runtime import process_approved
                 await process_approved()
+                from app.application.facebook_reel_runtime import process_approved as process_facebook_reels
+                await process_facebook_reels()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -207,6 +210,7 @@ def create_app() -> FastAPI:
     application.include_router(library_import_router)
     application.include_router(publishing_queue_router)
     application.include_router(facebook_page_connections_router)
+    application.include_router(facebook_reel_execution_router)
     application.include_router(instagram_connections_router)
     application.include_router(instagram_execution_router)
     application.include_router(instagram_page_connections_router)
