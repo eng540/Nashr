@@ -1,0 +1,13 @@
+import {test,expect} from '@playwright/test';
+test('Instagram verification stays read only and local state has explicit confirmation',async({page},info)=>{
+ let enabled=false,verified=false;const writes:string[]=[];
+ await page.route('**/api/connections**',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
+ if(p==='/api/connections')return route.fulfill({json:{telegram:{items:[],credential_storage_ready:true},platforms:[]}});
+ if(p==='/api/connections/instagram'&&r.method()==='GET')return route.fulfill({json:{configured:true,missing_configuration:[],pending:null,requirements:[],source:'https://developers.facebook.com/documentation/instagram-platform/overview/',connection:{username:'synthetic_account',state:enabled?'CONNECTED_AT_LAST_CHECK':'DISABLED',enabled,expires_at:null,caveat:'لا موصل نشر مفعّل.',last_check_at:verified?'2026-11-24T07:00:00Z':null,last_check_ok:verified}}});
+ writes.push(p);if(p.endsWith('/verify'))verified=true;if(p.endsWith('/state'))enabled=r.postDataJSON().enabled;return route.fulfill({json:{sent_messages:0}});
+ });
+ await page.goto('/connections');await expect(page.getByRole('button',{name:'تحقق من حساب Instagram دون نشر',exact:true})).toBeVisible();expect(writes).toEqual([]);
+ await page.getByRole('button',{name:'تحقق من حساب Instagram دون نشر',exact:true}).click();await expect(page.getByText('معطل محلياً، لا تنفيذ جديد.',{exact:true})).toBeVisible();expect(enabled).toBe(false);
+ await page.getByText('تعطيل أو تفعيل الربط محلياً، مع حفظ الحساب والسجل',{exact:true}).click();await expect(page.getByRole('button',{name:'تفعيل ربط Instagram محلياً',exact:true})).toBeDisabled();await page.getByLabel('أفهم أثر التفعيل المحلي لحساب Instagram',{exact:true}).check();await page.getByRole('button',{name:'تفعيل ربط Instagram محلياً',exact:true}).click();await expect(page.getByRole('button',{name:'تعطيل ربط Instagram مع حفظ السجل',exact:true})).toBeDisabled();expect(writes).toEqual(['/api/connections/instagram/verify','/api/connections/instagram/state']);
+ const panel=page.getByRole('region',{name:'ربط Instagram الرسمي',exact:true});await panel.screenshot({path:info.outputPath('instagram-lifecycle-desktop.png')});await page.setViewportSize({width:390,height:844});await page.addStyleTag({content:'header{visibility:hidden}'});await panel.screenshot({path:info.outputPath('instagram-lifecycle-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});
