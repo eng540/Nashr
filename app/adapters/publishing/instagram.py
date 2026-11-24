@@ -24,6 +24,7 @@ class ContainerState:
     status:str
 
 class InstagramPublisher:
+    graph_base=BASE
     def __init__(self,*,client:httpx.AsyncClient,token:str,account_id:str):
         if not token or len(token)>16000 or not ID.fullmatch(account_id):raise ValueError('Invalid Instagram credentials')
         self.client=client;self.token=token;self.account_id=account_id
@@ -31,7 +32,7 @@ class InstagramPublisher:
     async def _request(self,method,path,*,params=None,data=None):
         mutation=method=='POST'
         try:
-            response=await self.client.request(method,BASE+path,headers={'Authorization':'Bearer '+self.token},params=params,data=data,follow_redirects=False)
+            response=await self.client.request(method,self.graph_base+path,headers={'Authorization':'Bearer '+self.token},params=params,data=data,follow_redirects=False)
         except httpx.HTTPError:
             raise InstagramProviderError('INSTAGRAM_OUTCOME_UNKNOWN' if mutation else 'INSTAGRAM_READ_FAILED',outcome_unknown=mutation) from None
         try:body=response.json()
