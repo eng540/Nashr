@@ -3,6 +3,7 @@ test('TikTok identity requires explicit choice and no publishing',async({page},i
  let selected=false;const writes:string[]=[];const identity={open_id:'synthetic-app-specific-id',display_name:'اسم عرض تجريبي'};
  await page.route('**/api/**',async route=>{
  const r=route.request(),p=new URL(r.url()).pathname;if(!p.startsWith('/api/'))return route.continue();
+ if(p==='/api/connections/tiktok/requirements')return route.fulfill({json:{reviewed_on:'2026-11-24',modes:[],media_requirements:[],sources:[]}});
  if(p==='/api/connections/tiktok')return route.fulfill({json:{configured:true,connection:selected?{...identity,state:'CONNECTED_AT_LAST_CHECK',expires_at:'2026-11-25T23:00:00Z',caveat:'اسم العرض ليس اسم المستخدم @. لا رفع أو نشر. التجديد التلقائي غير مفعّل.'}:null,pending:selected?null:{accounts:[identity]}}});
  if(p==='/api/connections/tiktok/select'){expect(r.postDataJSON()).toEqual({open_id:identity.open_id});selected=true;writes.push(p);return route.fulfill({json:{connected:true}});}
  if(p==='/api/connections/tiktok/verify'){writes.push(p);return route.fulfill({json:{connection:identity}});}
