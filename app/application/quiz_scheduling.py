@@ -29,6 +29,11 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         except ValueError as exc:
             item.status='FAILED';item.last_error=str(exc);item.processing_started_at=None
             await session.commit();return
+        destinations={destination}
+        if schedule and (schedule.telegram_review or {}).get('connection_id'):
+            from app.application.managed_connections import selected,allowed_destinations
+            channel,_=await selected(session,schedule.telegram_review['connection_id'])
+            destinations=allowed_destinations(channel)
         artifact_row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == item.artifact_id))).scalar_one_or_none()
         if artifact_row is None or artifact_row.kind not in MEDIA_KINDS | {"QUIZ", "TEXT"}:
             item.status = ScheduleItemStatus.FAILED.value
@@ -39,7 +44,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         published = (await session.execute(select(PublicationModel).where(
             PublicationModel.artifact_id == artifact_row.id,
             PublicationModel.platform == "telegram",
-            PublicationModel.destination == destination,
+            PublicationModel.destination.in_(destinations),
             PublicationModel.status == "PUBLISHED",
         ).limit(1))).scalar_one_or_none()
         if published is not None:
@@ -84,7 +89,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         existing = (await session.execute(select(PublicationModel).where(
             PublicationModel.artifact_id == artifact.id,
             PublicationModel.platform == "telegram",
-            PublicationModel.destination == destination,
+            PublicationModel.destination.in_(destinations),
         ).order_by(PublicationModel.created_at.asc()).limit(1))).scalar_one_or_none()
         if existing is not None and existing.status in ("READY", "PUBLISHING"):
             item.status = ScheduleItemStatus.FAILED.value
@@ -112,7 +117,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
 
     async with SessionFactory() as session:
         try:
-            publication = await ApproveAndPublish(publisher or TelegramPublisher()).execute(
+            publication = await ApproveAndPublish(publisher).execute(
                 session, publication_id, artifact=artifact, reviewed_copy_text=reviewed_copy_text
             )
         except Exception as exc:
