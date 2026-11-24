@@ -146,3 +146,12 @@ async def test_safe_publisher_does_not_store_token_bearing_exceptions(config,mon
     monkeypatch.setattr(TelegramPublisher,'publish',fail)
     with pytest.raises(RuntimeError) as exc:await service.SafePublisher(secret).publish(destination='synthetic',content='local only')
     assert secret not in str(exc.value)
+
+@pytest.mark.asyncio
+async def test_tiktok_summary_reports_connector_not_account_or_execution(config):
+    async with browser() as client:
+        r=await client.get('/api/connections');assert r.status_code==200
+        row=next(x for x in r.json()['platforms'] if x['key']=='tiktok')
+        assert row['state']=='IDENTITY_CONNECTION_ONLY'
+        assert 'user.info.basic' in row['requirements']
+        assert r.json()['execution_authorized'] is False
