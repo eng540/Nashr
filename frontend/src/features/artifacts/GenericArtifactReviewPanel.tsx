@@ -151,7 +151,7 @@ function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewable
 }
 
 
-export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOnly = false }: { showDesignCard?: boolean; designCardOnly?: boolean } = {}) {
+export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDesignCard?: boolean; designCardOnly?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [libraryParams] = useSearchParams();
   const [status, setStatus] = useState<GenericArtifactReviewStatus>(libraryParams.get("artifact_status") === "APPROVED" ? "APPROVED" : "DRAFT");
@@ -454,11 +454,12 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       </section>
     );
   }
-  return <section className="space-y-3 rounded-2xl border bg-white p-5 shadow-sm" aria-label="مراجعة المخرجات العامة">
-    <div className="flex flex-wrap items-center justify-between gap-3">
+  return <section className="library-browser space-y-3" aria-label="مراجعة المخرجات العامة">
+    <nav aria-label="مهام بنك المحتوى" className="grid grid-cols-2 gap-2 lg:grid-cols-4">{[["إنشاء نص أو اختبار", "manual"],["رفع وسيط جاهز", "upload"],["اشتقاق نسخة منصة", "variant"],["إنتاج بطاقة تصميم", "design"]].map(([label,target])=><button type="button" key={target} className="workspace-secondary justify-start" onClick={()=>{const panel=document.getElementById('library-create-tools') as HTMLDetailsElement|null;if(panel)panel.open=true;requestAnimationFrame(()=>document.getElementById('library-task-'+target)?.scrollIntoView({behavior:'smooth',block:'start'}));}}>＋ {label}</button>)}</nav>
+    <div className="library-heading flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h2 className="text-lg font-bold">مراجعة المخرجات العامة</h2>
-        <p className="mt-1 text-sm text-slate-500">النصوص والوسائط التي لا تمثل منشورات Telegram تمر بمراجعة مستقلة.</p>
+        <h2 className="workspace-section-title">مكتبة المحتوى</h2>
+        <p className="mt-1 text-sm text-slate-500">تصفّح المواد، ثم افتح مادة لمراجعة أصلها وتجهيز وجهاتها.</p>
       </div>
       <label className="text-sm font-semibold">الحالة
         <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => {setFocusedId(null);setStatus(event.target.value as GenericArtifactReviewStatus);}} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
@@ -468,16 +469,16 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
         </select>
       </label>
     </div>
-    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+    <div className="library-toolbar space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-bold">مكتبة المخرجات</h3>
+        <h3 className="text-xs text-slate-400">البحث والتصفية</h3>
         <p className="text-xs font-semibold text-slate-500">
           {artifacts.data ? `${filteredArtifacts.length} من ${artifacts.data.total} عنصرًا في هذه الحالة` : ""}
         </p>
       </div>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        <Input aria-label="بحث في المخرجات" value={search} onChange={(event) => updateFilters(() => setSearch(event.target.value))} placeholder="ابحث بالعنوان أو الأصل أو نسخ المنصات أو اسم الملف..." />
-        <Select aria-label="تصفية حسب نوع المخرج" value={kindFilter} onChange={(event) => updateFilters(() => setKindFilter(event.target.value))}>
+      <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
+        <Input className="col-span-2 xl:col-span-3" aria-label="بحث في المخرجات" value={search} onChange={(event) => updateFilters(() => setSearch(event.target.value))} placeholder="ابحث بالعنوان أو الأصل أو نسخ المنصات أو اسم الملف..." />
+      </div><details open={!compact} className="library-filters"><summary>تصفية وترتيب · النوع، المصدر، السلسلة، التصنيف</summary><div className="grid grid-cols-2 gap-2 pt-3 xl:grid-cols-3">        <Select aria-label="تصفية حسب نوع المخرج" value={kindFilter} onChange={(event) => updateFilters(() => setKindFilter(event.target.value))}>
           <option value="ALL">كل الأنواع</option>
           <option value="VIDEO">فيديو</option>
           <option value="IMAGE">صورة</option>
@@ -503,8 +504,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <option value="title">العنوان أبجديًا</option>
           <option value="kind">النوع</option>
         </Select>
-      </div>
-      <div className="rounded border bg-white p-3 text-xs leading-7"><p>تحديد التنظيم منفصل عن تحديد النشر. حتى 100 مادة، ويعمل قبل الاعتماد وبعده.</p><button type="button" className="rounded border p-2" onClick={()=>setCatalogIds(pagedArtifacts.filter(i=>i.metadata.source_type!=="PLATFORM_VARIANT").map(i=>i.id))}>تحديد صفحة الفهرسة</button> <button type="button" className="rounded border p-2" onClick={()=>setCatalogIds([])}>إلغاء تحديد الفهرسة</button><p>{catalogIds.filter(id=>allArtifacts.some(i=>i.id===id)).length} محدد للتنظيم</p></div>
+      </div></details>
+      <details open={!compact} className="library-filters"><summary>تنظيم جماعي · تحديد الفهرسة والسلاسل والتصنيفات</summary><div className="flex flex-wrap items-center gap-2 pt-3 text-xs leading-7"><p className="text-slate-400">فهرسة المواد، مستقلة عن تحديد النشر · حتى 100 مادة</p><button type="button" className="rounded border p-2" onClick={()=>setCatalogIds(pagedArtifacts.filter(i=>i.metadata.source_type!=="PLATFORM_VARIANT").map(i=>i.id))}>تحديد صفحة الفهرسة</button> <button type="button" className="rounded border p-2" onClick={()=>setCatalogIds([])}>إلغاء تحديد الفهرسة</button><p>{catalogIds.filter(id=>allArtifacts.some(i=>i.id===id)).length} محدد للتنظيم</p></div></details>
       {catalogIds.some(id=>allArtifacts.some(i=>i.id===id))?<ContentOrganizationPanel key={catalogIds.join(",")} items={allArtifacts.filter(i=>catalogIds.includes(i.id))}/>:null}
       {status === "APPROVED" ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
         <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
@@ -547,9 +548,9 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
     {!artifacts.isLoading && !artifacts.isError && filteredArtifacts.length === 0 ? <EmptyState title={allArtifacts.length === 0 ? "لا توجد مخرجات في هذه الحالة." : "لا توجد نتائج مطابقة للبحث أو الفلاتر الحالية."} /> : null}
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-slate-50 p-3"><p className="text-sm">تصفح المكتبة ثم افتح مادة للعمل عليها. التحديد مستقل عن فتح المحرر.</p><button type="button" onClick={()=>{setCompact(!compact);setFocusedId(null);}} className="rounded border bg-white p-2 text-xs font-bold">{compact?'عرض أدوات جميع بطاقات الصفحة':'العودة إلى التصفح المختصر'}</button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-slate-50 p-3"><p className="text-sm">افتح مادة للمراجعة والنسخ والخطط والسجل.</p><button type="button" onClick={()=>{setCompact(!compact);setFocusedId(null);}} className="rounded border bg-white p-2 text-xs font-bold">{compact?'فتح محررات جميع مواد الصفحة':'إغلاق المحررات والعودة للبطاقات'}</button></div>
     <div className={`grid min-w-0 items-start gap-3 ${pagedArtifacts.length>1&&!focusedId?'xl:grid-cols-2':''}`}>
-      {pagedArtifacts.filter(artifact=>!focusedId||artifact.id===focusedId).map((artifact) => <article key={artifact.id} className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      {pagedArtifacts.filter(artifact=>!focusedId||artifact.id===focusedId).map((artifact) => <article key={artifact.id} data-focused={focusedId===artifact.id} className="library-card min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<label className="text-xs"><input type="checkbox" aria-label={`تنظيم المخرج ${artifact.id}`} checked={catalogIds.includes(artifact.id)} disabled={!catalogIds.includes(artifact.id)&&catalogIds.length>=100} onChange={e=>setCatalogIds(ids=>e.target.checked?[...ids,artifact.id]:ids.filter(id=>id!==artifact.id))}/> فهرسة</label>:null}
           {status === "APPROVED" && isTelegramMediaEligible(artifact) ? <input
@@ -562,15 +563,15 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           /> : null}
           <div className="min-w-0">
             <h3 className="text-sm font-extrabold text-slate-900" dir="auto">{artifactTitle(artifact)}</h3>
-            <strong className="mt-0.5 block text-xs font-semibold text-slate-500">{artifact.kind} · {artifact.mime_type ?? "نوع غير محدد"}</strong>
+            <strong className="mt-0.5 block text-xs font-normal text-slate-400">{compact?(MEDIA_LABELS[artifact.kind]??({TEXT:"نص",QUIZ:"اختبار"} as Record<string,string>)[artifact.kind]??artifact.kind):`${artifact.kind} · ${artifact.mime_type??"نوع غير محدد"}`}</strong>
             <p className="mt-1 text-[11px] text-slate-400">المعرّف {artifact.id.slice(0, 8)}</p>
           </div>
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? "رفع يدوي" : artifact.metadata.source_type === "PLATFORM_VARIANT" ? `نسخة ${String(artifact.metadata.platform_label_ar ?? artifact.metadata.platform ?? "منصة")}${(artifact.metadata.constraints as Record<string, unknown> | undefined)?.trimmed ? " · مقصوصة للحد" : ""}` : "مخرج مولّد"}</span>
           {artifact.organization?.category?<Badge tone="sky">{artifact.organization.category}</Badge>:null}
           {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{({DRAFT:"قيد المراجعة",APPROVED:"معتمد",REJECTED:"مرفوض"})[artifact.review_status]??artifact.review_status}</span>
         </div>
-        {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button type="button" aria-expanded={focusedId===artifact.id} onClick={()=>setFocusedId(focusedId===artifact.id?null:artifact.id)} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-bold text-white">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
+        {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button type="button" aria-expanded={focusedId===artifact.id} onClick={()=>setFocusedId(focusedId===artifact.id?null:artifact.id)} className="library-card-primary rounded-lg px-4 py-2 text-sm font-bold">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
         {!compact||focusedId===artifact.id?<div className="space-y-3" aria-label={`مساحة المادة ${artifact.id}`}>
         {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<ContentOrganizationPanel key={artifact.id+":"+(artifact.organization?.version??0)} items={[artifact]}/>:null}
         <nav aria-label="مراحل العمل على المادة" className="flex flex-wrap gap-2 rounded bg-slate-50 p-2 text-xs text-slate-600"><span>1. الأصل والمراجعة</span><span>← 2. نسخ المنصات والوجهات</span><span>← 3. معاينة وخطة</span><span>← 4. سجل النشر</span></nav>
@@ -698,11 +699,11 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       <span className="text-xs font-semibold text-slate-500">صفحة {safePage + 1} من {pageCount} · عرض {pagedArtifacts.length} من {filteredArtifacts.length}</span>
       <button type="button" onClick={() => {setFocusedId(null);setPage((current) => Math.min(pageCount - 1, current + 1));}} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">التالي</button>
     </nav> : null}
-    <details className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/40 p-4" open>
-      <summary className="cursor-pointer text-sm font-bold text-slate-600">إجراءات إضافية: رفع وسيط جاهز، اشتقاق نسخة منصة، وبطاقة تصميم</summary>
+    <details id="library-create-tools" open={!compact} className="workspace-disclosure space-y-3 p-4">
+      <summary className="cursor-pointer text-sm font-bold text-slate-600">إنشاء نص أو اختبار · رفع وسيط · اشتقاق نسخة منصة · بطاقة تصميم</summary>
       <div className="mt-3 space-y-3">
     <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-      <h3 className="font-bold">نص أو اختبار تفاعلي</h3>
+      <h3 id="library-task-manual" className="scroll-mt-24 font-bold">نص أو اختبار تفاعلي</h3>
       <select aria-label="نوع المسودة اليدوية" value={manualKind} onChange={e => { setManualKind(e.target.value); if (NATIVE_TEMPLATES[e.target.value]) setNativeJson(JSON.stringify(NATIVE_TEMPLATES[e.target.value], null, 2)); }} className="w-full rounded-lg border p-2"><option value="TEXT">نص</option><option value="QUIZ">اختبار</option><option value="POLL">استطلاع</option><option value="LOCATION">موقع</option><option value="LIVE_LOCATION">موقع حي محدود المدة</option><option value="VENUE">مكان</option><option value="CONTACT">جهة اتصال</option><option value="DICE">نرد تفاعلي</option></select>
       <input aria-label="عنوان المسودة اليدوية" value={manualTitle} onChange={e => setManualTitle(e.target.value)} placeholder="عنوان داخلي" className="w-full rounded-lg border p-2" />
       <textarea aria-label="نص المسودة اليدوية" value={manualContent} onChange={e => setManualContent(e.target.value)} placeholder={manualKind === "QUIZ" ? "سؤال الاختبار" : "النص الكامل"} className="min-h-32 w-full rounded-lg border p-2" />
@@ -711,7 +712,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       <button type="button" onClick={() => createManual.mutate()} disabled={!manualTitle.trim() || !manualContent.trim() || createManual.isPending} className="rounded-lg bg-indigo-700 px-3 py-2 text-white">حفظ مسودة للمراجعة</button>
       {createManual.isError ? <p role="alert" className="text-rose-700">{createManual.error.message}</p> : null}
       {createManual.isSuccess ? <p role="status">حُفظت المسودة،لا نشر ولا اعتماد تلقائي.</p> : null}
-      <h3 className="border-t pt-4 font-bold">بنك الوسائط الجاهزة</h3>
+      <h3 id="library-task-upload" className="scroll-mt-24 border-t pt-4 font-bold">بنك الوسائط الجاهزة</h3>
       <p className="text-sm text-slate-600">اختر نوع إرسال Telegram صراحةً للصوت والملفات والملصقات. كل رفع يدخل قيد المراجعة. حد Telegram: الصور10MiB، وبقية الملفات50MiB. الأصل محفوظ؛ تعليق النشر محدود1024حرفاً، ولا تعليق للملصق أو الفيديو الدائري.</p>
       <label className="block text-sm font-semibold">نوع الإرسال
         <select aria-label="نوع الوسيط المرفوع" value={uploadKind} onChange={e => setUploadKind(e.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2">
@@ -732,7 +733,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       {ingestMedia.isSuccess ? <p role="status" className="text-sm text-emerald-800">تم الرفع؛ الوسيط الآن قيد المراجعة.</p> : null}
     </div>
     <div className="space-y-3 rounded-xl border border-sky-100 bg-sky-50/50 p-4">
-      <h3 className="font-bold">اشتقاق نسخة بحدود منصة من منشور معتمد</h3>
+      <h3 id="library-task-variant" className="scroll-mt-24 font-bold">اشتقاق نسخة بحدود منصة من منشور معتمد</h3>
       <p className="text-sm text-slate-600">ينشئ نسخة نصية منفصلة من منشور معتمد، مقصوصة عند حدود آمنة ضمن حد المنصة الموثق. تجهيز طول فقط دون إعادة صياغة؛ المنشور الأصلي لا يتغير، والنسخة تُحفظ قيد المراجعة، ولا يُنشر شيء خارجيًا.</p>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold">المنشور المصدر
@@ -755,10 +756,10 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
       {derivePostVariant.isError ? <p role="alert" className="text-sm text-rose-700">تعذر اشتقاق النسخة: {derivePostVariant.error.message}</p> : null}
       {approvedPosts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المنشورات المعتمدة...</p> : null}
     </div>
-      {showDesignCard ? designCard : null}
+      <div id="library-task-design" className="scroll-mt-24">{designCard}</div>
       </div>
     </details>
     {jobStatus}
     {mutationError}
   </section>;
-                                                                                                                                                                 }
+  }

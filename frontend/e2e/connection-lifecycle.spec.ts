@@ -14,7 +14,7 @@ test('legacy import and lifecycle keep history and hide write-only token',async(
  });
  await page.setViewportSize({width:390,height:844});await page.goto('/connections');expect(calls).toEqual([]);
  await page.getByRole('button',{name:'استيراد الربط الحالي دون إعادة الرمز'}).click();await expect(page.getByRole('heading',{name:'قناة الربط السابق',exact:true})).toBeVisible();
- expect(calls[0].body).toBeNull();await page.getByText('إدارة الربط والتحقق والرمز',{exact:true}).click();
+ expect(calls[0].body).toBeNull();await page.getByText('إدارة الربط: التحقق · تحديث الرمز · التعطيل والتفعيل',{exact:true}).click();
  await expect(page.getByRole('button',{name:'تعطيل الربط مع حفظ السجل'})).toBeDisabled();
  await page.getByLabel('أفهم أثر التعطيل المحلي على الخطط').check();await page.getByRole('button',{name:'تعطيل الربط مع حفظ السجل'}).click();await expect(page.getByText('معطلة محلياً، لا إرسال جديد',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'سجل قناة الربط السابق',exact:true}).click();await expect(page.getByText('الخطة القديمة المحفوظة')).toBeVisible();

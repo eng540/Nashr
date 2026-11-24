@@ -1,64 +1,20 @@
 import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router";
-
-const navItems = [
-  { to: "/connections", label: "الحسابات والاتصالات" },
-  { to: "/sources/library", label: "المصادر" },
-  { to: "/production", label: "الإنتاج" },
-  { to: "/bank", label: "بنك المحتوى" },
-  { to: "/publishing", label: "النشر" },
-  { to: "/control", label: "إعدادات التوليد" },
+const navItems=[
+ {to:'/bank',label:'بنك المحتوى',icon:'▤',group:'مساحة العمل'},
+ {to:'/publishing',label:'النشر',icon:'↗',group:'مساحة العمل'},
+ {to:'/connections',label:'الحسابات والاتصالات',icon:'◎',group:'مساحة العمل'},
+ {to:'/sources/library',label:'المصادر',icon:'▥',group:'الإنتاج'},
+ {to:'/production',label:'الإنتاج',icon:'◇',group:'الإنتاج'},
+ {to:'/control',label:'إعدادات التوليد',icon:'⚙',group:'الإنتاج'},
 ];
-
-function navClass({ isActive }: { isActive: boolean }) {
-  return [
-    "rounded-xl px-3.5 py-2 text-sm font-bold transition-colors",
-    isActive ? "bg-brand-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-  ].join(" ");
-}
-
-export function AppShell({ children }: { children: ReactNode }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  return (
-    <div className="flex min-h-screen flex-col text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
-          <NavLink to="/publishing" className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-lg font-extrabold text-white shadow-sm">ن</span>
-            <span className="leading-tight">
-              <span className="block text-[11px] font-bold text-brand-600">Nashr · نشر</span>
-              <span className="block text-sm font-extrabold text-slate-900">منصة الإنتاج والنشر</span>
-            </span>
-          </NavLink>
-          <nav className="hidden items-center gap-1 md:flex" aria-label="التنقل الرئيسي">
-            {navItems.map((item) => <NavLink key={item.to} to={item.to} className={navClass}>{item.label}</NavLink>)}
-          </nav>
-          <button
-            type="button"
-            className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 md:hidden"
-            aria-expanded={menuOpen}
-            aria-label="قائمة التنقل"
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            ☰ القائمة
-          </button>
-        </div>
-        {menuOpen ? (
-          <nav className="border-t border-slate-200/70 bg-white px-4 py-2 md:hidden" aria-label="التنقل الرئيسي للجوال">
-            <div className="flex flex-col gap-1 pb-2">
-              {navItems.map((item) => (
-                <NavLink key={item.to} to={item.to} className={navClass} onClick={() => setMenuOpen(false)}>{item.label}</NavLink>
-              ))}
-            </div>
-          </nav>
-        ) : null}
-      </header>
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8">{children}</main>
-      <footer className="border-t border-slate-200/70 bg-white/60">
-        <div className="mx-auto max-w-7xl px-4 py-4 text-center text-xs text-slate-400">
-          نشر — مساحة عمل داخلية لإنتاج المحتوى ومراجعته واعتماده. لا يُنشر أي محتوى خارجيًا دون اعتماد يدوي.
-        </div>
-      </footer>
-    </div>
-  );
+const navClass=({isActive}:{isActive:boolean})=>`app-nav-link ${isActive?'is-active':''}`;
+export function AppShell({children}:{children:ReactNode}){
+ const [menuOpen,setMenuOpen]=useState(false);
+ const brand=<NavLink to="/bank" className="app-brand"><span className="app-brand-mark">ن</span><span><strong>نشر <span>Nashr</span></strong><small>من المحتوى إلى النشر</small></span></NavLink>;
+ return <div className="app-frame">
+ <aside className="app-sidebar"><div className="app-sidebar-brand">{brand}</div><nav aria-label="التنقل الرئيسي">{['مساحة العمل','الإنتاج'].map(group=><div key={group} className="app-nav-group"><p>{group}</p>{navItems.filter(i=>i.group===group).map(i=><NavLink key={i.to} to={i.to} className={navClass}><span aria-hidden="true">{i.icon}</span>{i.label}</NavLink>)}</div>)}</nav><div className="app-sidebar-note"><span className="status-dot"/>مساحة عمل خاصة<small>المراجعة أولاً. النشر بقرارك.</small></div></aside>
+ <div className="app-main-column"><header className="app-topbar"><div className="app-mobile-brand">{brand}</div><span className="app-desktop-context">مساحة العمل <span>/</span> إدارة المحتوى والنشر</span><span className="app-topbar-safety"><span className="status-dot"/>لا نشر تلقائي من التصفح</span><button type="button" className="app-menu-button" aria-expanded={menuOpen} aria-label="قائمة التنقل" onClick={()=>setMenuOpen(v=>!v)}>☰ القائمة</button></header>
+ {menuOpen?<nav className="app-mobile-nav" aria-label="التنقل الرئيسي للجوال">{navItems.map(i=><NavLink key={i.to} to={i.to} className={navClass} onClick={()=>setMenuOpen(false)}>{i.label}</NavLink>)}</nav>:null}
+ <main className="app-main">{children}</main><footer className="app-footer">نشر · المحتوى الأصلي محفوظ، والاعتماد لا يعني النشر.</footer></div></div>;
 }

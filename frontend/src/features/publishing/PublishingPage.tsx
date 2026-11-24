@@ -256,21 +256,21 @@ export function PublishingPage() {
       <PageHeader
         eyebrow="مساحة العمل"
         title="مساحة النشر"
-        description="منطقة مرتبة للجاهز، خطط النشر، والتقويم. كل خطوة تظهر عندما تكون منطقية للحالة الحالية."
+        description="تابع المحتوى المعتمد، نظّم خططك، وراجع نتيجة كل عملية نشر."
         actions={<Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">العودة إلى بنك المحتوى</Link>}
       />
 
-      <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-7"><p>الصور والفيديوهات والنصوص المستوردة تُجهز من المكتبة. الخطط المحفوظة منها تظهر هنا في «خطط النشر». قائمة المحتوى الموحدة أدناه تجمع المعتمد وتفصل حالته عن أدوات جدولة المنشورات التحريرية.</p><Link to="/bank?artifact_status=APPROVED" className="font-bold text-indigo-700 underline">فتح مكتبة المخرجات المعتمدة والتجهيز</Link></div>
-      <nav aria-label="أقسام مساحة النشر" className="grid gap-2 rounded-2xl border bg-slate-50 p-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="workspace-stats" aria-label="ملخص النشر"><div className="workspace-stat"><small>خطط النشر</small><strong>{schedules.data?.total??schedules.data?.items.length??"—"}</strong><span>جميع الحالات المحفوظة</span></div><div className="workspace-stat"><small>القادم</small><strong>{upcoming.data?.items.length??"—"}</strong><span>عناصر في القائمة القادمة</span></div><div className="workspace-stat"><small>نسخ المنصات</small><strong>{platformVariants.data?.length??"—"}</strong><span>تجهيز يدوي، لا نشر آلي</span></div></div>
+      <nav aria-label="أقسام مساحة النشر" className="workspace-tabs">
         {([
           ["ready", "المحتوى والتجهيز", "↗", "قائمة موحدة، ثم أدوات جدولة النصوص"],
           ["plans", "خطط النشر", schedules.data?.total ?? schedules.data?.items.length ?? 0, "الخطط المحفوظة وحالاتها"],
           ["calendar", "التقويم", upcoming.data?.items.length ?? 0, "القادم وجدول اليوم"],
           ["platforms", "مسودات المنصات", platformVariants.data?.length ?? 0, "تحضير يدوي فقط، بلا نشر آلي"],
         ] as const).map(([key, label, count, hint]) => (
-          <button key={key} type="button" onClick={() => switchSection(key)} className={`rounded-xl p-4 text-right transition ${section === key ? "bg-white shadow-sm ring-1 ring-indigo-200" : "hover:bg-white"}`}>
+          <button key={key} type="button" onClick={() => switchSection(key)} aria-pressed={section===key} className="text-right">
             <div className="flex items-center justify-between gap-3"><strong>{label}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{count}</span></div>
-            <span className="mt-1 block text-xs text-slate-500">{hint}</span>
+            <span className="sr-only">{hint}</span>
           </button>
         ))}
       </nav>

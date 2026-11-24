@@ -10,11 +10,11 @@ test('explicit catalog labels organize originals without publishing or editing t
  if(p==='/api/artifacts')return route.fulfill({json:{items,total:2,limit:100,offset:0}});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
  await page.setViewportSize({width:390,height:844});await page.goto('/bank');
- await page.getByRole('button',{name:'تحديد صفحة الفهرسة',exact:true}).click();const batch=page.getByLabel('تنظيم الدفعة',{exact:true});await batch.locator('summary').click();
+ await page.getByText('تنظيم جماعي · تحديد الفهرسة والسلاسل والتصنيفات',{exact:true}).click();await page.getByRole('button',{name:'تحديد صفحة الفهرسة',exact:true}).click();const batch=page.getByLabel('تنظيم الدفعة',{exact:true});await batch.locator('summary').click();
  await batch.getByLabel('تطبيق السلسلة على المحدد',{exact:true}).check();await batch.getByLabel('سلسلة الفهرسة',{exact:true}).fill('حملة صريحة');
  await expect(batch.getByRole('button',{name:'حفظ بيانات الفهرسة',exact:true})).toBeDisabled();await batch.getByLabel('راجعت تنظيم 2 مادة، دون تغيير المحتوى أو النشر',{exact:true}).check();await batch.getByRole('button',{name:'حفظ بيانات الفهرسة',exact:true}).click();
  await expect(batch.getByRole('status')).toContainText('حُفظ تنظيم 2 مادة');expect(writes).toEqual(['/api/artifacts/organization']);
- await page.getByLabel('تصفية حسب السلسلة',{exact:true}).selectOption('حملة صريحة');await expect(page.getByRole('heading',{name:'مادة one',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'مادة two',exact:true})).toBeVisible();
+ await page.getByText('تصفية وترتيب · النوع، المصدر، السلسلة، التصنيف',{exact:true}).click();await page.getByLabel('تصفية حسب السلسلة',{exact:true}).selectOption('حملة صريحة');await expect(page.getByRole('heading',{name:'مادة one',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'مادة two',exact:true})).toBeVisible();
  await expect(page.getByLabel('حالة مراجعة المخرجات')).toHaveValue('DRAFT');expect(items.map(i=>i.content)).toEqual(['الأصل الكامل one','الأصل الكامل two']);
  await batch.scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:info.outputPath('organization-mobile.png')});
  await page.getByRole('button',{name:'إلغاء تحديد الفهرسة',exact:true}).click();await page.getByRole('button',{name:'فتح المادة والتجهيز والتتبع',exact:true}).first().click();
