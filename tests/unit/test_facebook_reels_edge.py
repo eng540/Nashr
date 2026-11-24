@@ -101,3 +101,19 @@ async def test_pinned_inputs_fail_before_network(mutation):
  async def handler(r):raise AssertionError('No traffic')
  async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
   with pytest.raises(ValueError):await edge(c).upload(session,content=content,**YES)
+
+@pytest.mark.asyncio
+async def test_missing_offset_only_allowed_for_never_transferred_initial_session():
+ calls=[]
+ def handler(req):
+  if req.url.host=='rupload.facebook.com':calls.append('upload');return httpx.Response(200,json={'success':True})
+  if req.url.path.endswith('/me'):return httpx.Response(200,json={'id':'123','name':'Page'})
+  return httpx.Response(200,json={'status':{'video_status':'uploading','uploading_phase':{'status':'in_progress'},'processing_phase':{'status':'not_started'},'publishing_phase':{'status':'not_started'}}})
+ async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+  with pytest.raises(FacebookProviderError):await edge(c).upload(SESSION,content=DATA,**YES)
+  assert not calls
+  await edge(c).upload(SESSION,content=DATA,initial_transfer=True,**YES)
+  assert calls==['upload']
+
+def test_documented_completed_spelling_supported():
+ assert decode_status(state(len(DATA),'completed','completed','completed'),size_bytes=len(DATA))['publishing_complete']

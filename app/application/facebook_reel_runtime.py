@@ -131,7 +131,7 @@ async def process_one(s,j):
             j.remote_session=asdict(rs);await claim(s,j,'SESSION_CREATED')
         if j.state=='SESSION_CREATED':
             data=await valid(s,j);rs=ReelSession(**j.remote_session)
-            await claim(s,j,'UPLOADING');await p.upload(rs,content=data,**flags);await claim(s,j,'PROCESSING')
+            await claim(s,j,'UPLOADING');await p.upload(rs,content=data,initial_transfer=True,**flags);await claim(s,j,'PROCESSING')
         if j.state=='PROCESSING':
             rs=ReelSession(**j.remote_session);status=await p.status(rs)
             if status['state']=='REMOTE_ERROR':await claim(s,j,'REMOTE_ERROR');return
@@ -159,3 +159,15 @@ async def process_approved():
                     j.state='OUTCOME_UNKNOWN' if j.state in {'INITIALIZING','UPLOADING','FINISHING'} else j.state if j.state in {'FINISH_ACCEPTED','OUTCOME_UNKNOWN'} else 'BLOCKED'
                     j.updated_at=now();await s.commit()
         finally:await lock_connection.execute(text('SELECT pg_advisory_unlock(606029)'));await lock_connection.commit()
+
+
+async def retire_unfinished(s,j):
+    """Retire a known session forever before replacing, never delete evidence."""
+    if j.state!='OUTCOME_UNKNOWN' or not j.remote_session:raise ValueError('Only a known unknown session can be retired')
+    async with httpx.AsyncClient(timeout=30,follow_redirects=False) as client:
+        p=await provider(s,j,client)
+        body=await p._request('GET',j.remote_session['video_id'],params={'fields':'status'})
+        st=body.get('status',{})
+        if st.get('video_status')!='uploading' or st.get('processing_phase',{}).get('status')!='not_started' or st.get('publishing_phase',{}).get('status')!='not_started':raise ValueError('Remote session changed; do not replace')
+        j.remote_session={**j.remote_session,'retired_status_evidence':st,'retired_at':now().isoformat(),'never_resume':True}
+        j.state='RETIRED_UNPUBLISHED';j.updated_at=now();await s.commit();return describe(j)
