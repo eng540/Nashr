@@ -66,3 +66,22 @@ async def test_unknown_claim_never_automatically_scanned(config,monkeypatch):
 async def test_redact_capability_before_logs():
     from app.infrastructure.connection_logging import redact
     assert 'sensitive' not in redact('GET /instagram-media?capability=sensitive HTTP/1.1')
+
+
+@pytest.mark.asyncio
+async def test_known_published_reconciles_after_decision_expiry_without_mutation(config,monkeypatch):
+    from app.application import instagram_runtime as runtime,instagram_dispatch as dispatch
+    jid,did,due=await approved(monkeypatch)
+    async with SessionFactory() as s:
+        for row in (await s.execute(select(Dispatch))).scalars():row.state='CANCELLED'
+        job=await s.get(Job,jid);job.state='PUBLISHED_ID_KNOWN';job.media_id='confirmed-media'
+        s.add(Dispatch(execution_id=jid,decision_id=did,due_at=due,state='BLOCKED',updated_at=due));await s.commit()
+    monkeypatch.setattr(decisions,'now',lambda:due+timedelta(minutes=20))
+    async def forbidden(*a,**k):raise AssertionError('No publication decision or mutation replay')
+    async def provider(*a,**k):return object()
+    seen=[]
+    async def reconcile(s,did,**kw):seen.append(did)
+    monkeypatch.setattr(decisions,'validate',forbidden)
+    monkeypatch.setattr(dispatch,'run',forbidden);monkeypatch.setattr(dispatch,'resume_media',forbidden)
+    monkeypatch.setattr(execution,'verified_provider',provider);monkeypatch.setattr(dispatch,'reconcile',reconcile)
+    await runtime.process_approved();assert len(seen)==1
