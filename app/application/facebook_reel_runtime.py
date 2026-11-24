@@ -111,9 +111,9 @@ async def reconcile(s,j,p):
     status=await p.status(rs)
     if status['state']=='REMOTE_ERROR':j.state='REMOTE_ERROR'
     elif status['publishing_complete']:
-        d=await p._request('GET',rs.video_id,params={'fields':'id,description,from,permalink_url,published'})
+        d=await p._request('GET',rs.video_id,params={'fields':'id,description,from,permalink_url'})
         u=urlsplit(d.get('permalink_url',''))
-        if d.get('id')==rs.video_id and d.get('from',{}).get('id')==rs.page_id and d.get('description','')==j.snapshot['caption'] and d.get('published') is True and u.scheme=='https' and u.hostname in {'www.facebook.com','facebook.com','m.facebook.com'} and not u.username and not u.password:
+        if d.get('id')==rs.video_id and d.get('from',{}).get('id')==rs.page_id and d.get('description','')==j.snapshot['caption'] and status.get('publish_status')=='published' and u.scheme=='https' and u.hostname in {'www.facebook.com','facebook.com','m.facebook.com'} and not u.username and not u.password:
             j.permalink=d['permalink_url'];j.state='PUBLISHED';j.error_code=None
     j.updated_at=now();await s.commit()
 
