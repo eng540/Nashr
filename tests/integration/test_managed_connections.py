@@ -42,7 +42,8 @@ async def test_write_only_multi_channel_plans_and_separate_history(config,monkey
         plan_payload={**payload,'name':'قناتان محلياً','timezone':'Asia/Riyadh','start_at':(datetime.now(timezone.utc)+timedelta(days=1)).isoformat(),'interval_minutes':60,'previews':data}
         saved=await client.post('/api/connections/telegram/plans',json=plan_payload);assert saved.status_code==200,saved.text
         assert len(saved.json()['plans'])==2 and saved.json()['sent_messages']==0 and not saved.json()['activated']
-        assert (await client.post('/api/connections/telegram/'+ids[0]+'/remove')).status_code==409
+        assert (await client.post('/api/connections/telegram/'+ids[0]+'/remove')).status_code==200
+        assert (await client.post('/api/connections/telegram/'+ids[0]+'/state',json={'enabled':True})).status_code==200
         assert (await client.post('/api/connections/telegram/plans',json=plan_payload)).status_code==409
         async with SessionFactory() as session:
             plans=[await session.get(ScheduleModel,UUID(p['id'])) for p in saved.json()['plans']]
