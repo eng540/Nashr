@@ -14,3 +14,13 @@ def test_instagram_debug_input_token_is_redacted():
     assert CredentialFilter().filter(record)
     assert 'synthetic-private' not in record.getMessage()
     assert 'input_token=[REDACTED]' in record.getMessage()
+
+
+def test_uvicorn_access_formatter_keeps_structured_arguments_and_redacts():
+    from uvicorn.logging import AccessFormatter
+    record=logging.LogRecord('uvicorn.access',logging.INFO,'test',1,'%s - "%s %s HTTP/%s" %d',('127.0.0.1:123','GET','/callback?code=synthetic-code&state=synthetic-state','1.1',400),None)
+    CredentialFilter().filter(record)
+    assert len(record.args)==5
+    output=AccessFormatter('%(request_line)s %(status_code)s',use_colors=False).format(record)
+    assert 'synthetic-code' not in output and 'synthetic-state' not in output
+    assert '[REDACTED]' in output and '400' in output
