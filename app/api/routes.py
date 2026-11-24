@@ -1249,7 +1249,7 @@ def _upcoming_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
     if item.artifact_id is not None:
         artifact = item.artifact
         metadata = (artifact.artifact_metadata or {}) if artifact is not None else {}
-        title = metadata.get("title") or "اختبار تفاعلي"
+        title = metadata.get("title") or {"IMAGE":"صورة","VIDEO":"فيديو","TEXT":"نص","QUIZ":"اختبار تفاعلي"}.get(artifact.kind if artifact is not None else "", "مادة")
     else:
         title = item.post.knowledge_unit.title if item.post is not None else "منشور"
     return {
@@ -1257,6 +1257,7 @@ def _upcoming_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
         "schedule_name": item.schedule.name,
         "timezone": item.schedule.timezone,
         "item_id": str(item.id),
+        "id": str(item.id),
         "post_id": str(item.post_id) if item.post_id else None,
         "artifact_id": str(item.artifact_id) if item.artifact_id else None,
         "title": title,
@@ -2814,24 +2815,6 @@ async def create_schedule_route(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-def _upcoming_item_payload(item: ScheduleItemModel) -> dict[str, Any]:
-    post = item.post
-    unit = post.knowledge_unit
-    return {
-        "schedule_id": str(item.schedule_id),
-        "schedule_name": item.schedule.name,
-        "timezone": item.schedule.timezone,
-        "item_id": str(item.id),
-        "post_id": str(item.post_id),
-        "title": unit.title,
-        "scheduled_at": item.scheduled_at,
-        "status": item.status,
-        "position": item.position,
-        "attempts": item.attempts,
-        "last_error": item.last_error,
-    }
-
-
 @router.get("/schedules/calendar")
 async def schedule_calendar(
     date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
@@ -2852,6 +2835,7 @@ async def schedule_calendar(
         .join(ScheduleModel)
         .options(
             selectinload(ScheduleItemModel.schedule),
+            selectinload(ScheduleItemModel.artifact),
             selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit),
         )
         .where(

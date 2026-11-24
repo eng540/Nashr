@@ -31,7 +31,8 @@ export interface UpcomingResponse {
     id: string;
     schedule_id: string;
     schedule_name: string;
-    post_id: string;
+    post_id: string | null;
+    artifact_id?: string | null;
     title: string;
     content_preview: string;
     scheduled_at: string;
@@ -50,7 +51,8 @@ export interface CalendarResponse {
     id: string;
     schedule_id: string;
     schedule_name: string;
-    post_id: string;
+    post_id: string | null;
+    artifact_id?: string | null;
     title: string;
     content_preview: string;
     scheduled_at: string;
@@ -106,7 +108,8 @@ export const schedulesApi = {
     return get<CalendarResponse>(`/schedules/calendar?${query.toString()}`);
   },
   telegramPreview(postId: string): Promise<{
-    post_id: string;
+    post_id: string | null;
+    artifact_id?: string | null;
     platform: string;
     destination: string;
     content: string;
