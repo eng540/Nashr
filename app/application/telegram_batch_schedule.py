@@ -6,7 +6,7 @@ from app.application.telegram_batch_preview import preview_telegram_batch
 from app.infrastructure.database.models import ArtifactModel, ScheduleModel, ScheduleItemModel
 
 
-async def create_telegram_batch_schedule(session, *, artifact_ids, fingerprints, name, timezone_name, start_at, interval_minutes, destination, copy_versions=None):
+async def create_telegram_batch_schedule(session, *, artifact_ids, fingerprints, name, timezone_name, start_at, interval_minutes, destination, copy_versions=None, connection_id=None, commit=True):
     name = name.strip()
     if not name:
         raise ValueError('اكتب اسماً للخطة.')
@@ -16,7 +16,7 @@ async def create_telegram_batch_schedule(session, *, artifact_ids, fingerprints,
     # Same selected originals share a lock boundary. The second concurrent
     # request sees the first draft reservation, not another eligible batch.
     await session.execute(select(ArtifactModel.id).where(ArtifactModel.id.in_(artifact_ids)).order_by(ArtifactModel.id).with_for_update())
-    preview = await preview_telegram_batch(session, artifact_ids)
+    preview = await preview_telegram_batch(session, artifact_ids, connection_id=connection_id)
     if destination != preview['destination']:
         raise ValueError('تغيرت الوجهة منذ المعاينة. أعد فحص الدفعة.')
     if preview['blocked_count']:
@@ -25,10 +25,16 @@ async def create_telegram_batch_schedule(session, *, artifact_ids, fingerprints,
         raise ValueError('تغيرت المادة بعد المعاينة. أعد فحص الدفعة قبل حفظ الخطة.')
     if any((copy_versions or {}).get(item['artifact_id']) != item.get('copy_version') for item in preview['items']):
         raise ValueError('تغيرت نسخة Telegram بعد المعاينة. أعد الفحص.')
-    schedule = ScheduleModel(name=name, timezone=timezone_name, status='DRAFT', telegram_review={'destination':destination,'fingerprints':fingerprints,'copy_versions':{item['artifact_id']:item.get('copy_version') for item in preview['items']}})
+    binding={}
+    if connection_id:
+        from app.application.managed_connections import selected
+        channel,_=await selected(session,connection_id)
+        binding={'connection_id':str(channel.id),'bot_id':channel.details['bot_id'],'channel_label':channel.label}
+    schedule = ScheduleModel(name=name, timezone=timezone_name, status='DRAFT', telegram_review={**binding,'destination':destination,'fingerprints':fingerprints,'copy_versions':{item['artifact_id']:item.get('copy_version') for item in preview['items']}})
     schedule.items = [ScheduleItemModel(artifact_id=uid, position=index+1, scheduled_at=start_at+timedelta(minutes=index*interval_minutes), status='PENDING') for index,uid in enumerate(artifact_ids)]
     session.add(schedule)
-    await session.commit()
+    if commit:await session.commit()
+    else:await session.flush()
     return {'id':str(schedule.id),'name':name,'status':'DRAFT','timezone':timezone_name,'destination':preview['destination'],
             'items':[{'artifact_id':str(item.artifact_id),'scheduled_at':item.scheduled_at.isoformat()} for item in schedule.items]}
 
@@ -40,7 +46,11 @@ async def reviewed_batch_blocker(session, schedule):
     import os
     from app.application.distribution_readiness import source_fingerprint
     from app.infrastructure.database.models import DistributionSelectionModel, PlatformCopyModel
-    if review.get('destination') != os.getenv('TELEGRAM_DESTINATION_ID','').strip():
+    if review.get('connection_id'):
+        from app.application.managed_connections import schedule_binding
+        try:await schedule_binding(session,schedule)
+        except ValueError as exc:return str(exc)
+    elif review.get('destination') != os.getenv('TELEGRAM_DESTINATION_ID','').strip():
         return 'تغيرت وجهة Telegram منذ مراجعة الدفعة. أنشئ خطة جديدة بعد إعادة المعاينة.'
     for uid, fingerprint in review.get('fingerprints',{}).items():
         from uuid import UUID

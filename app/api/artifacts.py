@@ -744,7 +744,14 @@ async def confirm_location_operation(operation_id: UUID, session: AsyncSession =
     from app.application.live_locations import execute_operation
     from app.adapters.publishing.telegram import TelegramPublisher
     try:
-        return await execute_operation(session, operation_id, TelegramPublisher())
+        from app.infrastructure.database.models import LiveLocationOperationModel,PublicationModel
+        operation=await session.get(LiveLocationOperationModel,operation_id)
+        publication=await session.get(PublicationModel,operation.publication_id) if operation else None
+        if publication and publication.connection_id:
+            from app.application.managed_connections import publication_publisher
+            publisher=await publication_publisher(session,publication)
+        else:publisher=TelegramPublisher()
+        return await execute_operation(session, operation_id, publisher)
     except ValueError as exc:
         await session.rollback()
         raise _handle_error(exc) from exc

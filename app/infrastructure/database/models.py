@@ -282,6 +282,7 @@ class PublicationModel(Base):
     knowledge_unit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("knowledge_units.id", ondelete="RESTRICT"), nullable=False)
     post_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="SET NULL"), nullable=True)
     artifact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("artifacts.id", ondelete="RESTRICT"), nullable=True, index=True)
+    connection_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True),ForeignKey("managed_connections.id"),nullable=True)
     platform: Mapped[str] = mapped_column(String(50), nullable=False, default="telegram")
     destination: Mapped[str] = mapped_column(String(500), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -672,3 +673,45 @@ class PlatformMediaInspectionModel(Base):
     probe_version: Mapped[str]=mapped_column(String(30),nullable=False)
     result: Mapped[dict]=mapped_column(JSONB,nullable=False)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),server_default=func.now(),nullable=False)
+
+
+class InstagramOAuthFlowModel(Base):
+    __tablename__='instagram_oauth_flows'
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    session_hash: Mapped[str]=mapped_column(String(64),nullable=False)
+    browser_hash: Mapped[str]=mapped_column(String(64),nullable=False)
+    config_hash: Mapped[str]=mapped_column(String(64),nullable=False)
+    expires_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    consumed: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    token_ciphertext: Mapped[str | None]=mapped_column(Text,nullable=True)
+    accounts: Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
+    scopes: Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
+    token_expires_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+
+
+class InstagramConnectionModel(Base):
+    __tablename__='instagram_connections'
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    account_id: Mapped[str]=mapped_column(String(100),nullable=False)
+    username: Mapped[str]=mapped_column(String(100),nullable=False)
+    token_ciphertext: Mapped[str]=mapped_column(Text,nullable=False)
+    scopes: Mapped[list]=mapped_column(JSONB,nullable=False)
+    config_hash: Mapped[str]=mapped_column(String(64),nullable=False)
+    token_expires_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+    connected_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class ManagedConnectionModel(Base):
+    __tablename__='managed_connections'
+    id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    platform: Mapped[str]=mapped_column(String(30),nullable=False)
+    label: Mapped[str]=mapped_column(String(100),nullable=False)
+    secret_ciphertext: Mapped[str]=mapped_column(Text,nullable=False)
+    details: Mapped[dict]=mapped_column(JSONB,nullable=False)
+    verified_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class PlatformAppSettingsModel(Base):
+    __tablename__='platform_app_settings'
+    platform: Mapped[str]=mapped_column(String(30),primary_key=True)
+    ciphertext: Mapped[str]=mapped_column(Text,nullable=False)

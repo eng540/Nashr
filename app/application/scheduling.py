@@ -346,7 +346,7 @@ async def validate_schedule_for_activation(session: AsyncSession, schedule_id: U
                     blocked_items.append({'item_id': str(item.id), 'artifact_id': str(item.artifact_id), 'position': item.position, 'reason_code': 'INVALID_LIVE_PHOTO', 'message': str(exc)})
             if item.scheduled_at.tzinfo is None or item.scheduled_at.utcoffset() is None:
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "INVALID_TIME", "message": "Quiz schedule time is invalid."})
-            already_published = (await session.execute(select(PublicationModel.id).where(PublicationModel.artifact_id == item.artifact_id, PublicationModel.platform == "telegram", PublicationModel.status == "PUBLISHED").limit(1))).scalar_one_or_none()
+            already_published = (await session.execute(select(PublicationModel.id).where(PublicationModel.artifact_id == item.artifact_id, PublicationModel.platform == "telegram", PublicationModel.destination == (schedule.telegram_review or {}).get("destination",os.getenv("TELEGRAM_DESTINATION_ID", "")), PublicationModel.status == "PUBLISHED").limit(1))).scalar_one_or_none()
             if already_published is not None:
                 blocked_items.append({"item_id": str(item.id), "artifact_id": str(item.artifact_id), "position": item.position, "reason_code": "ALREADY_PUBLISHED", "message": "Quiz was already published."})
             continue
@@ -668,7 +668,12 @@ async def _execute_claimed_item(
         if review_item:
             review_schedule = await review_session.get(ScheduleModel, review_item.schedule_id)
             from app.application.telegram_batch_schedule import reviewed_batch_blocker
-            review_error = await reviewed_batch_blocker(review_session, review_schedule)
+            from app.application.managed_connections import schedule_binding
+            try:
+                binding=await schedule_binding(review_session,review_schedule)
+                if binding:destination,publisher=binding
+                review_error=await reviewed_batch_blocker(review_session,review_schedule)
+            except ValueError as exc:review_error=str(exc)
             if review_error:
                 review_item.status = ScheduleItemStatus.FAILED.value
                 review_item.last_error = review_error
