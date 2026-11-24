@@ -17,6 +17,7 @@ async def create_telegram_batch_schedule(session, *, artifact_ids, fingerprints,
     # request sees the first draft reservation, not another eligible batch.
     await session.execute(select(ArtifactModel.id).where(ArtifactModel.id.in_(artifact_ids)).order_by(ArtifactModel.id).with_for_update())
     preview = await preview_telegram_batch(session, artifact_ids, connection_id=connection_id)
+    connection_id=preview.get('connection_id')
     if destination != preview['destination']:
         raise ValueError('تغيرت الوجهة منذ المعاينة. أعد فحص الدفعة.')
     if preview['blocked_count']:
