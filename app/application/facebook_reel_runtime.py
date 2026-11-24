@@ -57,13 +57,13 @@ async def prepare_delivery(s,uid):
     if ig.source_fingerprint!=source_fingerprint(a):raise ValueError('Instagram copy is stale')
     source=await S3ArtifactStorage.from_environment().get_bytes(a.storage_uri,max_bytes=50_000_000)
     sh=hashlib.sha256(source).hexdigest()
-    recipe=dict(kind='FACEBOOK_REEL_AUDIO_COMPAT',version=1,video='COPY',audio='AAC_STEREO_48KHZ_160K',content_changed=False)
+    recipe=dict(kind='FACEBOOK_REEL_AUDIO_COMPAT',version=2,video='COPY',audio='AAC_STEREO_48KHZ_160K',content_changed=False)
     existing=(await s.execute(select(PlatformCopyMediaModel).where(PlatformCopyMediaModel.artifact_id==uid,PlatformCopyMediaModel.platform=='facebook',PlatformCopyMediaModel.source_sha256==sh,PlatformCopyMediaModel.recipe==recipe))).scalars().first()
     if not existing:
         def convert():
             with tempfile.TemporaryDirectory() as td:
                 src=Path(td)/'in.mp4';out=Path(td)/'out.mp4';src.write_bytes(source)
-                subprocess.run(['ffmpeg','-v','error','-i',str(src),'-map','0:v:0','-map','0:a:0','-c:v','copy','-c:a','aac','-ac','2','-ar','48000','-b:a','160k','-movflags','+faststart','-use_editlist','0',str(out)],check=True,capture_output=True,timeout=90)
+                subprocess.run(['ffmpeg','-v','error','-i',str(src),'-map','0:v:0','-map','0:a:0','-c:v','copy','-c:a','aac','-ac','2','-ar','48000','-b:a','160k','-movflags','+faststart','-use_editlist','0','-avoid_negative_ts','disabled',str(out)],check=True,capture_output=True,timeout=90)
                 def video_hash(p):return subprocess.run(['ffmpeg','-v','error','-i',str(p),'-map','0:v:0','-c:v','copy','-f','hash','-hash','sha256','-'],check=True,capture_output=True,timeout=30).stdout
                 if video_hash(src)!=video_hash(out):raise ValueError('Video packets changed')
                 from app.domain.platform_media_probe import inspect_video_file
