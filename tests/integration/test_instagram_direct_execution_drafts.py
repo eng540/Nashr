@@ -45,11 +45,15 @@ async def test_direct_review_and_ledger_private_idempotent_no_provider(config,mo
         assert (await direct.history(s,uid))['items'][0]['state']=='CANCELLED'
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('change',['disabled','config','account','expired','stale-check'])
+@pytest.mark.parametrize('change',['disabled','config','account','expired','stale-check','reconnected','cancelled-review'])
 async def test_direct_binding_blocks_changed_connection_before_provider(config,monkeypatch,change):
     uid,rid=await setup(monkeypatch);p=Provider();p.graph_base='https://graph.instagram.com/v27.0'
     async with SessionFactory() as s:
         j=await direct.stage(s,uid,rid);conn=await s.get(Connection,1)
+        if change=='reconnected':conn.connected_at=oauth.now()+timedelta(seconds=1)
+        if change=='cancelled-review':
+            from app.infrastructure.database.models import InstagramPlanDraftModel
+            record=await s.get(InstagramPlanDraftModel,rid);record.state='CANCELLED'
         if change=='disabled':conn.enabled=False
         if change=='config':conn.config_hash='changed'
         if change=='account':conn.account_id='999'
@@ -92,3 +96,13 @@ async def test_direct_core_requires_separate_public_and_media_disclosure(config,
         j=await direct.stage(s,uid,rid)
         with pytest.raises(ValueError,match='disclosure'):await core.create_container(s,UUID(j['id']),provider=p,media_url='https://synthetic.example/a.jpg',media_sha256=DIGEST,authorized=True,**flags)
         assert not p.calls
+
+
+@pytest.mark.asyncio
+async def test_direct_concurrent_stage_is_one_private_draft(config,monkeypatch):
+    import asyncio
+    uid,rid=await setup(monkeypatch)
+    async def call():
+        async with SessionFactory() as s:return await direct.stage(s,uid,rid)
+    a,b=await asyncio.gather(call(),call())
+    assert a['id']==b['id']
