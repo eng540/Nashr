@@ -22,11 +22,16 @@ from app.api.policies import router as policies_router
 from app.api.products import router as products_router
 from app.api.artifacts import router as generic_artifacts_router
 from app.api.library_import import router as library_import_router
+from app.api.connections import router as connections_router
+from app.api.instagram_connections import router as instagram_connections_router
 from app.api.publishing_queue import router as publishing_queue_router
 from app.api.routes import router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 from app.application.production_jobs import recover_stale_production_jobs, run_production_job
 from app.application.scheduling import process_due_schedule_items, recover_stale_schedule_items
+
+from app.infrastructure.connection_logging import install as install_connection_log_safety
+install_connection_log_safety()
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +193,17 @@ def create_app() -> FastAPI:
     application.include_router(generic_artifacts_router)
     application.include_router(library_import_router)
     application.include_router(publishing_queue_router)
+    application.include_router(instagram_connections_router)
+    application.include_router(connections_router)
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.exception_handlers import request_validation_exception_handler
+    from fastapi.responses import JSONResponse
+    @application.exception_handler(RequestValidationError)
+    async def secret_validation(request,exc):
+        if request.url.path.startswith('/api/connections'):
+            return JSONResponse({'detail':'حقول الربط غير صالحة أو ناقصة. لم نحفظ الأسرار.'},status_code=422,headers={'Cache-Control':'no-store'})
+        return await request_validation_exception_handler(request,exc)
+
     application.include_router(benchmark_router)  # <--- أضف هذا السطر فقط
     log_gemini_startup_config()
     return application
