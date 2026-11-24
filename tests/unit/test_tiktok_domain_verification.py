@@ -10,7 +10,8 @@ def test_public_exact_domain_proof(monkeypatch):
     client=TestClient(app)
     response=client.get("/"+proof.name)
     assert response.status_code==200
-    assert response.content==proof.read_bytes()
+    assert response.content==proof.read_bytes().rstrip(b"\n")
+    assert len(response.content)==68
     assert response.headers["content-type"].startswith("text/plain")
     assert client.get("/api/connections/tiktok").status_code==401
     assert client.get("/tiktok-unregistered.txt",follow_redirects=False).status_code in {401,303,404}
