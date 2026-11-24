@@ -117,3 +117,35 @@ async def settings(payload:DirectSettings,request:Request,session:AsyncSession=D
     row.ciphertext=encrypted
     await session.execute(delete(InstagramDirectOAuthFlowModel));await session.commit()
     return JSONResponse({'saved':True,'secret_saved':True,'account_connected':False,'other_connections_changed':False},headers=HEADERS)
+
+
+from uuid import UUID
+class StageDraft(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    review_id:UUID
+
+@router.post('/materials/{uid}/execution-drafts')
+async def stage_execution(uid:UUID,payload:StageDraft,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    from app.application.instagram_direct_execution import stage
+    try:result=await stage(session,uid,payload.review_id)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
+
+@router.get('/materials/{uid}/execution-drafts')
+async def execution_history(uid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
+    owner(request)
+    from app.application.instagram_direct_execution import history
+    return JSONResponse(await history(session,uid),headers=HEADERS)
+
+@router.post('/materials/{uid}/execution-drafts/{jid}/cancel')
+async def cancel_execution(uid:UUID,jid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    from app.infrastructure.database.models import InstagramExecutionModel
+    from app.application.instagram_direct_execution import describe
+    from app.application.instagram_execution import cancel_draft
+    job=await session.get(InstagramExecutionModel,jid)
+    if not job or job.artifact_id!=uid or (job.connection_binding or {}).get('login_mode')!='INSTAGRAM_LOGIN':raise HTTPException(404,'مسودة التنفيذ غير موجودة لهذه المادة.')
+    try:job=await cancel_draft(session,jid)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(describe(job),headers=HEADERS)

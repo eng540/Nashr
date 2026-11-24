@@ -15,3 +15,34 @@ The direct route requests only instagram_business_basic and instagram_business_c
 No publishing route is activated. No media reads, external media grants, uploads, or publications occur. Existing Unified/Page settings, connections, schedules, media and publication history remain separate and unchanged.
 
 Standard access applies to owned/managed professional accounts added in App Dashboard. Serving other accounts can require Advanced Access/App Review. Current setup in Meta must be verified before promising a working login. Instagram App ID/Secret are product-specific; never substitute the earlier Facebook app ID/secret.
+
+## Dormant publishing edge
+
+`InstagramDirectPublisher` uses `graph.instagram.com/v27.0`, reuses the
+single-image/Reel limits and mutation-unknown handling, and overrides all
+Facebook/Unified verification. No production route imports it. It cannot
+create a media grant or publication authority. A future caller must supply an
+explicitly authorized, pinned provider-readable media grant and load the
+provenance-bound encrypted connection after checking its current configuration,
+enabled state, token deadline and saved identity. Local scope/deadline checks
+and a read-only `/me` identity check are not proof of continued permission on
+all future provider requests. Provider permission/auth failures remain blockers.
+
+Publishing requirements and hosts were checked against:
+https://developers.facebook.com/docs/instagram-platform/content-publishing/
+
+## Private execution ledger
+
+Direct-login review snapshots use an explicit INSTAGRAM_LOGIN mode, no fallback.
+A private execution draft pins review ID/hash, config hash, account ID/username,
+source fingerprint, copy version, measured digest and inspection. Repeated stage
+requests recover the existing draft. Staging never grants permission or creates
+a media URL. Current source, connection and inspection are rechecked at staging;
+changes invalidate the snapshot. Existing execution records retain an empty
+connection_binding and their old behavior.
+
+Direct-bound core calls additionally require explicit public-publication and
+media-disclosure flags, the direct provider host, and unchanged enabled/fresh
+connection provenance. These internal flags are safeguards, not user consent
+records. No publish/media-exposure endpoint or scheduler runner is enabled.
+The UI exposes only review, private staging, history and local cancellation.
