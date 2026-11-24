@@ -21,6 +21,14 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         item = (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.id == item_id))).scalar_one_or_none()
         if item is None or item.artifact_id is None:
             return
+        schedule=await session.get(ScheduleModel,item.schedule_id)
+        from app.application.managed_connections import schedule_binding
+        try:
+            binding=await schedule_binding(session,schedule)
+            if binding:destination,publisher=binding
+        except ValueError as exc:
+            item.status='FAILED';item.last_error=str(exc);item.processing_started_at=None
+            await session.commit();return
         artifact_row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == item.artifact_id))).scalar_one_or_none()
         if artifact_row is None or artifact_row.kind not in MEDIA_KINDS | {"QUIZ", "TEXT"}:
             item.status = ScheduleItemStatus.FAILED.value
@@ -31,6 +39,7 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         published = (await session.execute(select(PublicationModel).where(
             PublicationModel.artifact_id == artifact_row.id,
             PublicationModel.platform == "telegram",
+            PublicationModel.destination == destination,
             PublicationModel.status == "PUBLISHED",
         ).limit(1))).scalar_one_or_none()
         if published is not None:
@@ -85,6 +94,9 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
             await session.commit()
             return
         if existing is not None and existing.status == "FAILED":
+            if schedule and (schedule.telegram_review or {}).get("connection_id") and str(existing.connection_id)!=schedule.telegram_review["connection_id"]:
+                item.status="FAILED";item.last_error="Publication bot binding differs; review before retry.";item.processing_started_at=None
+                await session.commit();return
             existing.status = "DRAFT"
             existing.error_message = None
             await session.commit()
@@ -94,7 +106,8 @@ async def execute_quiz_schedule_item(item_id: UUID, publisher=None, destination:
         else:
             content_override = reviewed_copy_text if reviewed_copy_text is not None else telegram_publish_text(artifact)
             publication_id = (await CreateTelegramDraft.execute_for_artifact(
-                session, artifact, destination, content_override=content_override
+                session, artifact, destination, content_override=content_override,
+                connection_id=UUID(schedule.telegram_review["connection_id"]) if schedule and (schedule.telegram_review or {}).get("connection_id") else None
             )).id
 
     async with SessionFactory() as session:
