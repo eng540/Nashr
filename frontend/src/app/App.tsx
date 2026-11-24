@@ -5,10 +5,13 @@ import { PostBankPage } from "../features/post-bank/PostBankPage";
 import { ControlPlanePage } from "../features/control-plane/ControlPlanePage";
 import { SourcesPage } from "../features/sources/SourcesPage";
 
+import {ConnectionsPage} from "../features/publishing/ConnectionsPage";
+
 export function App() {
   return (
     <AppShell>
       <Routes>
+        <Route path="/connections" element={<ConnectionsPage />} />
         <Route path="/control" element={<ControlPlanePage />} />
         <Route path="/publishing" element={<PublishingPage />} />
         <Route path="/sources/library" element={<SourcesPage />} />
