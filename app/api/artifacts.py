@@ -790,3 +790,36 @@ async def update_organization(payload:CatalogUpdate,request:Request,session:Asyn
     try:result=await save(session,payload.artifact_ids,payload.fields.model_dump(exclude_none=True),payload.versions)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse(result,headers=HEADERS)
+
+
+class SuggestionRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    version:int=Field(ge=1)
+    current_source_fingerprint:str=Field(pattern=r'^[a-f0-9]{64}$')
+
+class SuggestionApplication(SuggestionRequest):
+    suggestion_id:UUID
+    confirmed:bool
+
+@router.post('/{artifact_id}/platform-copies/{platform}/suggestions')
+async def suggest_platform_copy(artifact_id:UUID,platform:str,payload:SuggestionRequest,request:Request,session:AsyncSession=Depends(get_session)):
+    from app.api.instagram_connections import mutation_owner,HEADERS
+    from app.application.copy_suggestions import request_suggestion
+    from fastapi.responses import JSONResponse
+    mutation_owner(request)
+    # Deliberately no provider resolution, even when GEMINI_API_KEY is set.
+    try:result=await request_suggestion(session,artifact_id,platform,payload.version,payload.current_source_fingerprint)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
+
+@router.post('/{artifact_id}/platform-copies/{platform}/suggestions/apply')
+async def apply_platform_suggestion(artifact_id:UUID,platform:str,payload:SuggestionApplication,request:Request,session:AsyncSession=Depends(get_session)):
+    from app.api.instagram_connections import mutation_owner,HEADERS
+    from app.application.copy_suggestions import apply_suggestion
+    from fastapi.responses import JSONResponse
+    mutation_owner(request)
+    try:result=await apply_suggestion(session,artifact_id,platform,payload.suggestion_id,payload.version,payload.current_source_fingerprint,payload.confirmed)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
