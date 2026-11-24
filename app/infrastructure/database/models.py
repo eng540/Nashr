@@ -749,3 +749,25 @@ class CopySuggestionModel(Base):
     state:Mapped[str]=mapped_column(String(30),nullable=False)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
     applied_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+
+
+class InstagramExecutionModel(Base):
+    """Pinned provider attempt. No secret or media grant URL is stored here."""
+    __tablename__='instagram_executions'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id'),nullable=False)
+    account_id:Mapped[str]=mapped_column(String(100),nullable=False)
+    source_fingerprint:Mapped[str]=mapped_column(String(64),nullable=False)
+    copy_version:Mapped[int]=mapped_column(Integer,nullable=False)
+    media_sha256:Mapped[str]=mapped_column(String(64),nullable=False)
+    kind:Mapped[str]=mapped_column(String(10),nullable=False)
+    caption:Mapped[str]=mapped_column(Text,nullable=False)
+    alt_text:Mapped[str]=mapped_column(Text,nullable=False)
+    share_to_feed:Mapped[bool|None]=mapped_column(Boolean,nullable=True)
+    state:Mapped[str]=mapped_column(String(40),nullable=False)
+    container_id:Mapped[str|None]=mapped_column(String(100),nullable=True)
+    media_id:Mapped[str|None]=mapped_column(String(100),nullable=True)
+    error_code:Mapped[str|None]=mapped_column(String(100),nullable=True)
+    permalink:Mapped[str|None]=mapped_column(Text,nullable=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
