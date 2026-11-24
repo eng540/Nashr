@@ -51,7 +51,7 @@ async def stage(session,uid,review_id):
     job=await core.prepare(session,uid,account_id=account['account_id'],media_sha256=snapshot['inspection']['sha256'],
         copy_version=snapshot['copy_version'],fingerprint=snapshot['source_fingerprint'],
         inspection_id=UUID(snapshot['inspection']['id']),share_to_feed=snapshot.get('share_to_feed'),
-        connection_binding=dict(login_mode='INSTAGRAM_LOGIN',config_hash=c['fingerprint'],username=account['username'],review_id=str(review_id),review_hash=record.snapshot_hash))
+        connection_binding=dict(login_mode='INSTAGRAM_LOGIN',config_hash=c['fingerprint'],connected_at=conn.connected_at.isoformat(),username=account['username'],review_id=str(review_id),review_hash=record.snapshot_hash))
     return describe(job)
 
 async def history(session,uid):
@@ -61,9 +61,12 @@ async def history(session,uid):
 async def validate_binding(session,job):
     binding=job.connection_binding or {}
     if binding.get('login_mode')!='INSTAGRAM_LOGIN':raise ValueError('Direct connection provenance required')
+    from uuid import UUID
+    record=await session.get(Review,UUID(binding['review_id']),populate_existing=True)
+    if not record or record.state!='DRAFT' or record.snapshot_hash!=binding['review_hash']:raise ValueError('Review draft changed or cancelled')
     c=await oauth.configuration(session,True);conn=await session.get(Connection,1,populate_existing=True)
     account=oauth.payload(conn,c)
     from datetime import datetime,timezone,timedelta
     if conn and (not conn.last_check_at or conn.last_check_ok is not True or conn.last_check_at<datetime.now(timezone.utc)-timedelta(minutes=5)):raise ValueError('يلزم تحقق حديث من الحساب.')
-    if not account or account['state']!='CONNECTED_AT_LAST_CHECK' or binding['config_hash']!=c['fingerprint'] or job.account_id!=account['account_id'] or binding['username']!=account['username']:raise ValueError('Direct connection changed or disabled')
+    if not account or account['state']!='CONNECTED_AT_LAST_CHECK' or binding['config_hash']!=c['fingerprint'] or job.account_id!=account['account_id'] or binding['username']!=account['username'] or binding.get('connected_at')!=conn.connected_at.isoformat():raise ValueError('Direct connection changed or disabled')
     return account
