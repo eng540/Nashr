@@ -270,6 +270,59 @@ async def distribution_readiness(artifact_id: UUID, session: AsyncSession = Depe
         raise _handle_error(exc) from exc
 
 
+class CopyMediaSaveRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    source_fingerprint: str=Field(min_length=64,max_length=64)
+    copy_version: int=Field(ge=1)
+    background: str=Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    expected_sha256: str=Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class CopyMediaSelectionRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    source_fingerprint: str=Field(min_length=64,max_length=64)
+    copy_version: int=Field(ge=1)
+    media_id: UUID | None=None
+
+
+@router.get("/{artifact_id}/platform-copies/{platform}/media")
+async def list_copy_media(artifact_id: UUID,platform: str,session: AsyncSession=Depends(get_session)):
+    from app.application.platform_copy_media import list_media
+    try: return await list_media(session,artifact_id,platform)
+    except ValueError as exc: raise _handle_error(exc) from exc
+
+
+@router.post("/{artifact_id}/platform-copies/{platform}/media/jpeg")
+async def save_copy_jpeg(artifact_id: UUID,platform: str,payload: CopyMediaSaveRequest,session: AsyncSession=Depends(get_session)):
+    from app.application.platform_copy_media import save_jpeg
+    try: return await save_jpeg(session,artifact_id,platform,fingerprint=payload.source_fingerprint,version=payload.copy_version,background=payload.background,expected_sha256=payload.expected_sha256)
+    except ArtifactStorageConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
+    except ArtifactStorageError as exc: raise HTTPException(502,str(exc)) from exc
+    except ValueError as exc:
+        await session.rollback()
+        raise _handle_error(exc) from exc
+
+
+@router.post("/{artifact_id}/platform-copies/{platform}/media/selection")
+async def select_copy_media(artifact_id: UUID,platform: str,payload: CopyMediaSelectionRequest,session: AsyncSession=Depends(get_session)):
+    from app.application.platform_copy_media import select_media
+    try: return await select_media(session,artifact_id,platform,fingerprint=payload.source_fingerprint,version=payload.copy_version,media_id=payload.media_id)
+    except ValueError as exc:
+        await session.rollback()
+        raise _handle_error(exc) from exc
+
+
+@router.get("/{artifact_id}/platform-copies/{platform}/media/{media_id}/url")
+async def copy_media_url(artifact_id: UUID,platform: str,media_id: UUID,session: AsyncSession=Depends(get_session)):
+    from app.application.platform_copy_media import media_url
+    try:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(await media_url(session,artifact_id,platform,media_id),headers={"Cache-Control":"no-store"})
+    except ArtifactStorageConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
+    except ArtifactStorageError as exc: raise HTTPException(502,str(exc)) from exc
+    except ValueError as exc: raise _handle_error(exc) from exc
+
+
 class JpegPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source_fingerprint: str = Field(min_length=64,max_length=64)
@@ -290,10 +343,10 @@ async def instagram_jpeg_preview(artifact_id: UUID,platform: str,payload: JpegPr
 
 
 @router.post("/{artifact_id}/platform-copies/{platform}/inspect-media")
-async def inspect_platform_copy_media(artifact_id: UUID, platform: str, session: AsyncSession = Depends(get_session)):
+async def inspect_platform_copy_media(artifact_id: UUID, platform: str, selected: bool = Query(default=False),session: AsyncSession = Depends(get_session)):
     from app.application.platform_media_probe import probe_platform_media
     try:
-        return await probe_platform_media(session, artifact_id, platform)
+        return await probe_platform_media(session, artifact_id, platform,selected=selected)
     except ArtifactStorageConfigurationError as exc:
         raise HTTPException(503, str(exc)) from exc
     except ArtifactStorageError as exc:
