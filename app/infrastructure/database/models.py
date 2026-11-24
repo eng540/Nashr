@@ -636,7 +636,24 @@ class PlatformCopyModel(Base):
     artifact_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey('artifacts.id',ondelete='CASCADE'),primary_key=True)
     platform: Mapped[str] = mapped_column(String(30),primary_key=True)
     source_fingerprint: Mapped[str] = mapped_column(String(64),nullable=False)
+    selected_media_id: Mapped[UUID | None]=mapped_column(PGUUID(as_uuid=True),ForeignKey('platform_copy_media.id'),nullable=True)
     fields: Mapped[dict] = mapped_column(JSONB,nullable=False)
     origin: Mapped[str] = mapped_column(String(30),nullable=False)
     version: Mapped[int] = mapped_column(Integer,nullable=False,default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class PlatformCopyMediaModel(Base):
+    """Immutable private derivative, separate from the original bank inventory."""
+    __tablename__='platform_copy_media'
+    id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    artifact_id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id',ondelete='CASCADE'),nullable=False)
+    platform: Mapped[str]=mapped_column(String(30),nullable=False)
+    source_fingerprint: Mapped[str]=mapped_column(String(64),nullable=False)
+    source_sha256: Mapped[str]=mapped_column(String(64),nullable=False)
+    sha256: Mapped[str]=mapped_column(String(64),nullable=False)
+    storage_uri: Mapped[str]=mapped_column(Text,nullable=False)
+    mime_type: Mapped[str]=mapped_column(String(100),nullable=False)
+    recipe: Mapped[dict]=mapped_column(JSONB,nullable=False)
+    measurements: Mapped[dict]=mapped_column(JSONB,nullable=False)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),server_default=func.now(),nullable=False)

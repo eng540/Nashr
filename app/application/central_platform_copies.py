@@ -59,14 +59,16 @@ def evaluate(row, copy):
             blockers.append('التعليق يتجاوز2200حرف أو30وسماً أو20إشارة. لم يُقص.')
         if len(alt)>1000: blockers.append('النص البديل يتجاوز1000حرف.')
         if row.kind!='IMAGE' and alt: blockers.append('النص البديل موثق للصور فقط، لاReels.')
-        if row.kind=='IMAGE' and row.mime_type!='image/jpeg': blockers.append('الصورة تتطلبJPEG للنشر الرسمي. الأصل لم يُحوّل.')
+        if row.kind=='IMAGE' and row.mime_type!='image/jpeg' and getattr(copy,'selected_media_id',None) is None: blockers.append('الأصل ليسJPEG. راجع وسيط النسخة المحفوظ واختياره صراحة؛ لا يعني حفظه قبول المنصة.')
         media.append('يلزم فحص أبعاد/حجم الصورة أو ترميز/مدة الفيديو. لم ننشئ رابط وسيط متاحاً للمنصة.')
         if title: warnings.append('Instagram لا يستخدم عنواناً منفصلاً هنا. المحفوظ للتنظيم فقط، لن يضاف للتعليق تلقائياً.')
     else:
         blockers.append('لم يكتمل ملف المتطلبات الرسمي لهذه المنصة. الحقول محفوظة للتحرير فقط.')
+    if getattr(copy,'selected_media_id',None) is not None:
+        media.append('اختير وسيط مشتق خاص. افحص وسيط النسخة الحالي؛ لا تكفي حالة الحقول لإثبات صلاحيته أو حداثته.')
     if copy.platform!='youtube' and tags:
         warnings.append('الكلمات المفتاحية لا تُلصق بالنص تلقائياً. ضع الوسوم داخل نص النشر إذا أردتها ضمنه.')
-    return {'platform':copy.platform,'label':PLATFORMS[copy.platform],'fields':fields,'version':copy.version,
+    return {'selected_media_id':str(getattr(copy,'selected_media_id',None)) if getattr(copy,'selected_media_id',None) else None,'platform':copy.platform,'label':PLATFORMS[copy.platform],'fields':fields,'version':copy.version,
             'source_fingerprint':copy.source_fingerprint,'current_source_fingerprint':source_fingerprint(row),
             'origin':copy.origin,'source_stale':stale,'central_approval':row.review_status,
             'field_status':'BLOCKED' if blockers else 'FIELDS_VALIDATED','blockers':blockers,'warnings':warnings,
@@ -104,6 +106,11 @@ async def update_copy(session,uid,platform,fields,version,current_fingerprint):
     row=(await session.execute(select(ArtifactModel).where(ArtifactModel.id==uid).with_for_update())).scalar_one_or_none()
     copy=await session.get(PlatformCopyModel,(uid,platform))
     if row is None or copy is None: raise ValueError('جهّز النسخة أولاً.')
+    if getattr(copy,'selected_media_id',None) is not None:
+        from app.infrastructure.database.models import PlatformCopyMediaModel
+        asset=await session.get(PlatformCopyMediaModel,getattr(copy,'selected_media_id',None))
+        if asset is None or asset.source_fingerprint!=source_fingerprint(row):
+            raise ValueError('وسيط النسخة قديم. ارجع للأصل أو جهّز وسيطاً جديداً قبل ربط الحقول.')
     if version!=copy.version: raise ValueError('حُدثت النسخة في نافذة أخرى. أعد تحميلها قبل الحفظ.')
     if source_fingerprint(row)!=current_fingerprint: raise ValueError('تغير الأصل منذ فتح المحرر. أعد تحميل المعاينة.')
     copy.fields=fields
