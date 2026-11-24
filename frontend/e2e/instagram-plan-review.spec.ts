@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+test('Instagram review shows exact copy, explicit Reel choice and non-runnable saved draft',async({page},info)=>{
+ const id='instagram-review';let saves=0,previews=0;const unsafe:string[]=[];
+ const item={id,kind:'VIDEO',source_knowledge_unit_id:'u',status:'AVAILABLE',content:null,storage_uri:'s3://private/a.mp4',mime_type:'video/mp4',metadata:{title:'فيديو للمراجعة'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'};
+ const copy={platform:'instagram',label:'Instagram',fields:{title:'',description:'النص المحفوظ كاملاً دون تعديل',tags:[],alt_text:''},version:2,source_fingerprint:'a'.repeat(64),current_source_fingerprint:'a'.repeat(64),origin:'USER_EDITED',source_stale:false,central_approval:'APPROVED',field_status:'FIELDS_VALIDATED',blockers:[],warnings:[],media_checks_pending:[],execution_blockers:[],sources:[]};
+ const preview={artifact_id:id,kind:'VIDEO',caption:copy.fields.description,alt_text:'',copy_version:2,share_to_feed:false,selected_media_id:null,account:{username:'review_account',account_id:'123',state:'CONNECTED_AT_LAST_CHECK'},inspection:{created_at:'2026-11-24T08:00:00Z',sha256:'b'.repeat(64),measurements:{width:1080,height:1920}},blockers:[],pending:['VBR غير متحقق.'],remaining_steps:['موافقة نشر مستقلة وإتاحة وسيط محدودة لم تنفذا.'],preview_hash:'c'.repeat(64),can_save_draft:true,caveat:'معاينة خاصة لا تنشر ولا تكشف الوسيط.'};
+ await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
+ if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p.endsWith('/platform-copies'))return route.fulfill({json:{items:[copy]}});
+ if(p.endsWith('/preview')&&p.includes('/instagram/materials/')){previews++;return route.fulfill({json:{...preview,share_to_feed:r.postDataJSON().share_to_feed}});}
+ if(p.endsWith('/drafts')&&p.includes('/instagram/materials/')){if(r.method()==='POST'){saves++;expect(r.postDataJSON()).toEqual({preview_hash:preview.preview_hash,share_to_feed:false});return route.fulfill({json:{id:'saved',state:'DRAFT',stale:false,created_at:'2026-11-24T08:00:00Z',snapshot:preview}});}return route.fulfill({json:{items:saves?[{id:'saved',state:'DRAFT',stale:false,created_at:'2026-11-24T08:00:00Z',snapshot:preview}]:[]}});}
+ if(p.endsWith('/media-url'))return route.fulfill({json:{url:null}});
+ if(p.startsWith('/api/')&&r.method()!=='GET')unsafe.push(p);
+ if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
+ await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
+ const copies=page.getByLabel('نسخ المنصات '+id,{exact:true});await copies.locator('summary').first().click();await copies.getByRole('button',{name:'عرض النسخ المحفوظة',exact:true}).click();await copies.getByLabel('منصة النسخة '+id).selectOption('instagram');
+ const panel=copies.getByLabel('معاينة خطة Instagram',{exact:true});await panel.locator('summary').first().click();expect(previews).toBe(0);expect(saves).toBe(0);
+ await panel.getByRole('button',{name:'عرض معاينة Instagram دون نشر',exact:true}).click();await expect(panel.getByRole('button',{name:'حفظ مسودة مراجعة فقط، دون موعد أو نشر',exact:true})).toBeDisabled();
+ await panel.getByLabel('ظهور Reel في الخلاصة').selectOption('no');await panel.getByRole('button',{name:'عرض معاينة Instagram دون نشر',exact:true}).click();await expect(panel.getByText('@review_account · 123',{exact:true})).toBeVisible();await expect(panel.getByText(copy.fields.description,{exact:true})).toBeVisible();
+ await panel.getByRole('button',{name:'حفظ مسودة مراجعة فقط، دون موعد أو نشر',exact:true}).click();await expect(panel.getByRole('status')).toContainText('لا إذن نشر');expect(saves).toBe(1);expect(unsafe).toEqual([]);
+ await page.addStyleTag({content:'header{visibility:hidden}'});await page.setViewportSize({width:1280,height:1000});await panel.screenshot({path:info.outputPath('instagram-review-desktop.png')});await page.setViewportSize({width:390,height:844});await panel.screenshot({path:info.outputPath('instagram-review-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});

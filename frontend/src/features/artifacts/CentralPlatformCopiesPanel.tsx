@@ -1,3 +1,4 @@
+import {InstagramPlanReviewPanel} from './InstagramPlanReviewPanel';
 import {useState} from 'react';
 import {CopySuggestionsPanel} from './CopySuggestionsPanel';
 import {MediaInspectionHistoryPanel} from './MediaInspectionHistoryPanel';
@@ -46,6 +47,7 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan}:{id:string;kind:stri
      <details className="rounded border bg-white p-2"><summary className="cursor-pointer">ما الذي لم يُتحقق بعد؟</summary>{[...shown.warnings,...shown.media_checks_pending,...shown.execution_blockers].map(reason=><p key={reason}>{reason}</p>)}<p>نسخة Telegram تُستخدم في معاينة الدفعة وخطتها الجديدة فقط بعد مراجعتها. تغيير النسخة يوقف الخطة السابقة. المنصات الأخرى للتجهيز دون تنفيذ.</p>{shown.sources.map(url=><a key={url} href={url} target="_blank" rel="noreferrer" className="block break-all underline">{url}</a>)}</details>
     </>:null}</>:null}
    {load.isError||prepare.isError||save.isError?<p role="alert" className="text-rose-700">{load.error?.message??prepare.error?.message??save.error?.message}</p>:null}
+   {active==='instagram'&&row&&!draft&&['IMAGE','VIDEO'].includes(kind)?<InstagramPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} kind={kind} disabled={busy}/>:null}
    {active==='telegram'&&row&&!draft&&onPlan?<button type="button" disabled={busy} onClick={onPlan} className="rounded border bg-white p-2 font-bold">معاينة وجدولة نسخة Telegram هذه</button>:null}
    {note?<p role="status" className="text-emerald-800">{note}</p>:null}
   </div>

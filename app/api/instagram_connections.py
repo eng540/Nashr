@@ -89,3 +89,37 @@ async def local_state(payload:LocalState,request:Request,session:AsyncSession=De
     try:await service.set_connection_enabled(session,payload.enabled)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse({'enabled':payload.enabled,'remote_changed':False,'sent_messages':0,'execution_authorized':False},headers=HEADERS)
+
+from uuid import UUID
+from pydantic import StrictBool
+
+class PlanReview(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    share_to_feed:StrictBool|None=None
+
+class SavePlanReview(PlanReview):
+    preview_hash:str=Field(pattern=r'^[a-f0-9]{64}$')
+
+@router.post('/materials/{uid}/preview')
+async def plan_preview(uid:UUID,payload:PlanReview,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    from app.application.instagram_plan_review import preview
+    try:result=await preview(session,uid,share_to_feed=payload.share_to_feed)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
+
+@router.post('/materials/{uid}/drafts')
+async def save_plan_review(uid:UUID,payload:SavePlanReview,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    from app.application.instagram_plan_review import save_draft
+    try:result=await save_draft(session,uid,preview_hash=payload.preview_hash,share_to_feed=payload.share_to_feed)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
+
+@router.get('/materials/{uid}/drafts')
+async def plan_review_history(uid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
+    owner(request)
+    from app.application.instagram_plan_review import list_drafts
+    try:result=await list_drafts(session,uid)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
