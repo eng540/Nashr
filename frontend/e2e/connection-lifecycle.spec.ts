@@ -4,7 +4,9 @@ test('legacy import and lifecycle keep history and hide write-only token',async(
  const channel=()=>({id:'synthetic',label:'قناة الربط السابق',details:{destination:'-100123456',channel_title:'قناة محلية للاختبار',bot_username:'synthetic_bot'},verified_at:'2026-11-24T05:00:00Z',enabled,last_check_ok:true,last_check_at:'2026-11-24T05:00:00Z'});
  await page.route('**/api/connections**',async route=>{
   const p=new URL(route.request().url()).pathname;
-  if(p==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
+  if(p==='/api/connections/tiktok')return route.fulfill({json:{configured:false,connection:null,pending:null}});
+ if(p==='/api/connections/tiktok/requirements')return route.fulfill({json:{reviewed_on:'2026-11-24',modes:[],media_requirements:[],sources:[]}});
+ if(p==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
  if(p==='/api/connections/instagram-direct')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,source:'https://developers.facebook.com'}});
  if(p==='/api/connections/instagram-page')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[]}});
   if(p==='/api/connections/instagram')return route.fulfill({json:{configured:false,missing_configuration:['META_APP_ID'],connection:null,pending:null,requirements:[]}});
