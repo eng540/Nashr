@@ -724,3 +724,12 @@ class LegacyTelegramBindingModel(Base):
     id: Mapped[int]=mapped_column(Integer,primary_key=True)
     connection_id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('managed_connections.id'),nullable=False)
     original_destination: Mapped[str]=mapped_column(String(500),nullable=False)
+
+class ArtifactOrganizationModel(Base):
+    __tablename__='artifact_organization'
+    artifact_id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id',ondelete='CASCADE'),primary_key=True)
+    title: Mapped[str]=mapped_column(String(500),nullable=False,default='')
+    series: Mapped[str]=mapped_column(String(200),nullable=False,default='')
+    category: Mapped[str]=mapped_column(String(200),nullable=False,default='')
+    version: Mapped[int]=mapped_column(Integer,nullable=False,default=1)
+    updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
