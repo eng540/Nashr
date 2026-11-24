@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -767,3 +767,26 @@ async def cancel_location_operation(operation_id: UUID, session: AsyncSession = 
     except ValueError as exc:
         await session.rollback()
         raise _handle_error(exc) from exc
+
+
+class CatalogFields(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    title:str|None=Field(default=None,max_length=500)
+    series:str|None=Field(default=None,max_length=200)
+    category:str|None=Field(default=None,max_length=200)
+
+class CatalogUpdate(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    artifact_ids:list[UUID]=Field(min_length=1,max_length=100)
+    fields:CatalogFields
+    versions:dict[str,int]
+
+@router.post('/organization')
+async def update_organization(payload:CatalogUpdate,request:Request,session:AsyncSession=Depends(get_session)):
+    from app.api.instagram_connections import mutation_owner,HEADERS
+    from app.application.content_organization import save
+    from fastapi.responses import JSONResponse
+    mutation_owner(request)
+    try:result=await save(session,payload.artifact_ids,payload.fields.model_dump(exclude_none=True),payload.versions)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
