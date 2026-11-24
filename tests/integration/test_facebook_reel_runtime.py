@@ -83,3 +83,40 @@ async def test_unknown_never_mutates_and_mismatched_result_not_published(monkeyp
     async def provider(*a):return P()
     monkeypatch.setattr(r,'provider',provider)
     await r.process_one(S(),j);assert j.state=='OUTCOME_UNKNOWN' and j.permalink is None
+
+@pytest.mark.asyncio
+async def test_private_delivery_keeps_exact_video_timing(monkeypatch):
+    import subprocess,tempfile,hashlib
+    from pathlib import Path
+    from types import SimpleNamespace
+    from uuid import uuid4
+    from app.application import platform_copy_media
+    from app.domain.platform_media_probe import inspect_media
+    with tempfile.TemporaryDirectory() as td:
+        path=Path(td)/'source.mp4'
+        subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=size=540x960:rate=24:duration=3.5','-f','lavfi','-i','sine=frequency=440:sample_rate=24000:duration=3.5','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','-movflags','+faststart','-use_editlist','0',str(path)],check=True,capture_output=True)
+        source=path.read_bytes()
+    uid=uuid4();a=SimpleNamespace(kind='VIDEO',storage_uri='private-source');fb=SimpleNamespace(version=1,fields={},selected_media_id=None);ig=SimpleNamespace(selected_media_id=None,source_fingerprint='fp',fields={'description':'exact\n\ncaption'})
+    class Scalar:
+        def scalars(self):return self
+        def first(self):return None
+    class Session:
+        async def get(self,model,key):return a if model is r.ArtifactModel else ig if key[1]=='instagram' else fb
+        async def execute(self,*a):return Scalar()
+        async def commit(self):pass
+        def add(self,x):self.asset=x
+    s=Session();saved={}
+    class Storage:
+        async def get_bytes(self,*a,**kw):return source
+        async def put(self,**kw):saved['content']=kw['content'];return 'private-derivative'
+    async def current_copy(*a):return a0,fb
+    a0=a
+    monkeypatch.setattr(platform_copy_media,'current_copy',current_copy)
+    monkeypatch.setattr(r,'source_fingerprint',lambda a:'fp')
+    monkeypatch.setattr(r.S3ArtifactStorage,'from_environment',lambda:Storage())
+    result=await r.prepare_delivery(s,uid)
+    m=inspect_media(saved['content'],'VIDEO','video/mp4')
+    assert m['fps']==24 and m['width']==540 and m['height']==960
+    assert m['audio'][0]['sample_rate']==48000 and m['audio'][0]['channels']==2
+    assert s.asset.recipe['version']==2 and fb.fields==ig.fields
+    assert result['video_packets_identical'] and result['published'] is False
