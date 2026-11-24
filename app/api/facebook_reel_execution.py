@@ -65,3 +65,19 @@ async def provider_status(jid:UUID,request:Request,session:AsyncSession=Depends(
             return JSONResponse({'video_id':j.remote_session['video_id'],'status':result.get('status'),'read_only':True},headers=HEADERS)
         except FacebookProviderError as e:
             return JSONResponse({'video_id':j.remote_session['video_id'],'error_code':e.code,'read_only':True},headers=HEADERS,status_code=409)
+
+
+@router.post('/{jid}/retire-unpublished')
+async def retire_unpublished(jid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    j=(await session.execute(select(Job).where(Job.id==jid).with_for_update())).scalar_one_or_none()
+    if not j:raise HTTPException(404,'Unknown job')
+    # Same advisory lock as worker, prevents an in-flight reconciliation race.
+    from sqlalchemy import text
+    from app.infrastructure.database.session import engine
+    async with engine.connect() as lock:
+        if not (await lock.execute(text('SELECT pg_try_advisory_lock(606029)'))).scalar():raise HTTPException(409,'Worker active, read result first')
+        try:
+            try:return JSONResponse(await service.retire_unfinished(session,j),headers=HEADERS)
+            except ValueError as e:raise HTTPException(409,str(e)) from None
+        finally:await lock.execute(text('SELECT pg_advisory_unlock(606029)'));await lock.commit()
