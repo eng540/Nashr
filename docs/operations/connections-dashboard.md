@@ -32,3 +32,34 @@ Sources checked during development:
 - https://core.telegram.org/bots/api
 - https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-unified-login/get-started
 - https://developers.facebook.com/docs/graph-api/reference/debug_token/
+
+## Telegram lifecycle
+
+The owner can import the existing server connection without retyping its token.
+The explicit POST import reads only getMe, getChat and getChatMember, encrypts the
+known token with the existing persistent server key, binds matching publication
+rows and plans, and preserves each stored destination, content, status and time.
+It is idempotent and refuses an unresolved provider call or processing schedule.
+No migration or dashboard GET calls Telegram or automatically imports anything.
+
+After import the database binding wins over environment values, including after
+a restart. Missing or unreadable ciphertext never falls back to environment.
+Canonical numeric channel identity is pinned for provider calls, including when
+the old stored address is an @username. Old addresses stay intact in the ledger.
+Both aliases count as one channel for duplicate checks and previews.
+
+A saved token can be checked without sending, or replaced only with a token that
+verifies as the same bot with posting rights in the same channel. Replacement
+preserves disabled state and can repair an unreadable old ciphertext using the
+current valid server key. Never change the encryption key casually: existing
+ciphertexts still require the original key. Rotation cannot recover unknown
+credentials for other connections.
+
+Disable is local and non-destructive. It blocks selection and new sends, keeps
+history and credentials, does not revoke a token or delete a channel, and does
+not rewrite schedule status or destination. A due item while disabled fails
+explicitly in its schedule ledger; re-enabling checks permissions but does not
+retry failed items. The compatibility remove endpoint also disables, never
+physically deletes. History remains readable even if the encryption key is lost.
+READY/PUBLISHING calls prevent state/token changes until their outcome is settled.
+A shared transaction lock closes the race between disabling and READY claim.

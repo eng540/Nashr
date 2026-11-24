@@ -8,11 +8,15 @@ from app.infrastructure.database.models import ArtifactModel, DistributionSelect
 
 
 async def preview_telegram_batch(session, artifact_ids, connection_id=None):
+    from app.application.managed_connections import default_binding,allowed_destinations
+    implicit=not connection_id
+    default_destination,default_id=await default_binding(session) if implicit else (os.getenv("TELEGRAM_DESTINATION_ID", "").strip(),None)
+    if not connection_id:connection_id=default_id
     connection=None
     if connection_id:
         from app.application.managed_connections import selected
         connection,_=await selected(session,connection_id)
-    destination=connection.details["destination"] if connection else os.getenv("TELEGRAM_DESTINATION_ID", "").strip()
+    destination=default_destination if implicit else connection.details["destination"] if connection else default_destination
     if len(set(artifact_ids)) != len(artifact_ids):
         raise ValueError('تحديد مكرر؛ اختر كل مادة مرة واحدة.')
     rows = (await session.execute(select(ArtifactModel).where(ArtifactModel.id.in_(artifact_ids)))).scalars().all()
@@ -47,10 +51,10 @@ async def preview_telegram_batch(session, artifact_ids, connection_id=None):
                 blockers.append('تغيرت المادة منذ اختيار وجهاتها؛ حدّث اختيار التوزيع.')
             if 'telegram' not in selection.platforms:
                 blockers.append('Telegram مستبعد من الوجهات المحفوظة لهذه المادة.')
-        pubs = [p for p in publications if p.artifact_id == uid and p.destination == destination]
+        pubs = [p for p in publications if p.artifact_id == uid and p.destination in (allowed_destinations(connection) if connection else {destination})]
         if any(p.status in {'PUBLISHED','PUBLISHING','READY'} for p in pubs):
             blockers.append('للمادة نشر سابق أو عملية غير محسومة؛ راجع السجل بدلاً من إعادة الإرسال.')
-        planned = [{'name':name,'schedule_status':status,'item_status':item_status} for artifact_id,name,status,item_status,review in schedules if artifact_id == uid and (review or {}).get("destination",os.getenv("TELEGRAM_DESTINATION_ID", "").strip())==destination]
+        planned = [{'name':name,'schedule_status':status,'item_status':item_status} for artifact_id,name,status,item_status,review in schedules if artifact_id == uid and (review or {}).get("destination",default_destination) in (allowed_destinations(connection) if connection else {destination})]
         if planned:
             blockers.append('المادة مرتبطة بجدول قائم؛ افتح الجدول لتعديله بدلاً من إنشاء نسخة.')
         if not destination:

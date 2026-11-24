@@ -34,7 +34,7 @@ async def remove(uid:UUID,request:Request,session:AsyncSession=Depends(get_sessi
     mutation_owner(request)
     try:await service.remove(session,uid)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
-    return JSONResponse({'removed_locally':True,'remote_revoked':False},headers=HEADERS)
+    return JSONResponse({'removed_locally':False,'disabled_locally':True,'history_preserved':True,'remote_revoked':False},headers=HEADERS)
 
 class ChannelBatch(BaseModel):
     model_config=ConfigDict(extra='forbid')
@@ -82,9 +82,10 @@ async def history(uid:UUID,request:Request,session:AsyncSession=Depends(get_sess
     owner(request)
     from sqlalchemy import select
     from app.infrastructure.database.models import PublicationModel,ScheduleModel
-    try:row,_=await service.selected(session,uid)
-    except ValueError as exc:raise HTTPException(409,str(exc)) from None
-    pubs=(await session.execute(select(PublicationModel).where(PublicationModel.platform=='telegram',PublicationModel.destination==row.details['destination']).order_by(PublicationModel.created_at.desc()).limit(100))).scalars().all()
+    from app.infrastructure.database.models import ManagedConnectionModel
+    row=await session.get(ManagedConnectionModel,uid)
+    if row is None or row.platform!='telegram':raise HTTPException(404,'الربط غير موجود.')
+    pubs=(await session.execute(select(PublicationModel).where(PublicationModel.platform=='telegram',PublicationModel.connection_id==uid).order_by(PublicationModel.created_at.desc()).limit(100))).scalars().all()
     plans=(await session.execute(select(ScheduleModel).where(ScheduleModel.telegram_review['connection_id'].astext==str(uid)).order_by(ScheduleModel.created_at.desc()).limit(100))).scalars().all()
     return JSONResponse({'publications':[{'id':str(p.id),'artifact_id':str(p.artifact_id) if p.artifact_id else None,'status':p.status,'published_at':p.published_at.isoformat() if p.published_at else None,'destination':p.destination} for p in pubs],'plans':[{'id':str(p.id),'name':p.name,'status':p.status}for p in plans]},headers=HEADERS)
 
@@ -117,3 +118,40 @@ async def meta_settings(payload:MetaSettings,request:Request,session:AsyncSessio
     row.ciphertext=crypt.encrypt(json.dumps(values).encode()).decode()
     await session.execute(delete(InstagramOAuthFlowModel));await session.commit()
     return JSONResponse({'saved':True,'secret_saved':True,'external_app_created':False,'account_connected':False},headers=HEADERS)
+
+
+@router.post('/api/connections/telegram/import-legacy')
+async def import_legacy(request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    try:result=await service.import_legacy(session)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
+
+class TokenUpdate(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    token:SecretStr=Field(min_length=20,max_length=250)
+
+@router.post('/api/connections/telegram/{uid}/token')
+async def token_update(uid:UUID,payload:TokenUpdate,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    try:result=await service.rotate_token(session,uid,payload.token.get_secret_value())
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
+
+@router.post('/api/connections/telegram/{uid}/verify')
+async def verify(uid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    try:result=await service.verify_saved(session,uid)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
+
+class EnabledInput(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    enabled:bool
+
+@router.post('/api/connections/telegram/{uid}/state')
+async def state_update(uid:UUID,payload:EnabledInput,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    try:result=await service.set_enabled(session,uid,payload.enabled)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)

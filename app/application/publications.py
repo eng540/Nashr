@@ -63,6 +63,16 @@ class CreateTelegramDraft:
     async def execute_for_artifact(
         session: AsyncSession, artifact: Artifact, destination: str, content_override: str | None = None, connection_id: UUID | None = None
     ) -> Publication:
+        destinations={destination}
+        if connection_id is None:
+            from app.application.managed_connections import default_binding
+            default_destination,default_id=await default_binding(session)
+            if destination==default_destination:connection_id=default_id
+        if connection_id:
+            from app.application.managed_connections import selected,allowed_destinations
+            channel,_=await selected(session,connection_id)
+            destinations=allowed_destinations(channel)
+            if destination not in destinations:raise ValueError('الوجهة لا تطابق هوية الربط.')
         is_post = artifact.kind == ArtifactKind.POST
         reference_filter = PublicationModel.post_id == artifact.id if is_post else PublicationModel.artifact_id == artifact.id
         existing_result = await session.execute(
@@ -70,7 +80,7 @@ class CreateTelegramDraft:
             .where(
                 reference_filter,
                 PublicationModel.platform == "telegram",
-                PublicationModel.destination == destination,
+                PublicationModel.destination.in_(destinations),
             )
             .order_by(PublicationModel.created_at.asc(), PublicationModel.id.asc())
             .limit(1)
@@ -116,7 +126,7 @@ class CreateTelegramDraft:
 class ApproveAndPublish:
     """Approve a publication and publish it through a platform adapter."""
 
-    def __init__(self, publisher: IPublisher) -> None:
+    def __init__(self, publisher: IPublisher | None = None) -> None:
         """Initialize the publisher."""
         self.publisher = publisher
 
@@ -151,6 +161,9 @@ class ApproveAndPublish:
                 raise ValueError("Publication must reference a Post or generic Artifact.")
 
         bound_publication=await session.get(PublicationModel,publication_id)
+        if bound_publication and not bound_publication.connection_id:
+            from app.application.managed_connections import bind_legacy_publication
+            await bind_legacy_publication(session,bound_publication)
         if bound_publication and bound_publication.connection_id:
             from app.application.managed_connections import publication_publisher
             self.publisher=await publication_publisher(session,bound_publication)
@@ -323,6 +336,19 @@ class ApproveAndPublish:
             current_row.content = artifact.content
             await session.commit()
 
+        # Share the local lifecycle lock through the READY transition. A disable
+        # cannot pass the final check then race a newly starting provider call.
+        from sqlalchemy import text
+        await session.execute(text('SELECT pg_advisory_xact_lock(606025)'))
+        await session.refresh(bound_publication)
+        from app.application.managed_connections import bind_legacy_publication
+        if not bound_publication.connection_id:await bind_legacy_publication(session,bound_publication)
+        if bound_publication.connection_id:
+            from app.application.managed_connections import publication_publisher
+            self.publisher=await publication_publisher(session,bound_publication)
+        if self.publisher is None:
+            from app.adapters.publishing.telegram import TelegramPublisher
+            self.publisher=TelegramPublisher()
         claimed = await session.execute(
             update(PublicationModel)
             .where(PublicationModel.id == publication_id, PublicationModel.status == PublicationStatus.DRAFT.value)

@@ -217,6 +217,12 @@ async def create_schedule(
         )
         for position, (post_id, scheduled_at) in enumerate(normalized, start=1)
     ]
+    from app.application.managed_connections import default_binding
+    destination,connection_id=await default_binding(session)
+    if connection_id:
+        from app.application.managed_connections import selected
+        channel,_=await selected(session,connection_id)
+        schedule.telegram_review={'connection_id':str(connection_id),'destination':destination,'bot_id':channel.details['bot_id'],'channel_label':channel.label,'legacy_imported':True}
     session.add(schedule)
     await session.commit()
     await session.refresh(schedule)
@@ -604,6 +610,8 @@ async def recover_stale_schedule_items(now: datetime | None = None) -> list[UUID
 
 async def _claim_due_item(now: datetime) -> UUID | None:
     async with SessionFactory() as session:
+        from sqlalchemy import text
+        await session.execute(text('SELECT pg_advisory_xact_lock(606025)'))
         result = await session.execute(
             select(ScheduleItemModel)
             .join(ScheduleModel)
@@ -772,7 +780,6 @@ async def _execute_claimed_item(
             publication_id = draft.id
 
     # All DB work above is committed before the external Telegram call.
-    publisher = publisher or TelegramPublisher()
     async with SessionFactory() as session:
         try:
             publication = await ApproveAndPublish(publisher).execute(
