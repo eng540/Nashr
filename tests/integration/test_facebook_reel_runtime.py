@@ -120,3 +120,10 @@ async def test_private_delivery_keeps_exact_video_timing(monkeypatch):
     assert m['audio'][0]['sample_rate']==48000 and m['audio'][0]['channels']==2
     assert s.asset.recipe['version']==2 and fb.fields==ig.fields
     assert result['video_packets_identical'] and result['published'] is False
+
+@pytest.mark.asyncio
+async def test_provider_evidence_requires_owner(config):
+    from app.main import app
+    import httpx
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://test') as c:
+        assert (await c.get('/api/connections/facebook/reels/00000000-0000-0000-0000-000000000000/provider-status')).status_code==401

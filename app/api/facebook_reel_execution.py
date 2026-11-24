@@ -50,3 +50,18 @@ async def prepare_delivery(uid:UUID,request:Request,session:AsyncSession=Depends
     mutation_owner(request)
     try:return JSONResponse(await service.prepare_delivery(session,uid),headers=HEADERS)
     except ValueError as e:raise HTTPException(409,str(e)) from None
+
+@router.get('/{jid}/provider-status')
+async def provider_status(jid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
+    """Owner-only known-session status evidence, no uploads or finish calls."""
+    owner(request);j=await session.get(Job,jid)
+    if not j or not j.remote_session:raise HTTPException(404,'لا توجد جلسة Meta معروفة.')
+    import httpx
+    from app.adapters.publishing.facebook import FacebookProviderError
+    async with httpx.AsyncClient(timeout=30,follow_redirects=False) as client:
+        try:
+            provider=await service.provider(session,j,client)
+            result=await provider._request('GET',j.remote_session['video_id'],params={'fields':'status'})
+            return JSONResponse({'video_id':j.remote_session['video_id'],'status':result.get('status'),'read_only':True},headers=HEADERS)
+        except FacebookProviderError as e:
+            return JSONResponse({'video_id':j.remote_session['video_id'],'error_code':e.code,'read_only':True},headers=HEADERS,status_code=409)
