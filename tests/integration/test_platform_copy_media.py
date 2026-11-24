@@ -37,6 +37,9 @@ async def test_saved_jpeg_is_private_versioned_separate_and_selection_checked(mo
         assert (await c.post(base+'/media/jpeg',json=body)).status_code==409
         measured=await c.post(base+'/inspect-media?selected=true',json={});assert measured.status_code==200,measured.text
         assert measured.json()['measurements']['format']=='JPEG' and measured.json()['inspected_media_id']==asset
+        saved_bytes=objects[puts[0]];objects[puts[0]]=b'changed bytes'
+        assert (await c.post(base+'/inspect-media?selected=true',json={})).status_code==409
+        objects[puts[0]]=saved_bytes
         history=(await c.get(base+'/media')).json();assert len(history['items'])==1 and not history['items'][0]['source_stale']
         assert (await c.get(base+f'/media/{asset}/url')).json()['url']=='https://private.example/signed'
         selection={'source_fingerprint':fp,'copy_version':2,'media_id':None}
