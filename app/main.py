@@ -25,6 +25,7 @@ from app.api.library_import import router as library_import_router
 from app.api.connections import router as connections_router
 from app.api.instagram_connections import router as instagram_connections_router
 from app.api.instagram_page_connections import router as instagram_page_connections_router
+from app.api.instagram_direct_connections import router as instagram_direct_connections_router
 from app.api.youtube_reviews import router as youtube_reviews_router
 from app.api.facebook_reviews import router as facebook_reviews_router
 from app.api.publishing_queue import router as publishing_queue_router
@@ -198,6 +199,7 @@ def create_app() -> FastAPI:
     application.include_router(publishing_queue_router)
     application.include_router(instagram_connections_router)
     application.include_router(instagram_page_connections_router)
+    application.include_router(instagram_direct_connections_router)
     application.include_router(youtube_reviews_router)
     application.include_router(facebook_reviews_router)
     application.include_router(connections_router)
