@@ -135,7 +135,7 @@ async def process_one(s,j):
         if j.state=='PROCESSING':
             rs=ReelSession(**j.remote_session);status=await p.status(rs)
             if status['state']=='REMOTE_ERROR':await claim(s,j,'REMOTE_ERROR');return
-            if not status['upload_complete'] or not status['processing_complete']:return
+            if not status['upload_complete'] or not (status['processing_complete'] or (status.get('video_status')=='upload_complete' and status.get('processing_not_started') and status['received_bytes']==rs.size_bytes)):return
             if not status['publishing_not_started']:await claim(s,j,'OUTCOME_UNKNOWN');return
             await valid(s,j);await claim(s,j,'FINISHING')
             await p.finish(rs,description=j.snapshot['caption'],title='',**flags)
