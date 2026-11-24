@@ -69,10 +69,17 @@ export interface DistributionReadiness { artifact_id:string; source_fingerprint:
 
 export interface TelegramBatchPreview { destination:string|null;ready_count:number;blocked_count:number;caveat:string;items:Array<{artifact_id:string;title:string;kind:string;content:string;source_fingerprint:string;copy_version:number|null;ready:boolean;blockers:string[];publications:Array<{id:string;status:string;external_ids:string[]}>;schedules:Array<{name:string;schedule_status:string;item_status:string}>}>; }
 
-export interface CentralPlatformCopy {platform:string;label:string;fields:{title:string;description:string;tags:string[];alt_text:string};version:number;source_fingerprint:string;current_source_fingerprint:string;origin:string;source_stale:boolean;central_approval:string;field_status:string;blockers:string[];warnings:string[];media_checks_pending:string[];execution_blockers:string[];sources:string[];}
+export interface CopyMedia {id:string;platform:string;source_stale:boolean;mime_type:string;sha256:string;measurements:Record<string,unknown>;recipe:Record<string,unknown>;}
+export interface CopyMediaList {selected_media_id:string|null;copy_version:number;source_fingerprint:string;items:CopyMedia[];caveat:string;}
+export interface CentralPlatformCopy {selected_media_id?:string|null;platform:string;label:string;fields:{title:string;description:string;tags:string[];alt_text:string};version:number;source_fingerprint:string;current_source_fingerprint:string;origin:string;source_stale:boolean;central_approval:string;field_status:string;blockers:string[];warnings:string[];media_checks_pending:string[];execution_blockers:string[];sources:string[];}
 export interface PlatformMediaInspection {source_fingerprint:string;copy_version:number;status:string;measurements:Record<string,unknown>;blockers:string[];pending:string[];}
 export interface JpegPreview {data_url:string;source_fingerprint:string;copy_version:number;measurements:Record<string,unknown>;blockers:string[];pending:string[];sha256:string;}
 export const genericArtifactsApi = {
+  copyMedia(id:string,platform:string):Promise<CopyMediaList>{return get(`/api/artifacts/${id}/platform-copies/${platform}/media`);},
+  saveCopyJpeg(id:string,platform:string,input:{source_fingerprint:string;copy_version:number;background:string;expected_sha256:string}):Promise<{copy_version:number}>{return post(`/api/artifacts/${id}/platform-copies/${platform}/media/jpeg`,input);},
+  selectCopyMedia(id:string,platform:string,input:{source_fingerprint:string;copy_version:number;media_id:string|null}):Promise<{copy_version:number}>{return post(`/api/artifacts/${id}/platform-copies/${platform}/media/selection`,input);},
+  copyMediaUrl(id:string,platform:string,mediaId:string):Promise<{url:string;source_stale:boolean}>{return get(`/api/artifacts/${id}/platform-copies/${platform}/media/${mediaId}/url`);},
+  inspectSelectedMedia(id:string,platform:string):Promise<PlatformMediaInspection>{return post(`/api/artifacts/${id}/platform-copies/${platform}/inspect-media?selected=true`,{});},
   jpegPreview(id:string,platform:string,source_fingerprint:string,copy_version:number,background:string):Promise<JpegPreview>{return post(`/api/artifacts/${id}/platform-copies/${platform}/jpeg-preview`,{source_fingerprint,copy_version,background});},
   inspectMedia(id:string,platform:string):Promise<PlatformMediaInspection>{return post(`/api/artifacts/${id}/platform-copies/${platform}/inspect-media`,{});},
   prepareBatchCopies(ids:string[]):Promise<{prepared:number;items:Array<{artifact_id:string;items:CentralPlatformCopy[]}>}>{return post('/api/artifacts/platform-copies/prepare-batch',{artifact_ids:ids});},
