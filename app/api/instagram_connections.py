@@ -1,4 +1,5 @@
 """Connection lifecycle only, never publishing or personal sign-in."""
+import os
 from urllib.parse import urlsplit
 from fastapi import APIRouter,Depends,Request,HTTPException
 from fastapi.responses import JSONResponse,RedirectResponse,HTMLResponse
@@ -18,7 +19,13 @@ def owner(request):
 def mutation_owner(request):
     token=owner(request);origin=request.headers.get('origin','')
     expected=urlsplit(str(request.base_url));actual=urlsplit(origin)
-    if not origin or actual.scheme!=expected.scheme or actual.netloc!=expected.netloc or request.headers.get('sec-fetch-site')=='cross-site':raise HTTPException(403,'الطلب يجب أن يبدأ من Nashr نفسه.')
+    allowed={(expected.scheme,expected.netloc)}
+    # Railway terminates TLS before ASGI. Trust its configured public domain,
+    # never arbitrary forwarded headers or the caller's Origin as configuration.
+    domain=os.getenv('RAILWAY_PUBLIC_DOMAIN','').strip().lower()
+    if domain and '/' not in domain and ':' not in domain and expected.hostname==domain:
+        allowed.add(('https',domain))
+    if not origin or (actual.scheme,actual.netloc) not in allowed or actual.path or actual.query or actual.fragment or actual.username or request.headers.get('sec-fetch-site')=='cross-site':raise HTTPException(403,'الطلب يجب أن يبدأ من Nashr نفسه.')
     return token
 
 @router.get('')
