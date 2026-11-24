@@ -703,6 +703,9 @@ class InstagramConnectionModel(Base):
 
 class ManagedConnectionModel(Base):
     __tablename__='managed_connections'
+    enabled: Mapped[bool]=mapped_column(Boolean,nullable=False,default=True,server_default='true')
+    last_check_ok: Mapped[bool]=mapped_column(Boolean,nullable=False,default=True,server_default='true')
+    last_check_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
     id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
     platform: Mapped[str]=mapped_column(String(30),nullable=False)
     label: Mapped[str]=mapped_column(String(100),nullable=False)
@@ -715,3 +718,9 @@ class PlatformAppSettingsModel(Base):
     __tablename__='platform_app_settings'
     platform: Mapped[str]=mapped_column(String(30),primary_key=True)
     ciphertext: Mapped[str]=mapped_column(Text,nullable=False)
+
+class LegacyTelegramBindingModel(Base):
+    __tablename__='legacy_telegram_binding'
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    connection_id: Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('managed_connections.id'),nullable=False)
+    original_destination: Mapped[str]=mapped_column(String(500),nullable=False)
