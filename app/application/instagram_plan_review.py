@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, text
 from app.infrastructure.database.models import (ArtifactModel, PlatformCopyModel,
-    PlatformMediaInspectionModel, InstagramConnectionModel, InstagramPlanDraftModel, InstagramPageConnectionModel)
+    PlatformMediaInspectionModel, InstagramConnectionModel, InstagramPlanDraftModel, InstagramPageConnectionModel, InstagramDirectConnectionModel)
 from app.application.central_platform_copies import evaluate
 from app.application.distribution_readiness import source_fingerprint
 from app.application.media_inspection_history import describe
@@ -28,13 +28,18 @@ def timing_intent(planned_at=None, timezone_name=None):
         'scheduled':False,'approval_recorded':False}
 
 async def preview(session, uid, *, share_to_feed=None, planned_at=None, timezone_name=None, login_mode='UNIFIED'):
-    if login_mode not in {'UNIFIED','FACEBOOK_PAGE_LOGIN'}:raise ValueError('اختر مسار ربط معروفاً دون تبديل تلقائي.')
+    if login_mode not in {'UNIFIED','FACEBOOK_PAGE_LOGIN','INSTAGRAM_LOGIN'}:raise ValueError('اختر مسار ربط معروفاً دون تبديل تلقائي.')
     row=await session.get(ArtifactModel,uid,populate_existing=True)
     copy=await session.get(PlatformCopyModel,(uid,'instagram'),populate_existing=True)
     if row is None or copy is None or row.kind not in {'IMAGE','VIDEO'}:
         raise ValueError('اختر صورة أو فيديو أصلياً مع نسخة Instagram محفوظة.')
     fields=evaluate(row,copy)
-    if login_mode=='FACEBOOK_PAGE_LOGIN':
+    if login_mode=='INSTAGRAM_LOGIN':
+        from app.application import instagram_direct_oauth as direct_service
+        c=await direct_service.configuration(session)
+        connection=await session.get(InstagramDirectConnectionModel,1,populate_existing=True)
+        account=direct_service.payload(connection,c)
+    elif login_mode=='FACEBOOK_PAGE_LOGIN':
         from app.application import instagram_page_oauth as page_service
         c=await page_service.configuration(session)
         connection=await session.get(InstagramPageConnectionModel,1,populate_existing=True)
@@ -46,7 +51,7 @@ async def preview(session, uid, *, share_to_feed=None, planned_at=None, timezone
     # Only public identity/state facts enter private review snapshots.
     keys=['account_id','username','state','enabled','expires_at','last_check_at','last_check_ok']
     if login_mode=='FACEBOOK_PAGE_LOGIN':keys+=['page_id','page_name']
-    account={k:account[k] for k in keys} if account else None
+    account={k:account[k] for k in keys if k in account} if account else None
     blockers=list(fields['blockers'])
     if c['missing']:blockers.append('إعداد تطبيق Meta في Nashr غير مكتمل؛ لا يثبت ذلك عدم وجود تطبيق لديك.')
     if not account:blockers.append('لم يُربط حساب Instagram مختار بعد.')
@@ -83,7 +88,7 @@ async def preview(session, uid, *, share_to_feed=None, planned_at=None, timezone
         'remaining_steps':['موافقة نشر مستقلة على الحساب والنص والوسيط والوقت، لا من حفظ هذه المسودة.',
             'نسخة وسيط محددة ورابط محدود لـMeta مرتبطان بإذن النشر فقط، وليس بهذه المعاينة.',
             'استكمال فحوص الوسيط المعلقة وقبول Meta الفعلي.']}
-    if login_mode=='FACEBOOK_PAGE_LOGIN':payload['login_mode']=login_mode
+    if login_mode!='UNIFIED':payload['login_mode']=login_mode
     return {**payload,'preview_hash':fingerprint(payload),'can_save_draft':row.review_status=='APPROVED' and row.status=='AVAILABLE' and not fields['source_stale'],
         'caveat':'معاينة خاصة دون قراءة جديدة للملف أو اتصال بـMeta. حفظ المسودة لا ينشئ موعداً أو إذن نشر ولا يكشف الوسيط.'}
 
@@ -97,6 +102,9 @@ async def save_draft(session,uid,*,preview_hash,share_to_feed=None,planned_at=No
     if login_mode=='FACEBOOK_PAGE_LOGIN':
         await session.execute(text('SELECT pg_advisory_xact_lock(606025)'))
         await session.execute(select(InstagramPageConnectionModel).where(InstagramPageConnectionModel.id==1).with_for_update())
+    if login_mode=='INSTAGRAM_LOGIN':
+        await session.execute(text('SELECT pg_advisory_xact_lock(606026)'))
+        await session.execute(select(InstagramDirectConnectionModel).where(InstagramDirectConnectionModel.id==1).with_for_update())
     current=await preview(session,uid,share_to_feed=share_to_feed,planned_at=planned_at,timezone_name=timezone_name,login_mode=login_mode)
     if current['timing_intent'] and datetime.fromisoformat(current['timing_intent']['planned_at'])<=datetime.now(timezone.utc):raise ValueError('الموعد المقترح مضى؛ اختر موعداً مستقبلياً للمراجعة فقط.')
     if current['preview_hash']!=preview_hash:raise ValueError('تغيرت المعاينة أو الحساب أو الفحص؛ اعرضها مجدداً قبل الحفظ.')
