@@ -979,3 +979,20 @@ class FacebookPageOAuthFlowModel(Base):
     consumed:Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
     token_ciphertext:Mapped[str|None]=mapped_column(Text,nullable=True)
     accounts:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
+
+
+class FacebookReelJobModel(Base):
+    """Pinned exact Reel decision and write-ahead remote lifecycle, no implicit retry."""
+    __tablename__='facebook_reel_jobs'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id'),nullable=False)
+    snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    snapshot_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    state:Mapped[str]=mapped_column(String(40),nullable=False)
+    evidence_ref:Mapped[str|None]=mapped_column(Text,nullable=True)
+    approved_until:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    remote_session:Mapped[dict|None]=mapped_column(JSONB,nullable=True)
+    permalink:Mapped[str|None]=mapped_column(Text,nullable=True)
+    error_code:Mapped[str|None]=mapped_column(String(100),nullable=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
