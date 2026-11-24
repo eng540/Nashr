@@ -557,7 +557,8 @@ async def create_telegram_draft_for_artifact(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Create a durable Telegram publication draft for a human-approved generic QUIZ Artifact."""
-    destination = os.getenv("TELEGRAM_DESTINATION_ID", "").strip()
+    from app.application.managed_connections import default_binding
+    destination,_=await default_binding(session)
     if not destination:
         raise HTTPException(status_code=503, detail="TELEGRAM_DESTINATION_ID is required.")
     try:
@@ -600,7 +601,8 @@ async def create_telegram_media_draft_for_artifact(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Create a durable Telegram publication draft for an approved media bank Artifact."""
-    destination = os.getenv("TELEGRAM_DESTINATION_ID", "").strip()
+    from app.application.managed_connections import default_binding
+    destination,_=await default_binding(session)
     if not destination:
         raise HTTPException(status_code=503, detail="TELEGRAM_DESTINATION_ID is required.")
     try:
