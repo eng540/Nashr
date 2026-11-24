@@ -811,3 +811,14 @@ class YouTubeUploadModel(Base):
     error_code:Mapped[str|None]=mapped_column(String(100),nullable=True)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
     updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class YouTubeReviewDraftModel(Base):
+    """Private preparation, distinct from upload jobs and publishing consent."""
+    __tablename__='youtube_review_drafts'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id'),nullable=False,index=True)
+    snapshot_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    state:Mapped[str]=mapped_column(String(20),nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
