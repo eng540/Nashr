@@ -72,3 +72,40 @@ async def test_preserve_existing_on_failed_selection_and_expiry(config,monkeypat
             r=await s.get(Connection,1);r.token_expires_at=service.now()-timedelta(seconds=1);await s.commit()
         assert (await c.post(service.BASE+'/verify')).status_code==409
         assert (await c.get(service.BASE)).json()['connection']['state']=='RECONNECT_REQUIRED'
+
+
+@pytest.mark.asyncio
+async def test_background_cleanup_boundary_preserves_live_flow_and_connection(config, monkeypatch):
+    await clear(); mock(monkeypatch)
+    async with browser() as c:
+        state=await start(c)
+        await c.get(service.BASE+'/callback',params={'state':state,'code':'x'})
+        assert (await c.post(service.BASE+'/select',json={'open_id':'test-id'})).status_code==200
+        before=(await c.get(service.BASE)).json()['connection']
+        state=await start(c)
+        await c.get(service.BASE+'/callback',params={'state':state,'code':'x'})
+        fixed=service.now()
+        monkeypatch.setattr(service,'now',lambda:fixed)
+        async with SessionFactory() as session:
+            live=await session.get(Flow,service.digest(state))
+            live.expires_at=fixed+timedelta(seconds=1)
+            for index,offset in enumerate([-1,0]):
+                session.add(Flow(id='expired-'+str(index),session_hash='synthetic',browser_hash='synthetic',config_hash='synthetic',expires_at=fixed+timedelta(seconds=offset),consumed=True,accounts=[],token_ciphertext='encrypted-candidate'))
+            await session.commit()
+        assert await service.cleanup_expired_flows()==2
+        assert await service.cleanup_expired_flows()==0
+        assert (await c.get(service.BASE)).json()['pending'] is not None
+        assert (await c.get(service.BASE)).json()['connection']==before
+        monkeypatch.setattr(service,'now',lambda:fixed+timedelta(seconds=1))
+        assert await service.cleanup_expired_flows()==1
+        async with SessionFactory() as session:
+            assert await session.get(Flow,service.digest(state)) is None
+            assert await session.get(Connection,1) is not None
+
+
+@pytest.mark.asyncio
+async def test_cleanup_skips_busy_lifecycle_lock(config):
+    async with SessionFactory() as session:
+        await service.lock(session)
+        assert await service.cleanup_expired_flows()==0
+        await session.rollback()
