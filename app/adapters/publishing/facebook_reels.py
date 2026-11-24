@@ -43,7 +43,7 @@ def decode_status(body,*,size_bytes):
     failed=any(p.get('error') or p['status']=='error' for p in phases.values()) or s.get('video_status')=='error'
     complete=all(p['status']=='complete' for p in phases.values())
     return dict(state='REMOTE_ERROR' if failed else 'REMOTE_PHASES_COMPLETE_NOT_PUBLICATION_VERIFIED' if complete else 'REMOTE_PROCESSING',
-        video_status=s.get('video_status'),processing_not_started=phases['processing_phase']['status']=='not_started',received_bytes=offset,upload_complete=not failed and phases['uploading_phase']['status']=='complete',
+        publish_status=phases['publishing_phase'].get('publish_status'),video_status=s.get('video_status'),processing_not_started=phases['processing_phase']['status']=='not_started',received_bytes=offset,upload_complete=not failed and phases['uploading_phase']['status']=='complete',
         processing_complete=not failed and phases['processing_phase']['status']=='complete',
         publishing_complete=not failed and phases['publishing_phase']['status']=='complete',
         publishing_not_started=not failed and phases['publishing_phase']['status']=='not_started',
