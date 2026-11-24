@@ -70,3 +70,26 @@ async def validate_binding(session,job):
     if conn and (not conn.last_check_at or conn.last_check_ok is not True or conn.last_check_at<datetime.now(timezone.utc)-timedelta(minutes=5)):raise ValueError('يلزم تحقق حديث من الحساب.')
     if not account or account['state']!='CONNECTED_AT_LAST_CHECK' or binding['config_hash']!=c['fingerprint'] or job.account_id!=account['account_id'] or binding['username']!=account['username'] or binding.get('connected_at')!=conn.connected_at.isoformat():raise ValueError('Direct connection changed or disabled')
     return account
+
+async def verified_provider(session,job,client):
+    """Read-only future-worker factory. No caller route invokes this today.
+
+    Token never leaves this object. Callers still owe explicit source-grounded
+    publication/disclosure authority, gated media access and durable execution.
+    """
+    await validate_binding(session,job)
+    conn=await session.get(Connection,1,populate_existing=True)
+    from app.application.managed_connections import key
+    from app.adapters.publishing.instagram_direct import InstagramDirectPublisher
+    import json
+    from datetime import datetime
+    try:
+        entry=json.loads(key().decrypt(conn.token_ciphertext.encode()))
+        account=entry['account']
+        if account['account_id']!=job.account_id or account['username']!=job.connection_binding['username']:raise ValueError()
+        provider=InstagramDirectPublisher(client=client,token=entry['token'],account_id=job.account_id)
+        await provider.verify_account(expected_username=account['username'],app_scoped_id=account['app_scoped_id'],scopes=entry['scopes'],expires_at=datetime.fromisoformat(entry['expires_at']))
+    except Exception:raise ValueError('Direct account verification failed; no provider mutation') from None
+    # Recheck after the read. No stale configuration or local disable fallback.
+    await validate_binding(session,job)
+    return provider
