@@ -181,7 +181,7 @@ def get_create_telegram_draft() -> CreateTelegramDraft:
 
 
 def get_approve_and_publish() -> ApproveAndPublish:
-    return ApproveAndPublish(TelegramPublisher())
+    return ApproveAndPublish()
 
 
 def _job_payload(job: DiscoveryJobModel) -> dict[str, Any]:
@@ -1941,7 +1941,8 @@ async def create_telegram_draft(
     session: AsyncSession = Depends(get_session),
     use_case: CreateTelegramDraft = Depends(get_create_telegram_draft),
 ) -> dict[str, Any]:
-    destination = os.getenv("TELEGRAM_DESTINATION_ID", "")
+    from app.application.managed_connections import default_binding
+    destination,_=await default_binding(session)
     if not destination:
         raise HTTPException(status_code=500, detail="TELEGRAM_DESTINATION_ID is required.")
     try:
@@ -3364,7 +3365,8 @@ async def create_telegram_draft(
     session: AsyncSession = Depends(get_session),
     use_case: CreateTelegramDraft = Depends(get_create_telegram_draft),
 ) -> dict[str, Any]:
-    destination = os.getenv("TELEGRAM_DESTINATION_ID", "")
+    from app.application.managed_connections import default_binding
+    destination,_=await default_binding(session)
     if not destination:
         raise HTTPException(status_code=500, detail="TELEGRAM_DESTINATION_ID is required.")
     try:
