@@ -90,12 +90,15 @@ async def local_state(payload:LocalState,request:Request,session:AsyncSession=De
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse({'enabled':payload.enabled,'remote_changed':False,'sent_messages':0,'execution_authorized':False},headers=HEADERS)
 
+from datetime import datetime
 from uuid import UUID
 from pydantic import StrictBool
 
 class PlanReview(BaseModel):
     model_config=ConfigDict(extra='forbid')
     share_to_feed:StrictBool|None=None
+    planned_at:datetime|None=None
+    timezone_name:str|None=Field(default=None,max_length=100)
 
 class SavePlanReview(PlanReview):
     preview_hash:str=Field(pattern=r'^[a-f0-9]{64}$')
@@ -104,7 +107,7 @@ class SavePlanReview(PlanReview):
 async def plan_preview(uid:UUID,payload:PlanReview,request:Request,session:AsyncSession=Depends(get_session)):
     mutation_owner(request)
     from app.application.instagram_plan_review import preview
-    try:result=await preview(session,uid,share_to_feed=payload.share_to_feed)
+    try:result=await preview(session,uid,share_to_feed=payload.share_to_feed,planned_at=payload.planned_at,timezone_name=payload.timezone_name)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse(result,headers=HEADERS)
 
@@ -112,7 +115,7 @@ async def plan_preview(uid:UUID,payload:PlanReview,request:Request,session:Async
 async def save_plan_review(uid:UUID,payload:SavePlanReview,request:Request,session:AsyncSession=Depends(get_session)):
     mutation_owner(request)
     from app.application.instagram_plan_review import save_draft
-    try:result=await save_draft(session,uid,preview_hash=payload.preview_hash,share_to_feed=payload.share_to_feed)
+    try:result=await save_draft(session,uid,preview_hash=payload.preview_hash,share_to_feed=payload.share_to_feed,planned_at=payload.planned_at,timezone_name=payload.timezone_name)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse(result,headers=HEADERS)
 
@@ -121,5 +124,14 @@ async def plan_review_history(uid:UUID,request:Request,session:AsyncSession=Depe
     owner(request)
     from app.application.instagram_plan_review import list_drafts
     try:result=await list_drafts(session,uid)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    return JSONResponse(result,headers=HEADERS)
+
+
+@router.post('/materials/{uid}/drafts/{draft_id}/cancel')
+async def cancel_plan_review(uid:UUID,draft_id:UUID,request:Request,session:AsyncSession=Depends(get_session)):
+    mutation_owner(request)
+    from app.application.instagram_plan_review import cancel_review_draft
+    try:result=await cancel_review_draft(session,uid,draft_id)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse(result,headers=HEADERS)
