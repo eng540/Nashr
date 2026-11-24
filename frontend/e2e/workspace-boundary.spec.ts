@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test("Post Bank hands selection to Publishing through URL state only", async ({ page }) => {
   await page.goto("/posts/workspace?status=APPROVED&library_view=expanded");
-  const checkbox = page.getByRole("checkbox").first();
+  const checkbox = page.getByRole("region", {name:"نتائج بنك المنشورات", exact:true}).getByRole("checkbox").first();
   await expect(checkbox).toBeVisible();
   await checkbox.check();
 
