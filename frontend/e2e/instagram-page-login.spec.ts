@@ -5,6 +5,8 @@ test('Page linked login is explicit independent and never publishes',async({page
  await page.route('**/api/connections**',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
  if(p==='/api/connections')return route.fulfill({json:{telegram:{source:'DATABASE',legacy_imported:false,legacy_connection_id:null,legacy_configured:false,credential_storage_ready:true,items:[]},platforms:[]}});
  if(p==='/api/connections/instagram')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
+ if(p==='/api/connections/tiktok')return route.fulfill({json:{configured:false,connection:null,pending:null}});
+ if(p==='/api/connections/tiktok/requirements')return route.fulfill({json:{reviewed_on:'2026-11-24',modes:[],media_requirements:[],sources:[]}});
  if(p==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
  if(p==='/api/connections/instagram-direct')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,source:'https://developers.facebook.com'}});
  if(p==='/api/connections/instagram-page')return route.fulfill({json:{configured,missing_configuration:[],connection:selected&&!removed?{...account,state:enabled?'CONNECTED_AT_LAST_CHECK':'DISABLED',enabled,expires_at:null,last_check_at:null,caveat:'لا نشر أو إذن تنفيذ من الربط.'}:null,pending:configured&&!selected?{accounts:[account]}:null,requirements:['حساب احترافي مرتبط بصفحة، دون رسائل أو إعلانات تلقائياً.'],source:'https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/get-started'}});
