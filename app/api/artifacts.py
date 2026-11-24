@@ -355,6 +355,33 @@ async def inspect_platform_copy_media(artifact_id: UUID, platform: str, selected
         raise _handle_error(exc) from exc
 
 
+class SavedInspectionRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    source_fingerprint: str=Field(pattern=r"^[0-9a-f]{64}$")
+    copy_version: int=Field(ge=1)
+    selected: bool=True
+
+
+@router.get("/{artifact_id}/platform-copies/{platform}/media-inspections")
+async def saved_media_inspections(artifact_id: UUID,platform: str,session: AsyncSession=Depends(get_session)):
+    from app.application.media_inspection_history import list_inspections
+    from fastapi.responses import JSONResponse
+    try:return JSONResponse(await list_inspections(session,artifact_id,platform),headers={"Cache-Control":"no-store"})
+    except ValueError as exc:raise _handle_error(exc) from exc
+
+
+@router.post("/{artifact_id}/platform-copies/{platform}/media-inspections")
+async def save_media_inspection(artifact_id: UUID,platform: str,payload: SavedInspectionRequest,session: AsyncSession=Depends(get_session)):
+    from app.application.media_inspection_history import record_inspection
+    from fastapi.responses import JSONResponse
+    try:return JSONResponse(await record_inspection(session,artifact_id,platform,fingerprint=payload.source_fingerprint,version=payload.copy_version,selected=payload.selected),headers={"Cache-Control":"no-store"})
+    except ArtifactStorageConfigurationError as exc:raise HTTPException(503,str(exc)) from exc
+    except ArtifactStorageError as exc:raise HTTPException(502,str(exc)) from exc
+    except ValueError as exc:
+        await session.rollback()
+        raise _handle_error(exc) from exc
+
+
 @router.post("/ingest-media", status_code=201)
 async def ingest_ready_media(
     file: UploadFile = File(...),
