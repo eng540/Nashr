@@ -98,7 +98,7 @@ from typing import Literal
 
 class PlanReview(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    login_mode:Literal['UNIFIED','FACEBOOK_PAGE_LOGIN']='UNIFIED'
+    login_mode:Literal['UNIFIED','FACEBOOK_PAGE_LOGIN','INSTAGRAM_LOGIN']='UNIFIED'
     share_to_feed:StrictBool|None=None
     planned_at:datetime|None=None
     timezone_name:str|None=Field(default=None,max_length=100)
