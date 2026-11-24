@@ -33,3 +33,34 @@ async def test_private_probe_is_bounded_read_only_and_rejects_stale_original(mon
             assert not (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.artifact_id==row.id))).scalars().all()
             row.artifact_metadata={'caption':'تغير الأصل'};await session.commit()
         assert (await client.post(f'/api/artifacts/{uid}/platform-copies/instagram/inspect-media',json={})).status_code==409
+
+
+@pytest.mark.asyncio
+async def test_jpeg_preview_is_ephemeral_version_checked_and_read_only(monkeypatch):
+    from app.infrastructure.artifact_storage import S3ArtifactStorage
+    from app.application.distribution_readiness import source_fingerprint
+    from app.infrastructure.database.models import PlatformCopyModel
+    uid=str(await _media_artifact(review_status='APPROVED',caption='نص لا يستبدل'))
+    stream=io.BytesIO();Image.new('RGBA',(640,800),(255,0,0,0)).save(stream,format='PNG');data=stream.getvalue()
+    class Storage:
+        async def get_bytes(self,uri,*,max_bytes):return data
+        async def put(self,**kw):raise AssertionError('No storage write for ephemeral preview')
+    monkeypatch.setattr(S3ArtifactStorage,'from_environment',lambda:Storage())
+    async with SessionFactory() as session:
+        row=await session.get(ArtifactModel,UUID(uid));fingerprint=source_fingerprint(row)
+        session.add(PlatformCopyModel(artifact_id=row.id,platform='instagram',fields={'title':'','description':'نص نسخة معدل','tags':[],'alt_text':''},version=3,origin='USER_EDITED',source_fingerprint=fingerprint))
+        await session.commit();original=row.storage_uri
+    payload={'source_fingerprint':fingerprint,'copy_version':3,'background':'#000000'}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        response=await client.post(f'/api/artifacts/{uid}/platform-copies/instagram/jpeg-preview',json=payload)
+        assert response.status_code==200,response.text
+        result=response.json();assert response.headers['cache-control']=='no-store'
+        assert result['data_url'].startswith('data:image/jpeg;base64,') and not result['persisted'] and not result['execution_authorized'] and not result['original_changed']
+        assert result['measurements']['background']=='#000000' and not result['blockers']
+        assert (await client.post(f'/api/artifacts/{uid}/platform-copies/instagram/jpeg-preview',json={**payload,'copy_version':2})).status_code==409
+        assert (await client.post(f'/api/artifacts/{uid}/platform-copies/youtube/jpeg-preview',json=payload)).status_code==409
+    async with SessionFactory() as session:
+        row=await session.get(ArtifactModel,UUID(uid));copy=await session.get(PlatformCopyModel,(row.id,'instagram'))
+        assert row.storage_uri==original and copy.version==3 and copy.fields['description']=='نص نسخة معدل'
+        assert not (await session.execute(select(PublicationModel).where(PublicationModel.artifact_id==row.id))).scalars().all()
+        assert not (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.artifact_id==row.id))).scalars().all()

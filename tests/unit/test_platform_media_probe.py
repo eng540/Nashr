@@ -16,7 +16,7 @@ def test_real_image_probe_does_not_convert_or_overstate_eligibility():
 
 
 def test_video_rules_remain_partial_even_when_measured_fields_pass():
-    info={'width':1080,'height':1920,'size_bytes':100,'video_codec':'h264','pixel_format':'yuv420p','field_order':'progressive','duration_seconds':30,'fps':30,'video_bitrate':2_000_000,'audio':[]}
+    info={'width':1080,'height':1920,'size_bytes':100,'video_codec':'h264','pixel_format':'yuv420p','field_order':'progressive','duration_seconds':30,'fps':30,'video_bitrate':2_000_000,'audio':[],'moov_before_media':True,'has_edit_lists':False}
     blockers,pending=media_findings('instagram','VIDEO',info)
     assert not blockers and len(pending)>=3
     bad={**info,'video_codec':'vp9','fps':120,'duration_seconds':1,'video_bitrate':26_000_000}
@@ -31,7 +31,7 @@ def test_real_mp4_probe_extracts_streams_and_missing_binary_is_not_pass(tmp_path
     import shutil,subprocess
     if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):pytest.skip('local media binaries unavailable')
     file=tmp_path/'synthetic.mp4'
-    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=320x400:r=30','-t','3','-an','-c:v','libx264','-pix_fmt','yuv420p','-y',str(file)],check=True,timeout=15)
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=320x400:r=30','-t','3','-an','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart','-use_editlist','0','-y',str(file)],check=True,timeout=15)
     data=file.read_bytes();info=inspect_media(data,'VIDEO','video/mp4')
     assert info['width']==320 and info['height']==400 and info['video_codec']=='h264' and info['fps']==30 and info['duration_seconds']==3
     assert not media_findings('instagram','VIDEO',info)[0]
