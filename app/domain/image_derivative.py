@@ -2,9 +2,11 @@
 import io
 import re
 import warnings
-from PIL import Image, ImageCms, ImageOps
+from PIL import Image, ImageCms, ImageOps, features
 
 def jpeg_preview(data,background):
+    if not features.check('littlecms2'):
+        raise ValueError('تحويل JPEG غير متاح مؤقتاً: دعم إدارة الألوان غير مثبت. بقية الموقع والجدولة لا تتأثر.')
     if not isinstance(background,str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',background):
         raise ValueError('اختر لون خلفية بصيغة #RRGGBB للشفافية المحتملة.')
     if len(data)>50*1024*1024:raise ValueError('الصورة تتجاوز حد القراءة الآمن.')
