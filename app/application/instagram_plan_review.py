@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, text
 from app.infrastructure.database.models import (ArtifactModel, PlatformCopyModel,
-    PlatformMediaInspectionModel, InstagramConnectionModel, InstagramPlanDraftModel)
+    PlatformMediaInspectionModel, InstagramConnectionModel, InstagramPlanDraftModel, InstagramPageConnectionModel)
 from app.application.central_platform_copies import evaluate
 from app.application.distribution_readiness import source_fingerprint
 from app.application.media_inspection_history import describe
@@ -27,17 +27,26 @@ def timing_intent(planned_at=None, timezone_name=None):
     return {'planned_at':utc.isoformat(),'timezone':timezone_name,'local_time':utc.astimezone(zone).isoformat(),
         'scheduled':False,'approval_recorded':False}
 
-async def preview(session, uid, *, share_to_feed=None, planned_at=None, timezone_name=None):
+async def preview(session, uid, *, share_to_feed=None, planned_at=None, timezone_name=None, login_mode='UNIFIED'):
+    if login_mode not in {'UNIFIED','FACEBOOK_PAGE_LOGIN'}:raise ValueError('اختر مسار ربط معروفاً دون تبديل تلقائي.')
     row=await session.get(ArtifactModel,uid,populate_existing=True)
     copy=await session.get(PlatformCopyModel,(uid,'instagram'),populate_existing=True)
     if row is None or copy is None or row.kind not in {'IMAGE','VIDEO'}:
         raise ValueError('اختر صورة أو فيديو أصلياً مع نسخة Instagram محفوظة.')
     fields=evaluate(row,copy)
-    c=await configuration_for(session)
-    connection=await session.get(InstagramConnectionModel,1,populate_existing=True)
-    account=connection_payload(connection,c)
-    # Never copy scopes, business identity, encrypted settings or token into a draft.
-    account={k:account[k] for k in ['account_id','username','state','enabled','expires_at','last_check_at','last_check_ok']} if account else None
+    if login_mode=='FACEBOOK_PAGE_LOGIN':
+        from app.application import instagram_page_oauth as page_service
+        c=await page_service.configuration(session)
+        connection=await session.get(InstagramPageConnectionModel,1,populate_existing=True)
+        account=page_service.payload(connection,c)
+    else:
+        c=await configuration_for(session)
+        connection=await session.get(InstagramConnectionModel,1,populate_existing=True)
+        account=connection_payload(connection,c)
+    # Only public identity/state facts enter private review snapshots.
+    keys=['account_id','username','state','enabled','expires_at','last_check_at','last_check_ok']
+    if login_mode=='FACEBOOK_PAGE_LOGIN':keys+=['page_id','page_name']
+    account={k:account[k] for k in keys} if account else None
     blockers=list(fields['blockers'])
     if c['missing']:blockers.append('إعداد تطبيق Meta في Nashr غير مكتمل؛ لا يثبت ذلك عدم وجود تطبيق لديك.')
     if not account:blockers.append('لم يُربط حساب Instagram مختار بعد.')
@@ -74,17 +83,21 @@ async def preview(session, uid, *, share_to_feed=None, planned_at=None, timezone
         'remaining_steps':['موافقة نشر مستقلة على الحساب والنص والوسيط والوقت، لا من حفظ هذه المسودة.',
             'نسخة وسيط محددة ورابط محدود لـMeta مرتبطان بإذن النشر فقط، وليس بهذه المعاينة.',
             'استكمال فحوص الوسيط المعلقة وقبول Meta الفعلي.']}
+    if login_mode=='FACEBOOK_PAGE_LOGIN':payload['login_mode']=login_mode
     return {**payload,'preview_hash':fingerprint(payload),'can_save_draft':row.review_status=='APPROVED' and row.status=='AVAILABLE' and not fields['source_stale'],
         'caveat':'معاينة خاصة دون قراءة جديدة للملف أو اتصال بـMeta. حفظ المسودة لا ينشئ موعداً أو إذن نشر ولا يكشف الوسيط.'}
 
 
-async def save_draft(session,uid,*,preview_hash,share_to_feed=None,planned_at=None,timezone_name=None):
+async def save_draft(session,uid,*,preview_hash,share_to_feed=None,planned_at=None,timezone_name=None,login_mode='UNIFIED'):
     # Match lock order used by source/copy edits. No network or media reads here.
     await session.execute(select(ArtifactModel).where(ArtifactModel.id==uid).with_for_update())
     await session.execute(select(PlatformCopyModel).where(PlatformCopyModel.artifact_id==uid,PlatformCopyModel.platform=='instagram').with_for_update())
     await session.execute(text('SELECT pg_advisory_xact_lock(606024)'))
     await session.execute(select(InstagramConnectionModel).where(InstagramConnectionModel.id==1).with_for_update())
-    current=await preview(session,uid,share_to_feed=share_to_feed,planned_at=planned_at,timezone_name=timezone_name)
+    if login_mode=='FACEBOOK_PAGE_LOGIN':
+        await session.execute(text('SELECT pg_advisory_xact_lock(606025)'))
+        await session.execute(select(InstagramPageConnectionModel).where(InstagramPageConnectionModel.id==1).with_for_update())
+    current=await preview(session,uid,share_to_feed=share_to_feed,planned_at=planned_at,timezone_name=timezone_name,login_mode=login_mode)
     if current['timing_intent'] and datetime.fromisoformat(current['timing_intent']['planned_at'])<=datetime.now(timezone.utc):raise ValueError('الموعد المقترح مضى؛ اختر موعداً مستقبلياً للمراجعة فقط.')
     if current['preview_hash']!=preview_hash:raise ValueError('تغيرت المعاينة أو الحساب أو الفحص؛ اعرضها مجدداً قبل الحفظ.')
     if not current['can_save_draft']:raise ValueError('الأصل أو النسخة لم يعد صالحاً لحفظ مسودة مراجعة.')
@@ -99,7 +112,7 @@ async def save_draft(session,uid,*,preview_hash,share_to_feed=None,planned_at=No
 async def describe_draft(session,record):
     timing=record.snapshot.get('timing_intent')
     current=await preview(session,record.artifact_id,share_to_feed=record.snapshot.get('share_to_feed'),
-        planned_at=datetime.fromisoformat(timing['local_time']) if timing else None,timezone_name=timing['timezone'] if timing else None)
+        planned_at=datetime.fromisoformat(timing['local_time']) if timing else None,timezone_name=timing['timezone'] if timing else None,login_mode=record.snapshot.get('login_mode','UNIFIED'))
     # Existing pre-timing drafts retain their original snapshot digest.
     if 'timing_intent' not in record.snapshot:
         current.pop('timing_intent',None);current['preview_hash']=fingerprint({k:v for k,v in current.items() if k not in {'preview_hash','can_save_draft','caveat'}})
