@@ -1,0 +1,17 @@
+import {test,expect} from '@playwright/test';
+test('accounts dashboard protects secrets and preserves multi channel intent',async({page},info)=>{
+ const writes:string[]=[];let saved=false;
+ const channel=(id:string,label:string,destination:string)=>({id,label,details:{destination,channel_title:label,bot_username:'synthetic_bot'},verified_at:'2026-11-24T04:00:00Z'});
+ await page.route('**/api/connections**',async route=>{
+ const p=new URL(route.request().url()).pathname;
+ if(p==='/api/connections/instagram')return route.fulfill({json:{configured:false,missing_configuration:['META_APP_ID'],connection:null,pending:null,requirements:['إعداد تطبيق موجود وحساب احترافي مطلوبان.'],source:'https://developers.facebook.com/documentation/instagram-platform/overview/'}});
+ if(p==='/api/connections'&&route.request().method()==='GET')return route.fulfill({json:{telegram:{source:'ENVIRONMENT',legacy_configured:true,credential_storage_ready:true,items:[channel('1','قناة التعليم','-100111'),channel('2','قناة الأخبار','-100222'),...(saved?[channel('3','قناة جديدة','-100333')]:[])]},platforms:[{key:'youtube',label:'YouTube',state:'NOT_IMPLEMENTED',requirements:'تطبيق Google وصلاحيات القناة، الموصل غير منفذ.'},{key:'tiktok',label:'TikTok',state:'PAUSED',requirements:'متوقف بطلب المستخدم.'}]}});
+ if(p==='/api/connections/telegram'&&route.request().method()==='POST'){writes.push(p);expect(route.request().postDataJSON().destination).toBe('-100333');saved=true;return route.fulfill({json:{id:'3',active:false,sent_messages:0}});}
+ if(p.endsWith('/history'))return route.fulfill({json:{plans:[{id:'synthetic','name':'خطة القناة المختارة','status':'DRAFT'}],publications:[]}});
+ throw Error('unexpected request '+p);
+ });
+ await page.goto('/connections');await expect(page.getByRole('heading',{name:'الحسابات والاتصالات',exact:true})).toBeVisible();await expect(page.getByText('الربط السابق من إعداد الخادم محفوظ دون تغيير.',{exact:false})).toBeVisible();expect(writes).toEqual([]);
+ await page.getByLabel('اسم القناة في Nashr').fill('قناة جديدة');await page.getByLabel('معرف قناة Telegram').fill('-100333');await page.getByLabel('رمز بوت Telegram').fill('123456:synthetic-not-real-token');await page.getByRole('button',{name:'تحقق واحفظ القناة دون نشر'}).click();await expect(page.getByLabel('رمز بوت Telegram')).toHaveValue('');await expect(page.getByRole('heading',{name:'قناة جديدة',exact:true})).toBeVisible();expect(writes).toEqual(['/api/connections/telegram']);
+ await page.getByRole('button',{name:'سجل قناة التعليم',exact:true}).click();await expect(page.getByText('خطة القناة المختارة')).toBeVisible();await expect(page.getByRole('button',{name:'المتابعة إلى Meta لربط حساب'})).toBeDisabled();
+ await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:info.outputPath('connections-desktop.png'),fullPage:true});await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.evaluate(()=>window.scrollTo(0,0));const heading=await page.getByRole('heading',{name:'الحسابات والاتصالات',exact:true}).boundingBox();const header=await page.locator('header').boundingBox();expect(heading!.y).toBeGreaterThanOrEqual(header!.y+header!.height);await page.screenshot({path:info.outputPath('connections-mobile.png'),fullPage:true});await page.screenshot({path:info.outputPath('connections-mobile-top.png')});
+});
