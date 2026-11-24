@@ -117,3 +117,14 @@ async def test_missing_offset_only_allowed_for_never_transferred_initial_session
 
 def test_documented_completed_spelling_supported():
  assert decode_status(state(len(DATA),'completed','completed','completed'),size_bytes=len(DATA))['publishing_complete']
+
+@pytest.mark.asyncio
+async def test_finish_accepts_exact_upload_complete_before_processing_starts():
+ calls=[]
+ def handler(req):
+  if req.method=='POST':calls.append('finish');return httpx.Response(200,json={'success':True})
+  if req.url.path.endswith('/me'):return httpx.Response(200,json={'id':'123','name':'Page'})
+  return httpx.Response(200,json={'status':{'video_status':'upload_complete','uploading_phase':{'status':'complete','bytes_transferred':len(DATA)},'processing_phase':{'status':'not_started'},'publishing_phase':{'status':'not_started'}}})
+ async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+  await edge(c).finish(SESSION,description='exact',**YES)
+ assert calls==['finish']
