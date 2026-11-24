@@ -251,7 +251,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     mutationFn: (id: string) => {
       const artifact = (artifacts.data?.items ?? []).find((item) => item.id === id);
       const content = drafts[id]?.content;
-      if (artifact?.metadata.source_type === "PLATFORM_VARIANT" && artifact.content === null && content !== undefined) {
+      if (artifact && artifact.content === null && content !== undefined) {
         return genericArtifactsApi.update(id, { metadata: { ...artifact.metadata, caption: content } });
       }
       if (artifact?.kind === "QUIZ" && content !== undefined) {
@@ -671,7 +671,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         <ArtifactPublicationLedger id={artifact.id} />
 
         <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
-        {typeof artifact.metadata.caption === "string" && artifact.metadata.caption ? <p dir="auto" className="rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p> : null}
+        {typeof artifact.metadata.caption === "string" ? <><p dir="auto" className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p>{status === "DRAFT" && artifact.content === null && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <label className="block text-sm">تعديل تعليق الوسيط<textarea rows={7} aria-label={`تعليق الوسيط ${artifact.id}`} value={drafts[artifact.id]?.content ?? artifact.metadata.caption} onChange={e=>setDrafts(current=>({...current,[artifact.id]:{...current[artifact.id],content:e.target.value}}))} className="block w-full rounded border p-3" dir="auto"/></label> : null}</> : null}
         {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
           <summary className="cursor-pointer text-sm font-bold text-indigo-900">النص الأصلي ونسخ المنصات</summary>
           {([
@@ -687,7 +687,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         {Object.keys(artifact.metadata).length > 0 ? <details className="rounded-lg bg-slate-50 p-3 text-xs"><summary className="cursor-pointer font-semibold text-slate-600">تفاصيل تقنية</summary><pre dir="ltr" className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-left">{JSON.stringify(artifact.metadata, null, 2)}</pre></details> : null}
         {status==='DRAFT'?<input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>:null}
         {status === "DRAFT" ? <div className="flex flex-wrap gap-2">
-          {artifact.content !== null ? <button type="button" onClick={() => save.mutate(artifact.id)} disabled={save.isPending} className="rounded-lg border px-3 py-2 text-sm font-semibold">حفظ التعديل</button> : null}
+          {(artifact.content !== null || typeof artifact.metadata.caption === "string") ? <button type="button" onClick={() => save.mutate(artifact.id)} disabled={save.isPending} className="rounded-lg border px-3 py-2 text-sm font-semibold">حفظ التعديل</button> : null}
           <button type="button" onClick={() => approve.mutate(artifact.id)} disabled={approve.isPending || drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? ""))} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">اعتماد المخرج</button>
           <button type="button" onClick={() => reject.mutate(artifact.id)} disabled={reject.isPending || !(drafts[artifact.id]?.review_note ?? "").trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white">رفض المخرج</button>
         </div> : null}
@@ -725,7 +725,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           <input aria-label="ملف الوسيط الجاهز" type="file" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal" />
         </label>
         <label className="text-sm font-semibold">التعليق (يظهر نصًا مع الوسيط عند النشر)
-          <input aria-label="تعليق الوسيط الجاهز" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" placeholder="نص يرافق الوسيط عند النشر" />
+          <textarea rows={5} aria-label="تعليق الوسيط الجاهز" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" placeholder="نص يرافق الوسيط عند النشر" />
         </label>
       </div>
       <button type="button" onClick={() => ingestMedia.mutate()} disabled={!uploadFile || ingestMedia.isPending} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">{ingestMedia.isPending ? "جارٍ الرفع..." : "رفع إلى بنك الوسائط"}</button>
@@ -762,4 +762,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-  }
+}
