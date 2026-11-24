@@ -153,9 +153,9 @@ async def process_approved():
             rows=(await s.execute(select(Job).where(Job.state.in_(['APPROVED','SESSION_CREATED','PROCESSING','FINISH_ACCEPTED','OUTCOME_UNKNOWN'])).order_by(Job.created_at).limit(3))).scalars().all()
             for j in rows:
                 try:await process_one(s,j)
-                except Exception:
+                except Exception as error:
                     await s.rollback();j=await s.get(Job,j.id,populate_existing=True)
-                    j.error_code='FACEBOOK_REEL_CHECK_OR_ACTION_FAILED'
+                    j.error_code=getattr(error,'code','FACEBOOK_REEL_CHECK_OR_ACTION_FAILED')
                     j.state='OUTCOME_UNKNOWN' if j.state in {'INITIALIZING','UPLOADING','FINISHING'} else j.state if j.state in {'FINISH_ACCEPTED','OUTCOME_UNKNOWN'} else 'BLOCKED'
                     j.updated_at=now();await s.commit()
         finally:await lock_connection.execute(text('SELECT pg_advisory_unlock(606029)'));await lock_connection.commit()
