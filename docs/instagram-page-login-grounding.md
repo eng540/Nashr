@@ -19,3 +19,7 @@ Implemented explicit encrypted `instagram_page` app settings, separate flow/conn
 Existing Unified tables, token records and configuration fingerprints are unchanged. Both journeys remain visible and separately named. No fallback from missing Page configuration to environment/Unified configuration.
 
 Validation: 831 backend tests passed, one skipped; seven frontend unit tests; frontend production build; 62 browser tests across four shards. Initial repeated shard used stale fixed-name Control Plane fixtures, then passed on a newly migrated empty database. Migration 72 downgrade/upgrade checked. Desktop and 390px mobile rendered panels visually inspected with synthetic identities only. No live Meta OAuth/permission call or social post executed. Real Meta app permission availability and token-type acceptance are still unverified. Owner-side Instagram/Page linking is a prerequisite, not consent for Nashr OAuth or publishing.
+
+## Private material review follows explicit login mode
+
+The private Instagram material preview now offers an explicit connection-mode choice. Existing callers and stored drafts remain Unified by default and retain their previous snapshot schema/hash. Page-linked drafts pin the mode and public paired Page/account identity. Missing Page connection never falls back to Unified. Saving rechecks the selected mode under the connection lifecycle lock; configuration/identity/verification changes mark its draft stale. No media read, external URL exposure, OAuth, execution grant or provider request is introduced by this preview choice.

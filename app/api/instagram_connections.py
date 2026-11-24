@@ -94,8 +94,11 @@ from datetime import datetime
 from uuid import UUID
 from pydantic import StrictBool
 
+from typing import Literal
+
 class PlanReview(BaseModel):
     model_config=ConfigDict(extra='forbid')
+    login_mode:Literal['UNIFIED','FACEBOOK_PAGE_LOGIN']='UNIFIED'
     share_to_feed:StrictBool|None=None
     planned_at:datetime|None=None
     timezone_name:str|None=Field(default=None,max_length=100)
@@ -107,7 +110,7 @@ class SavePlanReview(PlanReview):
 async def plan_preview(uid:UUID,payload:PlanReview,request:Request,session:AsyncSession=Depends(get_session)):
     mutation_owner(request)
     from app.application.instagram_plan_review import preview
-    try:result=await preview(session,uid,share_to_feed=payload.share_to_feed,planned_at=payload.planned_at,timezone_name=payload.timezone_name)
+    try:result=await preview(session,uid,share_to_feed=payload.share_to_feed,planned_at=payload.planned_at,timezone_name=payload.timezone_name,login_mode=payload.login_mode)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse(result,headers=HEADERS)
 
@@ -115,7 +118,7 @@ async def plan_preview(uid:UUID,payload:PlanReview,request:Request,session:Async
 async def save_plan_review(uid:UUID,payload:SavePlanReview,request:Request,session:AsyncSession=Depends(get_session)):
     mutation_owner(request)
     from app.application.instagram_plan_review import save_draft
-    try:result=await save_draft(session,uid,preview_hash=payload.preview_hash,share_to_feed=payload.share_to_feed,planned_at=payload.planned_at,timezone_name=payload.timezone_name)
+    try:result=await save_draft(session,uid,preview_hash=payload.preview_hash,share_to_feed=payload.share_to_feed,planned_at=payload.planned_at,timezone_name=payload.timezone_name,login_mode=payload.login_mode)
     except ValueError as exc:raise HTTPException(409,str(exc)) from None
     return JSONResponse(result,headers=HEADERS)
 
