@@ -3,6 +3,7 @@ import { get, patch, post, postForm } from "./client";
 export type GenericArtifactReviewStatus = "DRAFT" | "APPROVED" | "REJECTED";
 
 export interface GenericReviewableArtifact {
+  organization?:{title:string;series:string;category:string;version:number;updated_at:string}|null;
   id: string;
   source_knowledge_unit_id: string;
   kind: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "QUIZ" | "DOCUMENT" | "ANIMATION" | "VOICE" | "VIDEO_NOTE" | "STICKER";
