@@ -7,6 +7,7 @@ import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime } from "../../shared/utils/timezone";
 import { TelegramPreview } from "../post-bank/PostBankPage";
+import {UnifiedPublishingQueue} from "./UnifiedPublishingQueue";
 import { PageHeader } from "../../shared/components/ui";
 
 const DEFAULT_TIMEZONE = "Asia/Aden";
@@ -258,10 +259,10 @@ export function PublishingPage() {
         actions={<Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">العودة إلى بنك المحتوى</Link>}
       />
 
-      <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-7"><p>الصور والفيديوهات والنصوص المستوردة تُجهز من المكتبة. الخطط المحفوظة منها تظهر هنا في «خطط النشر». قائمة «الجاهز للنشر» أدناه خاصة بمنشورات النصوص القديمة وليست كل المخرجات المعتمدة.</p><Link to="/bank?artifact_status=APPROVED" className="font-bold text-indigo-700 underline">فتح مكتبة المخرجات المعتمدة والتجهيز</Link></div>
+      <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-7"><p>الصور والفيديوهات والنصوص المستوردة تُجهز من المكتبة. الخطط المحفوظة منها تظهر هنا في «خطط النشر». قائمة المحتوى الموحدة أدناه تجمع المعتمد وتفصل حالته عن أدوات جدولة المنشورات التحريرية.</p><Link to="/bank?artifact_status=APPROVED" className="font-bold text-indigo-700 underline">فتح مكتبة المخرجات المعتمدة والتجهيز</Link></div>
       <nav aria-label="أقسام مساحة النشر" className="grid gap-2 rounded-2xl border bg-slate-50 p-2 sm:grid-cols-2 lg:grid-cols-4">
         {([
-          ["ready", "الجاهز للنشر", readyTotal, "منشورات معتمدة ومؤهلة"],
+          ["ready", "المحتوى والتجهيز", "↗", "قائمة موحدة، ثم أدوات جدولة النصوص"],
           ["plans", "خطط النشر", schedules.data?.total ?? schedules.data?.items.length ?? 0, "الخطط المحفوظة وحالاتها"],
           ["calendar", "التقويم", upcoming.data?.items.length ?? 0, "القادم وجدول اليوم"],
           ["platforms", "مسودات المنصات", platformVariants.data?.length ?? 0, "تحضير يدوي فقط، بلا نشر آلي"],
@@ -278,9 +279,10 @@ export function PublishingPage() {
 
       {section === "ready" && (
         <section className="space-y-4" data-testid="publishing-ready">
+          <UnifiedPublishingQueue/>
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><h3 className="text-xl font-bold">المنشورات الجاهزة</h3><p className="mt-1 text-sm text-slate-500">لا يظهر هنا إلا ما هو معتمد ومؤهل للنشر.</p></div>
+              <div><h3 className="text-xl font-bold">جدولة المنشورات التحريرية المؤهلة</h3><p className="mt-1 text-sm text-slate-500">لا يظهر هنا إلا ما هو معتمد ومؤهل للنشر.</p></div>
               <span data-testid="selection-count" className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-bold text-indigo-700">{selectedIds.length} محدد</span>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-[1fr_220px_220px_220px_auto]">
