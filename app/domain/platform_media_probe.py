@@ -21,17 +21,27 @@ def inspect_media(data, kind, mime):
         raise ValueError('فحص الوسيط هنا يدعم الصور وفيديو MP4/MOV فقط.')
     with tempfile.NamedTemporaryFile() as file:
         file.write(data);file.flush()
-        result=subprocess.run(['ffprobe','-f','mov','-protocol_whitelist','file,pipe','-v','error','-show_streams','-show_format','-of','json',file.name],capture_output=True,timeout=15,check=True)
-        header_evidence=inspect_video_headers(file.name,next((stream.get('codec_name') for stream in json.loads(result.stdout).get('streams',[]) if stream.get('codec_type')=='video'),None))
-    structure=inspect_mp4_structure(data)
+        return inspect_video_file(file.name)
+
+
+def inspect_video_file(path):
+    import mmap
+    import os
+    size=os.path.getsize(path)
+    if not 0<size<=300_000_000:raise ValueError('Video exceeds bounded file inspection limit.')
+    result=subprocess.run(['ffprobe','-f','mov','-protocol_whitelist','file,pipe','-v','error','-show_streams','-show_format','-of','json',path],capture_output=True,timeout=15,check=True)
+    with open(path,'rb') as source:
+        with mmap.mmap(source.fileno(),0,access=mmap.ACCESS_READ) as mapped:
+            structure=inspect_mp4_structure(mapped)
     info=json.loads(result.stdout)
     videos=[s for s in info.get('streams',[]) if s.get('codec_type')=='video']
-    if len(videos)!=1: raise ValueError('يلزم مسار فيديو واحد قابل للفحص.')
+    if len(videos)!=1:raise ValueError('يلزم مسار فيديو واحد قابل للفحص.')
     video=videos[0]
+    header_evidence=inspect_video_headers(path,video.get('codec_name'))
     duration=float(info.get('format',{}).get('duration',video.get('duration',0)))
     fps=float(Fraction(video.get('avg_frame_rate','0')))
-    if not math.isfinite(duration) or not math.isfinite(fps) or duration<=0 or fps<=0: raise ValueError('تعذر قياس المدة أو معدل الإطارات.')
-    return {**structure,'header_evidence':header_evidence,'format':'MOV/MP4','size_bytes':len(data),'width':int(video.get('width',0)),'height':int(video.get('height',0)),'duration_seconds':duration,'fps':fps,'video_codec':video.get('codec_name'),'pixel_format':video.get('pix_fmt'),'field_order':video.get('field_order'),'video_bitrate':int(video.get('bit_rate') or 0),'audio':[{'codec':s.get('codec_name'),'sample_rate':int(s.get('sample_rate') or 0),'channels':int(s.get('channels') or 0),'bitrate':int(s.get('bit_rate') or 0)} for s in info.get('streams',[]) if s.get('codec_type')=='audio']}
+    if not math.isfinite(duration) or not math.isfinite(fps) or duration<=0 or fps<=0:raise ValueError('تعذر قياس المدة أو معدل الإطارات.')
+    return {**structure,'inspection_input_limit_bytes':300_000_000,'header_evidence':header_evidence,'format':'MOV/MP4','size_bytes':size,'width':int(video.get('width',0)),'height':int(video.get('height',0)),'duration_seconds':duration,'fps':fps,'video_codec':video.get('codec_name'),'pixel_format':video.get('pix_fmt'),'field_order':video.get('field_order'),'video_bitrate':int(video.get('bit_rate') or 0),'audio':[{'codec':s.get('codec_name'),'sample_rate':int(s.get('sample_rate') or 0),'channels':int(s.get('channels') or 0),'bitrate':int(s.get('bit_rate') or 0)} for s in info.get('streams',[]) if s.get('codec_type')=='audio']}
 
 
 def media_findings(platform,kind,info):
@@ -59,7 +69,7 @@ def media_findings(platform,kind,info):
         headers=info.get('header_evidence',{})
         if headers.get('closed_gop')!='REFRESH_BOUNDARIES_VERIFIED':pending.append('closed GOP غير متحقق. ترويسات غير مكتملة أو حدود داخلية دون IDR؛ لا نستنتج أنه مفتوح من ذلك وحده.')
         pending.append('نمط VBR غير متحقق. أعلام HRD أو تغير أحجام الحزم لا تثبت نمط تحكم المشفّر.')
-        pending.append('الفحص محدود 50MiB ولا يدعي قبول حد رفع المنصة 300MB.')
+        pending.append('قراءة الفيديو محدودة300MB بملف مؤقت؛ تحليل الترويسات له حد مستقل وقد يبقى غير متحقق.')
         if not info['video_bitrate']: pending.append('لم يصرح الملف بمعدل تدفق الفيديو.')
         if info['field_order'] in {None,'unknown'}: pending.append('نوع المسح لم يصرح به الملف.')
     elif platform=='telegram':
