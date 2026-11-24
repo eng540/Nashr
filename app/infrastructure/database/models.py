@@ -855,3 +855,31 @@ class FacebookReviewDraftModel(Base):
     snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
     state:Mapped[str]=mapped_column(String(20),nullable=False)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class InstagramPageConnectionModel(Base):
+    __tablename__='instagram_page_connections'
+    id:Mapped[int]=mapped_column(Integer,primary_key=True)
+    account_id:Mapped[str]=mapped_column(String(100),nullable=False)
+    username:Mapped[str]=mapped_column(String(100),nullable=False)
+    page_id:Mapped[str]=mapped_column(String(100),nullable=False)
+    page_name:Mapped[str]=mapped_column(String(500),nullable=False)
+    token_ciphertext:Mapped[str]=mapped_column(Text,nullable=False)
+    config_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    token_expires_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    connected_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    last_check_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    last_check_ok:Mapped[bool|None]=mapped_column(Boolean,nullable=True)
+    enabled:Mapped[bool]=mapped_column(Boolean,nullable=False,default=True)
+
+
+class InstagramPageOAuthFlowModel(Base):
+    __tablename__='instagram_page_oauth_flows'
+    id:Mapped[str]=mapped_column(String(64),primary_key=True)
+    session_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    browser_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    config_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    consumed:Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    token_ciphertext:Mapped[str|None]=mapped_column(Text,nullable=True)
+    accounts:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
