@@ -7,6 +7,7 @@ import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime } from "../../shared/utils/timezone";
 import { TelegramPreview } from "../post-bank/PostBankPage";
+
 import {UnifiedPublishingQueue} from "./UnifiedPublishingQueue";
 import { PageHeader } from "../../shared/components/ui";
 
@@ -17,7 +18,7 @@ type Section = "ready" | "plans" | "calendar" | "platforms";
 export function PublishingPage() {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [section, setSection] = useState<Section>(searchParams.get("schedule_id")?"plans":"ready");
+  const [section, setSection] = useState<Section>(searchParams.get("connections")==="instagram"?"platforms":searchParams.get("schedule_id")?"plans":"ready");
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
@@ -375,6 +376,7 @@ export function PublishingPage() {
 
       {section === "platforms" && (
         <section className="space-y-4" data-testid="publishing-platforms">
+          <a className="rounded border p-3 text-sm underline" href="/connections">إدارة الحسابات وقنوات Telegram ومتطلبات الربط</a>
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div><h3 className="text-xl font-bold">مسودات المنصات الاجتماعية</h3><p className="mt-1 text-sm text-slate-500">نسخ معدّة من المخرجات والمنشورات المعتمدة للمراجعة اليدوية لكل منصة.</p></div>
