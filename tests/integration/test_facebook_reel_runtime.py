@@ -63,7 +63,7 @@ async def test_complete_lifecycle_claims_and_readback_no_second_upload(monkeypat
         async def initialize(self,**kw):calls.append('init');assert j.state=='INITIALIZING';return ReelSession('123','456','https://rupload.facebook.com/video-upload/456','a'*64,5)
         async def upload(self,*a,**kw):calls.append('upload');assert j.state=='UPLOADING'
         async def finish(self,*a,**kw):calls.append('finish');assert j.state=='FINISHING'
-        async def status(self,*a):return dict(state='OK',upload_complete=True,processing_complete=True,publishing_not_started=True,publishing_complete=j.state=='FINISH_ACCEPTED')
+        async def status(self,*a):return dict(state='OK',upload_complete=True,processing_complete=True,publishing_not_started=True,publishing_complete=j.state=='FINISH_ACCEPTED',publish_status='published')
         async def _request(self,*a,**kw):return dict(id='456',description='exact',**{'from':{'id':'123'}},published=True,permalink_url='https://www.facebook.com/reel/456')
     async def provider(*a):return P()
     monkeypatch.setattr(r,'provider',provider);monkeypatch.setattr(r,'valid',valid)
