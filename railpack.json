@@ -12,7 +12,8 @@
     "libfribidi-dev",
     "libfreetype-dev",
     "libjpeg-dev",
-    "zlib1g-dev"
+    "zlib1g-dev",
+    "liblcms2-dev"
   ],
   "deploy": {
     "aptPackages": [
