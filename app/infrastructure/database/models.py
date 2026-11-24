@@ -761,6 +761,7 @@ class CopySuggestionModel(Base):
 class InstagramExecutionModel(Base):
     """Pinned provider attempt. No secret or media grant URL is stored here."""
     __tablename__='instagram_executions'
+    connection_binding:Mapped[dict]=mapped_column(JSONB,nullable=False,default=dict,server_default='{}')
     id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
     artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id'),nullable=False)
     inspection_id:Mapped[UUID|None]=mapped_column(PGUUID(as_uuid=True),ForeignKey('platform_media_inspections.id'),nullable=True)
