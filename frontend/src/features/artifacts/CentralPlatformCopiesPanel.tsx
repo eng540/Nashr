@@ -1,3 +1,4 @@
+import {FacebookPlanReviewPanel} from './FacebookPlanReviewPanel';
 import {YouTubePlanReviewPanel} from './YouTubePlanReviewPanel';
 import {InstagramPlanReviewPanel} from './InstagramPlanReviewPanel';
 import {useState} from 'react';
@@ -50,6 +51,7 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan}:{id:string;kind:stri
    {load.isError||prepare.isError||save.isError?<p role="alert" className="text-rose-700">{load.error?.message??prepare.error?.message??save.error?.message}</p>:null}
    {active==='instagram'&&row&&!draft&&['IMAGE','VIDEO'].includes(kind)?<InstagramPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} kind={kind} disabled={busy}/>:null}
    {active==='youtube'&&row&&!draft&&kind==='VIDEO'?<YouTubePlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
+   {active==='facebook'&&row&&!draft&&['TEXT','IMAGE'].includes(kind)?<FacebookPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
    {active==='telegram'&&row&&!draft&&onPlan?<button type="button" disabled={busy} onClick={onPlan} className="rounded border bg-white p-2 font-bold">معاينة وجدولة نسخة Telegram هذه</button>:null}
    {note?<p role="status" className="text-emerald-800">{note}</p>:null}
   </div>
