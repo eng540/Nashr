@@ -602,7 +602,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
         </div> : null}
         </details>
-          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} onPlan={() => {setSelectedMediaIds([artifact.id]); requestAnimationFrame(() => document.querySelector('[aria-label="معاينة دفعة Telegram"]')?.scrollIntoView({behavior:'smooth',block:'start'}));}} /> : null}
+          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} kind={artifact.kind} onPlan={() => {setSelectedMediaIds([artifact.id]); requestAnimationFrame(() => document.querySelector('[aria-label="معاينة دفعة Telegram"]')?.scrollIntoView({behavior:'smooth',block:'start'}));}} /> : null}
         <details open={!compact} className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold">أدوات إضافية قديمة: اشتقاق ومسودة من الأصل</summary>
         {status === "APPROVED" && ["TEXT", "IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 p-3">
           <label className="w-full text-sm font-semibold sm:w-auto">اشتقاق نسخة بحدود منصة
