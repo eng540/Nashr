@@ -822,3 +822,36 @@ class YouTubeReviewDraftModel(Base):
     snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
     state:Mapped[str]=mapped_column(String(20),nullable=False)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class FacebookExecutionModel(Base):
+    """Dormant pinned Page text/photo attempt, not a publishing grant."""
+    __tablename__='facebook_executions'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id'),nullable=False)
+    page_id:Mapped[str]=mapped_column(String(100),nullable=False)
+    source_fingerprint:Mapped[str]=mapped_column(String(64),nullable=False)
+    copy_version:Mapped[int]=mapped_column(Integer,nullable=False)
+    kind:Mapped[str]=mapped_column(String(10),nullable=False)
+    message:Mapped[str]=mapped_column(Text,nullable=False)
+    mime_type:Mapped[str|None]=mapped_column(String(100),nullable=True)
+    media_sha256:Mapped[str|None]=mapped_column(String(64),nullable=True)
+    total_bytes:Mapped[int]=mapped_column(BigInteger,nullable=False)
+    state:Mapped[str]=mapped_column(String(40),nullable=False)
+    post_id:Mapped[str|None]=mapped_column(String(201),nullable=True)
+    photo_id:Mapped[str|None]=mapped_column(String(100),nullable=True)
+    permalink:Mapped[str|None]=mapped_column(Text,nullable=True)
+    error_code:Mapped[str|None]=mapped_column(String(100),nullable=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+    updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
+
+
+class FacebookReviewDraftModel(Base):
+    """Private preparation, distinct from upload jobs and publishing consent."""
+    __tablename__='facebook_review_drafts'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    artifact_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('artifacts.id'),nullable=False,index=True)
+    snapshot_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    state:Mapped[str]=mapped_column(String(20),nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
