@@ -15,7 +15,7 @@ def now():return datetime.now(timezone.utc)
 def runtime_status():
     return {'programming_state':'SYNTHETIC_PROVIDER_CORE','live_account_state':'NOT_VERIFIED','external_acceptance':'NOT_RUN','execution_enabled':False,'media_exposure_enabled':False}
 
-async def prepare(session,uid,*,account_id,media_sha256,copy_version,fingerprint,inspection_id=None,share_to_feed=None):
+async def prepare(session,uid,*,account_id,media_sha256,copy_version,fingerprint,inspection_id=None,share_to_feed=None,connection_binding=None):
     import re
     if not ID.fullmatch(account_id) or not re.fullmatch(r'[a-f0-9]{64}',media_sha256):raise ValueError('Invalid pinned account or media digest')
     row=(await session.execute(select(ArtifactModel).where(ArtifactModel.id==uid).with_for_update())).scalar_one_or_none()
@@ -30,15 +30,19 @@ async def prepare(session,uid,*,account_id,media_sha256,copy_version,fingerprint
     evidence=await inspection_for_copy(session,uid,inspection_id,fingerprint=fingerprint,copy_version=copy_version)
     if evidence.sha256!=media_sha256:raise ValueError('Inspected digest differs')
     if evaluate(row,copy)['field_status']!='FIELDS_VALIDATED':raise ValueError('Instagram fields are blocked')
-    job=Job(inspection_id=inspection_id,artifact_id=uid,account_id=account_id,source_fingerprint=fingerprint,copy_version=copy_version,media_sha256=media_sha256,kind=row.kind,caption=copy.fields['description'],alt_text=copy.fields['alt_text'],share_to_feed=share_to_feed,state='DRAFT',created_at=now(),updated_at=now())
+    job=Job(connection_binding=connection_binding or {},inspection_id=inspection_id,artifact_id=uid,account_id=account_id,source_fingerprint=fingerprint,copy_version=copy_version,media_sha256=media_sha256,kind=row.kind,caption=copy.fields['description'],alt_text=copy.fields['alt_text'],share_to_feed=share_to_feed,state='DRAFT',created_at=now(),updated_at=now())
     session.add(job);await session.commit();return job
 
 async def _locked(session,job_id):
-    job=(await session.execute(select(Job).where(Job.id==job_id).with_for_update())).scalar_one_or_none()
+    job=(await session.execute(select(Job).where(Job.id==job_id).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if job is None:raise ValueError('Execution record not found')
     return job
 
 async def _valid(session,job,provider,media_sha256):
+    if job.connection_binding:
+        from app.application.instagram_direct_execution import validate_binding
+        if getattr(provider,'graph_base',None)!='https://graph.instagram.com/v27.0':raise ValueError('Direct Instagram provider required; no Facebook fallback')
+        await validate_binding(session,job)
     if provider.account_id!=job.account_id or media_sha256!=job.media_sha256:raise ValueError('Pinned account or media changed')
     from app.application.instagram_media_pin import recheck_pinned_bytes
     await recheck_pinned_bytes(session,job)
@@ -48,9 +52,10 @@ async def _valid(session,job,provider,media_sha256):
     from app.application.central_platform_copies import evaluate
     if evaluate(row,copy)['field_status']!='FIELDS_VALIDATED' or copy.fields.get('description')!=job.caption or copy.fields.get('alt_text')!=job.alt_text:raise ValueError('Pinned outgoing fields changed or are blocked')
 
-async def create_container(session,job_id,*,provider,media_url,media_sha256,authorized=False):
+async def create_container(session,job_id,*,provider,media_url,media_sha256,authorized=False,media_disclosure_authorized=False,public_publish_authorized=False):
     if authorized is not True:raise ValueError('Explicit publishing authority required; preview does not authorize media access')
     job=await _locked(session,job_id)
+    if job.connection_binding and (media_disclosure_authorized is not True or public_publish_authorized is not True):raise ValueError('Explicit public publication and provider media disclosure authority required')
     if job.state!='DRAFT':raise ValueError('Container creation already attempted; never repeat unknown outcomes')
     await _valid(session,job,provider,media_sha256)
     job.state='CREATING';job.updated_at=now();await session.commit()
@@ -61,9 +66,10 @@ async def create_container(session,job_id,*,provider,media_url,media_sha256,auth
         job.state='CREATE_UNKNOWN';job.error_code='INSTAGRAM_OUTCOME_UNKNOWN';job.updated_at=now();await session.commit();return job
     job.container_id=container;job.state='CONTAINER_CREATED';job.updated_at=now();await session.commit();return job
 
-async def publish(session,job_id,*,provider,media_sha256,authorized=False):
+async def publish(session,job_id,*,provider,media_sha256,authorized=False,public_publish_authorized=False):
     if authorized is not True:raise ValueError('Explicit publishing authority required')
     job=await _locked(session,job_id)
+    if job.connection_binding and public_publish_authorized is not True:raise ValueError('Explicit public publication authority required')
     if job.state not in {'CONTAINER_CREATED','WAITING_MEDIA'}:raise ValueError('Cannot repeat a publishing attempt')
     await _valid(session,job,provider,media_sha256)
     # Persist the claim before the provider edge. A crash after this point is
@@ -83,6 +89,7 @@ async def publish(session,job_id,*,provider,media_sha256,authorized=False):
 async def reconcile(session,job_id,*,provider):
     job=await _locked(session,job_id)
     if job.state in {'CREATING','PUBLISHING'}:raise ValueError('An active or crashed claim needs operator reconciliation; no overlapping provider action')
+    if job.connection_binding and getattr(provider,'graph_base',None)!='https://graph.instagram.com/v27.0':raise ValueError('Direct Instagram provider required')
     if provider.account_id!=job.account_id:raise ValueError('Pinned account mismatch')
     if job.state=='CANCELLED':raise ValueError('Cancelled draft has no provider result to reconcile')
     if job.media_id:
