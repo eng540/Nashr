@@ -4,7 +4,7 @@ class CredentialFilter(logging.Filter):
     def filter(self,record):
         message=record.getMessage()
         message=re.sub(r'(api\.telegram\.org/bot)[^/\s]+',r'\1[REDACTED]',message)
-        message=re.sub(r'([?&](?:access_token|input_token|client_secret|code|state)=)[^&\s"\']+',r'\1[REDACTED]',message)
+        message=re.sub(r'([?&](?:access_token|input_token|client_secret|code|state|upload_id)=)[^&\s"\']+',r'\1[REDACTED]',message)
         record.msg=message;record.args=()
         return True
 
