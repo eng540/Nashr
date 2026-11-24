@@ -1,4 +1,5 @@
 import { useSearchParams } from "react-router";
+import {ContentOrganizationPanel} from "./ContentOrganizationPanel";
 import { CentralPlatformCopiesPanel } from "./CentralPlatformCopiesPanel";
 import { TelegramBatchPreviewPanel } from "./TelegramBatchPreviewPanel";
 import { DistributionReadinessPanel } from "./DistributionReadinessPanel";
@@ -33,6 +34,7 @@ function variantLength(artifact: GenericReviewableArtifact, draft: string | unde
 }
 
 function artifactTitle(artifact: GenericReviewableArtifact): string {
+  if(artifact.organization?.title)return artifact.organization.title;
   const title = artifact.metadata.title;
   if (typeof title === "string" && title.trim()) return title.trim();
   const caption = artifact.metadata.caption;
@@ -46,6 +48,7 @@ function artifactTitle(artifact: GenericReviewableArtifact): string {
 }
 
 function artifactSeries(artifact: GenericReviewableArtifact): string | null {
+  if(artifact.organization?.series)return artifact.organization.series;
   const filename = typeof artifact.metadata.original_filename === "string" ? artifact.metadata.original_filename.replace(/^\d+-/, "") : "";
   const episode = filename.match(/^b(\d+)v\d+/);
   if (episode) return `وش معنى · دفعة ${episode[1]}`;
@@ -169,6 +172,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const [kindFilter, setKindFilter] = useState("ALL");
   const [sourceFilter, setSourceFilter] = useState("ALL");
   const [seriesFilter, setSeriesFilter] = useState("ALL");
+  const [categoryFilter,setCategoryFilter]=useState("ALL");
+  const [catalogIds,setCatalogIds]=useState<string[]>([]);
   const [sortMode, setSortMode] = useState<ArtifactSortMode>("newest");
   const [page, setPage] = useState(0);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
@@ -218,12 +223,14 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
   const allArtifacts = useMemo(() => artifacts.data?.items ?? [], [artifacts.data]);
   const seriesOptions = useMemo(() => [...new Set(allArtifacts.map(artifactSeriesKey))].sort((a,b) => a.localeCompare(b, "ar")), [allArtifacts]);
+  const categoryOptions=useMemo(()=>[...new Set(allArtifacts.map(i=>i.organization?.category||"غير مصنف"))].sort((a,b)=>a.localeCompare(b,"ar")),[allArtifacts]);
   const filteredArtifacts = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const matches = allArtifacts.filter((artifact) => {
       if (kindFilter !== "ALL" && artifact.kind !== kindFilter) return false;
       const sourceType = typeof artifact.metadata.source_type === "string" ? artifact.metadata.source_type : "GENERATED";
       if (sourceFilter !== "ALL" && sourceType !== sourceFilter) return false;
+      if(categoryFilter!=="ALL"&&(artifact.organization?.category||"غير مصنف")!==categoryFilter)return false;
       if (seriesFilter !== "ALL" && artifactSeriesKey(artifact) !== seriesFilter) return false;
       if (!needle) return true;
       const haystack = artifactSearchText(artifact);
@@ -235,7 +242,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     else if (sortMode === "kind") sorted.sort((a, b) => a.kind.localeCompare(b.kind) || b.created_at.localeCompare(a.created_at));
     else sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
     return sorted;
-  }, [allArtifacts, search, kindFilter, sourceFilter, seriesFilter, sortMode]);
+  }, [allArtifacts, search, kindFilter, sourceFilter, seriesFilter, categoryFilter, sortMode]);
   const pageCount = Math.max(1, Math.ceil(filteredArtifacts.length / LIBRARY_PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pagedArtifacts = filteredArtifacts.slice(safePage * LIBRARY_PAGE_SIZE, safePage * LIBRARY_PAGE_SIZE + LIBRARY_PAGE_SIZE);
@@ -489,6 +496,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <option value="ALL">كل السلاسل</option>
           {seriesOptions.map((series) => <option key={series} value={series}>{series}</option>)}
         </Select>
+        <Select aria-label="تصفية حسب التصنيف" value={categoryFilter} onChange={event=>updateFilters(()=>setCategoryFilter(event.target.value))}><option value="ALL">كل التصنيفات</option>{categoryOptions.map(c=><option key={c} value={c}>{c}</option>)}</Select>
         <Select aria-label="ترتيب المخرجات" value={sortMode} onChange={(event) => setSortMode(event.target.value as ArtifactSortMode)}>
           <option value="newest">الأحدث أولًا</option>
           <option value="oldest">الأقدم أولًا</option>
@@ -496,6 +504,8 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
           <option value="kind">النوع</option>
         </Select>
       </div>
+      <div className="rounded border bg-white p-3 text-xs leading-7"><p>تحديد التنظيم منفصل عن تحديد النشر. حتى 100 مادة، ويعمل قبل الاعتماد وبعده.</p><button type="button" className="rounded border p-2" onClick={()=>setCatalogIds(pagedArtifacts.filter(i=>i.metadata.source_type!=="PLATFORM_VARIANT").map(i=>i.id))}>تحديد صفحة الفهرسة</button> <button type="button" className="rounded border p-2" onClick={()=>setCatalogIds([])}>إلغاء تحديد الفهرسة</button><p>{catalogIds.filter(id=>allArtifacts.some(i=>i.id===id)).length} محدد للتنظيم</p></div>
+      {catalogIds.some(id=>allArtifacts.some(i=>i.id===id))?<ContentOrganizationPanel key={catalogIds.join(",")} items={allArtifacts.filter(i=>catalogIds.includes(i.id))}/>:null}
       {status === "APPROVED" ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
         <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
           <input
@@ -541,6 +551,7 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     <div className={`grid min-w-0 items-start gap-3 ${pagedArtifacts.length>1&&!focusedId?'xl:grid-cols-2':''}`}>
       {pagedArtifacts.filter(artifact=>!focusedId||artifact.id===focusedId).map((artifact) => <article key={artifact.id} className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
+          {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<label className="text-xs"><input type="checkbox" aria-label={`تنظيم المخرج ${artifact.id}`} checked={catalogIds.includes(artifact.id)} disabled={!catalogIds.includes(artifact.id)&&catalogIds.length>=100} onChange={e=>setCatalogIds(ids=>e.target.checked?[...ids,artifact.id]:ids.filter(id=>id!==artifact.id))}/> فهرسة</label>:null}
           {status === "APPROVED" && isTelegramMediaEligible(artifact) ? <input
             type="checkbox"
             aria-label={`تحديد المخرج ${artifact.id}`}
@@ -555,11 +566,13 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
             <p className="mt-1 text-[11px] text-slate-400">المعرّف {artifact.id.slice(0, 8)}</p>
           </div>
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">{artifact.metadata.source_type === "MEDIA_BANK_UPLOAD" ? "رفع يدوي" : artifact.metadata.source_type === "PLATFORM_VARIANT" ? `نسخة ${String(artifact.metadata.platform_label_ar ?? artifact.metadata.platform ?? "منصة")}${(artifact.metadata.constraints as Record<string, unknown> | undefined)?.trimmed ? " · مقصوصة للحد" : ""}` : "مخرج مولّد"}</span>
+          {artifact.organization?.category?<Badge tone="sky">{artifact.organization.category}</Badge>:null}
           {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{artifact.review_status}</span>
         </div>
         {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button type="button" aria-expanded={focusedId===artifact.id} onClick={()=>setFocusedId(focusedId===artifact.id?null:artifact.id)} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-bold text-white">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
         {!compact||focusedId===artifact.id?<div className="space-y-3" aria-label={`مساحة المادة ${artifact.id}`}>
+        {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<ContentOrganizationPanel key={artifact.id+":"+(artifact.organization?.version??0)} items={[artifact]}/>:null}
         <nav aria-label="مراحل العمل على المادة" className="flex flex-wrap gap-2 rounded bg-slate-50 p-2 text-xs text-slate-600"><span>1. الأصل والمراجعة</span><span>← 2. نسخ المنصات والوجهات</span><span>← 3. معاينة وخطة</span><span>← 4. سجل النشر</span></nav>
         {(artifact.metadata.telegram_native as Record<string, unknown> | undefined)?.type === 'LIVE_LOCATION' ? <LiveLocationControls artifactId={artifact.id} /> : null}
         {artifact.metadata.telegram_live_photo ? <section className="rounded-xl border border-violet-200 bg-violet-50 p-3"><h4 className="font-bold">صورة حية،الصورة الثابتة ثم فيديو الحركة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(artifact.metadata.live_photo_preview, null, 2)}</pre>{(Array.isArray(artifact.metadata.live_photo_preview) ? artifact.metadata.live_photo_preview : []).map(value => <AlbumChildPreview key={(value as {id:string}).id} id={(value as {id:string}).id} />)}<p className="text-xs">يُرسلان كصورة حية واحدة،وليست ألبوماً أو فيديو منفرداً.</p></section> : null}
@@ -748,4 +761,4 @@ export function GenericArtifactReviewPanel({ showDesignCard = true, designCardOn
     {jobStatus}
     {mutationError}
   </section>;
-}
+                                                                                                                                                                 }
