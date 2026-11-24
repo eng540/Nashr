@@ -142,3 +142,30 @@ async def test_corrupt_pending_payload_keeps_existing_binding(config,monkeypatch
             row=await s.get(Flow,service.digest(state));row.token_ciphertext=service.key().encrypt(b'[{}]').decode();await s.commit()
         assert (await c.post(service.BASE+'/select',json={'account_id':'111'})).status_code==409
         assert (await c.get(service.BASE)).json()['connection']==old
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure,expected',[(service.OAuthFailure('TOKEN_EXCHANGE'),'TOKEN_EXCHANGE'),(service.OAuthFailure('SESSION'),'SESSION'),(service.OAuthFailure('PERMISSIONS'),'PERMISSIONS'),(service.OAuthFailure('NO_ELIGIBLE_ACCOUNT'),'NO_ELIGIBLE_ACCOUNT')])
+async def test_callback_safe_phase_diagnostics(config,monkeypatch,caplog,failure,expected):
+    await clear()
+    async def bad(*a,**kw):raise failure
+    monkeypatch.setattr(service,'exchange',bad)
+    async with browser() as c:
+        state=await setup(c)
+        r=await c.get(service.BASE+'/callback',params={'state':state,'code':'do-not-leak-code'})
+        assert r.status_code==400 and expected in r.text
+        assert 'do-not-leak-code' not in r.text and state not in r.text
+        assert 'do-not-leak-code' not in caplog.text and state not in caplog.text
+        assert (await c.get(service.BASE)).json()['connection'] is None
+        assert 'no-store' in r.headers['cache-control']
+
+@pytest.mark.asyncio
+async def test_arbitrary_discovery_error_is_not_reflected(config,monkeypatch,caplog):
+    from app.adapters.publishing.instagram_page_login import PageLoginError
+    await clear()
+    async def bad(*a,**kw):raise PageLoginError('provider-private-token-and-details')
+    monkeypatch.setattr(service,'exchange',bad)
+    async with browser() as c:
+        state=await setup(c)
+        r=await c.get(service.BASE+'/callback',params={'state':state,'code':'private-code'})
+        assert r.status_code==400 and 'DISCOVERY' in r.text
+        assert 'provider-private' not in r.text+caplog.text
