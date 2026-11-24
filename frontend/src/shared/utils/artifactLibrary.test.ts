@@ -22,3 +22,10 @@ describe("artifact library indexing", () => {
     expect(artifactSeriesKey(sample("other.mp4"))).toBe("غير مصنف");
   });
 });
+
+it("explicit catalog labels override inferred series and remain searchable",()=>{
+ const item=sample("9-b3v4-ehkaam.mp4");item.organization={title:"عنوان فهرسة",series:"سلسلة صريحة",category:"تصنيف معين",version:1,updated_at:"2026-11-24"};
+ expect(artifactSeriesKey(item)).toBe("سلسلة صريحة");
+ expect(artifactSearchText(item)).toContain("تصنيف معين");
+ expect(artifactSearchText(item)).toContain("عنوان فهرسة");
+});
