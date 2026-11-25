@@ -180,3 +180,17 @@ async def test_invalid_provider_permalink_not_forwarded(url):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         result = await publisher(c).verify_post(POST, expected_message="")
         assert result.permalink is None
+
+@pytest.mark.asyncio
+async def test_readback_diagnostic_keeps_newline_mismatch_and_safe_link():
+    async def handler(r):
+        assert r.method == 'GET'
+        return httpx.Response(200,json={'id':POST,'from':{'id':PAGE},
+            'message':'first\n\nsecond','is_published':True,
+            'permalink_url':'https://www.facebook.com/permalink.php?story_fbid=99887&id=12345'})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        result=await publisher(c).verify_post(POST,expected_message='first\r\n\r\nsecond')
+    assert result.state=='RESULT_CHANGED'
+    assert result.observed_message=='first\n\nsecond'
+    assert result.observed_published is True
+    assert result.permalink is not None
