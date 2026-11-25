@@ -15,7 +15,7 @@ test('multiline draft media captions preserve paragraphs without approval',async
  return route.fulfill({json:{items:[],sources:[],topics:[],kinds:[]}});
  });
  await page.goto('/bank');await page.getByRole('button',{name:'فتح المادة والتجهيز والتتبع',exact:true}).click();
- await page.getByLabel('تعليق الوسيط '+id,{exact:true}).fill(caption);await expect(page.getByRole('button',{name:'اعتماد المخرج',exact:true})).toBeDisabled();
+ await page.getByLabel('تعليق الوسيط '+id,{exact:true}).fill(caption);await expect(page.getByRole('button',{name:'اعتماد المادة فقط، دون نشر',exact:true})).toBeDisabled();
  await page.getByRole('button',{name:'حفظ التعديل',exact:true}).click();await expect.poll(()=>writes.length).toBe(1);await expect(page.getByLabel('تعليق الوسيط '+id,{exact:true})).toHaveValue(caption);
  expect(item.review_status).toBe('DRAFT');await page.getByRole('button',{name:'＋ رفع وسيط جاهز',exact:true}).click();const upload=page.getByLabel('تعليق الوسيط الجاهز',{exact:true});await upload.fill(caption);await expect(upload).toHaveValue(caption);expect(await upload.evaluate(x=>x.tagName)).toBe('TEXTAREA');
  await page.setViewportSize({width:390,height:844});await upload.screenshot({path:info.outputPath('multiline-upload.png')});
