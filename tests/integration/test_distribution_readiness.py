@@ -92,3 +92,82 @@ async def test_distribution_selection_does_not_change_content_or_media_fingerpri
             row = await session.get(ArtifactModel, UUID(uid))
             after = (row.content, dict(row.artifact_metadata), row.updated_at, row.reviewed_at, child_fingerprint(row))
         assert before == after
+
+
+@pytest.mark.asyncio
+async def test_incremental_batch_choices_preserve_exceptions_and_reject_stale_selection_atomically():
+    ids = [await _seed_text_artifact('أصل أول'), await _seed_text_artifact('أصل ثان')]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        for uid in ids:
+            await client.post(f'/api/artifacts/{uid}/approve', json={})
+        async def read():
+            return [(await client.get(f'/api/artifacts/{uid}/distribution-readiness')).json() for uid in ids]
+        async def save(rows, platforms, mode='replace', selected_ids=None):
+            return await client.post('/api/artifacts/distribution-selection', json={
+                'artifact_ids': selected_ids or ids, 'platforms': platforms, 'mode': mode,
+                'fingerprints': {row['artifact_id']: row['source_fingerprint'] for row in rows},
+                'selection_versions': {row['artifact_id']: row['selection_version'] for row in rows}})
+        rows = await read()
+        assert (await save(rows, ['instagram'], selected_ids=[ids[0]])).status_code == 200
+        assert (await save(rows, ['facebook'], selected_ids=[ids[1]])).status_code == 200
+        rows = await read()
+        fingerprints = [row['source_fingerprint'] for row in rows]
+        added = await save(rows, ['telegram'], 'add')
+        assert added.status_code == 200, added.text
+        rows = await read()
+        assert [row['selection']['platforms'] for row in rows] == [['telegram', 'instagram'], ['telegram', 'facebook']]
+        assert [row['source_fingerprint'] for row in rows] == fingerprints
+        stale_rows = rows
+        assert (await save(rows, ['youtube'], 'add', [ids[1]])).status_code == 200
+        stale = await save(stale_rows, ['telegram'], 'remove')
+        assert stale.status_code == 409
+        rows = await read()
+        assert rows[0]['selection']['platforms'] == ['telegram', 'instagram']
+        assert rows[1]['selection']['platforms'] == ['telegram', 'youtube', 'facebook']
+        removed = await save(rows, ['telegram'], 'remove')
+        assert removed.status_code == 200
+        rows = await read()
+        assert [row['selection']['platforms'] for row in rows] == [['instagram'], ['youtube', 'facebook']]
+        assert all(row['central_approval'] == 'APPROVED' for row in rows)
+        assert removed.json()['publications_created'] == removed.json()['schedules_created'] == 0
+        assert all(target['execution_status'] == 'NOT_AUTHORIZED' for row in rows for target in row['targets'])
+        cleared = await save(rows, [], 'replace')
+        assert cleared.status_code == 200
+        assert all(not row['selection']['platforms'] for row in cleared.json()['items'])
+        missing_version = await client.post('/api/artifacts/distribution-selection', json={
+            'artifact_ids': ids, 'platforms': ['telegram'], 'mode': 'add',
+            'fingerprints': {row['artifact_id']: row['source_fingerprint'] for row in rows}})
+        assert missing_version.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_incremental_retries_and_old_source_require_explicit_replacement():
+    uid = await _seed_text_artifact('أصل محفوظ')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        await client.post(f'/api/artifacts/{uid}/approve', json={})
+        async def read():
+            return (await client.get(f'/api/artifacts/{uid}/distribution-readiness')).json()
+        async def save(row, platforms, mode):
+            return await client.post('/api/artifacts/distribution-selection', json={
+                'artifact_ids': [uid], 'platforms': platforms, 'mode': mode,
+                'fingerprints': {uid: row['source_fingerprint']},
+                'selection_versions': {uid: row['selection_version']}})
+        for _ in range(2):
+            result = await save(await read(), ['instagram'], 'add')
+            assert result.status_code == 200
+            assert result.json()['items'][0]['selection']['platforms'] == ['instagram']
+        for _ in range(2):
+            result = await save(await read(), ['facebook'], 'remove')
+            assert result.status_code == 200
+            assert result.json()['items'][0]['selection']['platforms'] == ['instagram']
+        async with SessionFactory() as session:
+            row = await session.get(ArtifactModel, UUID(uid))
+            row.content = 'أصل تغير بعد الاختيار'
+            await session.commit()
+        changed = await read()
+        assert changed['selection_stale'] is True
+        assert (await save(changed, ['telegram'], 'add')).status_code == 409
+        assert (await read())['selection']['platforms'] == ['instagram']
+        assert (await save(changed, ['telegram'], 'replace')).status_code == 200
+        assert (await read())['selection_stale'] is False
+        assert (await save(await read(), [], 'invalid')).status_code == 422
