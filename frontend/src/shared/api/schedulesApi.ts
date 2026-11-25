@@ -71,8 +71,10 @@ export const schedulesApi = {
   create(input: ScheduleCreateInput): Promise<Schedule> {
     return post<Schedule>("/schedules", input);
   },
-  list(): Promise<ScheduleListResponse> {
-    return get<ScheduleListResponse>("/schedules?limit=50&offset=0");
+  list(options: {limit?:number;offset?:number;query?:string;status?:string;failedOnly?:boolean} = {}): Promise<ScheduleListResponse> {
+    const params=new URLSearchParams({limit:String(options.limit??50),offset:String(options.offset??0)});
+    if(options.query)params.set("query",options.query);if(options.status)params.set("status",options.status);if(options.failedOnly)params.set("failed_only","true");
+    return get<ScheduleListResponse>(`/schedules?${params}`);
   },
   get(scheduleId: string): Promise<ScheduleDetail> {
     return get<ScheduleDetail>(`/schedules/${scheduleId}`);
