@@ -1,5 +1,8 @@
 # Ready-content phase acceptance, 2026-11-24
 
+Historical checkpoint. The current platform-capability section below supersedes
+its old connector status. It does not change any publication authority.
+
 This checkpoint covers originals, catalog organization, central approval, linked
 platform copies, explicit distribution choices, preflight, Telegram draft plans
 and execution history. It does not mean all social platforms can publish.
@@ -33,24 +36,41 @@ No existing imported material is automatically reclassified by deployment.
   activate separately. Pin channel/bot/copy/source identities and keep outcomes.
 - Preserve existing originals, approvals, publication IDs and schedule times.
 
-## Still unfinished, not account-only blockers
+## Current platform capabilities, 2026-11-25
 
-- Semantic title/hook/description/SEO suggestions are not implemented. Current
-  defaults are unchanged originals and rules, not an AI adaptation engine.
-- Instagram has owner-driven OAuth code and encrypted settings, but no real
-  connected account yet, no publishing adapter and no background token renewal.
-- YouTube, Facebook and X lack execution connectors and account setup flows.
-- TikTok remains paused by the owner.
-- Analytics and full campaign workflow remain later work. Series labels are
-  organization, not a campaign scheduler or performance model.
+- Telegram supports explicit channel selection, reviewed drafts, schedules and
+  execution history. A saved channel is not permission to publish every item.
+- Instagram has separate official connection flows and review-gated execution
+  with durable result recovery. A real publication was verified. This proves
+  that one completed operation, not that any account is connected or authorized
+  now. Read live connection/preflight and review the exact item/target.
+- Facebook has a separate Page connection plus review-gated Reels execution,
+  including delivery preparation, status recovery and a verified real result.
+  Connecting a Page does not upload or publish. Other Facebook formats are not
+  implied by Reels support.
+- TikTok Login Kit implements identity-only connection with user.info.basic.
+  Selected account, app acceptance and live consent must be checked separately.
+  There is no implemented upload, video listing, direct post or auto-refresh.
+- YouTube upload edges and review preparation have synthetic tests. No live
+  connected-channel upload or scheduling acceptance has been demonstrated.
+- X and Snapchat have no implemented execution connector in this app. This is
+  an implementation statement, not a claim that their external APIs lack one.
+- Current capability labels do not authorize execution, grant additional scopes,
+  approve external terms or permit paid calls. Readiness, account connection,
+  item approval and execution remain separate.
+
+## Still unfinished
+
+- Optional semantic suggestions and full campaign/analytics workflows need
+  separate acceptance. Unchanged originals remain the default, not an AI rewrite.
+- Live setup/eligibility for future connectors must be verified against current
+  provider/account evidence, not inferred from these implementation notes.
 
 ## Independent next work versus external setup
 
-An Instagram adapter can be built and synthetic-provider tested without an
-account: durable container/publish states, media delivery, per-target safety,
-status recovery, expiry handling and clear no-account blockers. Real acceptance
-still needs the owner's authorized Meta app/configuration, selected professional
-account, required permissions and explicit publishing authority. An OAuth token
+New connector work can be built and synthetic-provider tested without an
+account. Synthetic tests do not replace the authorized app/configuration,
+selected account, required permissions and explicit publishing authority. An OAuth token
 must not be assumed refreshable: verify the chosen Meta login/token type first.
 
 An optional adaptation pipeline can be built against the existing provider port

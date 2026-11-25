@@ -155,3 +155,13 @@ async def test_tiktok_summary_reports_connector_not_account_or_execution(config)
         assert row['state']=='IDENTITY_CONNECTION_ONLY'
         assert 'user.info.basic' in row['requirements']
         assert r.json()['execution_authorized'] is False
+
+
+@pytest.mark.asyncio
+async def test_facebook_capability_is_distinct_from_account_and_execution_permission(config):
+    async with browser() as client:
+        r=await client.get('/api/connections')
+        row=next(x for x in r.json()['platforms'] if x['key']=='facebook')
+        assert row['state']=='REVIEW_GATED_REELS_EXECUTION'
+        assert 'Reels' in row['requirements']
+        assert r.json()['execution_authorized'] is False
