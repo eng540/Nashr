@@ -22,9 +22,10 @@ type Section = "ready" | "plans" | "calendar" | "platforms";
 export function PublishingPage() {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [section, setSection] = useState<Section>(searchParams.get("connections")==="instagram"?"platforms":searchParams.get("schedule_id")||searchParams.get("view")==="plans"?"plans":"ready");
+  const [section, setSection] = useState<Section>(searchParams.get("connections")==="instagram"?"platforms":searchParams.get("schedule_id")||searchParams.get("view")==="plans"?"plans":searchParams.get("view")==="calendar"?"calendar":searchParams.get("view")==="platforms"?"platforms":"ready");
   const [readyTask,setReadyTask]=useState<"distribution"|"editorial">(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial"?"editorial":"distribution");
   useEffect(()=>{setReadyTask(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial"?"editorial":"distribution");},[searchParams]);
+  useEffect(()=>{const view=searchParams.get("view");setSection(searchParams.has("schedule_id")?"plans":view==="plans"||view==="calendar"||view==="platforms"?view:"ready");},[searchParams]);
   const [operationGroup,setOperationGroup]=useState<OperationGroup>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
@@ -191,9 +192,11 @@ export function PublishingPage() {
       if(request===detailRequest.current)setDetailPending(null);
     }
   };
+  const choosePlan=(id:string)=>{if(searchParams.get("schedule_id")===id){void openDetail(id);return;}setSearchParams(previous=>{const next=new URLSearchParams(previous);next.set("view","plans");next.set("schedule_id",id);return next;});};
   const linkedScheduleId=searchParams.get('schedule_id');
   useEffect(()=>{
     if(linkedScheduleId)void openDetail(linkedScheduleId);
+    else {detailRequest.current++;setDetail(null);setDetailPending(null);setDetailError(null);}
     return ()=>{detailRequest.current++;};
   },[linkedScheduleId]);
   const setSelection = (id: string, checked: boolean) => {
@@ -262,6 +265,7 @@ export function PublishingPage() {
 
   const switchSection = (next: Section) => {
     setSection(next);
+    setSearchParams(previous=>{const params=new URLSearchParams(previous);params.set("view",next);if(next!=="plans")params.delete("schedule_id");return params;});
     if (next !== "plans") {detailRequest.current++;setDetail(null);setDetailPending(null);setDetailError(null);}
   };
 
@@ -370,7 +374,7 @@ export function PublishingPage() {
             <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]"><label className="text-sm font-semibold"><span className="sr-only">بحث الخطط</span><input aria-label="بحث الخطط" value={planQuery} onChange={(e) => { setPlanQuery(e.target.value); setPlanPage(0); }} placeholder="ابحث باسم الخطة أو محتواها أو المنطقة الزمنية..." className="mt-2 w-full rounded-xl border p-3 font-normal"/></label><label className="text-sm font-semibold">الحالة<select aria-label="حالة الخطة" value={planStatus} onChange={(e) => { setPlanStatus(e.target.value); setPlanPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="ACTIVE">نشطة</option><option value="PAUSED">متوقفة</option><option value="COMPLETED">مكتملة</option><option value="CANCELLED">ملغاة</option></select></label></div>
           </div>
           {searchParams.has("failures")?<p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">مرشح نشط: الخطط التي تضم عناصر تعثر تنفيذها فقط. <a href="/publishing?view=plans" className="underline">إلغاء مرشح التعثر</a></p>:null}
-          {schedules.isLoading?<Status title="تحميل الخطط..."/>:schedules.isError?<div role="alert" className="rounded-xl border bg-white p-4"><p>تعذر تحميل الخطط. لا نعتبر القائمة فارغة.</p><button type="button" onClick={()=>void schedules.refetch()} className="underline">إعادة تحميل الخطط</button></div>:!visiblePlans.length ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد خطط مطابقة</h3>{searchParams.has("failures")?<a href="/publishing?view=plans" className="underline">عرض الخطط دون مرشح التعثر</a>:null}<p className="mt-2 text-sm text-slate-500">أنشئ خطة من قسم «الجاهز للنشر» أو غيّر الفلاتر.</p></div> : <div className="space-y-2">{visiblePlans.map((s) => <button key={s.id} type="button" onClick={() => void openDetail(s.id)} className={`w-full rounded-2xl border bg-white p-4 text-right shadow-sm transition hover:border-indigo-300 ${detail?.id === s.id ? "border-indigo-300 ring-1 ring-indigo-200" : ""}`}><div className="flex flex-wrap items-center justify-between gap-3"><strong className="min-w-0 break-words">{s.content_summary?.[0]?.title || s.name}</strong><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{stateLabel(s.status)}</span></div><p className="mt-1 text-xs text-slate-600">{s.platform==="telegram"?"Telegram":"منصة غير موضحة"}{s.destination_label?` · ${s.destination_label}`:" · راجع الوجهة في تفاصيل الخطة"}</p>{s.content_summary?.length?<><p className="mt-1 text-xs text-slate-500">{s.name} · {s.content_summary.map(i=>({VIDEO:"فيديو",IMAGE:"صورة",POST:"منشور",TEXT:"نص",AUDIO:"صوت",DOCUMENT:"ملف"} as Record<string,string>)[i.kind]??i.kind).join("، ")}</p>{s.content_summary.slice(1).map((i,index)=><p key={index} className="mt-1 break-words text-xs">{i.title}</p>)}</>:null}<div className="mt-2 text-xs text-slate-500">{s.total_items} عناصر · {s.published_items} منشور · {s.failed_items} فشل · {s.timezone}</div></button>)}</div>}
+          {schedules.isLoading?<Status title="تحميل الخطط..."/>:schedules.isError?<div role="alert" className="rounded-xl border bg-white p-4"><p>تعذر تحميل الخطط. لا نعتبر القائمة فارغة.</p><button type="button" onClick={()=>void schedules.refetch()} className="underline">إعادة تحميل الخطط</button></div>:!visiblePlans.length ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد خطط مطابقة</h3>{searchParams.has("failures")?<a href="/publishing?view=plans" className="underline">عرض الخطط دون مرشح التعثر</a>:null}<p className="mt-2 text-sm text-slate-500">أنشئ خطة من قسم «الجاهز للنشر» أو غيّر الفلاتر.</p></div> : <div className="space-y-2">{visiblePlans.map((s) => <button key={s.id} type="button" onClick={() => choosePlan(s.id)} className={`w-full rounded-2xl border bg-white p-4 text-right shadow-sm transition hover:border-indigo-300 ${detail?.id === s.id ? "border-indigo-300 ring-1 ring-indigo-200" : ""}`}><div className="flex flex-wrap items-center justify-between gap-3"><strong className="min-w-0 break-words">{s.content_summary?.[0]?.title || s.name}</strong><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{stateLabel(s.status)}</span></div><p className="mt-1 text-xs text-slate-600">{s.platform==="telegram"?"Telegram":"منصة غير موضحة"}{s.destination_label?` · ${s.destination_label}`:" · راجع الوجهة في تفاصيل الخطة"}</p>{s.content_summary?.length?<><p className="mt-1 text-xs text-slate-500">{s.name} · {s.content_summary.map(i=>({VIDEO:"فيديو",IMAGE:"صورة",POST:"منشور",TEXT:"نص",AUDIO:"صوت",DOCUMENT:"ملف"} as Record<string,string>)[i.kind]??i.kind).join("، ")}</p>{s.content_summary.slice(1).map((i,index)=><p key={index} className="mt-1 break-words text-xs">{i.title}</p>)}</>:null}<div className="mt-2 text-xs text-slate-500">{s.total_items} عناصر · {s.published_items} منشور · {s.failed_items} فشل · {s.timezone}</div></button>)}</div>}
           {!schedules.isError&&<Pagination page={planPage} pageCount={planPageCount} onChange={setPlanPage} loading={schedules.isFetching} label="صفحات خطط النشر" />}
         </section>
       )}
