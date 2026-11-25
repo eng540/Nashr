@@ -1,3 +1,4 @@
+import {FacebookTextExecutionPanel} from './FacebookTextExecutionPanel';
 import {FacebookPlanReviewPanel} from './FacebookPlanReviewPanel';
 import {YouTubePlanReviewPanel} from './YouTubePlanReviewPanel';
 import {InstagramPlanReviewPanel} from './InstagramPlanReviewPanel';
@@ -26,6 +27,12 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
  const row=rows.find(item=>item.platform===active);
  const shown=draft??row;
  const busy=load.isPending||prepare.isPending||save.isPending||inspect.isPending||jpeg.isPending;
+ useEffect(()=>{
+  if(new URLSearchParams(window.location.search).has('text_job_id')&&new URLSearchParams(window.location.search).get('artifact_id')===id){
+   if(panelRef.current)panelRef.current.open=true;
+   setActive('facebook');load.mutate();
+  }
+ },[id]);
  useEffect(()=>{
   if(!request)return;
   if(panelRef.current){panelRef.current.open=true;panelRef.current.scrollIntoView({block:'start',behavior:'smooth'});}
@@ -62,7 +69,8 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
    {active==='youtube'&&row&&!draft&&kind==='VIDEO'?<YouTubePlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
    {active==='facebook'&&row&&!draft&&kind==='VIDEO'?<div className="rounded border bg-white p-3"><p>مسار Facebook للفيديو هو Reel على صفحة عامة، منفصل عن مراجعة النص والصورة. فتحه يمرر معرف الأصل فقط، ولا يجهز أو يرفع ملفاً ولا يعتمد نشراً. الربط والوسيط والوصف والصفحة وقرار التنفيذ تحتاج مراجعة هناك.</p><a className="inline-block rounded border p-2 font-bold" href={`/connections?reel_artifact_id=${encodeURIComponent(id)}#platform-facebook`}>فتح مراجعة Facebook Reel لهذه المادة</a></div>:null}
    {['x','tiktok'].includes(active)&&row?<p className="rounded border bg-amber-50 p-3">الحقول محفوظة للمراجعة فقط. لا مسار تنفيذ منشور من هذه النسخة. <a className="underline" href={`/connections#platform-${active}`}>متطلبات ربط المنصة وحدودها</a></p>:null}
-   {active==='facebook'&&row&&!draft&&['TEXT','IMAGE'].includes(kind)?<FacebookPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
+   {active==='facebook'&&row&&!draft&&kind==='TEXT'?<FacebookTextExecutionPanel key={`${id}:${row.version}:${row.current_source_fingerprint}:execute`} id={id}/>:null}
+   {active==='facebook'&&row&&!draft&&kind==='IMAGE'?<FacebookPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
    {active==='telegram'&&row&&!draft&&onPlan?<button type="button" disabled={busy} onClick={onPlan} className="rounded border bg-white p-2 font-bold">معاينة وجدولة نسخة Telegram هذه</button>:null}
    {note?<p role="status" className="text-emerald-800">{note}</p>:null}
   </div>
