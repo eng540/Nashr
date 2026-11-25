@@ -167,7 +167,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const [status, setStatus] = useState<GenericArtifactReviewStatus>(["APPROVED","REJECTED"].includes(libraryParams.get("artifact_status")??"") ? libraryParams.get("artifact_status") as GenericArtifactReviewStatus : "DRAFT");
   const [copyRequests,setCopyRequests]=useState<Record<string,{platform:string;nonce:number}>>({});
   const [focusedId,setFocusedState] = useState<string|null>(libraryParams.get("artifact_id"));
-  const setFocusedId=(id:string|null)=>{setFocusedState(id);const next=new URLSearchParams(libraryParams);if(id){next.set("artifact_id",id);next.set("artifact_status",status);}else next.delete("artifact_id");if(id!==focusedId){next.delete("text_job_id");next.delete("photo_job_id");}setLibraryParams(next,{preventScrollReset:true});};
+  const setFocusedId=(id:string|null)=>{setFocusedState(id);const next=new URLSearchParams(libraryParams);if(id){next.set("artifact_id",id);next.set("artifact_status",status);}else next.delete("artifact_id");if(id!==focusedId){next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");}setLibraryParams(next,{preventScrollReset:true});};
   useEffect(()=>{setFocusedState(libraryParams.get("artifact_id"));const requested=libraryParams.get("artifact_status");if(requested&&["DRAFT","APPROVED","REJECTED"].includes(requested))setStatus(requested as GenericArtifactReviewStatus);},[libraryParams]);
   const materialNav=useRef<HTMLElement>(null);
   useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
@@ -496,7 +496,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         <p className="mt-1 text-sm text-slate-500">تصفّح المواد، ثم افتح مادة لمراجعة أصلها وتجهيز وجهاتها.</p>
       </div>
       <label className="text-sm font-semibold">الحالة
-        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => {const next=new URLSearchParams(libraryParams);next.delete("artifact_id");next.delete("text_job_id");next.delete("photo_job_id");next.set("artifact_status",event.target.value);setFocusedState(null);setStatus(event.target.value as GenericArtifactReviewStatus);setLibraryParams(next,{preventScrollReset:true});}} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
+        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => {const next=new URLSearchParams(libraryParams);next.delete("artifact_id");next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");next.set("artifact_status",event.target.value);setFocusedState(null);setStatus(event.target.value as GenericArtifactReviewStatus);setLibraryParams(next,{preventScrollReset:true});}} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
           <option value="DRAFT">قيد المراجعة</option>
           <option value="APPROVED">معتمد</option>
           <option value="REJECTED">مرفوض</option>
@@ -800,4 +800,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-          }
+}
