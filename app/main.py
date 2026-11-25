@@ -1,3 +1,4 @@
+from app.api.production_history import router as production_history_router
 import asyncio
 import logging
 import math
@@ -237,6 +238,7 @@ def create_app() -> FastAPI:
     application.include_router(auth_router)
     application.include_router(legal_router)
     register_gemini_error_handlers(application)
+    application.include_router(production_history_router)
     application.include_router(router)
     application.include_router(control_plane_router)
     application.include_router(policies_router)
