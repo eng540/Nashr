@@ -1,3 +1,4 @@
+import { BatchReviewPanel } from "./BatchReviewPanel";
 import { useSearchParams } from "react-router";
 import {EditorialReviewNotes} from "./EditorialReviewNotes";
 import {ContentOrganizationPanel} from "./ContentOrganizationPanel";
@@ -518,6 +519,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       </div></details>
       <details open={!compact} className="library-filters"><summary>تنظيم جماعي · تحديد الفهرسة والسلاسل والتصنيفات</summary><div className="flex flex-wrap items-center gap-2 pt-3 text-xs leading-7"><p className="text-slate-400">فهرسة المواد، مستقلة عن تحديد النشر · حتى 100 مادة</p><button type="button" className="rounded border p-2" onClick={()=>setCatalogIds(pagedArtifacts.filter(i=>i.metadata.source_type!=="PLATFORM_VARIANT").map(i=>i.id))}>تحديد صفحة الفهرسة</button> <button type="button" className="rounded border p-2" onClick={()=>setCatalogIds([])}>إلغاء تحديد الفهرسة</button><p>{catalogIds.filter(id=>allArtifacts.some(i=>i.id===id)).length} محدد للتنظيم</p></div></details>
       {catalogIds.some(id=>allArtifacts.some(i=>i.id===id))?<ContentOrganizationPanel key={catalogIds.join(",")} items={allArtifacts.filter(i=>catalogIds.includes(i.id))}/>:null}
+      {status === "DRAFT" && !focusedId && !artifacts.isError ? <BatchReviewPanel key={[status,search,kindFilter,sourceFilter,seriesFilter,categoryFilter,sortMode].join("|")} items={filteredArtifacts} pageItems={pagedArtifacts} unsavedIds={Object.keys(drafts).filter(id=>drafts[id]?.content!==undefined||drafts[id]?.review_note!==undefined)} renderMedia={item=>item.storage_uri?<GenericArtifactMediaPreview artifact={item}/>:null} onApproved={()=>void refresh()}/>:null}
       {status === "APPROVED" ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
         <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
           <input
@@ -775,4 +777,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-}
+            }
