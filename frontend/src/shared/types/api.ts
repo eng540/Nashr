@@ -39,6 +39,9 @@ export interface EligibilityResponse {
 }
 
 export interface Schedule {
+  content_summary?: Array<{title:string;kind:string}>;
+  platform?: string;
+  destination_label?: string | null;
   id: string;
   name: string;
   status: string;
