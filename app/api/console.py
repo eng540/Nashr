@@ -4,7 +4,7 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nashr — مساحة العمل</title><script src="https://cdn.tailwindcss.com"></script>
+<base target="_top"><title>Nashr — مساحة العمل</title><script src="https://cdn.tailwindcss.com"></script>
 <style>
   *{box-sizing:border-box;min-width:0}html,body{width:100%;margin:0}select,input,button{max-width:100%}select{width:100%}p,h1,h2,h3{overflow-wrap:anywhere}
   body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
