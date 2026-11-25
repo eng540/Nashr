@@ -278,7 +278,7 @@ export function PublishingPage() {
         {([
           ["ready", "المحتوى والتجهيز", "↗", "قائمة موحدة، ثم أدوات جدولة النصوص"],
           ["plans", "خطط النشر", schedules.isError?"—":schedules.data?.total ?? schedules.data?.items.length ?? "—", "الخطط المحفوظة وحالاتها"],
-          ["calendar", "تقويم Telegram", upcoming.data?.items.length ?? "—", "القادم وجدول اليوم"],
+          ["calendar", "التقويم · Telegram", upcoming.data?.items.length ?? "—", "القادم وجدول اليوم"],
           ["platforms", "مسودات المنصات", platformVariants.data?.length ?? "—", "تحضير يدوي فقط، بلا نشر آلي"],
         ] as const).map(([key, label, count, hint]) => (
           <button key={key} type="button" onClick={() => switchSection(key)} aria-pressed={section===key} className="text-right">
