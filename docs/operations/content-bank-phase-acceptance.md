@@ -263,3 +263,12 @@ editor. They remain unchanged until explicitly edited and saved. They are never
 silently appended to the message or dropped by a runtime. Inherited title
 blockers therefore have an actionable editing path rather than an invisible
 field. Source material and other platform copies remain unchanged.
+
+
+## Exact Facebook photo automatic execution
+- Photo route uses the existing Page runtime table, advisory lock, scheduler and known-ID readback. No parallel queue.
+- JPEG/PNG bytes up to4MB, original or selected private derivative, source/version/asset/SHA pinned. Animated images rejected.
+- Five explicit consent fields include exact artwork and direct-byte disclosure. Text route cannot approve photo rows.
+- Future start, cancellation before send, expiry, source/copy/Page drift, write-ahead claim and no automatic unknown retry remain enforced.
+- Full-frame JPEG preparation now supports Facebook as well as Instagram. Original remains unchanged. No public URL is generated for Facebook.
+- Local provider simulations are engineering evidence only. Scheduled live batch and actual Meta links are separate acceptance work.

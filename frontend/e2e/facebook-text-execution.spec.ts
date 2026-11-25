@@ -23,7 +23,7 @@ test('Facebook exact text needs separate public approval and can cancel before s
  const approve=panel.getByRole('button',{name:'اعتماد تنفيذ نص Facebook المحدد',exact:true});await expect(approve).toBeDisabled();
  await panel.getByRole('checkbox').nth(0).check();await panel.getByRole('checkbox').nth(1).check();await expect(approve).toBeDisabled();await panel.getByRole('checkbox').nth(2).check();
  await page.setViewportSize({width:390,height:844});await panel.screenshot({path:info.outputPath('facebook-text-mobile.png'),style:'header{visibility:hidden}'});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
- await approve.click();await expect(panel.getByText('الحالة: معتمد بانتظار التنفيذ',{exact:true})).toBeVisible();await panel.getByRole('button',{name:'إلغاء قرار النص قبل بدء الإرسال',exact:true}).click();await expect(panel.getByText('الحالة: ملغى محلياً',{exact:true})).toBeVisible();
+ await approve.click();await expect(panel.getByText('الحالة: معتمد بانتظار التنفيذ',{exact:true})).toBeVisible();await panel.getByRole('button',{name:'إلغاء القرار قبل بدء الإرسال',exact:true}).click();await expect(panel.getByText('الحالة: ملغى محلياً',{exact:true})).toBeVisible();
  expect(writes).toEqual([`/api/connections/facebook/text-posts/materials/${id}/preview`,`/api/connections/facebook/text-posts/${jid}/approve`,`/api/connections/facebook/text-posts/${jid}/cancel`]);
 });
 

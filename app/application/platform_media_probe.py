@@ -55,8 +55,8 @@ async def preview_instagram_jpeg(session,uid,platform,*,fingerprint,version,back
     from app.domain.image_derivative import jpeg_preview
     row=await session.get(ArtifactModel,uid)
     copy=await session.get(PlatformCopyModel,(uid,platform))
-    if platform!='instagram' or row is None or row.kind!='IMAGE' or row.status!='AVAILABLE' or row.review_status!='APPROVED' or not row.storage_uri or copy is None:
-        raise ValueError('اختر صورة أصلية معتمدة ونسخة Instagram مجهزة.')
+    if platform not in {'instagram','facebook'} or row is None or row.kind!='IMAGE' or row.status!='AVAILABLE' or row.review_status!='APPROVED' or not row.storage_uri or copy is None:
+        raise ValueError('اختر صورة أصلية معتمدة ونسخة Instagram أو Facebook مجهزة.')
     if source_fingerprint(row)!=fingerprint or copy.source_fingerprint!=fingerprint or copy.version!=version:
         raise ValueError('تغير الأصل أو النسخة. أعد تحميل النسخ قبل التحويل.')
     data=await S3ArtifactStorage.from_environment().get_bytes(row.storage_uri,max_bytes=50*1024*1024)

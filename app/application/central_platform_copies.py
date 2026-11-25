@@ -59,9 +59,9 @@ def evaluate(row, copy):
         from app.application.facebook_copy_fields import blockers as facebook_blockers
         blockers.extend(facebook_blockers(row.kind,fields))
         if row.kind=='IMAGE':
-            if row.mime_type not in {'image/jpeg','image/png'} or getattr(copy,'selected_media_id',None) is not None:
-                blockers.append('تجهيز الصورة الحالي لأصل JPEG أو PNG فقط، دون تبديل وسيط.')
-            media.append('مسار الصورة للمراجعة الخاصة فقط، لا تنفيذ نشر صورة. يلزم فحص الملف والأبعاد والحجم والحقوق، ولا نقرأ الملف هنا.')
+            if row.mime_type not in {'image/jpeg','image/png'} and getattr(copy,'selected_media_id',None) is None:
+                blockers.append('الصورة تتطلب أصل JPEG/PNG أو وسيط JPEG محفوظاً مختاراً لهذه النسخة.')
+            media.append('يلزم فحص بايتات الصورة المختارة وحد4MB المحلي ومراجعة الصفحة العامة والنص والصورة والحقوق وإذن إرسالها إلى Meta؛ الحقول وحدها لا تثبت الجاهزية.')
         elif row.kind=='VIDEO':
             media.append('حقول Reel فقط. يلزم فحص وسيط MP4 الحالي وترميزه وصوته وحجمه في مسار Facebook Reel المنفصل، لا يعني قبول الحقول قبول الملف.')
         elif row.kind=='TEXT':
