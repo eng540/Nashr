@@ -178,3 +178,25 @@ async def test_operation_calendar_half_open_dst_day_filters_all_reel_states_and_
         assert first['items'][0]['id']==created[1] and second['items'][0]['id']==created[2]
         assert first['items'][0]['state']=='OUTCOME_UNKNOWN' and second['items'][0]['state']=='CANCELLED'
         assert first['counts']['attention']==1 and first['counts']['total']==2
+
+@pytest.mark.asyncio
+async def test_operation_filters_intersect_platform_day_state_and_preserve_other_history(config):
+    from tests.integration.test_media_scheduling import _media_artifact
+    from app.infrastructure.database.models import FacebookExecutionModel as Text
+    uid=await _media_artifact();due=datetime(2031,1,1,22,30,tzinfo=timezone.utc)
+    async with SessionFactory() as s:
+        for kind,state in [('IMAGE','PUBLISHED_AT_LAST_CHECK'),('TEXT','OUTCOME_UNKNOWN'),('TEXT','CANCELLED'),('TEXT','APPROVED')]:
+            s.add(Text(artifact_id=uid,page_id='123',source_fingerprint='a'*64,copy_version=1,kind=kind,message='synthetic',total_bytes=0,runtime_snapshot={'timezone':'UTC','connection':{'page_name':'synthetic'}},evidence_ref='trusted-message:synthetic-only-123',due_at=due,state=state))
+        await s.commit()
+    async with browser() as c:
+        for group,platform,expected in [('all','all',4),('published','facebook_photo',1),('attention','facebook_text',1),('waiting','facebook_text',1),('other','facebook_text',1),('published','facebook_text',0),('all','instagram',0)]:
+            params={'date':'2031-01-02','timezone':'Asia/Riyadh','state_group':group,'platform':platform,'limit':1}
+            r=await c.get('/api/platform-operations',params=params);assert r.status_code==200,r.text
+            j=r.json();assert j['total']==j['counts']['total']==expected
+            assert j['platform']==platform and j['state_group']==group
+            if expected and group!='all':assert j['counts'].get(group,0)==(0 if group=='other' else 1)
+            if platform!='all':assert all(i['platform']==platform for i in j['items'])
+            assert r.headers['cache-control']=='no-store'
+        assert (await c.get('/api/platform-operations?state_group=typo')).status_code==422
+        assert (await c.get('/api/platform-operations?platform=tiktok')).status_code==422
+        assert (await c.get('/api/platform-operations?date=2031-01-01&timezone=Asia/Riyadh&platform=facebook_text')).json()['total']==0

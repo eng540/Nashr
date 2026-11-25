@@ -9,7 +9,7 @@ import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime, dateInTimezon
 import { TelegramPreview } from "../../shared/components/TelegramPreview";
 
 import {get} from "../../shared/api/client";
-import {PlatformOperations} from './PlatformOperations';
+import {PlatformOperations, type OperationGroup} from './PlatformOperations';
 import {UnifiedPublishingQueue} from "./UnifiedPublishingQueue";
 import { PageHeader } from "../../shared/components/ui";
 
@@ -23,6 +23,7 @@ export function PublishingPage() {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [section, setSection] = useState<Section>(searchParams.get("connections")==="instagram"?"platforms":searchParams.get("schedule_id")||searchParams.get("view")==="plans"?"plans":"ready");
+  const [operationGroup,setOperationGroup]=useState<OperationGroup>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
@@ -273,9 +274,9 @@ export function PublishingPage() {
       />
 
       <div className="workspace-stats publishing-stats" aria-label="ملخص النشر">
-        <button className="workspace-stat" onClick={()=>switchSection('plans')}><small>عمليات Meta القادمة أو الجارية</small><strong>{operationsSummary.data?.counts?.waiting??'—'}</strong><span>Instagram وFacebook · قرارات معتمدة</span></button>
-        <button className="workspace-stat" onClick={()=>switchSection('plans')}><small>نشر Meta المؤكد</small><strong>{operationsSummary.data?.counts?.published??'—'}</strong><span>نتائج محفوظة من المنصة</span></button>
-        <button className="workspace-stat" onClick={()=>switchSection('plans')}><small>عمليات تحتاج مراجعة</small><strong>{operationsSummary.data?.counts?.attention??'—'}</strong><span>لا نعيد إرسال نتيجة غير محسومة</span></button>
+        <button className="workspace-stat" onClick={()=>{setOperationGroup('waiting');switchSection('plans');}}><small>عمليات Meta القادمة أو الجارية</small><strong>{operationsSummary.data?.counts?.waiting??'—'}</strong><span>Instagram وFacebook · قرارات معتمدة</span></button>
+        <button className="workspace-stat" onClick={()=>{setOperationGroup('published');switchSection('plans');}}><small>نشر Meta المؤكد</small><strong>{operationsSummary.data?.counts?.published??'—'}</strong><span>نتائج محفوظة من المنصة</span></button>
+        <button className="workspace-stat" onClick={()=>{setOperationGroup('attention');switchSection('plans');}}><small>عمليات تحتاج مراجعة</small><strong>{operationsSummary.data?.counts?.attention??'—'}</strong><span>لا نعيد إرسال نتيجة غير محسومة</span></button>
         <button className="workspace-stat" onClick={()=>switchSection('calendar')}><small>قادم خطط Telegram</small><strong>{upcoming.isError?'—':upcoming.data?.items.length??'—'}</strong><span>قائمة منفصلة، لا تشمل Meta</span></button>
       </div>
       {operationsSummary.isError?<p role="alert" className="service-alert">تعذر تحميل ملخص Meta. لا نستنتج أن العدد صفر. <button onClick={()=>void operationsSummary.refetch()}>إعادة المحاولة</button></p>:null}
@@ -283,10 +284,10 @@ export function PublishingPage() {
         {([
           ["ready", "المحتوى والتجهيز", "↗", "قائمة موحدة، ثم أدوات جدولة النصوص"],
           ["plans", "خطط النشر", schedules.isError?"—":schedules.data?.total ?? schedules.data?.items.length ?? "—", "الخطط المحفوظة وحالاتها"],
-          ["calendar", "التقويم · Telegram", upcoming.data?.items.length ?? "—", "القادم وجدول اليوم"],
+          ["calendar", "التقويم · كل المنصات", "↗", "Telegram ومواعيد Meta لليوم المختار"],
           ["platforms", "مسودات المنصات", platformVariants.data?.length ?? "—", "تحضير يدوي فقط، بلا نشر آلي"],
         ] as const).map(([key, label, count, hint]) => (
-          <button key={key} type="button" onClick={() => switchSection(key)} aria-pressed={section===key} className="text-right">
+          <button key={key} type="button" onClick={() => {if(key==='plans')setOperationGroup('all');switchSection(key);}} aria-pressed={section===key} className="text-right">
             <div className="flex items-center justify-between gap-3"><strong>{label}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{count}</span></div>
             <span className="sr-only">{hint}</span>
           </button>
@@ -355,7 +356,7 @@ export function PublishingPage() {
         </section>
       )}
 
-      {section === "plans" && <PlatformOperations/>}
+      {section === "plans" && <PlatformOperations key={operationGroup} initialGroup={operationGroup}/>}
       {section === "plans" && (
         <section className="space-y-4" data-testid="publishing-plans">
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
