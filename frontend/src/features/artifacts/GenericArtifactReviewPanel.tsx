@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
 import { Badge, EmptyState, Input, Select } from "../../shared/components/ui";
 import { productionJobsApi, type ProductionProductOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
-import { artifactSearchText, artifactSeriesKey } from "../../shared/utils/artifactLibrary";
+import { artifactSearchText, artifactSeriesKey, isSelectableOriginal } from "../../shared/utils/artifactLibrary";
 import { postsApi } from "../../shared/api/postsApi";
 
 
@@ -245,6 +245,14 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   useEffect(()=>{if(reviewBatchRaw!==null)setSelectedMediaIds([]);},[reviewBatchRaw]);
   useEffect(()=>{if(reviewBatchRaw!==null&&(artifacts.isFetching||artifacts.isError||reviewBatchIds.some(id=>!allArtifacts.some(i=>i.id===id&&i.review_status==="APPROVED"&&i.status==="AVAILABLE"&&i.metadata.source_type!=="PLATFORM_VARIANT"))))setSelectedMediaIds([]);},[reviewBatchRaw,reviewBatchIds,allArtifacts,artifacts.isFetching,artifacts.isError]);
 
+  useEffect(()=>{
+    if(artifacts.isFetching||artifacts.isError||!artifacts.data)return;
+    setSelectedMediaIds(current=>{
+      const next=current.filter(id=>allArtifacts.some(item=>item.id===id&&isSelectableOriginal(item)));
+      return next.length===current.length?current:next;
+    });
+  },[allArtifacts,artifacts.isFetching,artifacts.isError,artifacts.data]);
+
   const seriesOptions = useMemo(() => [...new Set(allArtifacts.map(artifactSeriesKey))].sort((a,b) => a.localeCompare(b, "ar")), [allArtifacts]);
   const categoryOptions=useMemo(()=>[...new Set(allArtifacts.map(i=>i.organization?.category||"غير مصنف"))].sort((a,b)=>a.localeCompare(b,"ar")),[allArtifacts]);
   const filteredArtifacts = useMemo(() => {
@@ -356,8 +364,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     },
     onSuccess: (schedule, input) => setMediaSchedules((current) => ({ ...current, [input.id]: { id: schedule.id, status: schedule.status, at: schedule.items[0]?.scheduled_at ?? "" } })),
   });
-  const isTelegramMediaEligible = (artifact: GenericReviewableArtifact) =>
-    (STORED_MEDIA.includes(artifact.kind) && Boolean(artifact.storage_uri) || ["TEXT", "QUIZ"].includes(artifact.kind)) && artifact.review_status === "APPROVED";
+
   const eligibleSelectedCount = selectedMediaIds.length;
   const batchMediaDrafts = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -408,7 +415,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const toggleMediaSelection = (artifactId: string, checked: boolean) => {
     setSelectedMediaIds((current) => checked ? [...new Set([...current, artifactId])].slice(0,100) : current.filter((id) => id !== artifactId));
   };
-  const pageEligibleIds = pagedArtifacts.filter(isTelegramMediaEligible).map((artifact) => artifact.id);
+  const pageEligibleIds = pagedArtifacts.filter(isSelectableOriginal).map((artifact) => artifact.id);
   const allPageSelected = pageEligibleIds.length > 0 && pageEligibleIds.every((id) => selectedMediaIds.includes(id));
   const publishQuiz = useMutation({
     mutationFn: ({ publicationId, content }: { artifactId: string; publicationId: string; content: string }) => genericArtifactsApi.publishQuiz(publicationId, content),
@@ -552,8 +559,8 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           />
           تحديد كل عناصر الصفحة
         </label>
-        <button type="button" onClick={()=>{const eligible=filteredArtifacts.filter(isTelegramMediaEligible).map(item=>item.id);setSelectedMediaIds(eligible.slice(0,100));setBatchNote(eligible.length>100?`حُدد أول 100 من ${eligible.length} نتيجة بالترتيب المعروض. حد الدفعة 100؛ عالجها ثم اختر دفعة أخرى. لم تُحدّد بقية النتائج.`:`حُددت النتائج المؤهلة وعددها ${eligible.length}.`);}} className="rounded-lg border bg-white px-3 py-2 text-xs font-bold">تحديد النتائج المؤهلة (حتى 100)</button>
-        <p className="w-full text-xs text-slate-600">حد الدفعة 100 مادة. التحديد يحفظ ترتيبك بين الصفحات، ولا يحدد ما يزيد عن 100 تلقائياً.</p>
+        <button type="button" onClick={()=>{const eligible=filteredArtifacts.filter(isSelectableOriginal).map(item=>item.id);setSelectedMediaIds(eligible.slice(0,100));setBatchNote(eligible.length>100?`حُدد أول 100 من ${eligible.length} نتيجة بالترتيب المعروض. حد الدفعة 100؛ عالجها ثم اختر دفعة أخرى. لم تُحدّد بقية النتائج.`:`حُددت النتائج المؤهلة وعددها ${eligible.length}.`);}} className="rounded-lg border bg-white px-3 py-2 text-xs font-bold">تحديد النتائج المؤهلة (حتى 100)</button>
+        <p className="w-full text-xs text-slate-600">تحديد أصول معتمدة ومتاحة فقط، لا دليل جاهزية للنشر. يظهر الأصل حتى عند نقص ملفه كي تقرأ العائق. النسخ المشتقة والمواد غير المتاحة مستبعدة. حد الدفعة 100 مادة، مع حفظ ترتيبك بين الصفحات.</p>
         <span className="text-xs font-semibold text-slate-500" data-testid="media-selection-count">{eligibleSelectedCount} محدد</span>
         <button
           type="button"
@@ -583,7 +590,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       {displayArtifacts.map((artifact) => <article key={artifact.id} data-focused={focusedId===artifact.id} className="library-card min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<label className="text-xs"><input type="checkbox" aria-label={`تنظيم المخرج ${artifact.id}`} checked={catalogIds.includes(artifact.id)} disabled={!catalogIds.includes(artifact.id)&&catalogIds.length>=100} onChange={e=>setCatalogIds(ids=>e.target.checked?[...ids,artifact.id]:ids.filter(id=>id!==artifact.id))}/> فهرسة</label>:null}
-          {status === "APPROVED" && isTelegramMediaEligible(artifact) ? <input
+          {status === "APPROVED" && isSelectableOriginal(artifact) ? <input
             type="checkbox"
             aria-label={`تحديد المخرج ${artifact.id}`}
             checked={selectedMediaIds.includes(artifact.id)}
@@ -793,4 +800,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-                                                                    }
+          }
