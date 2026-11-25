@@ -159,3 +159,7 @@ Read-only progress counts original available non-POST materials separately from 
 ## Plan browsing and feed isolation
 
 Saved-plan search, status and failed-item filters now apply before server pagination and count, including old plans beyond the previous newest-fifty window. Literal substring search covers saved plan names/zones and saved original/post titles/captions/content, not inferred categories. No schedules or items are rewritten. Publishing navigation, unified queue, calendar and saved plans remain accessible if the separate editorial-ready feed is unavailable; explicit feed/plan errors are not empty-state messages. A fresh backend suite validates older failures and API filtering. Browser checks cover failing editorial reads, server pagination/search parameters and failed plan reads without writes.
+
+## Truthful loading and failure-filter polish
+
+Pagination now says that a page is loading rather than showing a temporary incompatible page/total pair. Both navigation buttons stay disabled during that fetch. Unknown/error counts remain unknown. An active failure-only plan filter is always visible and can be cleared even when it has results. This is read-only display/navigation work, with a deliberately delayed isolated browser response validating the intermediate state.
