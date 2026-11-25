@@ -230,3 +230,22 @@ Official sources checked 2026-11-25:
 - https://developers.google.com/youtube/data/guides/quota_and_compliance_audits
 
 Current Google pages no longer impose the former unverified-project private-only upload restriction. Do not use that stale rule as an account blocker. This does not activate uploads or waive OAuth/account requirements.
+
+## Facebook Page text runtime, 2026-11-25
+
+A saved approved TEXT original and its exact Facebook copy can now be privately
+previewed against the saved Page, then separately approved for public Page text
+publication. Image/video inputs and nonempty extra copy fields are rejected,
+not silently dropped. Central approval, copy validity, connection verification
+and the explicit execution decision remain separate facts.
+
+The decision pins source/copy/Page and optional app-local time up to seven days.
+The worker checks current prerequisites at dispatch, commits SENDING before the
+single POST, persists a known post ID before readback, and never auto-resends an
+unknown outcome. A Page readback, not a returned ID, establishes publication.
+An interrupted worker becomes OUTCOME_UNKNOWN. Legacy dormant rows cannot enter
+this scanner. Cancel is local and only before sending; it does not delete posts.
+
+No live public text acceptance test was run for this tranche. Existing live
+posts and held production videos were not used. No claim of end-to-end provider
+acceptance follows from the synthetic tests or deployment alone.

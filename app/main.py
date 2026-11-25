@@ -27,6 +27,7 @@ from app.api.library_import import router as library_import_router
 from app.api.connections import router as connections_router
 from app.api.facebook_page_connections import router as facebook_page_connections_router
 from app.api.tiktok_connections import router as tiktok_connections_router
+from app.api.facebook_text_execution import router as facebook_text_execution_router
 from app.api.facebook_reel_execution import router as facebook_reel_execution_router
 from app.api.instagram_connections import router as instagram_connections_router
 from app.api.instagram_execution import router as instagram_execution_router
@@ -90,15 +91,16 @@ async def run_schedule_trigger() -> None:
             except Exception:
                 # Do not include candidate data or provider exceptions in logs.
                 logger.warning("event=TIKTOK_TEMPORARY_FLOW_CLEANUP_FAILED")
-            try:
-                from app.application.instagram_runtime import process_approved
-                await process_approved()
-                from app.application.facebook_reel_runtime import process_approved as process_facebook_reels
-                await process_facebook_reels()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("event=INSTAGRAM_TRIGGER_FAILED")
+            from app.application.instagram_runtime import process_approved
+            from app.application.facebook_reel_runtime import process_approved as process_facebook_reels
+            from app.application.facebook_text_runtime import process_approved as process_facebook_text
+            for worker in (process_approved,process_facebook_reels,process_facebook_text):
+                try:
+                    await worker()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("event=PLATFORM_EXECUTION_TRIGGER_FAILED worker=%s",worker.__module__)
             processed = await process_due_schedule_items(limit=20)
             if processed:
                 logger.info("event=SCHEDULE_TRIGGER_PROCESSED count=%s", processed)
@@ -243,6 +245,7 @@ def create_app() -> FastAPI:
     application.include_router(publishing_queue_router)
     application.include_router(platform_operations_router)
     application.include_router(facebook_page_connections_router)
+    application.include_router(facebook_text_execution_router)
     application.include_router(facebook_reel_execution_router)
     application.include_router(tiktok_connections_router)
     application.include_router(instagram_connections_router)
