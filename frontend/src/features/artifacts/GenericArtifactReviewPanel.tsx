@@ -183,18 +183,25 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const [variantPostId, setVariantPostId] = useState("");
   const [variantPostPlatform, setVariantPostPlatform] = useState("");
   const [variantPostNote, setVariantPostNote] = useState("");
-  const [search, setSearch] = useState("");
-  const [kindFilter, setKindFilter] = useState("ALL");
-  const [sourceFilter, setSourceFilter] = useState("ALL");
-  const [seriesFilter, setSeriesFilter] = useState("ALL");
-  const [categoryFilter,setCategoryFilter]=useState("ALL");
+  const filterValue=(key:string,fallback:string)=>libraryParams.get(key)??fallback;
+  const setLibraryFilter=(key:string,value:string,fallback:string)=>setLibraryParams(current=>{const next=new URLSearchParams(current);if(value===fallback)next.delete(key);else next.set(key,value);next.delete("artifact_id");next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");return next;},{replace:true,preventScrollReset:true});
+  const [search,setSearchText]=useState(()=>filterValue("library_q",""));
+  const searchRequested=useRef(search);
+  const setSearch=(value:string)=>{searchRequested.current=value;setSearchText(value);setLibraryFilter("library_q",value,"");};
+  const observedQuery=useRef(filterValue("library_q",""));
+  useEffect(()=>{const value=libraryParams.get("library_q")??"";if(observedQuery.current===value)return;observedQuery.current=value;if(value===searchRequested.current)return;searchRequested.current=value;setSearchText(value);},[libraryParams]);
+  const kindFilter=filterValue("library_kind","ALL");const setKindFilter=(value:string)=>setLibraryFilter("library_kind",value,"ALL");
+  const sourceFilter=filterValue("library_source","ALL");const setSourceFilter=(value:string)=>setLibraryFilter("library_source",value,"ALL");
+  const seriesFilter=filterValue("library_series","ALL");const setSeriesFilter=(value:string)=>setLibraryFilter("library_series",value,"ALL");
+  const categoryFilter=filterValue("library_category","ALL");const setCategoryFilter=(value:string)=>setLibraryFilter("library_category",value,"ALL");
   const [catalogIds,setCatalogIds]=useState<string[]>([]);
-  const [sortMode, setSortMode] = useState<ArtifactSortMode>("newest");
+  const rawSort=filterValue("library_sort","newest");const sortMode:ArtifactSortMode=["newest","oldest","title","kind"].includes(rawSort)?rawSort as ArtifactSortMode:"newest";
+  const setSortMode=(value:ArtifactSortMode)=>setLibraryFilter("library_sort",value,"newest");
   const [page, setPage] = useState(0);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
   const reviewBatchRaw=libraryParams.get("review_batch");
   const reviewBatchIds=useMemo(()=>reviewBatchRaw===null?[]:reviewBatchRaw.split(","),[reviewBatchRaw]);
-  const finishBatchReview=(ids:string[])=>{const next=new URLSearchParams(libraryParams);next.set("artifact_status","APPROVED");next.set("review_batch",ids.join(","));next.delete("artifact_id");setSelectedMediaIds([]);setStatus("APPROVED");setFocusedState(null);setSearch("");setKindFilter("ALL");setSourceFilter("ALL");setSeriesFilter("ALL");setCategoryFilter("ALL");setPage(0);setLibraryParams(next,{preventScrollReset:true});void refresh();};
+  const finishBatchReview=(ids:string[])=>{const next=new URLSearchParams(libraryParams);next.set("artifact_status","APPROVED");next.set("review_batch",ids.join(","));next.delete("artifact_id");for(const key of ["library_q","library_kind","library_source","library_series","library_category","library_sort"])next.delete(key);setSelectedMediaIds([]);setStatus("APPROVED");setFocusedState(null);setPage(0);setLibraryParams(next,{preventScrollReset:true});void refresh();};
 
   const [copiesRevision,setCopiesRevision]=useState(0);
   const [batchNote, setBatchNote] = useState("");
@@ -281,7 +288,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const focusIndex=filteredArtifacts.findIndex(item=>item.id===focusedId);
   const displayArtifacts=focusedId?(focusedArtifact?[focusedArtifact]:[]):pagedArtifacts;
   const returnToLibrary=()=>{if(focusIndex>=0)setPage(Math.floor(focusIndex/LIBRARY_PAGE_SIZE));setFocusedId(null);};
-  const updateFilters = (apply: () => void) => { apply(); setPage(0); setFocusedId(null); };
+  const updateFilters = (apply: () => void) => { apply(); setPage(0); setFocusedState(null); };
   const save = useMutation({
     mutationFn: (id: string) => {
       const artifact = (artifacts.data?.items ?? []).find((item) => item.id === id);
@@ -532,7 +539,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           {seriesOptions.map((series) => <option key={series} value={series}>{series}</option>)}
         </Select>
         <Select aria-label="تصفية حسب التصنيف" value={categoryFilter} onChange={event=>updateFilters(()=>setCategoryFilter(event.target.value))}><option value="ALL">كل التصنيفات</option>{categoryOptions.map(c=><option key={c} value={c}>{c}</option>)}</Select>
-        <Select aria-label="ترتيب المخرجات" value={sortMode} onChange={(event) => setSortMode(event.target.value as ArtifactSortMode)}>
+        <Select aria-label="ترتيب المخرجات" value={sortMode} onChange={(event) => updateFilters(()=>setSortMode(event.target.value as ArtifactSortMode))}>
           <option value="newest">الأحدث أولًا</option>
           <option value="oldest">الأقدم أولًا</option>
           <option value="title">العنوان أبجديًا</option>
@@ -800,4 +807,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-}
+    }
