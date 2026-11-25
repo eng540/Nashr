@@ -1,3 +1,4 @@
+import { ApprovedBatchHandoff } from "./ApprovedBatchHandoff";
 import { BatchReviewPanel } from "./BatchReviewPanel";
 import { useSearchParams } from "react-router";
 import {EditorialReviewNotes} from "./EditorialReviewNotes";
@@ -185,6 +186,10 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const [sortMode, setSortMode] = useState<ArtifactSortMode>("newest");
   const [page, setPage] = useState(0);
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const reviewBatchRaw=libraryParams.get("review_batch");
+  const reviewBatchIds=useMemo(()=>reviewBatchRaw===null?[]:reviewBatchRaw.split(","),[reviewBatchRaw]);
+  const finishBatchReview=(ids:string[])=>{const next=new URLSearchParams(libraryParams);next.set("artifact_status","APPROVED");next.set("review_batch",ids.join(","));next.delete("artifact_id");setSelectedMediaIds([]);setStatus("APPROVED");setFocusedState(null);setSearch("");setKindFilter("ALL");setSourceFilter("ALL");setSeriesFilter("ALL");setCategoryFilter("ALL");setPage(0);setLibraryParams(next,{preventScrollReset:true});void refresh();};
+
   const [batchNote, setBatchNote] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState("");
@@ -230,6 +235,9 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   }, [activeJob.data?.status, queryClient]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
   const allArtifacts = useMemo(() => artifacts.data?.items ?? [], [artifacts.data]);
+  useEffect(()=>{if(reviewBatchRaw!==null)setSelectedMediaIds([]);},[reviewBatchRaw]);
+  useEffect(()=>{if(reviewBatchRaw!==null&&(artifacts.isFetching||artifacts.isError||reviewBatchIds.some(id=>!allArtifacts.some(i=>i.id===id&&i.review_status==="APPROVED"&&i.status==="AVAILABLE"&&i.metadata.source_type!=="PLATFORM_VARIANT"))))setSelectedMediaIds([]);},[reviewBatchRaw,reviewBatchIds,allArtifacts,artifacts.isFetching,artifacts.isError]);
+
   const seriesOptions = useMemo(() => [...new Set(allArtifacts.map(artifactSeriesKey))].sort((a,b) => a.localeCompare(b, "ar")), [allArtifacts]);
   const categoryOptions=useMemo(()=>[...new Set(allArtifacts.map(i=>i.organization?.category||"غير مصنف"))].sort((a,b)=>a.localeCompare(b,"ar")),[allArtifacts]);
   const filteredArtifacts = useMemo(() => {
@@ -519,7 +527,8 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       </div></details>
       <details open={!compact} className="library-filters"><summary>تنظيم جماعي · تحديد الفهرسة والسلاسل والتصنيفات</summary><div className="flex flex-wrap items-center gap-2 pt-3 text-xs leading-7"><p className="text-slate-400">فهرسة المواد، مستقلة عن تحديد النشر · حتى 100 مادة</p><button type="button" className="rounded border p-2" onClick={()=>setCatalogIds(pagedArtifacts.filter(i=>i.metadata.source_type!=="PLATFORM_VARIANT").map(i=>i.id))}>تحديد صفحة الفهرسة</button> <button type="button" className="rounded border p-2" onClick={()=>setCatalogIds([])}>إلغاء تحديد الفهرسة</button><p>{catalogIds.filter(id=>allArtifacts.some(i=>i.id===id)).length} محدد للتنظيم</p></div></details>
       {catalogIds.some(id=>allArtifacts.some(i=>i.id===id))?<ContentOrganizationPanel key={catalogIds.join(",")} items={allArtifacts.filter(i=>catalogIds.includes(i.id))}/>:null}
-      {status === "DRAFT" && !focusedId && !artifacts.isError ? <BatchReviewPanel key={[status,search,kindFilter,sourceFilter,seriesFilter,categoryFilter,sortMode].join("|")} items={filteredArtifacts} pageItems={pagedArtifacts} unsavedIds={Object.keys(drafts).filter(id=>drafts[id]?.content!==undefined||drafts[id]?.review_note!==undefined)} renderMedia={item=>item.storage_uri?<GenericArtifactMediaPreview artifact={item}/>:null} onApproved={()=>void refresh()}/>:null}
+      {status === "DRAFT" && !focusedId && !artifacts.isError ? <BatchReviewPanel key={[status,search,kindFilter,sourceFilter,seriesFilter,categoryFilter,sortMode].join("|")} items={filteredArtifacts} pageItems={pagedArtifacts} unsavedIds={Object.keys(drafts).filter(id=>drafts[id]?.content!==undefined||drafts[id]?.review_note!==undefined)} renderMedia={item=>item.storage_uri?<GenericArtifactMediaPreview artifact={item}/>:null} onApproved={finishBatchReview}/>:null}
+      {status==="APPROVED"&&reviewBatchRaw!==null?<ApprovedBatchHandoff ids={reviewBatchIds} items={allArtifacts} loading={artifacts.isFetching} failed={artifacts.isError} onContinue={ids=>{setSelectedMediaIds(ids);setBatchNote(`حُددت مواد دفعة الاعتماد نفسها وعددها ${ids.length}. اختر الوجهات أو افحص Telegram أدناه؛ لم تُحفظ وجهات ولم تُنشأ خطة.`);}} onClear={()=>{const next=new URLSearchParams(libraryParams);next.delete("review_batch");setLibraryParams(next,{preventScrollReset:true});setSelectedMediaIds([]);setBatchNote("");}}/>:null}
       {status === "APPROVED" ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
         <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
           <input
@@ -777,4 +786,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-            }
+                                                              }
