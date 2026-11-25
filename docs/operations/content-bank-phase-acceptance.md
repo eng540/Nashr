@@ -134,3 +134,12 @@ operations for review, not retry. A selected platform with connector confirmatio
 is no longer described as lacking all historical evidence. Earlier uncertain
 jobs are not silently cleared by another job. Historical results still do not
 prove current-copy delivery, all-destination completion or live account readiness.
+
+## Calendar wall-clock safety, 2026-11-25
+
+The scheduling UI rejects invalid calendar values, nonexistent DST times and
+repeated clock hours rather than silently choosing a different instant. Existing
+stored UTC timestamps and schedule zones are not rewritten. The daily calendar
+starts on the date in its displayed zone, lets the operator choose another valid
+IANA display zone and formats each daily item in that same zone. Upcoming items
+still show their saved plan zone. A view-only zone change never edits a plan.

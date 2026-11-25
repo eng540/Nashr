@@ -1,32 +1,25 @@
 export function localDateTimeToUtcISOString(value: string, timeZone: string): string {
-  const [date, time] = value.split("T");
-  const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute] = time.split(":").map(Number);
-  const requestedUtc = Date.UTC(year, month - 1, day, hour, minute);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) throw new Error("حدد تاريخاً ووقتاً صالحين.");
+  const [year, month, day, hour, minute] = value.split(/[-T:]/).map(Number);
+  const wall = Date.UTC(year, month - 1, day, hour, minute);
+  if (new Date(wall).toISOString().slice(0, 16) !== value) throw new Error("التاريخ أو الوقت غير صالح.");
+  // Sample both sides of timezone transitions. Keep every matching instant so
+  // a repeated clock hour is rejected rather than silently choosing one fold.
+  const offsets = new Set<number>();
+  for (let h = -36; h <= 36; h += 6) {
+    const instant = wall + h * 3600000;
+    const local = utcISOStringToLocalDateTime(new Date(instant).toISOString(), timeZone);
+    offsets.add(Date.parse(local + ":00Z") - instant);
+  }
+  const matches = [...offsets].map(offset => new Date(wall - offset).toISOString())
+    .filter(instant => utcISOStringToLocalDateTime(instant, timeZone) === value);
+  if (matches.length === 0) throw new Error("هذا الوقت غير موجود في المنطقة الزمنية المختارة. اختر وقتاً آخر.");
+  if (matches.length > 1) throw new Error("هذا الوقت يتكرر بسبب تغيير الساعة. اختر وقتاً غير ملتبس.");
+  return matches[0];
+}
 
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
-
-  const parts = formatter.formatToParts(new Date(requestedUtc));
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  const zonedAsUtc = Date.UTC(
-    Number(values.year),
-    Number(values.month) - 1,
-    Number(values.day),
-    Number(values.hour),
-    Number(values.minute),
-    Number(values.second),
-  );
-  const offsetMs = zonedAsUtc - requestedUtc;
-  return new Date(requestedUtc - offsetMs).toISOString();
+export function dateInTimezone(timeZone: string, at: Date = new Date()): string {
+  return utcISOStringToLocalDateTime(at.toISOString(), timeZone).slice(0, 10);
 }
 
 
