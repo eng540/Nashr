@@ -27,4 +27,6 @@ def test_public_exact_sandbox_proof_preserves_existing(monkeypatch):
         assert response.content==(root/filename).read_bytes().rstrip(b"\n")
         assert len(response.content)==68
     assert client.get("/api/connections/tiktok").status_code==401
+    import hashlib
+    assert hashlib.sha256(client.get("/tiktokePPmBzm3Ej1QWBVM7rVXy8eiIbCCGpJj.txt").content).hexdigest()=="5efaecff91c5f7f7b1b49388dd733bc6dc5452e79c2059c97317eb21c985488b"
     assert client.get("/bank").status_code==401
