@@ -53,4 +53,4 @@ async def history(session, artifact_id):
 def attention_for(artifact_id):
     view = results()
     return exists(select(view.c.id).where(view.c.artifact_id == artifact_id,
-        view.c.status != 'APPROVED', view.c.confirmed.is_not(True)))
+        view.c.status.notin_(['APPROVED', 'RETIRED_UNPUBLISHED']), view.c.confirmed.is_not(True)))
