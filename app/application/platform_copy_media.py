@@ -40,7 +40,7 @@ async def list_media(session,uid,platform):
 
 
 async def save_jpeg(session,uid,platform,*,fingerprint,version,background,expected_sha256):
-    if platform!='instagram':raise ValueError('تحويل JPEG المحفوظ متاح لنسخة Instagram فقط.')
+    if platform not in {'instagram','facebook'}:raise ValueError('تحويل JPEG المحفوظ لنسخة Instagram أو Facebook فقط.')
     row,copy=await current_copy(session,uid,platform,fingerprint,version)
     if row.kind!='IMAGE' or not row.storage_uri:raise ValueError('اختر صورة أصلية مخزنة.')
     storage=S3ArtifactStorage.from_environment()
@@ -50,7 +50,7 @@ async def save_jpeg(session,uid,platform,*,fingerprint,version,background,expect
     except Exception as exc:raise ValueError('تعذر تحويل الصورة. لم يُغيّر الأصل أو الاختيار.') from exc
     digest=hashlib.sha256(content).hexdigest()
     if digest!=expected_sha256:raise ValueError('اختلفت نتيجة التحويل عن المعاينة التي راجعتها. أنشئ معاينة جديدة أولاً.')
-    recipe={'kind':'INSTAGRAM_JPEG','version':1,'background':background,'quality':90,'cropped':False}
+    recipe={'kind':platform.upper()+'_JPEG','version':1,'background':background,'quality':90,'cropped':False}
     # Retry after an ambiguous response can reuse immutable bytes instead of uploading again.
     existing=(await session.execute(select(PlatformCopyMediaModel).where(PlatformCopyMediaModel.artifact_id==uid,PlatformCopyMediaModel.platform==platform,PlatformCopyMediaModel.source_fingerprint==fingerprint,PlatformCopyMediaModel.sha256==digest,PlatformCopyMediaModel.recipe==recipe))).scalars().first()
     uploaded_uri=None
