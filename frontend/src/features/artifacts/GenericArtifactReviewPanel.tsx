@@ -99,6 +99,7 @@ function ArtifactPublicationLedger({id}:{id:string}) {
     {open ? <><p className="text-xs">قراءة فقط، لا تنشئ مسودة ولا تعيد الإرسال. الاعتماد ليس دليلاً على النشر؛ وPUBLISHING قد تعني نتيجة غير محسومة فلا تعاود الإرسال.</p>
     {query.isLoading ? <p role="status">تحميل سجل النشر...</p>:null}{query.isError ? <p role="alert">{query.error.message}</p>:null}
     {query.data?.total===0&&offset===0&&!query.data?.connector_items?.length ? <p>لا توجد سجلات نشر لهذا العنصر. لا يشمل ذلك نشراً يدوياً خارج النظام.</p>:null}
+    {offset===0&&query.data?.connector_items?.length?<p className="text-xs">نتائج الموصلات المستقلة: {query.data.connector_items.length} نتيجة في هذه القراءة، منفصلة عن سجلات النشر المرقمة أدناه.</p>:null}
     {offset===0?query.data?.connector_items?.map(item=><article key={item.record_type+item.id} className="space-y-2 rounded border bg-white p-3 text-xs"><p className="font-semibold">{item.platform} · {item.status}</p><p>سجل الموصل المستقل · {item.confirmed?'نتيجة مثبتة':item.status==='RETIRED_UNPUBLISHED'?'عملية متروكة دون نشر، محفوظة للتوثيق':'لم يثبت اكتمال النشر'}</p><p className="break-all" dir="ltr">{item.destination} · {item.external_id||'لا معرّف نتيجة'}</p>{item.permalink?<a className="underline" href={item.permalink} target="_blank" rel="noreferrer">فتح نتيجة النشر المثبتة</a>:null}<p>{item.updated_at}</p><details><summary>النص المحفوظ وقت العملية</summary><p dir="auto" className="whitespace-pre-wrap break-words">{item.content}</p></details></article>):null}
     {query.data?.items.map(item=><article key={item.id} className="space-y-2 rounded border bg-white p-3 text-xs">
       <p className="font-semibold">{item.platform} · {item.status}</p><p className="break-all">الوجهة: <bdi>{item.destination}</bdi></p>
@@ -109,7 +110,7 @@ function ArtifactPublicationLedger({id}:{id:string}) {
       {item.error_message ? <p role="alert">{item.error_message}</p>:null}
     </article>)}
     {query.isFetching&&query.data?<p role="status" className="text-xs">جارٍ تحديث الصفحة المعروضة، هذه آخر قراءة محفوظة.</p>:null}
-    {query.data?<nav aria-label={`صفحات سجل النشر ${id}`} className="flex flex-wrap items-center gap-2 text-xs"><button type="button" className="workspace-secondary" disabled={offset===0||query.isFetching} onClick={()=>setOffset(value=>Math.max(0,value-pageSize))}>السجلات الأحدث</button><span role="status">{query.data.items.length?`السجلات ${offset+1} إلى ${offset+query.data.items.length} من ${query.data.total}`:'لا سجلات في هذه الصفحة'}</span><button type="button" className="workspace-secondary" disabled={offset+query.data.items.length>=query.data.total||query.isFetching} onClick={()=>setOffset(value=>value+pageSize)}>السجلات الأقدم</button></nav>:offset>0?<button type="button" className="workspace-secondary" disabled={query.isFetching} onClick={()=>setOffset(value=>Math.max(0,value-pageSize))}>العودة إلى السجلات الأحدث</button>:null}
+    {query.data?<nav aria-label={`صفحات سجل النشر ${id}`} className="flex flex-wrap items-center gap-2 text-xs"><button type="button" className="workspace-secondary" disabled={offset===0||query.isFetching} onClick={()=>setOffset(value=>Math.max(0,value-pageSize))}>السجلات الأحدث</button><span role="status">{query.data.items.length?`السجلات ${offset+1} إلى ${offset+query.data.items.length} من ${query.data.total}`:'لا سجلات نشر عامة في هذه الصفحة'}</span><button type="button" className="workspace-secondary" disabled={offset+query.data.items.length>=query.data.total||query.isFetching} onClick={()=>setOffset(value=>value+pageSize)}>السجلات الأقدم</button></nav>:offset>0?<button type="button" className="workspace-secondary" disabled={query.isFetching} onClick={()=>setOffset(value=>Math.max(0,value-pageSize))}>العودة إلى السجلات الأحدث</button>:null}
     {offset>0?<p className="text-xs">نتائج الموصلات المستقلة تظهر في الصفحة الأولى فقط، ولا تدخل في عدد سجلات النشر أعلاه.</p>:null}</>:null}
   </section>;
 }
@@ -790,4 +791,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-    }
+        }

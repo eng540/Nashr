@@ -19,3 +19,12 @@ test('read only publication ledger shows destination all message ids and attempt
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await page.getByRole('button',{name:'عرض وتحديث سجل النشر',exact:true}).click();expect(writes).toBe(0);
 });
+
+ test('connector-only publication history never labels the proven result as missing',async({page})=>{
+ const item={id:'connector-only',kind:'TEXT',status:'AVAILABLE',content:'أصل',metadata:{title:'مادة'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'};
+ await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;expect(r.method()).toBe('GET');
+ if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts/connector-only/publications')return route.fulfill({json:{total:0,items:[],connector_items:[{id:'ig',record_type:'INSTAGRAM_EXECUTION',platform:'instagram',destination:'synthetic',status:'PUBLISHED',content:'أصل',external_id:'123',permalink:null,confirmed:true,updated_at:'2026-11-23T20:00:00Z'}]}});
+ if(p.startsWith('/api/'))return route.fulfill({json:p.includes('/control/')?[]:{items:[],total:0}});if(['/posts','/sources'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
+ await page.goto('/bank?artifact_status=APPROVED&library_view=expanded');const ledger=page.getByLabel('سجل نشر المخرج connector-only',{exact:true});await ledger.getByRole('button',{name:'عرض وتحديث سجل النشر',exact:true}).click();await expect(ledger).toContainText('نتائج الموصلات المستقلة: 1 نتيجة');await expect(ledger).toContainText('لا سجلات نشر عامة في هذه الصفحة');await expect(ledger.getByText('لا سجلات في هذه الصفحة',{exact:true})).toHaveCount(0);await expect(ledger).toContainText('نتيجة مثبتة');
+ });
