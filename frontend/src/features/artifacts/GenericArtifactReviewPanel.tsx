@@ -172,6 +172,10 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   useEffect(()=>{setFocusedState(libraryParams.get("artifact_id"));const requested=libraryParams.get("artifact_status");if(requested&&["DRAFT","APPROVED","REJECTED"].includes(requested))setStatus(requested as GenericArtifactReviewStatus);},[libraryParams]);
   const materialNav=useRef<HTMLElement>(null);
   useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
+  const creationTask=(["manual","upload","variant","design"].includes(libraryParams.get("library_task")??"")?libraryParams.get("library_task"):null);
+  const [creationVisit,setCreationVisit]=useState(0);
+  const chooseCreationTask=(task:string)=>{setCreationVisit(v=>v+1);setLibraryParams(current=>{const next=new URLSearchParams(current);next.set("library_task",task);return next;},{preventScrollReset:true});};
+  useEffect(()=>{if(!creationTask)return;const frame=requestAnimationFrame(()=>{const panel=document.getElementById("library-create-tools") as HTMLDetailsElement|null;if(panel)panel.open=true;const heading=document.getElementById("library-task-"+creationTask);heading?.focus({preventScroll:true});heading?.scrollIntoView({block:"start"});});return()=>cancelAnimationFrame(frame);},[creationTask,creationVisit]);
   const [compact,setCompact] = useState(libraryParams.get("library_view")!=="expanded");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
@@ -497,7 +501,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     );
   }
   return <section className="library-browser space-y-3" aria-label="مراجعة المخرجات العامة">
-    <nav aria-label="مهام بنك المحتوى" className="grid grid-cols-2 gap-2 lg:grid-cols-4">{[["إنشاء نص أو اختبار", "manual"],["رفع وسيط جاهز", "upload"],["اشتقاق نسخة منصة", "variant"],["إنتاج بطاقة تصميم", "design"]].map(([label,target])=><button type="button" key={target} className="workspace-secondary justify-start" onClick={()=>{const panel=document.getElementById('library-create-tools') as HTMLDetailsElement|null;if(panel)panel.open=true;requestAnimationFrame(()=>document.getElementById('library-task-'+target)?.scrollIntoView({behavior:'smooth',block:'start'}));}}>＋ {label}</button>)}</nav>
+    <nav aria-label="مهام بنك المحتوى" className="grid grid-cols-2 gap-2 lg:grid-cols-4">{[["إنشاء نص أو اختبار", "manual"],["رفع وسيط جاهز", "upload"],["اشتقاق نسخة منصة", "variant"],["إنتاج بطاقة تصميم", "design"]].map(([label,target])=><button type="button" key={target} className="workspace-secondary justify-start" aria-pressed={creationTask===target} onClick={()=>chooseCreationTask(target)}>＋ {label}</button>)}</nav>
     <div className="library-heading flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 className="workspace-section-title">مكتبة المحتوى</h2>
@@ -745,11 +749,13 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       <span className="text-xs font-semibold text-slate-500">صفحة {safePage + 1} من {pageCount} · عرض {pagedArtifacts.length} من {filteredArtifacts.length}</span>
       <button type="button" onClick={() => {setFocusedId(null);setPage((current) => Math.min(pageCount - 1, current + 1));}} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">التالي</button>
     </nav> : null}
-    <details id="library-create-tools" open={!compact} className="workspace-disclosure space-y-3 p-4">
+    <details id="library-create-tools" open={!compact||Boolean(creationTask)} className="workspace-disclosure space-y-3 p-4">
       <summary className="cursor-pointer text-sm font-bold text-slate-600">إنشاء نص أو اختبار · رفع وسيط · اشتقاق نسخة منصة · بطاقة تصميم</summary>
       <div className="mt-3 space-y-3">
-    <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-      <h3 id="library-task-manual" className="scroll-mt-24 font-bold">نص أو اختبار تفاعلي</h3>
+      <nav aria-label="تغيير مهمة الإنشاء" className="flex flex-wrap gap-2">{[["نص أو اختبار","manual"],["رفع وسيط","upload"],["نسخة منصة","variant"],["بطاقة تصميم","design"]].map(([label,key])=><button type="button" key={key} aria-pressed={(creationTask??"manual")===key} className="workspace-secondary" onClick={()=>chooseCreationTask(key)}>{label}</button>)}</nav>
+      <p className="text-sm leading-7 text-slate-600">تظهر أداة المهمة المختارة فقط. يمكنك تغييرها دون إرسال أو اعتماد محتوى. تبقى المدخلات أثناء التنقل هنا، لكنها لا تُحفظ عند إعادة تحميل الصفحة حتى تحفظ المسودة.</p>
+    <div hidden={(creationTask??"manual")!=="manual"} className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+      <h3 tabIndex={-1} id="library-task-manual" className="scroll-mt-24 font-bold">نص أو اختبار تفاعلي</h3>
       <select aria-label="نوع المسودة اليدوية" value={manualKind} onChange={e => { setManualKind(e.target.value); if (NATIVE_TEMPLATES[e.target.value]) setNativeJson(JSON.stringify(blankNative(e.target.value), null, 2)); }} className="w-full rounded-lg border p-2"><option value="TEXT">نص</option><option value="QUIZ">اختبار</option><option value="POLL">استطلاع</option><option value="LOCATION">موقع</option><option value="LIVE_LOCATION">موقع حي محدود المدة</option><option value="VENUE">مكان</option><option value="CONTACT">جهة اتصال</option><option value="DICE">نرد تفاعلي</option></select>
       <input aria-label="عنوان المسودة اليدوية" value={manualTitle} onChange={e => setManualTitle(e.target.value)} placeholder="عنوان داخلي" className="w-full rounded-lg border p-2" />
       <textarea aria-label="نص المسودة اليدوية" value={manualContent} onChange={e => setManualContent(e.target.value)} placeholder={manualKind === "QUIZ" ? "سؤال الاختبار" : "النص الكامل"} className="min-h-32 w-full rounded-lg border p-2" />
@@ -759,7 +765,9 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       <button type="button" onClick={() => createManual.mutate()} disabled={!manualTitle.trim() || !manualContent.trim() || Boolean(NATIVE_TEMPLATES[manualKind]&&nativeError(nativeJson)) || createManual.isPending} className="rounded-lg bg-indigo-700 px-3 py-2 text-white">حفظ مسودة للمراجعة</button>
       {createManual.isError ? <p role="alert" className="text-rose-700">{createManual.error.message}</p> : null}
       {createManual.isSuccess ? <p role="status">حُفظت المسودة،لا نشر ولا اعتماد تلقائي.</p> : null}
-      <h3 id="library-task-upload" className="scroll-mt-24 border-t pt-4 font-bold">بنك الوسائط الجاهزة</h3>
+    </div>
+    <div hidden={creationTask!=="upload"} className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+      <h3 tabIndex={-1} id="library-task-upload" className="scroll-mt-24 border-t pt-4 font-bold">بنك الوسائط الجاهزة</h3>
       <p className="text-sm text-slate-600">اختر نوع إرسال Telegram صراحةً للصوت والملفات والملصقات. كل رفع يدخل قيد المراجعة. حد Telegram: الصور10MiB، وبقية الملفات50MiB. الأصل محفوظ؛ تعليق النشر محدود1024حرفاً، ولا تعليق للملصق أو الفيديو الدائري.</p>
       <label className="block text-sm font-semibold">نوع الإرسال
         <select aria-label="نوع الوسيط المرفوع" value={uploadKind} onChange={e => setUploadKind(e.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2">
@@ -779,8 +787,8 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       {ingestMedia.isError ? <p role="alert" className="text-sm text-rose-700">{ingestMedia.error.message}</p> : null}
       {ingestMedia.isSuccess ? <p role="status" className="text-sm text-emerald-800">تم الرفع؛ الوسيط الآن قيد المراجعة.</p> : null}
     </div>
-    <div className="space-y-3 rounded-xl border border-sky-100 bg-sky-50/50 p-4">
-      <h3 id="library-task-variant" className="scroll-mt-24 font-bold">اشتقاق نسخة بحدود منصة من منشور معتمد</h3>
+    <div hidden={creationTask!=="variant"} className="space-y-3 rounded-xl border border-sky-100 bg-sky-50/50 p-4">
+      <h3 tabIndex={-1} id="library-task-variant" className="scroll-mt-24 font-bold">اشتقاق نسخة بحدود منصة من منشور معتمد</h3>
       <p className="text-sm text-slate-600">ينشئ نسخة نصية منفصلة من منشور معتمد، مقصوصة عند حدود آمنة ضمن حد المنصة الموثق. تجهيز طول فقط دون إعادة صياغة؛ المنشور الأصلي لا يتغير، والنسخة تُحفظ قيد المراجعة، ولا يُنشر شيء خارجيًا.</p>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold">المنشور المصدر
@@ -803,10 +811,10 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       {derivePostVariant.isError ? <p role="alert" className="text-sm text-rose-700">تعذر اشتقاق النسخة: {derivePostVariant.error.message}</p> : null}
       {approvedPosts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المنشورات المعتمدة...</p> : null}
     </div>
-      <div id="library-task-design" className="scroll-mt-24">{designCard}</div>
+      <div hidden={creationTask!=="design"} tabIndex={-1} id="library-task-design" className="scroll-mt-24">{designCard}</div>
       </div>
     </details>
     {jobStatus}
     {mutationError}
   </section>;
-              }
+            }
