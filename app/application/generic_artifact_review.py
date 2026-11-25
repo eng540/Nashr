@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 from typing import Any
 from uuid import UUID
 
@@ -166,6 +168,13 @@ class GenericArtifactReviewService:
         row = await self._get_row(artifact_id, for_update=True)
         if row.review_status != "DRAFT":
             raise ValueError("Only DRAFT generic artifacts can be approved.")
+        await self._validate_approval(row)
+        await self._apply_approval(row, review_note)
+        await self.session.commit()
+        await self.session.refresh(row)
+        return _payload(row)
+
+    async def _validate_approval(self, row):
         _validate_review_candidate(row, row.content, dict(row.artifact_metadata or {}))
         if (row.artifact_metadata or {}).get("telegram_album") is not None:
             from app.application.telegram_albums import resolve_album
@@ -173,6 +182,8 @@ class GenericArtifactReviewService:
         if (row.artifact_metadata or {}).get('telegram_live_photo') is not None:
             from app.application.telegram_live_photos import resolve_live_photo
             await resolve_live_photo(self.session, row.artifact_metadata)
+
+    async def _apply_approval(self, row, review_note):
         if (row.artifact_metadata or {}).get("source_type") == "PLATFORM_VARIANT":
             row.artifact_metadata = {**row.artifact_metadata, "needs_review": False}
         row.review_status = "APPROVED"
@@ -182,9 +193,47 @@ class GenericArtifactReviewService:
         if (row.artifact_metadata or {}).get("source_type") != "PLATFORM_VARIANT":
             from app.application.central_platform_copies import prepare_copies
             await prepare_copies(self.session, row)
-        await self.session.commit()
-        await self.session.refresh(row)
-        return _payload(row)
+
+    @staticmethod
+    def _review_fingerprint(row):
+        # Pin everything a reviewer sees and the validation context, not just text.
+        value = {**_payload(row), "resolved_context": row.resolved_context}
+        return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+
+    async def _batch_rows(self, artifact_ids, *, lock=False):
+        if not 1 <= len(artifact_ids) <= 100 or len(set(artifact_ids)) != len(artifact_ids):
+            raise ValueError("اختر من مادة إلى100مادة مختلفة.")
+        statement = select(ArtifactModel).where(ArtifactModel.id.in_(artifact_ids)).order_by(ArtifactModel.id)
+        if lock:
+            statement = statement.with_for_update()
+        rows = list((await self.session.execute(statement)).scalars().all())
+        if len(rows) != len(artifact_ids):
+            raise LookupError("بعض المواد غير موجودة. لم يعتمد أي شيء.")
+        for row in rows:
+            if row.kind == "POST" or row.review_status != "DRAFT" or row.status != "AVAILABLE" or (row.artifact_metadata or {}).get("source_type") == "PLATFORM_VARIANT":
+                raise ValueError("الاعتماد الجماعي يخص المواد الأصلية المتاحة وقيد المراجعة فقط.")
+            if any((row.artifact_metadata or {}).get(key) is not None for key in ("telegram_album", "telegram_live_photo")):
+                raise ValueError("الألبومات والصور الحية تحتاج معاينة عناصرها في المراجعة الفردية؛ أزلها من الدفعة.")
+            await self._validate_approval(row)
+        indexed = {row.id: row for row in rows}
+        return [indexed[uid] for uid in artifact_ids]
+
+    async def preview_batch_approval(self, artifact_ids):
+        rows = await self._batch_rows(artifact_ids)
+        return {"items": [{**_payload(row), "review_fingerprint": self._review_fingerprint(row)} for row in rows], "publishing_authorized": False}
+
+    async def approve_batch(self, artifact_ids, fingerprints):
+        try:
+            rows = await self._batch_rows(artifact_ids, lock=True)
+            if set(fingerprints) != {str(uid) for uid in artifact_ids} or any(fingerprints[str(row.id)] != self._review_fingerprint(row) for row in rows):
+                raise ValueError("تغيرت إحدى المواد منذ المعاينة. أعد مراجعة الدفعة؛ لم يعتمد أي شيء.")
+            for row in rows:
+                await self._apply_approval(row, row.review_note)
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        return {"approved_ids": [str(row.id) for row in rows], "publishing_authorized": False}
 
     async def record_manual_publication(
         self, artifact_id: UUID, published_at: datetime, external_url: str | None = None
