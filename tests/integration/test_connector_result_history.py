@@ -33,7 +33,7 @@ async def test_connector_history_requires_provenance_and_external_result_and_nev
         row=q.json()['items'][0];assert row['state']=='ATTENTION'
         assert {x['platform']:x['confirmed_targets'] for x in row['publication_outcomes']}=={'instagram':1,'facebook':1}
     async with SessionFactory() as s:
-        job=await s.get(IG,bad_link.id);job.state='CANCELLED';await s.commit()
+        job=await s.get(IG,bad_link.id);job.state='RETIRED_UNPUBLISHED';await s.commit()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as c:
         row=(await c.get('/api/publishing-queue',params={'q':token})).json()['items'][0]
         assert row['state']=='PUBLISHED'
