@@ -1,0 +1,20 @@
+import {useState} from 'react';
+import {useQuery} from '@tanstack/react-query';
+import {Link} from 'react-router';
+import {get} from '../../shared/api/client';
+type Job={job_id:string;source_id:string;filename:string;scope:string;status:string;total_items:number;completed_items:number;failed_items:number;created_at:string};
+const labels:Record<string,string>={QUEUED:'في قائمة الانتظار',RUNNING:'قيد الإنتاج',COMPLETED:'مكتملة',FAILED:'متعثرة'};
+export function ProductionHistory(){
+ const [page,setPage]=useState(0),[state,setState]=useState('');
+ const query=useQuery({queryKey:['production-history',page,state],queryFn:async()=>{const result=await get<{items:Job[];total:number}>(`/production-jobs?limit=20&offset=${page*20}${state?'&state='+state:''}`);if(!Array.isArray(result?.items)||!Number.isFinite(result.total))throw new Error('Invalid production history response');return result;},retry:false});
+ return <section aria-label="سجل مهام الإنتاج" className="space-y-3 rounded-2xl border bg-white p-5"><h3 className="text-xl font-bold">سجل مهام الإنتاج</h3><p className="text-sm leading-7 text-slate-600">افتح مهمة سابقة لمراجعة حالتها وموادها ومخرجاتها. فتح السجل أو المهمة لا يعيد الإنتاج ولا ينشر شيئاً.</p><label className="block text-sm">حالة مهام الإنتاج<select aria-label="حالة مهام الإنتاج" value={state} onChange={e=>{setState(e.target.value);setPage(0);}} className="mr-2 rounded-lg border p-2"><option value="">كل الحالات</option>{Object.entries(labels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+ {query.isPending?<p role="status">جارٍ تحميل سجل المهام...</p>:query.isError?<div role="alert">تعذر قراءة سجل المهام، لا نعتبره فارغاً.<button onClick={()=>void query.refetch()} className="mr-2 rounded-lg border p-2">إعادة تحميل سجل المهام</button></div>:<>{!query.data.items.length?<p>لا توجد مهام محفوظة تطابق الحالة المختارة.</p>:query.data.items.map(job=><article key={job.job_id} className="space-y-2 rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="min-w-0 [overflow-wrap:anywhere]">{job.filename}</strong><span>{labels[job.status]??job.status}</span></div><p className="text-sm">{job.completed_items} مكتمل · {job.failed_items} متعثر · {job.total_items} مادة</p><p className="text-xs">أُنشئت <bdi>{new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Riyadh'}).format(new Date(job.created_at))}</bdi> · الرياض</p><p className="break-all text-xs text-slate-500"><bdi>{job.job_id}</bdi></p><Link to={`/production?job_id=${encodeURIComponent(job.job_id)}`} reloadDocument className="inline-block rounded-lg border px-3 py-2 text-sm">فتح المهمة المحفوظة</Link></article>)}<div className="flex items-center justify-between gap-2"><button className="rounded-lg border px-3 py-2 disabled:opacity-40" disabled={page===0||query.isFetching} onClick={()=>setPage(p=>p-1)}>المهام السابقة</button><span className="text-sm">صفحة {page+1} من {Math.max(1,Math.ceil(query.data.total/20))} · {query.data.total} مهمة</span><button className="rounded-lg border px-3 py-2 disabled:opacity-40" disabled={(page+1)*20>=query.data.total||query.isFetching} onClick={()=>setPage(p=>p+1)}>المهام التالية</button></div></>}
+ </section>;
+}
+
+export function ProductionOutputLink({id}:{id:string}){
+ const output=useQuery({queryKey:['production-output-status',id],queryFn:()=>get<{review_status:string}>(`/api/artifacts/${encodeURIComponent(id)}`),retry:false});
+ if(output.isPending)return <p role="status" className="text-sm">جارٍ قراءة رابط المخرج...</p>;
+ if(output.isError)return <div role="alert" className="text-sm">تعذر قراءة حالة المخرج.<button className="mr-2 underline" onClick={()=>void output.refetch()}>إعادة قراءة المخرج</button></div>;
+ return <Link className="mt-2 block text-sm underline" to={`/bank?artifact_id=${encodeURIComponent(id)}&artifact_status=${encodeURIComponent(output.data.review_status)}`}>فتح المخرج في بنك المحتوى</Link>;
+}
