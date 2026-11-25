@@ -1,10 +1,10 @@
-"""Exact Page text execution. No media, implicit retries or native scheduling."""
+"""Exact Page text/photo execution. No implicit retries or native scheduling."""
 import json
 import re
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, text, or_
 import httpx
-from app.infrastructure.database.models import FacebookExecutionModel as Job, ArtifactModel, FacebookPageConnectionModel as Connection
+from app.infrastructure.database.models import FacebookExecutionModel as Job, ArtifactModel, FacebookPageConnectionModel as Connection, PlatformCopyMediaModel as Asset
 from app.application import facebook_execution as core, facebook_reel_runtime as reels, facebook_page_oauth as oauth
 from app.application.instagram_plan_review import fingerprint
 from app.application.distribution_readiness import source_fingerprint
@@ -20,19 +20,44 @@ def describe(j):
                 snapshot=j.runtime_snapshot, snapshot_hash=j.runtime_hash,
                 approved=bool(j.evidence_ref), post_id=j.post_id, permalink=j.permalink,
                 error_code=j.error_code, updated_at=j.updated_at.isoformat(),
-                no_automatic_retry=True, kind='FACEBOOK_PAGE_TEXT')
+                no_automatic_retry=True, kind='FACEBOOK_PAGE_PHOTO' if j.kind=='IMAGE' else 'FACEBOOK_PAGE_TEXT')
 
-async def facts(s, uid):
-    a,p=await core.original(s,uid)
-    if a.kind!='TEXT':
-        raise ValueError('مسار النص لا يقبل صورة أو فيديو. لا تحويل أو حذف للمحتوى.')
-    return dict(artifact_id=str(uid),source_fingerprint=source_fingerprint(a),copy_version=p.version,
+async def photo_bytes(s,a,p):
+    import hashlib,asyncio
+    from app.infrastructure.artifact_storage import S3ArtifactStorage
+    from app.domain.platform_media_probe import inspect_media
+    asset=await s.get(Asset,p.selected_media_id,populate_existing=True) if p.selected_media_id else a
+    if not asset or asset.mime_type not in {'image/jpeg','image/png'} or (p.selected_media_id and (asset.artifact_id!=a.id or asset.platform!='facebook' or asset.source_fingerprint!=p.source_fingerprint)):
+        raise ValueError('اختر أصل JPEG/PNG أو وسيط صورة خاصاً حديثاً لهذه النسخة.')
+    data=await S3ArtifactStorage.from_environment().get_bytes(asset.storage_uri,max_bytes=4_000_000)
+    digest=hashlib.sha256(data).hexdigest()
+    if p.selected_media_id and digest!=asset.sha256:raise ValueError('تغيرت بايتات وسيط الصورة.')
+    m=await asyncio.to_thread(inspect_media,data,'IMAGE',asset.mime_type)
+    from PIL import Image
+    import io
+    with Image.open(io.BytesIO(data)) as image:
+        if getattr(image,'n_frames',1)!=1:raise ValueError('لا ننشر صورة متحركة كلقطة منفردة.')
+    if m.get('format') not in {'JPEG','PNG'} or m.get('frames',1)!=1 or not m.get('width') or not m.get('height'):
+        raise ValueError('صورة JPEG/PNG منفردة مقروءة مطلوبة، دون تحويل صامت.')
+    return dict(media_id=str(p.selected_media_id) if p.selected_media_id else None,media_sha256=digest,total_bytes=len(data),mime_type=asset.mime_type,measurements=m),data
+
+async def facts(s, uid,kind='TEXT'):
+    a,p=await core.original(s,uid,allow_selected_photo=kind=='IMAGE')
+    if a.kind!=kind or kind not in {'TEXT','IMAGE'}:
+        raise ValueError('نوع المادة لا يطابق مسار النص أو الصورة المختار.')
+    f=dict(artifact_id=str(uid),source_fingerprint=source_fingerprint(a),copy_version=p.version,
                 message=p.fields['description'],connection=await reels.binding(s),
-                audience='FACEBOOK_PAGE_PUBLIC_TEXT',fields=dict(p.fields))
+                audience='FACEBOOK_PAGE_PUBLIC_PHOTO' if kind=='IMAGE' else 'FACEBOOK_PAGE_PUBLIC_TEXT',fields=dict(p.fields))
+    if kind=='IMAGE':
+        media,_=await photo_bytes(s,a,p);f.update(**media,media_disclosure='EXACT_PRIVATE_BYTES_TO_META_NO_PUBLIC_URL')
+        await s.refresh(a);await s.refresh(p)
+        if f['source_fingerprint']!=source_fingerprint(a) or f['copy_version']!=p.version or f['fields']!=p.fields or f['media_id']!=(str(p.selected_media_id) if p.selected_media_id else None):
+            raise ValueError('تغير الأصل أو النسخة أو وسيطها أثناء الفحص.')
+    return f
 
-async def stage(s,uid,*,due_at=None,timezone_name=None):
+async def stage(s,uid,*,due_at=None,timezone_name=None,kind='TEXT'):
     scheduled=timing(due_at,timezone_name,now=now()) if due_at is not None or timezone_name is not None else None
-    snap={**await facts(s,uid),'time':'NOW_AFTER_EXPLICIT_APPROVAL'}
+    snap={**await facts(s,uid,kind),'time':'NOW_AFTER_EXPLICIT_APPROVAL'}
     if scheduled:snap.update(time='APP_LOCAL_SCHEDULED',**scheduled)
     h=fingerprint(snap)
     unresolved=(await s.execute(select(Job).where(Job.artifact_id==uid,Job.runtime_snapshot.is_not(None),Job.state.in_(['SENDING','OUTCOME_UNKNOWN'])))).scalars().first()
@@ -42,21 +67,21 @@ async def stage(s,uid,*,due_at=None,timezone_name=None):
     if old:return describe(old)
     # Reuse the established text lifecycle table and exact-copy validator. Legacy
     # dormant rows remain unbound and can never enter the runtime scanner.
-    j=Job(artifact_id=uid,page_id=snap['connection']['page_id'],source_fingerprint=snap['source_fingerprint'],copy_version=snap['copy_version'],kind='TEXT',message=snap['message'],total_bytes=0,state='DRAFT',runtime_snapshot=snap,runtime_hash=h,due_at=datetime.fromisoformat(scheduled['due_at']) if scheduled else None,created_at=now(),updated_at=now())
+    j=Job(artifact_id=uid,page_id=snap['connection']['page_id'],source_fingerprint=snap['source_fingerprint'],copy_version=snap['copy_version'],kind=kind,message=snap['message'],total_bytes=snap.get('total_bytes',0),mime_type=snap.get('mime_type'),media_sha256=snap.get('media_sha256'),state='DRAFT',runtime_snapshot=snap,runtime_hash=h,due_at=datetime.fromisoformat(scheduled['due_at']) if scheduled else None,created_at=now(),updated_at=now())
     s.add(j);await s.commit()
     return describe(j)
 
 async def validate(s,j,*,approval=False):
-    if not j.runtime_snapshot or j.kind!='TEXT' or fingerprint(j.runtime_snapshot)!=j.runtime_hash:
+    if not j.runtime_snapshot or j.kind not in {'TEXT','IMAGE'} or fingerprint(j.runtime_snapshot)!=j.runtime_hash:
         raise ValueError('محاولة غير مربوطة بمعاينة نصية صريحة.')
     snap=j.runtime_snapshot
     expected_due=datetime.fromisoformat(snap['due_at']) if snap.get('due_at') else None
     if (j.due_at!=expected_due or
         j.source_fingerprint!=snap['source_fingerprint'] or j.copy_version!=snap['copy_version'] or
         j.message!=snap['message'] or j.page_id!=snap['connection']['page_id'] or
-        j.total_bytes!=0 or j.mime_type is not None or j.media_sha256 is not None):
+        j.total_bytes!=snap.get('total_bytes',0) or j.mime_type!=snap.get('mime_type') or j.media_sha256!=snap.get('media_sha256')):
         raise ValueError('تغير النص المثبت أو الصفحة.')
-    f=await facts(s,j.artifact_id)
+    f=await facts(s,j.artifact_id,j.kind)
     if any(j.runtime_snapshot.get(k)!=v for k,v in f.items()):
         raise ValueError('تغير الأصل أو نسخة Facebook أو ربط الصفحة. راجع قراراً جديداً.')
     conflicting=(await s.execute(select(Job.id).where(Job.artifact_id==j.artifact_id,Job.id!=j.id,Job.runtime_snapshot.is_not(None),Job.state.in_(['APPROVED','SENDING','OUTCOME_UNKNOWN'])))).first()
@@ -96,13 +121,23 @@ async def process_one(s,j):
         await validate(s,j)
         p=await provider(s,j,client)
         await validate(s,j) # recheck exact approval/content after remote reads
+        content=None
+        if j.kind=='IMAGE':
+            a,c=await core.original(s,j.artifact_id,allow_selected_photo=True)
+            media,content=await photo_bytes(s,a,c)
+            if any(j.runtime_snapshot.get(k)!=v for k,v in media.items()):raise ValueError('تغيرت بايتات الصورة قبل الإرسال.')
+            await validate(s,j)
         j.state='SENDING';j.updated_at=now();await s.commit()
         try:
-            result=await p.publish_text(message=j.message,authorized=True,public_page_acknowledged=True)
+            if j.kind=='IMAGE':
+                result=await p.publish_photo(message=j.message,content=content,mime_type=j.mime_type,sha256=j.media_sha256,authorized=True,public_page_acknowledged=True)
+            else:
+                result=await p.publish_text(message=j.message,authorized=True,public_page_acknowledged=True)
             # A known ID is not publication proof. Persist it before readback.
             post=p.post_identity(result.post_id)
             if result.state!='POST_ID_KNOWN':raise ValueError()
-            j.post_id=post;j.state='POST_ID_KNOWN';j.updated_at=now();await s.commit()
+            if j.kind=='IMAGE' and (not isinstance(result.photo_id,str) or not re.fullmatch(r'[0-9]{1,100}',result.photo_id)):raise ValueError('Invalid photo identity')
+            j.post_id=post;j.photo_id=result.photo_id;j.state='POST_ID_KNOWN';j.updated_at=now();await s.commit()
         except Exception as exc:
             j.state='FAILED' if isinstance(exc,FacebookProviderError) and not exc.outcome_unknown else 'OUTCOME_UNKNOWN'
             j.error_code=exc.code if isinstance(exc,FacebookProviderError) else 'FACEBOOK_TEXT_OUTCOME_UNKNOWN'
@@ -118,7 +153,7 @@ async def process_approved():
             for j in interrupted:
                 j.state='OUTCOME_UNKNOWN';j.error_code='FACEBOOK_TEXT_INTERRUPTED';j.updated_at=now()
             await s.commit()
-            rows=(await s.execute(select(Job).where(Job.runtime_snapshot.is_not(None),Job.kind=='TEXT',or_( (Job.state=='APPROVED') & or_(Job.due_at.is_(None),Job.due_at<=now()), (Job.state.in_(['POST_ID_KNOWN','NOT_CONFIRMED_PUBLISHED'])) & Job.post_id.is_not(None))).order_by(Job.updated_at).limit(3))).scalars().all()
+            rows=(await s.execute(select(Job).where(Job.runtime_snapshot.is_not(None),Job.kind.in_(['TEXT','IMAGE']),or_( (Job.state=='APPROVED') & or_(Job.due_at.is_(None),Job.due_at<=now()), (Job.state.in_(['POST_ID_KNOWN','NOT_CONFIRMED_PUBLISHED'])) & Job.post_id.is_not(None))).order_by(Job.updated_at).limit(3))).scalars().all()
             for j in rows:
                 jid=j.id
                 try:await process_one(s,j)
