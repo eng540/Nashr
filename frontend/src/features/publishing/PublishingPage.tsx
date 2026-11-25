@@ -12,6 +12,8 @@ import {UnifiedPublishingQueue} from "./UnifiedPublishingQueue";
 import { PageHeader } from "../../shared/components/ui";
 
 const DEFAULT_TIMEZONE = "Asia/Aden";
+const DISPLAY_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
+const stateLabel=(value:string)=>({DRAFT:"مسودة",ACTIVE:"نشطة",PAUSED:"متوقفة مؤقتاً",COMPLETED:"مكتملة",CANCELLED:"ملغاة",PUBLISHED:"منشور",PENDING:"بانتظار التنفيذ",FAILED:"تعذر التنفيذ",PROCESSING:"قيد التنفيذ"} as Record<string,string>)[value]??value;
 const PAGE_SIZE = 20;
 type Section = "ready" | "plans" | "calendar" | "platforms";
 
@@ -35,10 +37,10 @@ export function PublishingPage() {
   const [planQuery, setPlanQuery] = useState("");
   const [planStatus, setPlanStatus] = useState("");
   const [planPage, setPlanPage] = useState(0);
-  const [calendarTimezone, setCalendarTimezone] = useState(DEFAULT_TIMEZONE);
-  const [calendarTimezoneInput, setCalendarTimezoneInput] = useState(DEFAULT_TIMEZONE);
+  const [calendarTimezone, setCalendarTimezone] = useState(DISPLAY_TIMEZONE);
+  const [calendarTimezoneInput, setCalendarTimezoneInput] = useState(DISPLAY_TIMEZONE);
   const [calendarZoneError, setCalendarZoneError] = useState("");
-  const [calendarDate, setCalendarDate] = useState(() => dateInTimezone(DEFAULT_TIMEZONE));
+  const [calendarDate, setCalendarDate] = useState(() => dateInTimezone(DISPLAY_TIMEZONE));
   const [manualPub, setManualPub] = useState<{ id: string; date: string; url: string } | null>(null);
   const [form, setForm] = useState({ name: "خطة نشر", timezone: DEFAULT_TIMEZONE, startAt: "", interval: "60" });
 
@@ -249,6 +251,7 @@ export function PublishingPage() {
       return matchesQuery && matchesStatus;
     });
   }, [planQuery, planStatus, schedules.data?.items]);
+  useEffect(()=>{if(detail&&section==="plans")requestAnimationFrame(()=>document.getElementById("selected-plan-detail")?.scrollIntoView({block:"start",behavior:"smooth"}));},[detail?.id,section]);
   const planPageCount = Math.max(1, Math.ceil(planItems.length / PAGE_SIZE));
   const visiblePlans = planItems.slice(planPage * PAGE_SIZE, (planPage + 1) * PAGE_SIZE);
 
@@ -352,15 +355,15 @@ export function PublishingPage() {
             <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-bold">خطط النشر</h3><p className="mt-1 text-sm text-slate-500">راجع الخطط حسب الحالة وافتح الخطة المطلوبة فقط.</p></div><button type="button" onClick={() => void refresh()} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث</button></div>
             <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]"><label className="text-sm font-semibold"><span className="sr-only">بحث الخطط</span><input aria-label="بحث الخطط" value={planQuery} onChange={(e) => { setPlanQuery(e.target.value); setPlanPage(0); }} placeholder="ابحث باسم الخطة أو المنطقة الزمنية..." className="mt-2 w-full rounded-xl border p-3 font-normal"/></label><label className="text-sm font-semibold">الحالة<select aria-label="حالة الخطة" value={planStatus} onChange={(e) => { setPlanStatus(e.target.value); setPlanPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="ACTIVE">نشطة</option><option value="PAUSED">متوقفة</option><option value="COMPLETED">مكتملة</option><option value="CANCELLED">ملغاة</option></select></label></div>
           </div>
-          {!visiblePlans.length ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد خطط مطابقة</h3><p className="mt-2 text-sm text-slate-500">أنشئ خطة من قسم «الجاهز للنشر» أو غيّر الفلاتر.</p></div> : <div className="space-y-2">{visiblePlans.map((s) => <button key={s.id} type="button" onClick={() => void openDetail(s.id)} className={`w-full rounded-2xl border bg-white p-4 text-right shadow-sm transition hover:border-indigo-300 ${detail?.id === s.id ? "border-indigo-300 ring-1 ring-indigo-200" : ""}`}><div className="flex flex-wrap items-center justify-between gap-3"><strong>{s.name}</strong><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{s.status}</span></div><div className="mt-2 text-xs text-slate-500">{s.total_items} عناصر · {s.published_items} منشور · {s.failed_items} فشل · {s.timezone}</div></button>)}</div>}
+          {!visiblePlans.length ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد خطط مطابقة</h3><p className="mt-2 text-sm text-slate-500">أنشئ خطة من قسم «الجاهز للنشر» أو غيّر الفلاتر.</p></div> : <div className="space-y-2">{visiblePlans.map((s) => <button key={s.id} type="button" onClick={() => void openDetail(s.id)} className={`w-full rounded-2xl border bg-white p-4 text-right shadow-sm transition hover:border-indigo-300 ${detail?.id === s.id ? "border-indigo-300 ring-1 ring-indigo-200" : ""}`}><div className="flex flex-wrap items-center justify-between gap-3"><strong>{s.name}</strong><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{stateLabel(s.status)}</span></div><div className="mt-2 text-xs text-slate-500">{s.total_items} عناصر · {s.published_items} منشور · {s.failed_items} فشل · {s.timezone}</div></button>)}</div>}
           <Pagination page={planPage} pageCount={planPageCount} onChange={setPlanPage} loading={schedules.isFetching} label="صفحات خطط النشر" />
         </section>
       )}
 
       {section === "plans" && detail && (
-        <section className="rounded-2xl border-2 border-indigo-200 bg-white p-5 shadow-sm" data-testid="schedule-detail">
+        <section className="rounded-2xl border-2 border-indigo-200 bg-white p-5 shadow-sm" id="selected-plan-detail" tabIndex={-1} data-testid="schedule-detail" style={{scrollMarginTop:90}}>
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><p className="text-xs font-semibold text-indigo-600">تفاصيل الخطة</p><h3 className="mt-1 text-xl font-bold">{detail.name}</h3><p className="text-sm text-slate-500">{detail.status} · {detail.timezone} · {detail.total_items} عناصر</p></div>
+            <div><p className="text-xs font-semibold text-indigo-600">تفاصيل الخطة</p><h3 className="mt-1 text-xl font-bold">{detail.name}</h3><p className="text-sm text-slate-500">{stateLabel(detail.status)} · {detail.timezone} · {detail.total_items} عناصر</p></div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={()=>void openDetail(detail.id)} className="rounded-lg border px-3 py-2 text-sm">تحديث تفاصيل الخطة</button>
               {(detail.status === "DRAFT" || detail.status === "PAUSED") && <button type="button" onClick={() => void action.mutateAsync({ type: "activate", id: detail.id })} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white">تفعيل النشر الآلي</button>}
@@ -369,7 +372,7 @@ export function PublishingPage() {
               {detail.failed_items > 0 && <button type="button" onClick={() => action.mutate({ type: "retry", id: detail.id })} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">إعادة محاولة الفاشل</button>}
             </div>
           </div>
-          <div className="mt-4 space-y-2">{detail.items.map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{item.position}. {item.title}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{item.status}</span></div><p className="mt-1 text-sm text-slate-600">{item.content_preview}</p><div className="mt-2 flex flex-wrap gap-2"><input aria-label={`وقت نشر ${item.title}`} type="datetime-local" value={itemTimes[item.id] ?? utcISOStringToLocalDateTime(item.scheduled_at, detail.timezone)} onChange={(e) => setItemTimes(current=>({...current,[item.id]:e.target.value}))} disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING"} className="rounded-lg border p-2 text-sm"/><button type="button" disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING" || !itemTimes[item.id] || itemTimes[item.id]===utcISOStringToLocalDateTime(item.scheduled_at,detail.timezone)} onClick={()=>void updateItemTime(item.id,itemTimes[item.id])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">حفظ الموعد</button>{item.post_id?<button type="button" onClick={() => void preview(item.post_id)} className="rounded-lg border px-3 py-2 text-sm">معاينة Telegram</button>:item.artifact_id?<Link to={`/bank?artifact_status=APPROVED&artifact_id=${encodeURIComponent(item.artifact_id)}`} className="rounded-lg border px-3 py-2 text-sm">فتح المادة ونسخها وسجلها</Link>:null}{item.status === "FAILED" && <button type="button" onClick={() => void schedulesApi.retryItem(detail.id, item.id).then((r) => { setDetail(r.schedule); void refresh(); })} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold">إعادة المحاولة</button>}</div>{item.publication_external_id && <p className="mt-2 text-xs text-emerald-700">معرّفات Telegram: {(item.publication_external_ids?.length ? item.publication_external_ids : [item.publication_external_id]).join(", ")}</p>}{item.last_error && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{item.last_error}</p>}</div>)}</div>
+          <div className="mt-4 space-y-2">{detail.items.map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{item.position}. {item.title}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{stateLabel(item.status)}</span></div><p className="mt-1 text-sm text-slate-600">{item.content_preview}</p><div className="mt-2 flex flex-wrap gap-2"><input aria-label={`وقت نشر ${item.title}`} type="datetime-local" value={itemTimes[item.id] ?? utcISOStringToLocalDateTime(item.scheduled_at, detail.timezone)} onChange={(e) => setItemTimes(current=>({...current,[item.id]:e.target.value}))} disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING"} className="rounded-lg border p-2 text-sm"/><button type="button" disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING" || !itemTimes[item.id] || itemTimes[item.id]===utcISOStringToLocalDateTime(item.scheduled_at,detail.timezone)} onClick={()=>void updateItemTime(item.id,itemTimes[item.id])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">حفظ الموعد</button>{item.post_id?<button type="button" onClick={() => void preview(item.post_id)} className="rounded-lg border px-3 py-2 text-sm">معاينة Telegram</button>:item.artifact_id?<Link to={`/bank?artifact_status=APPROVED&artifact_id=${encodeURIComponent(item.artifact_id)}`} className="rounded-lg border px-3 py-2 text-sm">فتح المادة ونسخها وسجلها</Link>:null}{item.status === "FAILED" && <button type="button" onClick={() => void schedulesApi.retryItem(detail.id, item.id).then((r) => { setDetail(r.schedule); void refresh(); })} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold">إعادة المحاولة</button>}</div>{item.publication_external_id && <p className="mt-2 text-xs text-emerald-700">معرّفات Telegram: {(item.publication_external_ids?.length ? item.publication_external_ids : [item.publication_external_id]).join(", ")}</p>}{item.last_error && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{item.last_error}</p>}</div>)}</div>
         </section>
       )}
 
