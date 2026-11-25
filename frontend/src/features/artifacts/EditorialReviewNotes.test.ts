@@ -1,11 +1,13 @@
 import {describe,it,expect} from 'vitest';
 import {editorialReviewNotes} from './EditorialReviewNotes';
-describe('stored editorial notes',()=>{
- it('preserves exact text/order across explicit fields',()=>{
-  expect(editorialReviewNotes({editorial_notes:[' first\nline ',null,3,''],video_library:{editorial_notes:['engineering review required','not heard by ear']}})).toEqual([' first\nline ','engineering review required','not heard by ear']);
+describe('curated review notes',()=>{
+ it('preserves curated caveats exactly and never falls back to raw records',()=>{
+  expect(editorialReviewNotes({editorial_notes:['internal raw'],video_library:{editorial_notes:['raw'],review_notes:[' Engineering review needed.\nCement plaster only. ','https://www.astm.org/']}})).toEqual([' Engineering review needed.\nCement plaster only. ','https://www.astm.org/']);
  });
- it('handles legacy strings without interpreting claims',()=>expect(editorialReviewNotes({editorial_notes:'APPROVED is only stored text'})).toEqual(['APPROVED is only stored text']));
- it('does not stringify objects or invent empty notes',()=>{
-  for(const metadata of [{},{video_library:[]},{video_library:null},{editorial_notes:{claim:'approved'}},{video_library:{editorial_notes:[null,{},false,' ']}}])expect(editorialReviewNotes(metadata)).toEqual([]);
+ it('hides legacy raw records and malformed values',()=>{
+  for(const metadata of [{},{editorial_notes:'raw'},{video_library:[]},{video_library:{editorial_notes:['raw']}},{video_library:{review_notes:[null,{},false,' ']}}])expect(editorialReviewNotes(metadata)).toEqual([]);
+ });
+ it('rejects internal paths and process records even in curated input',()=>{
+  expect(editorialReviewNotes({video_library:{review_notes:['/downloads/private.mp4','/tmp/a','Provider pipeline','Charon WAV','agent handoff','Civil review required']}})).toEqual(['Civil review required']);
  });
 });
