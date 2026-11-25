@@ -1,7 +1,7 @@
 import {FacebookPlanReviewPanel} from './FacebookPlanReviewPanel';
 import {FacebookTextExecutionPanel} from './FacebookTextExecutionPanel';
 import {YouTubePlanReviewPanel} from './YouTubePlanReviewPanel';
-import {InstagramPlanReviewPanel} from './InstagramPlanReviewPanel';
+import {InstagramPlanReviewPanel,InstagramExactOperation} from './InstagramPlanReviewPanel';
 import {useState,useEffect,useRef} from 'react';
 import {CopySuggestionsPanel} from './CopySuggestionsPanel';
 import {MediaInspectionHistoryPanel} from './MediaInspectionHistoryPanel';
@@ -30,9 +30,9 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
  useEffect(()=>{
   const params=new URLSearchParams(window.location.search);
   if(params.get('artifact_id')!==id)return;
-  const platform=params.get('copy_platform');
+  const platform=params.has('instagram_job_id')?'instagram':params.get('copy_platform');
   if(platform&&!['telegram','instagram','facebook','youtube','x','tiktok'].includes(platform))return;
-  if(platform||params.has('text_job_id')||params.has('photo_job_id')){
+  if(platform||params.has('text_job_id')||params.has('photo_job_id')||params.has('instagram_job_id')){
    if(panelRef.current)panelRef.current.open=true;
    setActive(platform||'facebook');load.mutate();
    setHandoff('فتح النسخة المحفوظة للمادة والمنصة المحددتين فقط، دون تجهيز أو تغيير وجهة أو نشر.');
@@ -71,6 +71,7 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
      <details className="rounded border bg-white p-2"><summary className="cursor-pointer">ما الذي لم يُتحقق بعد؟</summary>{[...shown.warnings,...shown.media_checks_pending,...shown.execution_blockers].map(reason=><p key={reason}>{reason}</p>)}<p>نسخة Telegram تُستخدم في معاينة الدفعة وخطتها الجديدة فقط بعد مراجعتها. تغيير النسخة يوقف الخطة السابقة. حفظ حقول أي منصة لا يأذن بالنشر. الاتصال وفحص الوسيط وخطوات التنفيذ تُراجع في مسار كل منصة على حدة.</p>{shown.sources.map(url=><a key={url} href={url} target="_blank" rel="noreferrer" className="block break-all underline">{url}</a>)}</details>
     </>:null}</>:null}
    {load.isError||prepare.isError||save.isError?<p role="alert" className="text-rose-700">{load.error?.message??prepare.error?.message??save.error?.message}</p>:null}
+   {active==='instagram'?<InstagramExactOperation key={id} id={id}/>:null}
    {active==='instagram'&&row&&!draft&&['IMAGE','VIDEO'].includes(kind)?<InstagramPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} kind={kind} disabled={busy}/>:null}
    {active==='youtube'&&row&&!draft&&kind==='VIDEO'?<YouTubePlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
    {active==='facebook'&&row&&!draft&&kind==='IMAGE'?<FacebookPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
