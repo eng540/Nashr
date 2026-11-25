@@ -89,6 +89,7 @@ test("approved post derives a platform variant from the bank review view", async
   });
 
   await page.goto("/bank?library_view=expanded");
+  await page.getByRole("button", {name:"＋ اشتقاق نسخة منصة",exact:true}).click();
   await expect(page.getByLabel("المنشور المصدر للنسخة")).toBeVisible();
   await page.getByLabel("المنشور المصدر للنسخة").selectOption(postId);
   await page.getByLabel("منصة نسخة المنشور").selectOption("tiktok");
