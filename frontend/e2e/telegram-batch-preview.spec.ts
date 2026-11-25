@@ -3,7 +3,7 @@ test('batch preflight shows actual destination, full text and blockers without w
  let previews=0,unsafe=0,prepared=0;
  const item={id:'batch-original',source_knowledge_unit_id:'u',kind:'TEXT',status:'AVAILABLE',content:'نص المادة الأصلي الكامل دون قص',storage_uri:null,mime_type:'text/plain',metadata:{title:'مادة تجريبية'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'};
  await page.route('**/*',async route=>{const req=route.request(),p=new URL(req.url()).pathname;
- if(p==='/api/artifacts/platform-copies/prepare-batch'){prepared++;expect(req.postDataJSON()).toEqual({artifact_ids:[item.id]});return route.fulfill({json:{prepared:1,items:[]}});}
+ if(p==='/api/artifacts/platform-copies/prepare-batch'){prepared++;expect(req.postDataJSON()).toEqual({artifact_ids:[item.id]});return route.fulfill({json:{prepared:1,items:[{artifact_id:item.id,items:[]}]}});}
  if(p==='/api/artifacts/telegram-batch-preview'){previews++;return route.fulfill({json:{destination:'synthetic-private-target',ready_count:0,blocked_count:1,caveat:'فحص نصي أولي، لا يمنح إذن نشر.',items:[{artifact_id:item.id,title:'مادة تجريبية',kind:'TEXT',content:item.content,ready:false,blockers:['Telegram مستبعد من الوجهات المحفوظة لهذه المادة.'],publications:[],schedules:[]}]}});}
  if(p.startsWith('/api/')&&req.method()!=='GET')unsafe++;
  if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
@@ -11,7 +11,7 @@ test('batch preflight shows actual destination, full text and blockers without w
  await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  await page.getByLabel('تحديد كل وسائط الصفحة',{exact:true}).check();
  const panel=page.getByLabel('معاينة دفعة Telegram',{exact:true});
- await panel.getByRole('button',{name:'تجهيز نسخ المنصات للمحدد (1)',exact:true}).click();await expect(panel.getByRole('status')).toContainText('دون إرسال أو جدولة');expect(prepared).toBe(1);
+ const copies=page.getByLabel('نسخ منصات الدفعة',{exact:true});await copies.getByRole('button',{name:'تجهيز نسخ المنصات للمحدد (1)',exact:true}).click();await expect(copies.getByRole('status')).toContainText('دون إرسال أو جدولة');expect(prepared).toBe(1);
  await panel.getByRole('button',{name:'معاينة وفحص دفعة Telegram (1)',exact:true}).click();
  await expect(panel.getByText('synthetic-private-target',{exact:true})).toBeVisible();
  await panel.locator('summary').click();await expect(panel.getByText(item.content,{exact:true})).toBeVisible();
