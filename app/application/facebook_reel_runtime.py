@@ -8,7 +8,7 @@ from dataclasses import asdict
 from datetime import datetime,timedelta,timezone
 from urllib.parse import urlsplit
 import httpx
-from sqlalchemy import select,text
+from sqlalchemy import select,text,or_,cast,DateTime
 from app.infrastructure.database.models import FacebookReelJobModel as Job,FacebookPageConnectionModel as Connection,ArtifactModel,PlatformCopyModel,PlatformCopyMediaModel
 from app.application import facebook_page_oauth as oauth
 from app.application.distribution_readiness import source_fingerprint
@@ -74,10 +74,14 @@ async def prepare_delivery(s,uid):
     fb.fields=dict(ig.fields);fb.selected_media_id=existing.id;fb.version+=1;fb.updated_at=now();await s.commit()
     return dict(media_id=str(existing.id),sha256=existing.sha256,original_unchanged=True,instagram_unchanged=True,video_packets_identical=True,caption_copied_exactly=True,published=False)
 
-async def stage(s,uid):
+async def stage(s,uid,*,due_at=None,timezone_name=None):
+    from app.application.exact_schedule_time import timing
+    scheduled=timing(due_at,timezone_name,now=now()) if due_at is not None or timezone_name is not None else None
     await s.execute(select(ArtifactModel).where(ArtifactModel.id==uid).with_for_update())
     facts,_=await pinned(s,uid);b=await binding(s)
-    snap={**facts,'connection':b,'audience':'FACEBOOK_PAGE_PUBLIC_REEL','media_disclosure':'EXACT_MP4_BYTES_TO_META_NO_PUBLIC_URL','title':'','time':'NOW_AFTER_EXPLICIT_APPROVAL'};h=fingerprint(snap)
+    snap={**facts,'connection':b,'audience':'FACEBOOK_PAGE_PUBLIC_REEL','media_disclosure':'EXACT_MP4_BYTES_TO_META_NO_PUBLIC_URL','title':'','time':'NOW_AFTER_EXPLICIT_APPROVAL'}
+    if scheduled:snap.update(time='APP_LOCAL_SCHEDULED',**scheduled)
+    h=fingerprint(snap)
     old=(await s.execute(select(Job).where(Job.artifact_id==uid,Job.snapshot_hash==h,Job.state.in_(['DRAFT','APPROVED','INITIALIZING','SESSION_CREATED','UPLOADING','PROCESSING','FINISHING','FINISH_ACCEPTED','PUBLISHED','OUTCOME_UNKNOWN'])))).scalars().first()
     if old:return describe(old)
     j=Job(artifact_id=uid,snapshot=snap,snapshot_hash=h,state='DRAFT',created_at=now(),updated_at=now());s.add(j);await s.commit();return describe(j)
@@ -87,6 +91,7 @@ async def valid(s,j):
     for k,v in facts.items():
         if j.snapshot.get(k)!=v:raise ValueError('تغير الفيديو أو الوصف؛ لا تنفيذ.')
     if await binding(s)!=j.snapshot['connection']:raise ValueError('تغير ربط الصفحة؛ لا تنفيذ.')
+    if j.snapshot.get('due_at') and datetime.fromisoformat(j.snapshot['due_at'])>now():raise ValueError('لم يحن موعد التنفيذ.')
     if not j.evidence_ref or not j.approved_until or j.approved_until<=now():raise ValueError('قرار النشر منتهٍ أو غير موجود.')
     return data
 
@@ -95,7 +100,11 @@ async def approve(s,j,h,evidence):
     # Temporary checks do not become authority until exact snapshot still matches.
     facts,_=await pinned(s,j.artifact_id)
     if any(j.snapshot.get(k)!=v for k,v in facts.items()) or await binding(s)!=j.snapshot['connection']:raise ValueError('تغيرت المعاينة.')
-    j.evidence_ref=evidence;j.approved_until=now()+timedelta(minutes=30);j.state='APPROVED';j.updated_at=now();await s.commit();return describe(j)
+    due=datetime.fromisoformat(j.snapshot['due_at']) if j.snapshot.get('due_at') else now()
+    if j.snapshot.get('due_at'):
+        from app.application.exact_schedule_time import timing
+        timing(due,j.snapshot['timezone'],now=now())
+    j.evidence_ref=evidence;j.approved_until=due+timedelta(minutes=30);j.state='APPROVED';j.updated_at=now();await s.commit();return describe(j)
 
 async def provider(s,j,client):
     await oauth.verify_saved_connection(s)
@@ -119,6 +128,8 @@ async def reconcile(s,j,p):
     j.updated_at=now();await s.commit()
 
 async def process_one(s,j):
+    # Do not even verify the provider before an approved scheduled time.
+    if j.state=='APPROVED' and j.snapshot.get('due_at') and datetime.fromisoformat(j.snapshot['due_at'])>now():return
     async with httpx.AsyncClient(timeout=60,follow_redirects=False) as client:
         p=await provider(s,j,client)
         if j.state in {'FINISH_ACCEPTED','OUTCOME_UNKNOWN'}:
@@ -151,13 +162,13 @@ async def process_approved():
         try:
             interrupted=(await s.execute(select(Job).where(Job.state.in_(['INITIALIZING','UPLOADING','FINISHING'])))).scalars().all()
             for old in interrupted:await claim(s,old,'OUTCOME_UNKNOWN')
-            rows=(await s.execute(select(Job).where(Job.state.in_(['APPROVED','SESSION_CREATED','PROCESSING','FINISH_ACCEPTED','OUTCOME_UNKNOWN'])).order_by(Job.created_at).limit(3))).scalars().all()
+            rows=(await s.execute(select(Job).where(Job.state.in_(['APPROVED','SESSION_CREATED','PROCESSING','FINISH_ACCEPTED','OUTCOME_UNKNOWN']),or_(Job.state!='APPROVED',Job.snapshot['due_at'].astext.is_(None),cast(Job.snapshot['due_at'].astext,DateTime(timezone=True))<=now())).order_by(Job.created_at).limit(3))).scalars().all()
             for j in rows:
                 try:await process_one(s,j)
                 except Exception as error:
                     await s.rollback();j=await s.get(Job,j.id,populate_existing=True)
                     j.error_code=getattr(error,'code','FACEBOOK_REEL_CHECK_OR_ACTION_FAILED')
-                    j.state='OUTCOME_UNKNOWN' if j.state in {'INITIALIZING','UPLOADING','FINISHING'} else j.state if j.state in {'FINISH_ACCEPTED','OUTCOME_UNKNOWN'} else 'BLOCKED'
+                    j.state='OUTCOME_UNKNOWN' if j.state in {'INITIALIZING','UPLOADING','FINISHING'} else j.state if j.state in {'FINISH_ACCEPTED','OUTCOME_UNKNOWN'} else 'OUTCOME_UNKNOWN' if j.remote_session else 'BLOCKED'
                     j.updated_at=now();await s.commit()
         finally:await lock_connection.execute(text('SELECT pg_advisory_unlock(606029)'));await lock_connection.commit()
 
