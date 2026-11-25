@@ -1,3 +1,4 @@
+import {FacebookPlanReviewPanel} from './FacebookPlanReviewPanel';
 import {FacebookTextExecutionPanel} from './FacebookTextExecutionPanel';
 import {YouTubePlanReviewPanel} from './YouTubePlanReviewPanel';
 import {InstagramPlanReviewPanel} from './InstagramPlanReviewPanel';
@@ -67,6 +68,7 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
    {load.isError||prepare.isError||save.isError?<p role="alert" className="text-rose-700">{load.error?.message??prepare.error?.message??save.error?.message}</p>:null}
    {active==='instagram'&&row&&!draft&&['IMAGE','VIDEO'].includes(kind)?<InstagramPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} kind={kind} disabled={busy}/>:null}
    {active==='youtube'&&row&&!draft&&kind==='VIDEO'?<YouTubePlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
+   {active==='facebook'&&row&&!draft&&kind==='IMAGE'?<FacebookPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
    {active==='facebook'&&row&&!draft&&kind==='VIDEO'?<div className="rounded border bg-white p-3"><p>مسار Facebook للفيديو هو Reel على صفحة عامة، منفصل عن مراجعة النص والصورة. فتحه يمرر معرف الأصل فقط، ولا يجهز أو يرفع ملفاً ولا يعتمد نشراً. الربط والوسيط والوصف والصفحة وقرار التنفيذ تحتاج مراجعة هناك.</p><a className="inline-block rounded border p-2 font-bold" href={`/connections?reel_artifact_id=${encodeURIComponent(id)}#platform-facebook`}>فتح مراجعة Facebook Reel لهذه المادة</a></div>:null}
    {['x','tiktok'].includes(active)&&row?<p className="rounded border bg-amber-50 p-3">الحقول محفوظة للمراجعة فقط. لا مسار تنفيذ منشور من هذه النسخة. <a className="underline" href={`/connections#platform-${active}`}>متطلبات ربط المنصة وحدودها</a></p>:null}
    {active==='facebook'&&row&&!draft&&['TEXT','IMAGE'].includes(kind)?<FacebookTextExecutionPanel key={`${id}:${row.version}:${row.current_source_fingerprint}:execute`} id={id} photo={kind==='IMAGE'}/>:null}
