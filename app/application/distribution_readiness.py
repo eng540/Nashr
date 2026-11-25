@@ -18,6 +18,11 @@ def source_fingerprint(row):
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
+def selection_version(selection):
+    payload = None if selection is None else [selection.platforms, selection.source_fingerprint, selection.saved_at.isoformat()]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
 def readiness(row, selection=None):
     meta = row.artifact_metadata or {}
     text = row.content if row.content is not None else str(meta.get("caption") or "")
@@ -63,7 +68,7 @@ def readiness(row, selection=None):
                       "approval": "INHERITED" if row.review_status == "APPROVED" else "PENDING"})
     return {"artifact_id": str(row.id), "source_fingerprint": current, "central_approval": row.review_status,
             "preparation_mode": "UNCHANGED_ORIGINAL", "ai_required": False, "original_text": text,
-            "selection_stale": stale, "selection": selected, "targets": items}
+            "selection_stale": stale, "selection": selected, "selection_version": selection_version(selection), "targets": items}
 
 
 async def get_readiness(session, artifact_id):
@@ -84,7 +89,11 @@ async def get_readiness(session, artifact_id):
     return result
 
 
-async def save_selection(session, artifact_ids, platforms, fingerprints):
+async def save_selection(session, artifact_ids, platforms, fingerprints, mode="replace", selection_versions=None):
+    if mode not in {"replace", "add", "remove"}:
+        raise ValueError("طريقة تعديل الوجهات غير معروفة.")
+    if mode != "replace" and selection_versions is None:
+        raise ValueError("حدّث اختيار الوجهات قبل تعديل الدفعة.")
     if len(set(artifact_ids)) != len(artifact_ids) or len(set(platforms)) != len(platforms):
         raise ValueError("القائمة تحتوي معرّفات أو منصات مكررة.")
     if any(platform not in PLATFORMS for platform in platforms):
@@ -97,13 +106,25 @@ async def save_selection(session, artifact_ids, platforms, fingerprints):
             raise ValueError("اختيار التوزيع يخص المواد الأصلية المعتمدة والمتاحة فقط.")
         if fingerprints.get(str(row.id)) != source_fingerprint(row):
             raise ValueError("تغيرت المادة منذ المعاينة. حدّث الجاهزية قبل حفظ الاختيار.")
-    selections = {}
+    selections = {row.id: await session.get(DistributionSelectionModel, row.id) for row in rows}
+    if mode != "replace":
+        for row in rows:
+            existing = selections[row.id]
+            if existing and existing.source_fingerprint != source_fingerprint(row):
+                raise ValueError("تغير أصل إحدى المواد منذ اختيار وجهاتها. راجع القائمة واستبدلها صراحةً قبل تعديل الدفعة.")
+    if selection_versions is not None:
+        for row in rows:
+            if selection_versions.get(str(row.id)) != selection_version(selections[row.id]):
+                raise ValueError("تغير اختيار وجهات إحدى المواد في نافذة أخرى. حدّث الجاهزية؛ لم يُحفظ أي اختيار.")
     for row in rows:
-        selection = await session.get(DistributionSelectionModel, row.id)
+        selection = selections[row.id]
         if selection is None:
-            selection = DistributionSelectionModel(artifact_id=row.id)
+            selection = DistributionSelectionModel(artifact_id=row.id, platforms=[])
             session.add(selection)
-        selection.platforms = platforms
+        previous = set(selection.platforms or [])
+        wanted = set(platforms)
+        chosen = wanted if mode == "replace" else previous | wanted if mode == "add" else previous - wanted
+        selection.platforms = [platform for platform in PLATFORMS if platform in chosen]
         selection.source_fingerprint = source_fingerprint(row)
         selection.saved_at = datetime.now(timezone.utc)
         selections[row.id] = selection

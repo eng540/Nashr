@@ -66,7 +66,7 @@ export interface GenericArtifactPage {
 
 export interface ArtifactPublicationRecord { id:string; platform:string; destination:string; status:string; content:string; external_id:string|null; external_ids:string[]; error_message:string|null; published_at:string|null; created_at:string; schedules:Array<{schedule_id:string; name:string; schedule_status:string; item_status:string; scheduled_at:string; attempts:number; last_error:string|null}>; }
 
-export interface DistributionReadiness { artifact_id:string; source_fingerprint:string; central_approval:string; original_text:string; selection_stale:boolean; targets:Array<{platform:string; label:string; selected:boolean; copy_status:string; copy_blockers:string[]; execution_blockers:string[]}>; }
+export interface DistributionReadiness { selection_version:string; artifact_id:string; source_fingerprint:string; central_approval:string; original_text:string; selection_stale:boolean; targets:Array<{platform:string; label:string; selected:boolean; copy_status:string; copy_blockers:string[]; execution_blockers:string[]}>; }
 
 export interface TelegramBatchPreview { destination:string|null;ready_count:number;blocked_count:number;caveat:string;items:Array<{artifact_id:string;title:string;kind:string;content:string;source_fingerprint:string;copy_version:number|null;ready:boolean;blockers:string[];publications:Array<{id:string;status:string;external_ids:string[]}>;schedules:Array<{name:string;schedule_status:string;item_status:string}>}>; }
 
@@ -93,7 +93,7 @@ export const genericArtifactsApi = {
   telegramBatchSchedule(input:{artifact_ids:string[];fingerprints:Record<string,string>;name:string;timezone:string;start_at:string;interval_minutes:number;destination:string;copy_versions:Record<string,number|null>}):Promise<{id:string;status:string;items:Array<{artifact_id:string;scheduled_at:string}>}> {return post('/api/artifacts/telegram-batch-schedule',input);},
   telegramBatchPreview(ids:string[]):Promise<TelegramBatchPreview> { return post('/api/artifacts/telegram-batch-preview',{artifact_ids:ids}); },
   readiness(id:string):Promise<DistributionReadiness> { return get(`/api/artifacts/${id}/distribution-readiness`); },
-  saveDistribution(input:{artifact_ids:string[];platforms:string[];fingerprints:Record<string,string>}):Promise<{saved:number;items:DistributionReadiness[]}> { return post('/api/artifacts/distribution-selection',input); },
+  saveDistribution(input:{artifact_ids:string[];platforms:string[];fingerprints:Record<string,string>;mode?:'replace'|'add'|'remove';selection_versions?:Record<string,string>}):Promise<{saved:number;items:DistributionReadiness[]}> { return post('/api/artifacts/distribution-selection',input); },
   publications(id:string):Promise<{items:ArtifactPublicationRecord[];total:number}> { return get(`/api/artifacts/${id}/publications`); },
   liveLocations(id: string): Promise<LiveLocationRecord[]> { return get(`/api/artifacts/${id}/live-locations`); },
   locationOperation(publicationId: string, input: {action: string; latitude?: number; longitude?: number}): Promise<LiveLocationOperation> { return post(`/api/artifacts/live-locations/${publicationId}/operations`, input); },
