@@ -19,7 +19,7 @@ test('selected approved media creates a separate reviewable album without sendin
  await page.getByRole('button',{name:'إنشاء ألبوم من المحدد (2-10)',exact:true}).click();
  await expect.poll(()=>requested).not.toBeNull();expect(requested.artifact_ids).toEqual(['a','b']);
  await expect(page.getByLabel('حالة مراجعة المخرجات')).toHaveValue('DRAFT');
- await expect(page.getByText('a.png',{exact:false}).first()).toBeVisible();
+ await expect(page.getByText('a.png',{exact:true}).first()).toBeVisible();
  await page.screenshot({path:testInfo.outputPath('album-draft-desktop.png'),fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  await page.screenshot({path:testInfo.outputPath('album-selection-mobile.png'),fullPage:true});
