@@ -1,5 +1,5 @@
 from app.domain.telegram_copy import telegram_publish_text
-from typing import Any
+from typing import Any, Literal
 from datetime import datetime
 import os
 from uuid import UUID
@@ -249,13 +249,15 @@ class DistributionSelectionRequest(BaseModel):
     artifact_ids: list[UUID] = Field(min_length=1, max_length=100)
     platforms: list[str] = Field(max_length=6)
     fingerprints: dict[str, str]
+    mode: Literal["replace", "add", "remove"] = "replace"
+    selection_versions: dict[str, str] | None = None
 
 
 @router.post("/distribution-selection")
 async def save_distribution_selection(payload: DistributionSelectionRequest, session: AsyncSession = Depends(get_session)):
     from app.application.distribution_readiness import save_selection
     try:
-        return await save_selection(session, payload.artifact_ids, payload.platforms, payload.fingerprints)
+        return await save_selection(session, payload.artifact_ids, payload.platforms, payload.fingerprints, payload.mode, payload.selection_versions)
     except (ValueError, LookupError) as exc:
         await session.rollback()
         raise _handle_error(exc) from exc
