@@ -16,6 +16,7 @@ from app.adapters.gemini_policy import (
     resolve_model_chain,
     retry_after_seconds,
 )
+from app.api.legal import router as legal_router
 from app.api.auth import AuthMiddleware, router as auth_router
 from app.api.benchmark import benchmark_router
 from app.api.control_plane import router as control_plane_router
@@ -218,6 +219,7 @@ def create_app() -> FastAPI:
         return Response(proof, media_type="text/plain")
 
     application.include_router(auth_router)
+    application.include_router(legal_router)
     register_gemini_error_handlers(application)
     application.include_router(router)
     application.include_router(control_plane_router)
