@@ -1,0 +1,132 @@
+from datetime import timedelta,datetime,timezone
+from uuid import UUID
+import pytest
+from sqlalchemy import select
+from app.infrastructure.database.session import SessionFactory
+from app.infrastructure.database.models import ArtifactModel,FacebookReelJobModel as Facebook,InstagramExecutionModel as Instagram,InstagramDispatchModel as Dispatch,InstagramConnectionModel as Connection
+from app.application import facebook_reel_runtime as fb,instagram_publish_decisions as decisions,instagram_unified_execution as execution,instagram_dispatch as dispatch,instagram_runtime as runtime,instagram_oauth as oauth
+from tests.integration.test_instagram_oauth import config,browser
+from tests.integration.test_instagram_unified_execution_gates import approved
+from tests.integration.test_instagram_execution_core import private_storage
+
+@pytest.mark.asyncio
+async def test_fb_future_pins_time_no_early_calls_expiry_and_legacy(config,monkeypatch):
+    from tests.integration.test_media_scheduling import _media_artifact
+    uid=await _media_artifact();facts=dict(artifact_id=str(uid),media_sha256='a'*64,caption='exact',size_bytes=10);binding={'page_id':'123','page_name':'Page'}
+    async def pinned(*a):return facts,b'bytes'
+    async def bound(*a):return binding
+    monkeypatch.setattr(fb,'pinned',pinned);monkeypatch.setattr(fb,'binding',bound)
+    due=fb.now()+timedelta(days=2)
+    async with SessionFactory() as s:
+        j=await fb.stage(s,uid,due_at=due,timezone_name='Asia/Riyadh');job=await s.get(Facebook,UUID(j['id']))
+        assert job.snapshot['due_at']==due.isoformat() and job.state=='DRAFT'
+        assert (await fb.stage(s,uid,due_at=due,timezone_name='Asia/Riyadh'))['id']==j['id']
+        with pytest.raises(ValueError):await fb.approve(s,job,'b'*64,'owner-session:12345678')
+        await fb.approve(s,job,j['snapshot_hash'],'owner-session:12345678');assert job.approved_until==due+timedelta(minutes=30)
+        def forbidden(*a):raise AssertionError('No early provider or upload')
+        monkeypatch.setattr(fb,'provider',forbidden)
+        await fb.process_one(s,job)
+        with pytest.raises(ValueError,match='موعد'):await fb.valid(s,job)
+        monkeypatch.setattr(fb,'now',lambda:due+timedelta(seconds=1));assert await fb.valid(s,job)==b'bytes'
+        monkeypatch.setattr(fb,'now',lambda:due+timedelta(minutes=31))
+        with pytest.raises(ValueError):await fb.valid(s,job)
+        legacy=await fb.stage(s,uid);old=await s.get(Facebook,UUID(legacy['id']));assert 'due_at' not in old.snapshot
+        await fb.approve(s,old,legacy['snapshot_hash'],'owner-session:12345678');assert old.approved_until==fb.now()+timedelta(minutes=30)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('delta,zone',[(timedelta(days=8),'UTC'),(timedelta(seconds=-1),'UTC'),(timedelta(days=1),'Invalid/Zone')])
+async def test_bad_times_rejected_without_media(config,monkeypatch,delta,zone):
+    from app.application.exact_schedule_time import timing
+    with pytest.raises((ValueError,KeyError)):timing(datetime.now(timezone.utc)+delta,zone,now=datetime.now(timezone.utc))
+
+@pytest.mark.asyncio
+async def test_future_instagram_refresh_same_pinned_account_only(config,monkeypatch):
+    jid,did,due=await approved(monkeypatch);seen=[]
+    async with SessionFactory() as s:
+        conn=await s.get(Connection,1);conn.last_check_at=oauth.now()-timedelta(hours=2);await s.commit();job=await s.get(Instagram,jid)
+        with pytest.raises(ValueError):await execution.validate_binding(s,job)
+        async def verify(session):
+            seen.append('verify-read-only');conn.last_check_at=oauth.now();await session.commit()
+        monkeypatch.setattr(oauth,'verify_saved_connection',verify)
+        await execution.refresh_due_binding(s,job);assert seen==['verify-read-only']
+        conn.account_id='999';await s.commit()
+        with pytest.raises(ValueError):await execution.refresh_due_binding(s,job)
+        assert len(seen)==1
+
+@pytest.mark.asyncio
+async def test_operation_index_private_paginated_no_secrets(config,monkeypatch):
+    jid,did,due=await approved(monkeypatch)
+    async with SessionFactory() as s:
+        await dispatch.schedule(s,jid,did)
+    async with browser() as c:
+        r=await c.get('/api/platform-operations?limit=1');assert r.status_code==200,r.text
+        d=r.json();assert d['total']>=1 and len(d['items'])==1
+        assert r.headers['cache-control']=='no-store'
+        if d['items'][0]['due_at']:assert 'T' in d['items'][0]['due_at']
+        assert not any(x in r.text for x in ['evidence_ref','token_hash','private-token','connection_binding','snapshot_hash'])
+        assert (await c.get('/api/platform-operations?limit=101')).status_code==422
+
+@pytest.mark.asyncio
+async def test_due_runtime_refreshes_before_decision_but_expired_does_not(config,monkeypatch):
+    jid,did,due=await approved(monkeypatch)
+    async with SessionFactory() as s:
+        for row in (await s.execute(select(Dispatch))).scalars():row.state='CANCELLED'
+        row=await dispatch.schedule(s,jid,did)
+    seen=[]
+    async def refresh(*a):seen.append('refresh')
+    async def validate(*a):seen.append('validate');raise ValueError('stop before provider')
+    monkeypatch.setattr(execution,'refresh_due_binding',refresh);monkeypatch.setattr(decisions,'validate',validate)
+    monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
+    await runtime.process_approved();assert seen==['refresh','validate']
+    async with SessionFactory() as s:
+        r=await s.get(Dispatch,row.id);r.state='PENDING';await s.commit()
+    seen.clear();monkeypatch.setattr(decisions,'now',lambda:due+timedelta(minutes=16))
+    await runtime.process_approved();assert seen==[]
+
+@pytest.mark.asyncio
+async def test_fb_processing_window_expiry_blocks_finish_but_known_result_recovers(monkeypatch):
+    from types import SimpleNamespace
+    from app.adapters.publishing.facebook_reels import ReelSession
+    from dataclasses import asdict
+    class S:
+        async def commit(self):pass
+    due=fb.now()-timedelta(minutes=31);calls=[]
+    job=SimpleNamespace(state='PROCESSING',snapshot={'due_at':due.isoformat(),'caption':'exact'},approved_until=due+timedelta(minutes=30),remote_session=asdict(ReelSession('123','456','https://rupload.facebook.com/video-upload/456','a'*64,5)),updated_at=fb.now(),permalink=None,error_code=None)
+    async def valid(*a):raise ValueError('expired')
+    class Provider:
+        async def status(self,*a):calls.append('status');return dict(state='OK',publishing_complete=True,publish_status='published')
+        async def _request(self,*a,**k):calls.append('read');return dict(id='456',description='exact',**{'from':{'id':'123'}},permalink_url='https://www.facebook.com/reel/456/')
+        async def finish(self,*a,**k):raise AssertionError('No expired finish')
+        async def upload(self,*a,**k):raise AssertionError('No reupload')
+    async def provider(*a):return Provider()
+    monkeypatch.setattr(fb,'provider',provider);monkeypatch.setattr(fb,'valid',valid)
+    with pytest.raises(ValueError):await fb.process_one(S(),job)
+    assert calls==[]
+    job.state='OUTCOME_UNKNOWN';await fb.process_one(S(),job)
+    assert job.state=='PUBLISHED' and calls==['status','read']
+
+@pytest.mark.asyncio
+async def test_instagram_processing_expiry_blocks_without_provider_or_renewal(config,monkeypatch):
+    from app.infrastructure.database.models import InstagramMediaGrantModel as Grant
+    from app.application import instagram_media_grants as grants
+    jid,did,due=await approved(monkeypatch)
+    async with SessionFactory() as s:
+        for row in (await s.execute(select(Dispatch))).scalars():row.state='CANCELLED'
+        row=await dispatch.schedule(s,jid,did)
+        monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1));grant,token=await grants.mint(s,jid,did)
+        row.state='WAITING_MEDIA';await s.commit()
+    monkeypatch.setattr(decisions,'now',lambda:due+timedelta(minutes=16))
+    def forbidden(*a):raise AssertionError('No expired provider or grant renewal')
+    monkeypatch.setattr(execution,'refresh_due_binding',forbidden);monkeypatch.setattr(execution,'verified_provider',forbidden)
+    await runtime.process_approved()
+    async with SessionFactory() as s:
+        row=await s.get(Dispatch,row.id);assert row.state=='BLOCKED'
+        with pytest.raises(ValueError):await grants.read(s,token)
+
+
+@pytest.mark.asyncio
+async def test_index_needs_owner():
+    import httpx
+    from app.main import app
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://test') as c:
+        assert (await c.get('/api/platform-operations')).status_code==401
