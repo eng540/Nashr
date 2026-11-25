@@ -11,3 +11,18 @@ test('unified operations queue shows imported and editorial originals without gr
  await page.getByLabel('سلسلة قائمة التوزيع').fill('سلسلة الخرسانة');await expect(queue.getByText('منشور تحريري',{exact:true})).toHaveCount(0);await page.getByLabel('تصنيف قائمة التوزيع').fill('ضبط الجودة');await page.getByLabel('وجهة قائمة التوزيع').selectOption('youtube');await expect(queue.getByText('فيديو مستورد',{exact:true})).toBeVisible();await expect(queue).toContainText('تغير الأصل، حدّث الاختيار');await page.getByLabel('وجهة قائمة التوزيع').selectOption('NONE');await expect(queue.getByText('لا توجد مواد مطابقة.')).toBeVisible();await queue.getByRole('button',{name:'مسح مرشحات التنظيم والوجهة'}).click();await expect(queue.getByText('منشور تحريري',{exact:true})).toBeVisible();
  await page.getByLabel('مصدر قائمة المحتوى الموحدة').selectOption('ARTIFACT');await expect(queue.getByText('منشور تحريري',{exact:true})).toHaveCount(0);await page.getByLabel('بحث قائمة المحتوى الموحدة').fill('لا نتيجة');await expect(queue.getByText('لا توجد مواد مطابقة.')).toBeVisible();expect(writes).toBe(0);
 });
+
+test('search debounces, keeps stale results inert, recovers empty and failed reads without writes',async({page})=>{
+ const requests:string[]=[];let release:(()=>void)|undefined;let fail=false,writes=0;
+ await page.route('**/*',async route=>{const r=route.request(),u=new URL(r.url()),p=u.pathname;
+ if(p.startsWith('/api/')||p.startsWith('/posts')||p.startsWith('/schedules')){
+ if(r.method()!=='GET')writes++;
+ if(p==='/api/platform-operations')return route.fulfill({json:{items:[],total:0,counts:{waiting:0,published:0,attention:0,total:0}}});
+ if(p==='/api/artifacts/platform-variants')return route.fulfill({json:[]});
+ if(p==='/api/publishing-queue'){const q=u.searchParams.get('q')||'';requests.push(q);if(q==='pending')await new Promise<void>(resolve=>{release=resolve;});if(fail)return route.fulfill({status:503,json:{detail:'read unavailable'}});return route.fulfill({json:{items:q?[]:[{id:'stable',origin:'ARTIFACT',kind:'TEXT',title:'مادة محفوظة',content_preview:'نص محفوظ',state:'APPROVED',prepared_copies:0,fields_validated:0,selected_platforms:[],selection_stale:false}],total:q?0:1,caveat:'لا نشر من القراءة'}});}
+ return route.fulfill({json:{items:[],total:0,sources:[],kinds:[]}});}
+ return route.continue();});
+ await page.goto('/publishing');const queue=page.getByRole('region',{name:'قائمة المحتوى الموحدة',exact:true});await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();const before=requests.length;
+ await page.getByLabel('بحث قائمة المحتوى الموحدة').pressSequentially('pending',{delay:10});await expect.poll(()=>requests.filter(x=>x==='pending').length).toBe(1);expect(requests.length-before).toBe(1);await expect(queue).toContainText('تبقى آخر قائمة ظاهرة');await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();expect(await queue.locator('a').filter({hasText:'فتح المادة والتجهيز والخطة والسجل'}).evaluate(e=>!!e.closest('[inert]'))).toBeTruthy();release!();await expect(queue).toContainText('لا توجد مواد مطابقة.');await queue.getByRole('button',{name:'عرض كل المحتوى المعتمد'}).click();await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();
+ fail=true;await queue.getByRole('button',{name:'تحديث قائمة المحتوى'}).click();await expect(queue.getByRole('alert')).toBeVisible({timeout:15000});fail=false;await queue.getByRole('button',{name:'إعادة تحميل قائمة المحتوى'}).click();await expect(queue.getByRole('alert')).toHaveCount(0);await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();expect(writes).toBe(0);
+});
