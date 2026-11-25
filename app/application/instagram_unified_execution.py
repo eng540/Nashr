@@ -58,7 +58,7 @@ async def history(session,uid):
     rows=(await session.execute(select(Job).where(Job.artifact_id==uid).order_by(Job.created_at.desc()).limit(30))).scalars().all()
     return {'items':[describe(r) for r in rows if (r.connection_binding or {}).get('login_mode')=='UNIFIED'],'execution_enabled':False}
 
-async def validate_binding(session,job):
+async def validate_binding(session,job,*,allow_stale_check=False):
     binding=job.connection_binding or {}
     if binding.get('login_mode')!='UNIFIED':raise ValueError('Unified connection provenance required')
     from uuid import UUID
@@ -67,7 +67,7 @@ async def validate_binding(session,job):
     c=await oauth.configuration_for(session,True);conn=await session.get(Connection,1,populate_existing=True)
     account=oauth.connection_payload(conn,c)
     from datetime import datetime,timezone,timedelta
-    if conn and (not conn.last_check_at or conn.last_check_ok is not True or conn.last_check_at<datetime.now(timezone.utc)-timedelta(minutes=5)):raise ValueError('يلزم تحقق حديث من الحساب.')
+    if conn and (conn.last_check_ok is not True or (not allow_stale_check and (not conn.last_check_at or conn.last_check_at<datetime.now(timezone.utc)-timedelta(minutes=5)))):raise ValueError('يلزم تحقق حديث من الحساب.')
     if not account or account['state']!='CONNECTED_AT_LAST_CHECK' or binding['config_hash']!=c['fingerprint'] or job.account_id!=account['account_id'] or binding['username']!=account['username'] or binding.get('connected_at')!=conn.connected_at.isoformat() or binding.get('client_business_id')!=conn.client_business_id or binding.get('token_hash')!=oauth.digest(conn.token_ciphertext):raise ValueError('Unified connection changed or disabled')
     return account
 
@@ -90,3 +90,10 @@ async def verified_provider(session,job,client):
     except Exception:raise ValueError('Unified account verification failed; no provider mutation') from None
     await validate_binding(session,job)
     return provider
+
+
+async def refresh_due_binding(session,job):
+    await validate_binding(session,job,allow_stale_check=True)
+    # Verifies exactly the saved account. Never refreshes a token or selects one.
+    await oauth.verify_saved_connection(session)
+    await validate_binding(session,job)
