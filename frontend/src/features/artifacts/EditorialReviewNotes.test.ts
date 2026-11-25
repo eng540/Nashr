@@ -7,6 +7,10 @@ describe('curated review notes',()=>{
  it('hides legacy raw records and malformed values',()=>{
   for(const metadata of [{},{editorial_notes:'raw'},{video_library:[]},{video_library:{editorial_notes:['raw']}},{video_library:{review_notes:[null,{},false,' ']}}])expect(editorialReviewNotes(metadata)).toEqual([]);
  });
+ it('keeps HTTPS source paths without allowing a local path beside them',()=>{
+  const note='مصدر مساحة عام: https://ce.cet.ac.in/downloads/Study%20Material/Surveying/Settingout.pdf';
+  expect(editorialReviewNotes({video_library:{review_notes:[note,note+' /downloads/private.mp4']}})).toEqual([note]);
+ });
  it('rejects internal paths and process records even in curated input',()=>{
   expect(editorialReviewNotes({video_library:{review_notes:['/downloads/private.mp4','/tmp/a','Provider pipeline','Charon WAV','agent handoff','Civil review required']}})).toEqual(['Civil review required']);
  });
