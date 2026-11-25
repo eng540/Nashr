@@ -41,6 +41,7 @@ from app.api.facebook_reviews import router as facebook_reviews_router
 from app.api.publishing_queue import router as publishing_queue_router
 from app.api.platform_operations import router as platform_operations_router
 from app.api.routes import router
+from app.api.telegram_calendar import router as telegram_calendar_router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 from app.application.production_jobs import recover_stale_production_jobs, run_production_job
 from app.application.scheduling import process_due_schedule_items, recover_stale_schedule_items
@@ -239,6 +240,7 @@ def create_app() -> FastAPI:
     application.include_router(legal_router)
     register_gemini_error_handlers(application)
     application.include_router(production_history_router)
+    application.include_router(telegram_calendar_router)
     application.include_router(router)
     application.include_router(control_plane_router)
     application.include_router(policies_router)
