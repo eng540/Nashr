@@ -157,6 +157,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const queryClient = useQueryClient();
   const [libraryParams] = useSearchParams();
   const [status, setStatus] = useState<GenericArtifactReviewStatus>(libraryParams.get("artifact_status") === "APPROVED" ? "APPROVED" : "DRAFT");
+  const [copyRequests,setCopyRequests]=useState<Record<string,{platform:string;nonce:number}>>({});
   const [focusedId,setFocusedId] = useState<string|null>(libraryParams.get("artifact_id"));
   const [compact,setCompact] = useState(libraryParams.get("library_view")!=="expanded");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
@@ -619,7 +620,6 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           {!products.isLoading && eligibleCardProducts.length === 0 ? <span className="text-xs text-slate-600">لا يوجد منتج منشور بوصفة render_approved_text_card.</span> : null}
         </div> : null}
         </details>
-          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} kind={artifact.kind} onPlan={() => {setSelectedMediaIds([artifact.id]); requestAnimationFrame(() => document.querySelector('[aria-label="معاينة دفعة Telegram"]')?.scrollIntoView({behavior:'smooth',block:'start'}));}} /> : null}
         <details open={!compact} className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold">خيارات متقدمة: اشتقاق نسخة ومسودة من الأصل</summary>
         {status === "APPROVED" && ["TEXT", "IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 p-3">
           <label className="w-full text-sm font-semibold sm:w-auto">اشتقاق نسخة بحدود منصة
@@ -676,7 +676,8 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           <button type="button" onClick={() => approve.mutate(artifact.id)} disabled={approve.isPending || drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? ""))} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">اعتماد المادة فقط، دون نشر</button>
           <button type="button" onClick={() => reject.mutate(artifact.id)} disabled={reject.isPending || !(drafts[artifact.id]?.review_note ?? "").trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white">رفض المخرج</button>
         </div> : null}</section>
-        {artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div id={`destinations-${artifact.id}`} className="scroll-mt-24"><DistributionReadinessPanel ids={[artifact.id]} /></div> : null}
+        {artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div id={`destinations-${artifact.id}`} className="scroll-mt-24"><DistributionReadinessPanel ids={[artifact.id]} onReview={platform=>setCopyRequests(current=>({...current,[artifact.id]:{platform,nonce:Date.now()}}))} /></div> : null}
+          {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} kind={artifact.kind} request={copyRequests[artifact.id]} onPlan={() => {setSelectedMediaIds([artifact.id]); requestAnimationFrame(() => document.querySelector('[aria-label="معاينة دفعة Telegram"]')?.scrollIntoView({behavior:'smooth',block:'start'}));}} /> : null}
         <div id={`history-${artifact.id}`} className="scroll-mt-24"><ArtifactPublicationLedger id={artifact.id} /></div>
 
         <details className="text-xs text-slate-500"><summary>تفاصيل تقنية للمادة</summary><p className="break-all">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p></details>
@@ -765,4 +766,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-}
+    }
