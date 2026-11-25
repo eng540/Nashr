@@ -9,11 +9,11 @@ test('media copy saves its own caption and blocks approval while unsaved',async(
  if(p.endsWith('/media-url'))return route.fulfill({json:{url:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="teal"/></svg>',expires_in:300}});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
  await page.goto('/bank?library_view=expanded');await page.getByLabel('تعليق نسخة المنصة copy').fill('نص جديد محفوظ للنسخة');
- await expect(page.getByRole('button',{name:'اعتماد المخرج',exact:true})).toBeDisabled();
+ await expect(page.getByRole('button',{name:'اعتماد المادة فقط، دون نشر',exact:true})).toBeDisabled();
  await page.getByRole('button',{name:'حفظ تعليق النسخة',exact:true}).click();
  await expect.poll(()=>patch?.metadata?.caption).toBe('نص جديد محفوظ للنسخة');
  expect(patch.content).toBeUndefined();expect(patch.metadata.source_artifact_id).toBe('original');
- await expect(page.getByRole('button',{name:'اعتماد المخرج',exact:true})).toBeEnabled();
+ await expect(page.getByRole('button',{name:'اعتماد المادة فقط، دون نشر',exact:true})).toBeEnabled();
  await page.screenshot({path:info.outputPath('platform-copy-desktop.png'),fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:info.outputPath('platform-copy-mobile.png'),fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
