@@ -94,3 +94,15 @@ or processing plan, then history. A newer cancelled plan cannot hide the relevan
 active or failed plan. The link explains which case it represents. Published
 status still requires an external identifier and never means every destination
 has completed. Account, media and execution checks remain separate.
+
+## Organized distribution list, 2026-11-25
+
+The publishing queue displays the saved catalog title before import/source titles,
+without copying that label into publication text. Search includes saved series and
+category labels. Exact series/category filters and an explicit platform-choice
+filter narrow the read-only operations list. The no-destinations filter includes
+original artifacts with no saved selection or an explicitly empty one. Editorial
+legacy posts are excluded from platform-choice filters because they do not store
+central artifact choices. Stale choices remain visible and flagged; filtering by
+a platform is never evidence of media/account readiness or execution authority.
+No existing catalog, original, choice, approval or schedule is changed.
