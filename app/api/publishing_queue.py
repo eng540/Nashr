@@ -50,11 +50,17 @@ def _state(reference, content_type):
     pub_ref = PublicationModel.post_id if content_type == 'POST' else PublicationModel.artifact_id
     item_ref = ScheduleItemModel.post_id if content_type == 'POST' else ScheduleItemModel.artifact_id
     published = exists(select(PublicationModel.id).where(pub_ref == reference, _confirmed(PublicationModel)))
+    if content_type == 'ARTIFACT':
+        from app.application.connector_result_history import confirmed_for
+        published = or_(published, confirmed_for(reference))
     planned = exists(select(ScheduleItemModel.id).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
         .where(item_ref == reference, ScheduleModel.status.in_(['DRAFT','ACTIVE','PAUSED']), ScheduleItemModel.status.in_(['PENDING','PROCESSING'])))
     failed = or_(_unresolved_publication_failure(reference, content_type),
         exists(select(ScheduleItemModel.id).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
             .where(item_ref == reference, _failed_item(), ScheduleModel.status != 'CANCELLED')))
+    if content_type == 'ARTIFACT':
+        from app.application.connector_result_history import attention_for
+        failed = or_(failed, attention_for(reference))
     return case((failed, 'ATTENTION'), (planned, 'PLANNED'), (published, 'PUBLISHED'), else_='APPROVED')
 
 
@@ -137,6 +143,17 @@ async def publishing_queue(q: str = Query(default='', max_length=500),
                 outcomes.setdefault((origin_name, reference_id), []).append({
                     'platform': platform_name, 'attempts': attempts,
                     'confirmed_targets': confirmed_targets, 'unresolved_failures': unresolved_failures})
+    from app.application.connector_result_history import results as connector_results
+    if ids:
+        connector = connector_results()
+        evidence = (await session.execute(select(connector.c.artifact_id, connector.c.platform,
+            func.count().label('attempts'),
+            func.count(func.distinct(connector.c.destination)).filter(connector.c.confirmed.is_(True)).label('confirmed_targets'))
+            .where(connector.c.artifact_id.in_(ids)).group_by(connector.c.artifact_id, connector.c.platform))).all()
+        for uid, platform_name, attempts, confirmed_targets in evidence:
+            group = outcomes.setdefault(('ARTIFACT', uid), [])
+            group.append({'platform': platform_name, 'attempts': attempts,
+                'confirmed_targets': confirmed_targets, 'unresolved_failures': None, 'record_scope': 'CONNECTOR'})
     from app.application.central_platform_copies import evaluate
     from app.application.distribution_readiness import source_fingerprint
     items=[]
