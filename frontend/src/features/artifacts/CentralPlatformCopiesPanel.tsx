@@ -28,9 +28,14 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
  const shown=draft??row;
  const busy=load.isPending||prepare.isPending||save.isPending||inspect.isPending||jpeg.isPending;
  useEffect(()=>{
-  if((new URLSearchParams(window.location.search).has('text_job_id')||new URLSearchParams(window.location.search).has('photo_job_id'))&&new URLSearchParams(window.location.search).get('artifact_id')===id){
+  const params=new URLSearchParams(window.location.search);
+  if(params.get('artifact_id')!==id)return;
+  const platform=params.get('copy_platform');
+  if(platform&&!['telegram','instagram','facebook','youtube','x','tiktok'].includes(platform))return;
+  if(platform||params.has('text_job_id')||params.has('photo_job_id')){
    if(panelRef.current)panelRef.current.open=true;
-   setActive('facebook');load.mutate();
+   setActive(platform||'facebook');load.mutate();
+   setHandoff('فتح النسخة المحفوظة للمادة والمنصة المحددتين فقط، دون تجهيز أو تغيير وجهة أو نشر.');
   }
  },[id]);
  useEffect(()=>{
