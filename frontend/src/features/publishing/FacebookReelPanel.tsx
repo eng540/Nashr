@@ -1,11 +1,16 @@
 import {useState} from 'react';
+import {useSearchParams} from 'react-router';
 import {get,post} from '../../shared/api/client';
 type Job={id:string;state:string;snapshot_hash:string;permalink:string|null;snapshot:{caption:string;media_sha256:string;connection:{page_id:string;page_name:string};audience:string}};
 export function FacebookReelPanel(){
- const [uid,setUid]=useState(''),[jid,setJid]=useState(''),[job,setJob]=useState<Job|null>(null),[ok,setOk]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [params]=useSearchParams();
+ const requested=params.get('reel_artifact_id')??'';
+ const initial=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requested)?requested:'';
+ const [uid,setUid]=useState(initial),[jid,setJid]=useState(''),[job,setJob]=useState<Job|null>(null),[ok,setOk]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const base='/api/connections/facebook/reels';
  async function run(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'تعذر التنفيذ');}finally{setBusy(false);}}
- return <details className="rounded border p-3"><summary>نشر Reel على صفحة Facebook، قرار مستقل</summary><p>ينشر على الصفحة العامة فقط. لا يغير Instagram. لا رفع قبل موافقتك على المعاينة. يرسل MP4 إلى Meta دون رابط ملف متاح للآخرين. الاستجابة غير المؤكدة لا تعاد تلقائياً.</p>
+ return <details open={initial?true:undefined} className="rounded border p-3"><summary>نشر Reel على صفحة Facebook، قرار مستقل</summary><p>ينشر على الصفحة العامة فقط. لا يغير Instagram. لا رفع قبل موافقتك على المعاينة. يرسل MP4 إلى Meta دون رابط ملف متاح للآخرين. الاستجابة غير المؤكدة لا تعاد تلقائياً.</p>
+ {initial?<p role="status">انتقلت من المادة الأصلية. المعرف معبأ فقط؛ لم ننشئ معاينة أو نرسل ملفاً. راجع المادة والصفحة والوصف قبل أي تجهيز أو موافقة.</p>:null}
  <label>قراءة محاولة محفوظة<input aria-label="معرف محاولة Facebook" value={jid} onChange={e=>setJid(e.target.value)} className="block w-full rounded border p-2" dir="ltr"/></label><button disabled={busy||!jid} onClick={()=>void run(async()=>setJob(await get<Job>(base+'/'+jid)))}>قراءة المحاولة دون تنفيذ</button>
  <label>معرف المادة المعتمدة<input aria-label="مادة Facebook Reel" value={uid} onChange={e=>{setUid(e.target.value);setJob(null);setOk(false);}} dir="ltr" className="block w-full rounded border p-2"/></label>
  <button className="workspace-secondary" disabled={busy||!uid||!!job} onClick={()=>void run(async()=>{await post(base+'/materials/'+uid+'/prepare-delivery',{});setJob(await post<Job>(base+'/materials/'+uid+'/preview',{}));})}>تجهيز نسخة توافق خاصة ومعاينة دون نشر</button>

@@ -2,7 +2,7 @@ import {useState} from 'react';
 import {useMutation} from '@tanstack/react-query';
 import {genericArtifactsApi,type DistributionReadiness} from '../../shared/api/artifactsApi';
 
-export function DistributionReadinessPanel({ids}:{ids:string[]}) {
+export function DistributionReadinessPanel({ids,onReview}:{ids:string[];onReview?:(platform:string)=>void}) {
  const [rows,setRows]=useState<DistributionReadiness[]>([]);
  const [selected,setSelected]=useState<string[]>([]);
  const [note,setNote]=useState('');
@@ -30,7 +30,7 @@ export function DistributionReadinessPanel({ids}:{ids:string[]}) {
    {rows.map((row,index)=><details key={row.artifact_id} className="min-w-0 rounded-lg border border-slate-200 bg-white p-3"><summary className="cursor-pointer text-xs font-semibold">تفاصيل المادة {index+1} · {row.central_approval==='APPROVED'?'اعتماد مركزي محفوظ':'بانتظار الاعتماد'}</summary>
     {row.selection_stale?<p role="alert" className="text-xs text-amber-800">تغيرت المادة منذ الاختيار. حدّث المعاينة وراجع الوجهات. في الدفعة استخدم الاستبدال الصريح بعد المراجعة.</p>:null}
     <details className="my-2"><summary className="text-xs">معاينة النص الأصلي دون تغيير</summary><p dir="auto" className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-7">{row.original_text}</p></details>
-    {row.targets.map(target=><details key={target.platform} className="border-t py-2 text-xs leading-6"><summary className="cursor-pointer"><strong>{target.label}</strong> · {target.copy_blockers[0]??'الأصل مؤهل مبدئياً؛ تابع فحص الوسائط والوجهة'}</summary><div className="space-y-1 pt-1 text-slate-600">{target.copy_blockers.slice(1).map(reason=><p key={reason}>{reason}</p>)}{target.execution_blockers.map(reason=><p key={reason}>{reason}</p>)}</div></details>)}
+    {row.targets.map(target=><details key={target.platform} className="border-t py-2 text-xs leading-6"><summary className="cursor-pointer"><strong>{target.label}</strong> · {target.copy_blockers[0]??'الأصل مؤهل مبدئياً؛ تابع فحص الوسائط والوجهة'}</summary><div className="space-y-1 pt-1 text-slate-600">{target.copy_blockers.slice(1).map(reason=><p key={reason}>{reason}</p>)}{target.execution_blockers.map(reason=><p key={reason}>{reason}</p>)}{onReview&&row.central_approval==='APPROVED'?<button type="button" onClick={()=>onReview(target.platform)} className="rounded border bg-indigo-50 px-3 py-2 font-bold">فتح نسخة {target.label} ومسار مراجعتها دون نشر</button>:null}</div></details>)}
    </details>)}
   </>:null}
   {load.isError||save.isError?<p role="alert" className="break-words text-sm text-rose-700">{load.error?.message??save.error?.message}</p>:null}

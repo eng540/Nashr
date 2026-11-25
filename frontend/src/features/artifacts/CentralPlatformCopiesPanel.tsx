@@ -1,15 +1,17 @@
 import {FacebookPlanReviewPanel} from './FacebookPlanReviewPanel';
 import {YouTubePlanReviewPanel} from './YouTubePlanReviewPanel';
 import {InstagramPlanReviewPanel} from './InstagramPlanReviewPanel';
-import {useState} from 'react';
+import {useState,useEffect,useRef} from 'react';
 import {CopySuggestionsPanel} from './CopySuggestionsPanel';
 import {MediaInspectionHistoryPanel} from './MediaInspectionHistoryPanel';
 import {PlatformCopyMediaPanel} from './PlatformCopyMediaPanel';
 import {useMutation} from '@tanstack/react-query';
 import {genericArtifactsApi,type CentralPlatformCopy} from '../../shared/api/artifactsApi';
 
-export function CentralPlatformCopiesPanel({id,kind,onPlan}:{id:string;kind:string;onPlan?:()=>void}) {
+export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;kind:string;onPlan?:()=>void;request?:{platform:string;nonce:number}}) {
  function fileSize(bytes:unknown) {const size=Number(bytes);return size<1024?`${size} بايت`:size<1024*1024?`${(size/1024).toFixed(1)} كيبيبايت`:`${(size/1024/1024).toFixed(2)} ميبيبايت`;}
+ const panelRef=useRef<HTMLDetailsElement>(null);
+ const [handoff,setHandoff]=useState('');
  const [rows,setRows]=useState<CentralPlatformCopy[]>([]);
  const [active,setActive]=useState('telegram');
  const [draft,setDraft]=useState<CentralPlatformCopy|null>(null);
@@ -24,11 +26,18 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan}:{id:string;kind:stri
  const row=rows.find(item=>item.platform===active);
  const shown=draft??row;
  const busy=load.isPending||prepare.isPending||save.isPending||inspect.isPending||jpeg.isPending;
+ useEffect(()=>{
+  if(!request)return;
+  if(panelRef.current){panelRef.current.open=true;panelRef.current.scrollIntoView({block:'start',behavior:'smooth'});}
+  if(draft||busy){setHandoff('احفظ تعديلات النسخة أو ألغها أولاً. لم نغيّر المنصة أو نحذف تعديلاتك.');return;}
+  setActive(request.platform);setHandoff('فتح السجلات المحفوظة فقط. لا تجهيز جديد أو نشر من هذا الانتقال.');load.mutate();
+ },[request?.nonce]);
  function edit(field:keyof CentralPlatformCopy['fields'],value:string|string[]) {inspect.reset();jpeg.reset();if(shown)setDraft({...shown,fields:{...shown.fields,[field]:value}});setNote('');}
- return <details className="rounded-xl border border-violet-200 bg-violet-50/50 p-3" aria-label={`نسخ المنصات ${id}`}>
+ return <details ref={panelRef} className="scroll-mt-24 rounded-xl border border-violet-200 bg-violet-50/50 p-3" aria-label={`نسخ المنصات ${id}`}>
   <summary className="cursor-pointer text-xs font-bold">نسخ المنصات · حقول مرتبطة بالأصل</summary>
-  <div className="mt-3 space-y-3 text-xs leading-6"><p>اعتماد الأصل واحد. ننسخ النص كما هو دون قص أو توليد؛ نتحقق من الحقول المعروفة ونبين ما ينقص. تعديل نسخة لا يغير الأصل أو بقية المنصات.</p>
+  <div className="mt-3 space-y-3 text-xs leading-6">{handoff?<p role="status" className="rounded border bg-white p-2">{handoff}</p>:null}<p>اعتماد الأصل واحد. ننسخ النص كما هو دون قص أو توليد؛ نتحقق من الحقول المعروفة ونبين ما ينقص. تعديل نسخة لا يغير الأصل أو بقية المنصات.</p>
    <div className="flex flex-wrap gap-2"><button type="button" disabled={busy||!!draft} onClick={()=>{inspect.reset();jpeg.reset();load.mutate();}} className="rounded border bg-white p-2">عرض النسخ المحفوظة</button><button type="button" disabled={busy||!!draft} onClick={()=>{inspect.reset();jpeg.reset();prepare.mutate();}} className="rounded border bg-white p-2">تجهيز النسخ الناقصة دون استبدال</button></div>
+   {load.isSuccess&&!rows.length?<p role="status">لا توجد نسخ مركزية محفوظة لهذه المادة بعد. استخدم تجهيز النسخ الناقصة بقرار منفصل؛ لا نجهزها تلقائياً عند فتح المسار.</p>:null}
    {rows.length?<><label className="block">المنصة<select aria-label={`منصة النسخة ${id}`} disabled={!!draft||busy} value={active} onChange={e=>{setActive(e.target.value);inspect.reset();jpeg.reset();setNote('');}} className="block w-full rounded border bg-white p-2">{rows.map(copy=><option key={copy.platform} value={copy.platform}>{copy.label} · {copy.field_status==='FIELDS_VALIDATED'?'الحقول مقبولة مبدئياً':'يلزم استكمال'}</option>)}</select></label>
     {shown?<><p className="rounded bg-white p-2">{shown.origin==='UNCHANGED_ORIGINAL'?'من الأصل دون تغيير':'حقول معدلة'} · إصدار {shown.version} · {shown.central_approval==='APPROVED'?'اعتماد الأصل محفوظ':'الأصل غير معتمد'}</p>
      {draft?<p role="status" className="text-amber-800">تعديلات غير محفوظة. الحالات أدناه تخص آخر إصدار محفوظ وتُفحص مجدداً عند الحفظ.</p>:null}
@@ -51,6 +60,8 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan}:{id:string;kind:stri
    {load.isError||prepare.isError||save.isError?<p role="alert" className="text-rose-700">{load.error?.message??prepare.error?.message??save.error?.message}</p>:null}
    {active==='instagram'&&row&&!draft&&['IMAGE','VIDEO'].includes(kind)?<InstagramPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} kind={kind} disabled={busy}/>:null}
    {active==='youtube'&&row&&!draft&&kind==='VIDEO'?<YouTubePlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
+   {active==='facebook'&&row&&!draft&&kind==='VIDEO'?<div className="rounded border bg-white p-3"><p>مسار Facebook للفيديو هو Reel على صفحة عامة، منفصل عن مراجعة النص والصورة. فتحه يمرر معرف الأصل فقط، ولا يجهز أو يرفع ملفاً ولا يعتمد نشراً. الربط والوسيط والوصف والصفحة وقرار التنفيذ تحتاج مراجعة هناك.</p><a className="inline-block rounded border p-2 font-bold" href={`/connections?reel_artifact_id=${encodeURIComponent(id)}#platform-facebook`}>فتح مراجعة Facebook Reel لهذه المادة</a></div>:null}
+   {['x','tiktok'].includes(active)&&row?<p className="rounded border bg-amber-50 p-3">الحقول محفوظة للمراجعة فقط. لا مسار تنفيذ منشور من هذه النسخة. <a className="underline" href={`/connections#platform-${active}`}>متطلبات ربط المنصة وحدودها</a></p>:null}
    {active==='facebook'&&row&&!draft&&['TEXT','IMAGE'].includes(kind)?<FacebookPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} disabled={busy}/>:null}
    {active==='telegram'&&row&&!draft&&onPlan?<button type="button" disabled={busy} onClick={onPlan} className="rounded border bg-white p-2 font-bold">معاينة وجدولة نسخة Telegram هذه</button>:null}
    {note?<p role="status" className="text-emerald-800">{note}</p>:null}

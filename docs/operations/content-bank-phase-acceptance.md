@@ -167,3 +167,7 @@ Pagination now says that a page is loading rather than showing a temporary incom
 ## Copy-count scope correction
 
 Home progress counts central platform_copies saved-field records and legacy PLATFORM_VARIANT output artifacts separately. The former total was incorrectly derived from legacy outputs only. Neither is an original-material count, a sum of unique materials or proof of readiness. Read-only source correction preserves all records. Integration/browser coverage seeds both types independently and verifies their separate labels/counts.
+
+## Readiness to saved-copy review handoff
+
+Single-original readiness details can open that platform's saved-copy panel by GET only, keeping the original identity and central approval. Missing copies remain missing until explicit preparation; no GET prepares them. Dirty copy fields block a requested platform switch without clearing edits. The copy panel follows readiness in the review journey. Existing Instagram and YouTube reviews remain distinct from account/media/execution readiness. Facebook VIDEO now links to its implemented separate Reel review with the original UUID prefilled; merely following it creates no preview, transfer or authorization. Unsupported X/TikTok execution remains explicit. Isolated browser coverage follows the handoff to Reel review, rejects dirty switching and verifies zero writes.
