@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+test.use({timezoneId:'Asia/Aden'});
 test('calendar uses displayed local date and view timezone without altering plans',async({page},info)=>{
  await page.clock.install({time:new Date('2026-11-24T22:15:00Z')});let writes=0;
  await page.route('**/*',async route=>{const r=route.request(),u=new URL(r.url()),p=u.pathname;if(r.method()!=='GET')writes++;
