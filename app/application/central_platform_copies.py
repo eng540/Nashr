@@ -3,12 +3,14 @@ from datetime import datetime, timezone
 import re
 from sqlalchemy import select
 from app.application.distribution_readiness import PLATFORMS, source_fingerprint
+from app.application.facebook_copy_fields import SOURCES as FACEBOOK_SOURCES
 from app.domain.telegram_copy import telegram_publish_text
 from app.application.telegram_copy_readiness import telegram_copy_blockers
 from app.infrastructure.database.models import ArtifactModel, PlatformCopyModel
 
 SOURCES = {
  'telegram':['https://core.telegram.org/bots/api'],
+ 'facebook':FACEBOOK_SOURCES,
  'youtube':['https://developers.google.com/youtube/data/reference/rest/v3/videos','https://developers.google.com/youtube/data/reference/rest/v3/videos/insert'],
  'instagram':['https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media/','https://developers.facebook.com/documentation/instagram-platform/content-publishing'],
 }
@@ -53,6 +55,19 @@ def evaluate(row, copy):
         units=sum(len(tag)+(2 if ' ' in tag else 0) for tag in tags)+max(0,len(tags)-1)
         if units>500 or any(not tag.strip() for tag in tags): blockers.append('الكلمات المفتاحية تتجاوز500حرف مع الفواصل وعلامات الاقتباس للعبارات.')
         media.append('ملف الفيديو والرفع ومقاس الغلاف لم تُفحص. التصنيف وإعدادات الجمهور والخصوصية تحتاج اختياراً عند ربط القناة.')
+    elif copy.platform=='facebook':
+        from app.application.facebook_copy_fields import blockers as facebook_blockers
+        blockers.extend(facebook_blockers(row.kind,fields))
+        if row.kind=='IMAGE':
+            if row.mime_type not in {'image/jpeg','image/png'} or getattr(copy,'selected_media_id',None) is not None:
+                blockers.append('تجهيز الصورة الحالي لأصل JPEG أو PNG فقط، دون تبديل وسيط.')
+            media.append('مسار الصورة للمراجعة الخاصة فقط، لا تنفيذ نشر صورة. يلزم فحص الملف والأبعاد والحجم والحقوق، ولا نقرأ الملف هنا.')
+        elif row.kind=='VIDEO':
+            media.append('حقول Reel فقط. يلزم فحص وسيط MP4 الحالي وترميزه وصوته وحجمه في مسار Facebook Reel المنفصل، لا يعني قبول الحقول قبول الملف.')
+        elif row.kind=='TEXT':
+            if getattr(copy,'selected_media_id',None) is not None:
+                blockers.append('مسار النص لا يرسل وسيطاً مشتقاً. راجع اختيار وسيط النسخة صراحةً.')
+            media.append('مسار نص الصفحة مستقل: راجع الصفحة المربوطة والصلاحيات والنص والجمهور والحقوق عند معاينة قرار التنفيذ. لا موافقة من فحص الحقول.')
     elif copy.platform=='instagram':
         if row.kind not in {'IMAGE','VIDEO'}: blockers.append('هذا المسار يجهز صورة منفردة أوReel فقط.')
         if len(description)>2200 or len(re.findall(r'(?<!\w)#\w+',description))>30 or len(re.findall(r'(?<!\w)@\w+',description))>20:
@@ -74,7 +89,7 @@ def evaluate(row, copy):
             'field_status':'BLOCKED' if blockers else 'FIELDS_VALIDATED','blockers':blockers,'warnings':warnings,
             'media_checks_pending':media,'execution_status':'NOT_AUTHORIZED',
             'execution_blockers':['حفظ حقول النسخة لا يربط حساباً ولا ينشئ موعداً أو إذن تنفيذ. راجع مسار المنصة المنفصل للتحقق من الاتصال والوسيط وقرار النشر.'],
-            'sources':SOURCES.get(copy.platform,[]),'checked_on':'2026-11-24',
+            'sources':SOURCES.get(copy.platform,[]),'checked_on':'2026-11-25' if copy.platform=='facebook' else '2026-11-24',
             'updated_at':copy.updated_at.isoformat() if copy.updated_at else None}
 
 
