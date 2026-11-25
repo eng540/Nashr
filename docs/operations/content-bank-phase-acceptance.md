@@ -106,3 +106,14 @@ legacy posts are excluded from platform-choice filters because they do not store
 central artifact choices. Stale choices remain visible and flagged; filtering by
 a platform is never evidence of media/account readiness or execution authority.
 No existing catalog, original, choice, approval or schedule is changed.
+
+## Historical per-platform results, 2026-11-25
+
+Each unified-queue original now shows publication evidence grouped by platform.
+Confirmed destination/account pairs are counted once, even across repeated sends.
+Only records with a published status and external identifier count. Unresolved
+failed attempts use the same target/account/content recovery rule as overall
+attention status. Saved platforms lacking any confirmed historical result are
+listed separately. This is history, not delivery of the current copy, completion
+of all selected destinations, connection readiness or permission to retry.
+No content, choices, plans or publication records are changed by reading it.
