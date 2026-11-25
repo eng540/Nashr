@@ -21,9 +21,9 @@ test('successful review preserves only its exact batch through approved continua
 
 test('changing the handoff identity never preserves the preceding batch selection',async({page})=>{
  const extra='f4444444-4444-4444-8444-444444444444';
- const items=[...ids,extra].map(id=>({id,kind:'TEXT',status:'AVAILABLE',content:'أصل',storage_uri:null,mime_type:'text/plain',metadata:{title:id},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
+ const items=[...ids,extra].map(id=>({id,kind:'TEXT',status:'AVAILABLE',content:'أصل',storage_uri:null,mime_type:'text/plain',metadata:{},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
  let writes=0;
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;if(r.method()!=='GET')writes++;if(p==='/api/artifacts')return route.fulfill({json:{items,total:3,limit:100,offset:0}});if(p.startsWith('/api/'))return route.fulfill({json:p.includes('/control/')?[]:{items:[],total:0,telegram:{items:[]}}});if(['/posts','/sources'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
- await page.goto('/bank?artifact_status=APPROVED&review_batch='+ids.join(','));await page.getByRole('button',{name:'تحديد الدفعة نفسها للتجهيز (2)',exact:true}).click();await expect(page.getByTestId('media-selection-count')).toHaveText('2 محدد');
+ await page.goto('/bank?artifact_status=APPROVED&review_batch='+ids.join(','));await page.getByText('المواد المحددة في رابط المتابعة (2)',{exact:true}).click();await expect(page.getByText('TEXT · f1111111',{exact:true})).toBeVisible();await expect(page.getByText('مادة غير متاحة في القراءة الحالية',{exact:true})).toHaveCount(0);await page.getByRole('button',{name:'تحديد الدفعة نفسها للتجهيز (2)',exact:true}).click();await expect(page.getByTestId('media-selection-count')).toHaveText('2 محدد');
  await page.goto('/bank?artifact_status=APPROVED&review_batch='+extra);await expect(page.getByTestId('media-selection-count')).toHaveText('0 محدد');await page.getByRole('button',{name:'تحديد الدفعة نفسها للتجهيز (1)',exact:true}).click();await expect(page.getByTestId('media-selection-count')).toHaveText('1 محدد');for(const id of ids)await expect(page.getByLabel(`تحديد المخرج ${id}`,{exact:true})).not.toBeChecked();expect(writes).toBe(0);
 });
