@@ -218,7 +218,10 @@ class FacebookPagePublisher:
             link = None
         observed = body.get("message", "")
         published = body.get("is_published") is True
-        state = ("RESULT_CHANGED" if observed != expected_message else
+        # Meta converts CRLF pairs to LF on photo captions. Preserve all other
+        # characters, whitespace and bare CR; this is readback-only equivalence.
+        same = isinstance(observed,str) and observed.replace("\r\n","\n") == expected_message.replace("\r\n","\n")
+        state = ("RESULT_CHANGED" if not same else
                  "PUBLISHED_AT_LAST_CHECK" if published else "NOT_CONFIRMED_PUBLISHED")
         # Diagnostic data never relaxes exact comparison or author validation.
         return FacebookResult(state, post_id, permalink=link,

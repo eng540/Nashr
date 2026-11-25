@@ -182,7 +182,7 @@ async def test_invalid_provider_permalink_not_forwarded(url):
         assert result.permalink is None
 
 @pytest.mark.asyncio
-async def test_readback_diagnostic_keeps_newline_mismatch_and_safe_link():
+async def test_readback_accepts_only_crlf_pair_normalization_and_safe_link():
     async def handler(r):
         assert r.method == 'GET'
         return httpx.Response(200,json={'id':POST,'from':{'id':PAGE},
@@ -190,7 +190,16 @@ async def test_readback_diagnostic_keeps_newline_mismatch_and_safe_link():
             'permalink_url':'https://www.facebook.com/permalink.php?story_fbid=99887&id=12345'})
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
         result=await publisher(c).verify_post(POST,expected_message='first\r\n\r\nsecond')
-    assert result.state=='RESULT_CHANGED'
+    assert result.state=='PUBLISHED_AT_LAST_CHECK'
     assert result.observed_message=='first\n\nsecond'
     assert result.observed_published is True
     assert result.permalink is not None
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('observed',['first second','first\nsecond','first\n\nsecond ','First\n\nsecond','first\r\rsecond'])
+async def test_readback_never_relaxes_words_spacing_or_bare_cr(observed):
+    async def handler(r):
+        return httpx.Response(200,json={'id':POST,'from':{'id':PAGE},'message':observed,'is_published':True})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        result=await publisher(c).verify_post(POST,expected_message='first\r\n\r\nsecond')
+    assert result.state=='RESULT_CHANGED'
