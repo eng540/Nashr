@@ -1,6 +1,6 @@
 from starlette.responses import HTMLResponse
 
-from app.api.routes import console, publishing_console
+from app.api.routes import book_analysis_tool as console, publishing_console
 
 
 async def test_console_is_library_workspace() -> None:
@@ -121,3 +121,13 @@ async def test_publishing_console_has_no_dead_dom_references():
     assert "function showEligibleMessage" in body
     assert "function filterSelectionForScheduling" in body
     assert "function openScheduleCreation" in body
+
+
+async def test_root_and_legacy_entry_share_current_shell():
+    import httpx
+    from app.main import app
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        response=await client.get('/')
+        assert response.status_code==303 and response.headers['location']=='/bank'
+        response=await client.get('/console')
+        assert response.status_code==303 and response.headers['location']=='/sources/library?analysis=1'
