@@ -13,8 +13,8 @@ test('Reel exact preview and explicit public approval, never sends on preview',a
  });
  await page.goto('/connections');const panel=page.getByLabel('ربط صفحة Facebook',{exact:true});await panel.getByText('نشر Reel على صفحة Facebook، قرار مستقل',{exact:true}).click();
  await panel.getByLabel('مادة Facebook Reel',{exact:true}).fill('artifact1');await panel.getByRole('button',{name:'تجهيز نسخة توافق خاصة ومعاينة دون نشر'}).click();
- const approve=panel.getByRole('button',{name:'اعتماد نشر Reel العام الآن'});await expect(approve).toBeDisabled();expect(writes.every(p=>!p.endsWith('/approve'))).toBeTruthy();
+ const approve=panel.getByRole('button',{name:'تأكيد نشر Reel العام الآن'});await expect(approve).toBeDisabled();expect(writes.every(p=>!p.endsWith('/approve'))).toBeTruthy();
  await page.setViewportSize({width:1280,height:1000});await panel.screenshot({path:info.outputPath('reel-desktop.png')});
  await page.setViewportSize({width:390,height:844});await panel.screenshot({path:info.outputPath('reel-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
- await panel.getByRole('checkbox',{name:'أوافق على نشر هذا الفيديو والوصف على الصفحة العامة الآن وإرسال الملف إلى Meta.'}).check();await approve.click();await expect(panel.getByText('الحالة: APPROVED')).toBeVisible();expect(writes).toHaveLength(3);
+ await panel.getByRole('checkbox',{name:'أوافق على نشر هذا الفيديو والوصف على الصفحة العامة بعد الاعتماد الآن وإرسال الملف إلى Meta.'}).check();await approve.click();await expect(panel.getByText('الحالة: APPROVED')).toBeVisible();expect(writes).toHaveLength(3);
 });
