@@ -17,5 +17,5 @@ test('batch review requires each saved original and explicit final confirmation;
  await page.addStyleTag({content:'header, a[href="#main-content"] {visibility:hidden}'});
  await panel.screenshot({path:info.outputPath('batch-review-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await commit.click();await expect(panel.getByRole('alert')).toContainText('لم يعتمد أي شيء');await expect(commit).toHaveCount(0);expect(approvals).toBe(1);
- stale=false;await panel.getByRole('button',{name:'معاينة الدفعة المحفوظة (2)',exact:true}).click();await panel.getByLabel('راجعت أصل المادة original-0',{exact:true}).check();await panel.getByLabel('راجعت أصل المادة original-1',{exact:true}).check();await commit.click();await expect(panel.getByRole('status').filter({hasText:'اعتمدت 2'})).toContainText('لم ينشر أو يجدول شيء');expect(approvals).toBe(2);
+ stale=false;await panel.getByRole('button',{name:'معاينة الدفعة المحفوظة (2)',exact:true}).click();await panel.getByLabel('راجعت أصل المادة original-0',{exact:true}).check();await panel.getByLabel('راجعت أصل المادة original-1',{exact:true}).check();await commit.click();await expect(page).toHaveURL(/artifact_status=APPROVED/);await expect(page.getByLabel('متابعة الدفعة المعتمدة',{exact:true})).toBeVisible();expect(approvals).toBe(2);
 });
