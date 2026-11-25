@@ -249,3 +249,17 @@ this scanner. Cancel is local and only before sending; it does not delete posts.
 No live public text acceptance test was run for this tranche. Existing live
 posts and held production videos were not used. No claim of end-to-end provider
 acceptance follows from the synthetic tests or deployment alone.
+
+## Facebook copy readiness alignment, 2026-11-25
+
+The bank now evaluates Facebook text, photo-review and Reel fields against the
+same local exact-copy rules used by its text/Reel execution paths. Local limits
+are labeled as such, not provider maximum guarantees. Account, media, approval
+and real provider acceptance remain independent. Photo fields can pass field
+checks but photo execution remains unavailable. Unsupported kinds stay blocked.
+
+Saved separate title, tags and alt text are now visible in the Facebook copy
+editor. They remain unchanged until explicitly edited and saved. They are never
+silently appended to the message or dropped by a runtime. Inherited title
+blockers therefore have an actionable editing path rather than an invisible
+field. Source material and other platform copies remain unchanged.
