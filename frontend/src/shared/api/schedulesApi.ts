@@ -27,6 +27,7 @@ export interface ScheduleListResponse {
 }
 
 export interface UpcomingResponse {
+  total: number; offset: number;
   items: Array<{
     id: string;
     schedule_id: string;
@@ -45,6 +46,7 @@ export interface UpcomingResponse {
 }
 
 export interface CalendarResponse {
+  total: number; limit: number; offset: number;
   date: string;
   timezone: string;
   items: Array<{
@@ -102,11 +104,11 @@ export const schedulesApi = {
       scheduled_at: scheduledAt,
     });
   },
-  upcoming(): Promise<UpcomingResponse> {
-    return get<UpcomingResponse>("/schedules/upcoming?days=7&limit=100");
+  upcoming(offset=0): Promise<UpcomingResponse> {
+    return get<UpcomingResponse>(`/schedules/upcoming?days=7&limit=20&offset=${offset}`);
   },
-  calendar(date: string, timezone: string): Promise<CalendarResponse> {
-    const query = new URLSearchParams({ date, timezone });
+  calendar(date: string, timezone: string, offset=0): Promise<CalendarResponse> {
+    const query = new URLSearchParams({ date, timezone, limit:"20", offset:String(offset) });
     return get<CalendarResponse>(`/schedules/calendar?${query.toString()}`);
   },
   telegramPreview(postId: string): Promise<{
