@@ -16,8 +16,8 @@ export function FacebookPageConnectionPanel({ready}:{ready:boolean}){
  const action=useMutation({mutationFn:({kind,body}:{kind:string;body?:object})=>post(base+'/'+kind,body??{}),onSuccess:()=>{setConfirm(false);refresh();},onSettled:refresh});
  const data=state.data,busy=save.isPending||start.isPending||select.isPending||action.isPending;
  return <section id="platform-facebook" aria-label="ربط صفحة Facebook" className="workspace-surface space-y-4 p-5 text-sm leading-7 scroll-mt-24">
- <h2 className="workspace-section-title">Facebook · ربط صفحة دون نشر</h2>
- <p>ربط مستقل عن Instagram. اختر صفحة من نتيجة Meta، لا ملفاً شخصياً. لا رسائل اختبار ولا رفع وسائط ولا تفعيل نشر من هذا الربط.</p>
+ <h2 className="workspace-section-title">Facebook · ربط الصفحة وتنفيذ Reels منفصل</h2>
+ <p>ربط مستقل عن Instagram. اختر صفحة من نتيجة Meta، لا ملفاً شخصياً. لا رسائل اختبار ولا رفع وسائط ولا تفعيل نشر من هذا الربط. مسار Reels متاح بمراجعة وموافقة مستقلة لكل عملية، ولا يعني وجوده أن الصفحة مربوطة أو جاهزة الآن.</p>
  <details className="workspace-disclosure"><summary>إعداد Facebook Login for Business</summary><div className="space-y-3 p-4"><p>على تطبيق Meta الموجود، استخدم إعداداً منفصلاً للصفحات وصلاحيات pages_show_list وpages_read_engagement وpages_manage_posts. لا تغيّر إعداد Instagram. راجع نوع الرمز الذي اخترته لدى Meta، لا تفترضه من معرف الإعداد.</p><p dir="ltr" className="break-all">{window.location.origin+base+'/callback'}</p><form autoComplete="off" className="grid gap-3 md:grid-cols-2" onSubmit={e=>{e.preventDefault();save.mutate();}}>
  <label>معرف تطبيق Meta<input aria-label="معرف تطبيق Facebook" required dir="ltr" className="block w-full rounded border p-2" value={app} onChange={e=>setApp(e.target.value)}/></label>
  <label>معرف إعداد الصفحات<input aria-label="معرف إعداد Facebook" required dir="ltr" className="block w-full rounded border p-2" value={config} onChange={e=>setConfig(e.target.value)}/></label>
