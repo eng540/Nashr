@@ -1023,3 +1023,31 @@ class TikTokOAuthFlowModel(Base):
     consumed:Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
     token_ciphertext:Mapped[str|None]=mapped_column(Text,nullable=True)
     accounts:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
+
+
+class YouTubeConnectionModel(Base):
+    """Read-only selected YouTube channel, never an execution grant."""
+    __tablename__='youtube_connections'
+    id:Mapped[int]=mapped_column(Integer,primary_key=True)
+    channel_id:Mapped[str]=mapped_column(String(24),nullable=False)
+    title:Mapped[str]=mapped_column(String(500),nullable=False)
+    token_ciphertext:Mapped[str]=mapped_column(Text,nullable=False)
+    config_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    scopes:Mapped[list]=mapped_column(JSONB,nullable=False)
+    token_expires_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    connected_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    last_check_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    last_check_ok:Mapped[bool|None]=mapped_column(Boolean,nullable=True)
+    enabled:Mapped[bool]=mapped_column(Boolean,nullable=False,default=True)
+
+
+class YouTubeOAuthFlowModel(Base):
+    __tablename__='youtube_oauth_flows'
+    id:Mapped[str]=mapped_column(String(64),primary_key=True)
+    session_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    browser_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    config_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    consumed:Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    token_ciphertext:Mapped[str|None]=mapped_column(Text,nullable=True)
+    accounts:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
