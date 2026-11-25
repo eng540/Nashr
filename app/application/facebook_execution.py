@@ -16,12 +16,12 @@ def now():
     return datetime.now(timezone.utc)
 
 
-async def original(session, uid):
+async def original(session, uid, *, allow_selected_photo=False):
     row = (await session.execute(select(ArtifactModel).where(ArtifactModel.id == uid).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     copy = (await session.execute(select(PlatformCopyModel).where(PlatformCopyModel.artifact_id == uid, PlatformCopyModel.platform == 'facebook').with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if row is None or copy is None or row.review_status != 'APPROVED' or row.status != 'AVAILABLE' or row.kind not in {'TEXT','IMAGE'}:
         raise ValueError('Approved original text or photo and saved Page copy required')
-    if source_fingerprint(row) != copy.source_fingerprint or copy.selected_media_id is not None:
+    if source_fingerprint(row) != copy.source_fingerprint or (copy.selected_media_id is not None and not (allow_selected_photo and row.kind=='IMAGE')):
         raise ValueError('Changed source or derived media not supported in dormant core')
     from app.application.facebook_copy_fields import blockers
     reasons=blockers(row.kind,copy.fields)
