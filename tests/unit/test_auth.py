@@ -29,7 +29,7 @@ async def test_gate_open_when_password_unset(monkeypatch):
     async with _make_client(monkeypatch) as client:
         assert (await client.get("/health")).status_code == 200
         response = await client.get("/console")
-        assert response.status_code == 200
+        assert response.status_code == 303
 
 
 @pytest.mark.anyio
@@ -69,7 +69,7 @@ async def test_login_success_sets_cookie_and_unlocks(monkeypatch):
         assert "Secure" in response.headers["set-cookie"]
         assert "samesite=lax" in response.headers["set-cookie"].lower()
         # Cookie is stored by the client; subsequent API call succeeds.
-        assert (await client.get("/console")).status_code == 200
+        assert (await client.get("/console")).status_code == 303
 
 
 @pytest.mark.anyio
