@@ -218,6 +218,13 @@ def create_app() -> FastAPI:
         proof = (Path(__file__).parent / "static" / "tiktokQDsoHAsAIEswE2q0vxreoi4iWCJbhDsS.txt").read_bytes().rstrip(b"\n")
         return Response(proof, media_type="text/plain")
 
+    @application.get("/tiktokePPmBzm3Ej1QWBVM7rVXy8eiIbCCGpJj.txt", include_in_schema=False)
+    async def tiktok_sandbox_domain_verification():
+        from pathlib import Path
+        from fastapi.responses import Response
+        proof = (Path(__file__).parent / "static" / "tiktokePPmBzm3Ej1QWBVM7rVXy8eiIbCCGpJj.txt").read_bytes().rstrip(b"\n")
+        return Response(proof, media_type="text/plain")
+
     application.include_router(auth_router)
     application.include_router(legal_router)
     register_gemini_error_handlers(application)
