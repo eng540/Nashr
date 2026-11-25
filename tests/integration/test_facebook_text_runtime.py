@@ -155,3 +155,16 @@ async def test_scanner_recovers_interruption_and_excludes_legacy(bound,monkeypat
         j=await s.get(Job,jid);assert j.state=='OUTCOME_UNKNOWN' and j.error_code=='FACEBOOK_TEXT_INTERRUPTED'
         assert (await s.get(Job,legacy)).state=='APPROVED'
     assert p.calls==[]
+
+@pytest.mark.asyncio
+async def test_only_one_active_decision_for_original(bound,monkeypatch):
+    p=Provider();mockprovider(monkeypatch,p)
+    async with SessionFactory() as s:
+        uid,j=await staged(s)
+        d=await r.stage(s,uid,due_at=r.now()+timedelta(hours=1),timezone_name='Asia/Riyadh')
+        other=await s.get(Job,UUID(d['id']))
+        await r.approve(s,j,j.runtime_hash,'owner-session:12345678')
+        with pytest.raises(ValueError):await r.approve(s,other,other.runtime_hash,'owner-session:12345678')
+        j.state='OUTCOME_UNKNOWN';await s.commit()
+        with pytest.raises(ValueError):await r.approve(s,other,other.runtime_hash,'owner-session:12345678')
+    assert p.calls==[]
