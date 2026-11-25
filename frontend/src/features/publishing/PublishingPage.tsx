@@ -5,7 +5,7 @@ import { postsApi } from "../../shared/api/postsApi";
 import { genericArtifactsApi, type PlatformVariantDraft } from "../../shared/api/artifactsApi";
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
-import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime } from "../../shared/utils/timezone";
+import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime, dateInTimezone } from "../../shared/utils/timezone";
 import { TelegramPreview } from "../post-bank/PostBankPage";
 
 import {UnifiedPublishingQueue} from "./UnifiedPublishingQueue";
@@ -35,7 +35,10 @@ export function PublishingPage() {
   const [planQuery, setPlanQuery] = useState("");
   const [planStatus, setPlanStatus] = useState("");
   const [planPage, setPlanPage] = useState(0);
-  const [calendarDate, setCalendarDate] = useState(new Date().toISOString().slice(0, 10));
+  const [calendarTimezone, setCalendarTimezone] = useState(DEFAULT_TIMEZONE);
+  const [calendarTimezoneInput, setCalendarTimezoneInput] = useState(DEFAULT_TIMEZONE);
+  const [calendarZoneError, setCalendarZoneError] = useState("");
+  const [calendarDate, setCalendarDate] = useState(() => dateInTimezone(DEFAULT_TIMEZONE));
   const [manualPub, setManualPub] = useState<{ id: string; date: string; url: string } | null>(null);
   const [form, setForm] = useState({ name: "خطة نشر", timezone: DEFAULT_TIMEZONE, startAt: "", interval: "60" });
 
@@ -67,8 +70,8 @@ export function PublishingPage() {
   const upcoming = useQuery({ queryKey: ["publishing", "upcoming"], queryFn: schedulesApi.upcoming });
   const platformVariants = useQuery({ queryKey: ["publishing", "platform-variants"], queryFn: genericArtifactsApi.listPlatformVariants });
   const calendar = useQuery({
-    queryKey: ["publishing", "calendar", calendarDate, DEFAULT_TIMEZONE],
-    queryFn: () => schedulesApi.calendar(calendarDate, DEFAULT_TIMEZONE),
+    queryKey: ["publishing", "calendar", calendarDate, calendarTimezone],
+    queryFn: () => schedulesApi.calendar(calendarDate, calendarTimezone),
   });
 
   const eligibility = useMutation({ mutationFn: () => schedulesApi.eligibility(selectedIds) });
@@ -369,8 +372,9 @@ export function PublishingPage() {
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-xl font-bold">التقويم</h3><p className="mt-1 text-sm text-slate-500">راجع ما سيُنشر حسب اليوم قبل التنفيذ.</p></div><label className="text-sm font-semibold">اليوم<input aria-label="تاريخ التقويم" type="date" value={calendarDate} onChange={(e) => setCalendarDate(e.target.value)} className="mr-2 rounded-lg border p-2 font-normal"/></label></div>
           </div>
+          <form className="flex flex-wrap items-end gap-3 rounded-2xl border bg-white p-5 text-sm" onSubmit={e=>{e.preventDefault();try{dateInTimezone(calendarTimezoneInput.trim());setCalendarTimezone(calendarTimezoneInput.trim());setCalendarZoneError('');}catch{setCalendarZoneError('منطقة زمنية غير صالحة. استخدم اسماً مثل Asia/Riyadh.');}}}><label className="min-w-0">منطقة عرض تقويم اليوم<input aria-label="منطقة عرض تقويم اليوم" dir="ltr" className="mt-1 block w-full rounded border p-2" value={calendarTimezoneInput} onChange={e=>setCalendarTimezoneInput(e.target.value)}/></label><button className="rounded border p-2" type="submit">تطبيق منطقة العرض</button><button className="rounded border p-2" type="button" onClick={()=>setCalendarDate(dateInTimezone(calendarTimezone))}>اليوم في منطقة العرض</button><p className="w-full text-xs text-slate-500">تغيير العرض لا يغير منطقة أي خطة أو مواعيدها. القادم يعرض كل خطة بمنطقتها المحفوظة.</p>{calendarZoneError?<p role="alert">{calendarZoneError}</p>:null}</form>
           <div className="rounded-2xl border bg-white p-5 shadow-sm"><h3 className="font-bold">القادم 7 أيام</h3>{upcoming.isError?<p role="alert" className="mt-4 text-rose-700">تعذر تحميل القادم. أعد المحاولة، لا نستنتج أن القائمة فارغة.</p>:!(upcoming.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد عناصر مجدولة في الأيام القادمة.</p> : <div className="mt-4 space-y-2">{upcoming.data!.items.map((i) => <button key={i.id} type="button" onClick={() => void openDetail(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span className="text-xs text-slate-500">{new Date(i.scheduled_at).toLocaleString("ar", { timeZone: i.timezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}</div>
-          <div className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">تقويم اليوم</h3><span className="text-xs text-slate-500">{calendar.data?.timezone ?? DEFAULT_TIMEZONE}</span></div>{calendar.isError?<p role="alert" className="mt-4 text-rose-700">تعذر تحميل التقويم. أعد المحاولة، لا نستنتج عدم وجود مواد.</p>:!(calendar.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد منشورات مجدولة لهذا اليوم.</p> : <div className="mt-4 space-y-2">{calendar.data!.items.map((i) => <button key={i.id} type="button" onClick={() => void openDetail(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span>{new Date(i.scheduled_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit", timeZone: i.timezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}</div>
+          <div className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">تقويم اليوم</h3><span className="text-xs text-slate-500">{calendar.data?.timezone ?? calendarTimezone}</span></div>{calendar.isError?<p role="alert" className="mt-4 text-rose-700">تعذر تحميل التقويم. أعد المحاولة، لا نستنتج عدم وجود مواد.</p>:!(calendar.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد منشورات مجدولة لهذا اليوم.</p> : <div className="mt-4 space-y-2">{calendar.data!.items.map((i) => <button key={i.id} type="button" onClick={() => void openDetail(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span>{new Date(i.scheduled_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit", timeZone: calendar.data?.timezone ?? calendarTimezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}</div>
         </section>
       )}
 
