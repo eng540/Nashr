@@ -18,14 +18,18 @@ export function BatchReviewPanel({ items, pageItems, unsavedIds, renderMedia, on
   const select = (next: string[]) => { setIds([...new Set(next)].slice(0,100)); setPreview(null); setReviewed([]); setError(""); setDone(""); };
   const load = async () => {
     setBusy(true); setError(""); setPreview(null); setReviewed([]);
-    try { const result = await genericArtifactsApi.previewBatchReview(ids); setPreview(result.items); }
+    try {
+      const requested=[...ids]; const result = await genericArtifactsApi.previewBatchReview(requested);
+      if(result.publishing_authorized!==false||result.items.length!==requested.length||new Set(result.items.map(i=>i.id)).size!==requested.length||requested.some(id=>!result.items.some(i=>i.id===id))||result.items.some(i=>i.review_status!=="DRAFT"||i.status!=="AVAILABLE"||!i.review_fingerprint||i.metadata.source_type==="PLATFORM_VARIANT"||i.metadata.telegram_album!=null||i.metadata.telegram_live_photo!=null))throw new Error("لم تتطابق معاينة الدفعة مع الأصول المحددة. أعد القراءة دون اعتماد مواد أخرى.");
+      setPreview(requested.map(id=>result.items.find(i=>i.id===id)!));
+    }
     catch(e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
   const approve = async () => {
-    if(!preview || unsaved) return;
+    if(!preview || unsaved || busy || preview.length!==ids.length || preview.some(i=>!ids.includes(i.id)||!reviewed.includes(i.id))) return;
     setBusy(true); setError("");
-    try { const result = await genericArtifactsApi.approveBatchReview(preview); setDone(`اعتمدت ${result.approved_ids.length} مادة وجهزت نسخ المنصات. لم ينشر أو يجدول شيء.`); setPreview(null); setReviewed([]); setIds([]); onApproved(result.approved_ids); }
+    try { const result = await genericArtifactsApi.approveBatchReview(preview); if(result.publishing_authorized!==false||result.approved_ids.length!==preview.length||new Set(result.approved_ids).size!==preview.length||preview.some(i=>!result.approved_ids.includes(i.id)))throw new Error("لم تتطابق نتيجة الاعتماد مع الدفعة. قد يكون الحفظ تم، حدّث المكتبة وتحقق من الحالات قبل أي محاولة جديدة."); setDone(`اعتمدت ${result.approved_ids.length} مادة وجهزت نسخ المنصات. لم ينشر أو يجدول شيء.`); setPreview(null); setReviewed([]); setIds([]); onApproved(result.approved_ids); }
     catch(e) { setError((e as Error).message); setPreview(null); setReviewed([]); }
     finally { setBusy(false); }
   };
