@@ -251,3 +251,39 @@ async def test_queue_uses_saved_catalog_labels_and_explicit_artifact_destination
         artifact = await session.get(ArtifactModel, UUID(ids[0]))
         assert artifact.artifact_metadata['title'] == 'Old imported title'
         assert artifact.content == token+'0'
+
+
+@pytest.mark.asyncio
+async def test_queue_outcomes_separate_selected_platforms_from_historical_target_evidence():
+    from datetime import timedelta
+    from app.infrastructure.database.models import DistributionSelectionModel
+    from app.application.distribution_readiness import source_fingerprint
+    token='queue-outcomes-'+uuid4().hex
+    uid=await _seed_text_artifact(token)
+    now=datetime.now(timezone.utc)
+    async with SessionFactory() as session:
+        artifact=await session.get(ArtifactModel,UUID(uid));artifact.review_status='APPROVED'
+        session.add(DistributionSelectionModel(artifact_id=artifact.id,platforms=['telegram','instagram','youtube'],source_fingerprint=source_fingerprint(artifact),saved_at=now))
+        common=dict(knowledge_unit_id=artifact.source_knowledge_unit_id,artifact_id=artifact.id,platform='telegram',content=token)
+        session.add_all([
+            PublicationModel(**common,destination='a',status='FAILED',created_at=now),
+            PublicationModel(**common,destination='a',status='PUBLISHED',external_id='result-a',created_at=now+timedelta(seconds=1)),
+            PublicationModel(**common,destination='a',status='PUBLISHED',external_ids=['result-a-again'],created_at=now+timedelta(seconds=2)),
+            PublicationModel(**common,destination='b',status='FAILED',created_at=now),
+            PublicationModel(**common,destination='c',status='PUBLISHED',external_id='   ',created_at=now),
+            PublicationModel(knowledge_unit_id=artifact.source_knowledge_unit_id,artifact_id=artifact.id,platform='facebook',content=token,destination='page',status='PUBLISHED',external_id='result-fb'),
+            PublicationModel(knowledge_unit_id=artifact.source_knowledge_unit_id,artifact_id=artifact.id,platform='instagram',content=token,destination='ig',status='PUBLISHED'),
+        ]);await session.commit()
+        before=(await session.execute(select(func.count()).select_from(PublicationModel))).scalar_one()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        response=await client.get('/api/publishing-queue',params={'q':token})
+        assert response.status_code==200,response.text
+        row=response.json()['items'][0]
+        outcomes={item['platform']:item for item in row['publication_outcomes']}
+        assert outcomes['telegram']==dict(platform='telegram',attempts=5,confirmed_targets=1,unresolved_failures=1)
+        assert outcomes['facebook']['confirmed_targets']==1
+        assert outcomes['instagram']['confirmed_targets']==0
+        assert row['selected_without_confirmed_history']==['instagram','youtube']
+        assert row['state']=='ATTENTION'
+    async with SessionFactory() as session:
+        assert (await session.execute(select(func.count()).select_from(PublicationModel))).scalar_one()==before
