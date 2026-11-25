@@ -71,3 +71,20 @@ async def verify_result(jid:UUID,request:Request,session:AsyncSession=Depends(ge
                 return JSONResponse(service.describe(j),headers=HEADERS)
             except ValueError as e:raise HTTPException(409,str(e)) from None
         finally:await lock.execute(text(f'SELECT pg_advisory_unlock({service.LOCK})'));await lock.commit()
+
+@router.get('/{jid}/inspection')
+async def inspect_result(jid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
+    """Owner-only provider GET diagnostic. Never sends or changes a decision."""
+    owner(request)
+    j=await session.get(Job,jid)
+    if not j or not j.runtime_snapshot or j.kind!='IMAGE' or not j.post_id or j.state=='SENDING':
+        raise HTTPException(409,'Known photo result required; no resend.')
+    import httpx
+    from dataclasses import asdict
+    async with httpx.AsyncClient(timeout=30,follow_redirects=False) as client:
+        try:
+            p=await service.provider(session,j,client)
+            r=await p.verify_post(j.post_id,expected_message=j.message)
+            return JSONResponse(dict(**asdict(r),expected_message=j.message),headers=HEADERS)
+        except Exception:
+            raise HTTPException(409,'Provider inspection unavailable; no resend.') from None
