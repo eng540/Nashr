@@ -39,6 +39,9 @@ def validate_entries(entries: list[dict]) -> None:
             raise ValueError("Video text field is too long.")
         if len(entry["title"]) > 500 or len(entry["telegram_caption"]) > 1024:
             raise ValueError("Title or Telegram caption exceeds its limit.")
+        curated = entry.get("review_notes")
+        if curated is not None and (not isinstance(curated, list) or len(curated) > 100 or any(not isinstance(n, str) or len(n) > 10000 for n in curated)):
+            raise ValueError("Curated review notes must be a bounded text list.")
         notes = entry.get("editorial_notes")
         if not isinstance(notes, list) or any(not isinstance(n, str) or len(n) > 100000 for n in notes):
             raise ValueError("Editorial notes must be a text list.")
@@ -65,6 +68,11 @@ async def restore_video_metadata(session: AsyncSession, entries: list[dict]) -> 
         metadata = dict(row.artifact_metadata or {})
         archive = {k: entry[k] for k in TEXT_FIELDS}
         archive["editorial_notes"] = entry["editorial_notes"]
+        previous = metadata.get("video_library") or {}
+        if "review_notes" in entry:
+            archive["review_notes"] = entry["review_notes"]
+        elif isinstance(previous, dict) and "review_notes" in previous:
+            archive["review_notes"] = previous["review_notes"]
         archive["version"] = 1
         if metadata.get("video_library") == archive:
             skipped.append(str(row.id))

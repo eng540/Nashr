@@ -21,7 +21,7 @@ async def test_restore_keeps_media_review_and_caption(monkeypatch):
         entry = {"artifact_id": str(artifact.id), "filename": "episode.mp4", "title": "Episode",
             "source_file": "original.txt", "source_original": "Full source" * 200,
             "tiktok_text": "Platform description", "telegram_caption": "Separate short caption",
-            "catalog_caption_original": "Original caption", "editorial_notes": ["Internal source note"]}
+            "catalog_caption_original": "Original caption", "editorial_notes": ["Internal source note"], "review_notes": ["Engineering review needed"]}
         result = await restore_video_metadata(session, [entry])
         assert result["updated"] == [str(artifact.id)]
         assert (await restore_video_metadata(session, [entry]))["skipped"] == [str(artifact.id)]
@@ -30,6 +30,9 @@ async def test_restore_keeps_media_review_and_caption(monkeypatch):
         assert row.artifact_metadata["caption"] == "Existing publish caption"
         assert row.artifact_metadata["video_library"]["source_original"] == entry["source_original"]
         assert row.storage_uri == artifact.storage_uri
+        assert row.artifact_metadata["video_library"]["review_notes"] == entry["review_notes"]
+        without_curated = {k: v for k, v in entry.items() if k != "review_notes"}
+        assert (await restore_video_metadata(session, [without_curated]))["skipped"] == [str(artifact.id)]
         bad = dict(entry, artifact_id=str(uuid4()))
         with pytest.raises(ValueError, match="missing"):
             await restore_video_metadata(session, [bad])

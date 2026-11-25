@@ -30,3 +30,11 @@ def test_invalid_fields(field, value):
     entry[field] = value
     with pytest.raises(ValueError):
         validate_entries([entry])
+
+
+@pytest.mark.parametrize("value", ["raw", [None], ["x" * 10001], ["x"] * 101])
+def test_invalid_curated_notes(value):
+    entry = sample()
+    entry["review_notes"] = value
+    with pytest.raises(ValueError, match="Curated"):
+        validate_entries([entry])
