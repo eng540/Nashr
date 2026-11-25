@@ -77,6 +77,14 @@ async def run_schedule_trigger() -> None:
     while True:
         try:
             try:
+                from app.application.tiktok_oauth import cleanup_expired_flows
+                await cleanup_expired_flows()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Do not include candidate data or provider exceptions in logs.
+                logger.warning("event=TIKTOK_TEMPORARY_FLOW_CLEANUP_FAILED")
+            try:
                 from app.application.instagram_runtime import process_approved
                 await process_approved()
                 from app.application.facebook_reel_runtime import process_approved as process_facebook_reels
