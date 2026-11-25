@@ -32,6 +32,7 @@ from app.api.instagram_connections import router as instagram_connections_router
 from app.api.instagram_execution import router as instagram_execution_router
 from app.api.instagram_page_connections import router as instagram_page_connections_router
 from app.api.instagram_direct_connections import router as instagram_direct_connections_router
+from app.api.youtube_connections import router as youtube_connections_router
 from app.api.youtube_reviews import router as youtube_reviews_router
 from app.api.facebook_reviews import router as facebook_reviews_router
 from app.api.publishing_queue import router as publishing_queue_router
@@ -82,6 +83,8 @@ async def run_schedule_trigger() -> None:
             try:
                 from app.application.tiktok_oauth import cleanup_expired_flows
                 await cleanup_expired_flows()
+                from app.application.youtube_oauth import cleanup_expired_flows as cleanup_youtube
+                await cleanup_youtube()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -246,6 +249,7 @@ def create_app() -> FastAPI:
     application.include_router(instagram_execution_router)
     application.include_router(instagram_page_connections_router)
     application.include_router(instagram_direct_connections_router)
+    application.include_router(youtube_connections_router)
     application.include_router(youtube_reviews_router)
     application.include_router(facebook_reviews_router)
     application.include_router(connections_router)
