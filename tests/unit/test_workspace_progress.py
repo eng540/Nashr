@@ -20,14 +20,14 @@ def test_saved_plan_summary_does_not_rename_or_invent_destination():
 async def test_progress_has_separate_counts_and_is_read_only():
     from app.api.workspace_progress import progress
     class Session:
-        def __init__(self):self.calls=[];self.results=iter([[('DRAFT',2),('APPROVED',3)], [('DRAFT',4),('APPROVED',5)]]);self.scalars=iter([6,7,8,9])
+        def __init__(self):self.calls=[];self.results=iter([[('DRAFT',2),('APPROVED',3)], [('DRAFT',4),('APPROVED',5)]]);self.scalars=iter([6,10,7,8,9])
         async def execute(self,query):
             self.calls.append(str(query));return N(all=lambda:next(self.results))
         async def scalar(self,query):self.calls.append(str(query));return next(self.scalars)
     session=Session();result=await progress(session)
     assert result['materials']=={'DRAFT':2,'APPROVED':3}
     assert result['editorial_posts']=={'DRAFT':4,'APPROVED':5}
-    assert result['platform_copies']==6 and result['pdf_sources']==9
+    assert result['platform_copies']==10 and result['legacy_platform_variants']==6 and result['pdf_sources']==9
     assert result['schedule_items']=={'failed':7,'pending_or_processing':8}
     assert all(q.lstrip().startswith('SELECT') for q in session.calls)
     assert 'PLATFORM_VARIANT' in str(__import__('inspect').getsource(progress))
