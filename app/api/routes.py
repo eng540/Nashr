@@ -500,6 +500,12 @@ async def health() -> dict[str, str]:
 
 @router.get("/console", response_class=HTMLResponse, include_in_schema=False)
 async def console() -> HTMLResponse:
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/sources/library?analysis=1", status_code=303)
+
+
+@router.get('/sources/book-analysis', response_class=HTMLResponse, include_in_schema=False)
+async def book_analysis_tool():
     return HTMLResponse(content=NASHR_CONSOLE_HTML)
 
 
@@ -630,6 +636,7 @@ async def list_sources(
             "filename": source.filename,
             "status": source.status,
             "book_title": source.book_title or source.filename,
+            "mime_type": source.mime_type,
             "material_count": int(unit_counts.get(source.id, 0)),
             "produced_count": int(post_counts.get(source.id, 0)),
             "pending_count": max(int(unit_counts.get(source.id, 0)) - int(post_counts.get(source.id, 0)), 0),
@@ -2218,7 +2225,8 @@ async def health() -> dict[str, str]:
 
 @router.get("/console", response_class=HTMLResponse, include_in_schema=False)
 async def console() -> HTMLResponse:
-    return HTMLResponse(content=NASHR_CONSOLE_HTML)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/sources/library?analysis=1", status_code=303)
 
 
 @router.get("/publishing", response_class=HTMLResponse, include_in_schema=False)
@@ -2322,6 +2330,7 @@ async def list_sources(
             "filename": source.filename,
             "status": source.status,
             "book_title": source.book_title or source.filename,
+            "mime_type": source.mime_type,
             "material_count": int(unit_counts.get(source.id, 0)),
             "produced_count": int(post_counts.get(source.id, 0)),
             "pending_count": max(int(unit_counts.get(source.id, 0)) - int(post_counts.get(source.id, 0)), 0),

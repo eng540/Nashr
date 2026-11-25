@@ -209,7 +209,7 @@ def create_app() -> FastAPI:
     async def root_redirect():
         from fastapi.responses import RedirectResponse
 
-        return RedirectResponse("/console", status_code=303)
+        return RedirectResponse("/bank", status_code=303)
 
     @application.get("/tiktokQDsoHAsAIEswE2q0vxreoi4iWCJbhDsS.txt", include_in_schema=False)
     async def tiktok_domain_verification():

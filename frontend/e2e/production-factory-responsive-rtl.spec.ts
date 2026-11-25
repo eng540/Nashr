@@ -47,7 +47,7 @@ async function mockFactoryApi(page: Page, failSources = false) {
       topics: [{ id: topicId, position: 1, title: "محور تجريبي", description: "", materials: [materials[0]] }],
     } });
     return route.fulfill({ json: [{
-      id: sourceId, filename: "visual-test.pdf", book_title: "كتاب تجريبي", status: "READY",
+      id: sourceId, filename: "visual-test.pdf", mime_type: "application/pdf", book_title: "كتاب تجريبي", status: "READY",
       material_count: materials.length, produced_count: 0, pending_count: materials.length,
     }] });
   });

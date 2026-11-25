@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 import { postForm } from "../../shared/api/client";
 import { PageHeader } from "../../shared/components/ui";
@@ -9,6 +9,7 @@ import { productionJobsApi, type SourceSummary } from "../../shared/api/producti
 function sourceStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     READY: "جاهز",
+    STORED: "محفوظ، لم يبدأ التحليل",
     PROCESSING: "قيد المعالجة",
     PENDING: "قيد الانتظار",
     FAILED: "تعذّرت المعالجة",
@@ -56,7 +57,31 @@ function SourceBookMap({ sourceId }: { sourceId: string }) {
   );
 }
 
+function BookAnalysisFrame({sourceId}:{sourceId:string}) {
+  const ref=useRef<HTMLIFrameElement>(null);
+  const [height,setHeight]=useState(320);
+  useEffect(()=>{
+    const frame=ref.current;
+    if(!frame)return;
+    let observer:ResizeObserver|undefined;
+    const watch=()=>{
+      observer?.disconnect();
+      const main=frame.contentDocument?.querySelector("main");
+      if(!main)return;
+      const resize=()=>setHeight(Math.max(280,Math.ceil(main.getBoundingClientRect().height)+24));
+      observer=new ResizeObserver(resize);observer.observe(main);resize();
+    };
+    frame.addEventListener("load",watch);watch();
+    return()=>{frame.removeEventListener("load",watch);observer?.disconnect();};
+  },[sourceId]);
+  return <iframe ref={ref} title="أداة تحليل الكتاب" src={`/sources/book-analysis${sourceId?`?source_id=${encodeURIComponent(sourceId)}`:""}`} style={{height}} className="mt-3 w-full rounded-xl border"/>;
+}
+
 export function SourcesPage() {
+  const [params]=useSearchParams();
+  const [analysis,setAnalysis]=useState(params.has("analysis"));
+  const [analysisId,setAnalysisId]=useState("");
+  const [showOther,setShowOther]=useState(false);
   const queryClient = useQueryClient();
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [query, setQuery] = useState("");
@@ -81,6 +106,7 @@ export function SourcesPage() {
   });
 
   const items = (sources.data ?? []).filter((source: SourceSummary) => {
+    if (!showOther && source.mime_type!=="application/pdf") return false;
     const haystack = `${source.book_title} ${source.filename}`.toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
   });
@@ -90,18 +116,18 @@ export function SourcesPage() {
       <PageHeader
         eyebrow="المصادر"
         title="المصادر والمكتبة"
-        description="أضف الكتب والمواد الخام (PDF)، وتابع حالة معالجتها وبنيتها قبل تحويلها إلى محتوى في مساحة الإنتاج."
+        description="احفظ كتاب PDF، ثم حلّله لاستخراج المواد، وراجعها قبل إرسالها إلى الإنتاج. الملفات الجاهزة للمراجعة توجد في بنك المحتوى."
         actions={<>
           <Link to="/production" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">الإنتاج من المصادر</Link>
-          <a href="/console" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-400 hover:bg-slate-50">واجهة المكتبة القديمة</a>
+          <button type="button" onClick={()=>setAnalysis(v=>!v)} className="rounded-xl border bg-white px-4 py-2 text-sm font-bold">{analysis?"إغلاق تحليل الكتاب":"تحليل كتاب واستخراج المواد"}</button>
         </>}
       />
 
-      <section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5" aria-label="إضافة مصدر جديد">
+      {!analysis?<section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5" aria-label="إضافة مصدر جديد">
         <h3 className="font-bold">إضافة مصدر جديد</h3>
-        <p className="mt-1 text-sm text-slate-600">ارفع ملف PDF؛ تبدأ المعالجة تلقائيًا ويظهر المصدر في القائمة بحالة «قيد المعالجة» حتى يجهز.</p>
+        <p className="mt-1 text-sm text-slate-600">ارفع ملف PDF لحفظه أولاً، ثم افتح تحليل الكتاب وابدأ استخراج مواده بقرارك. الرفع وحده لا يبدأ التحليل.</p>
         <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="text-sm font-semibold">ملف PDF
+          <label className="min-w-0 max-w-full text-sm font-semibold">ملف PDF
             <input
               aria-label="ملف المصدر الجديد"
               type="file"
@@ -116,17 +142,18 @@ export function SourcesPage() {
             disabled={!uploadFile || upload.isPending}
             className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
           >
-            {upload.isPending ? "جارٍ الرفع..." : "رفع ومعالجة المصدر"}
+            {upload.isPending ? "جارٍ الرفع..." : "حفظ ملف الكتاب"}
           </button>
         </div>
         {upload.isError ? <p role="alert" className="mt-2 text-sm text-rose-700">{upload.error.message}</p> : null}
-        {upload.isSuccess ? <p role="status" className="mt-2 text-sm text-emerald-800">تم الرفع؛ المعالجة جارية وستظهر الحالة في القائمة.</p> : null}
-      </section>
+        {upload.isSuccess ? <p role="status" className="mt-2 text-sm text-emerald-800">حُفظ الملف. الخطوة التالية: افتح تحليل الكتاب، ثم ابدأ التحليل إن أردت.</p> : null}
+      </section>:null}
 
+      {analysis?<section className="rounded-2xl border bg-white p-3" aria-label="تحليل الكتاب"><h3 className="font-bold">تحليل الكتاب واستخراج المواد</h3><p className="text-xs leading-6">أداة تحليل ضمن مساحة العمل. فتحها لا يبدأ التحليل تلقائياً. ارجع إلى الإنتاج بعد مراجعة المواد المستخرجة.</p><BookAnalysisFrame sourceId={analysisId}/></section>:null}
       <section className="rounded-2xl border bg-white p-5 shadow-sm" aria-label="قائمة المصادر">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-xl font-bold">المصادر الحالية</h3>
-          <label className="text-sm font-semibold">
+          <h3 className="text-xl font-bold">{showOther?"جميع المصادر المحفوظة":"كتب PDF فقط"}</h3><label className="text-xs"><input type="checkbox" checked={showOther} onChange={e=>setShowOther(e.target.checked)}/> إظهار بقية الملفات والمصادر دون حذفها</label>
+          <label className="min-w-0 max-w-full text-sm font-semibold">
             <span className="sr-only">بحث المصادر</span>
             <input
               aria-label="بحث المصادر"
@@ -160,15 +187,15 @@ export function SourcesPage() {
                 {source.material_count} مادة · أُنتج منها {source.produced_count} · متبقٍ {source.pending_count}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
+                {source.mime_type==="application/pdf"?<button
                   type="button"
                   aria-expanded={expandedId === source.id}
                   onClick={() => setExpandedId((current) => (current === source.id ? null : source.id))}
                   className="rounded-lg border px-3 py-2 text-sm font-semibold"
                 >
                   {expandedId === source.id ? "إخفاء البنية" : "عرض بنية الكتاب"}
-                </button>
-                <Link to="/production" className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">الإنتاج من هذا المصدر</Link>
+                </button>:null}
+                {source.mime_type==="application/pdf"?<button type="button" onClick={()=>{setAnalysisId(source.id);setAnalysis(true);}} className="rounded-lg border px-3 py-2 text-sm">فتح تحليل هذا الكتاب</button>:null}<Link to={`/production?source_id=${encodeURIComponent(source.id)}${source.mime_type!=="application/pdf"?"&other_sources=1":""}`} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">الإنتاج من هذا المصدر</Link>
               </div>
               {expandedId === source.id ? <SourceBookMap sourceId={source.id} /> : null}
             </article>

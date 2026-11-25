@@ -576,7 +576,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button type="button" aria-expanded={focusedId===artifact.id} onClick={()=>setFocusedId(focusedId===artifact.id?null:artifact.id)} className="library-card-primary rounded-lg px-4 py-2 text-sm font-bold">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
         {!compact||focusedId===artifact.id?<div className="space-y-3" aria-label={`مساحة المادة ${artifact.id}`}>
         {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<ContentOrganizationPanel key={artifact.id+":"+(artifact.organization?.version??0)} items={[artifact]}/>:null}
-        <nav aria-label="مراحل العمل على المادة" className="flex flex-wrap gap-2 rounded bg-slate-50 p-2 text-xs text-slate-600"><span>1. الأصل والمراجعة</span><span>← 2. نسخ المنصات والوجهات</span><span>← 3. معاينة وخطة</span><span>← 4. سجل النشر</span></nav>
+        <nav aria-label="مراحل العمل على المادة" className="flex flex-wrap gap-2 rounded bg-slate-50 p-2 text-xs text-slate-600"><a href={`#original-${artifact.id}`} className="underline">1. الأصل والملاحظات</a><a href={`#review-${artifact.id}`} aria-current={status==="DRAFT"?"step":undefined} className="underline">2. قرار المراجعة</a><a href={`#destinations-${artifact.id}`} aria-current={status==="APPROVED"?"step":undefined} className="underline">3. النسخ والوجهات والخطة</a><a href={`#history-${artifact.id}`} className="underline">4. سجل النشر</a></nav><div id={`original-${artifact.id}`} className="scroll-mt-24"/>
         <EditorialReviewNotes artifact={artifact}/>
         {(artifact.metadata.telegram_native as Record<string, unknown> | undefined)?.type === 'LIVE_LOCATION' ? <LiveLocationControls artifactId={artifact.id} /> : null}
         {artifact.metadata.telegram_live_photo ? <section className="rounded-xl border border-violet-200 bg-violet-50 p-3"><h4 className="font-bold">صورة حية،الصورة الثابتة ثم فيديو الحركة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(artifact.metadata.live_photo_preview, null, 2)}</pre>{(Array.isArray(artifact.metadata.live_photo_preview) ? artifact.metadata.live_photo_preview : []).map(value => <AlbumChildPreview key={(value as {id:string}).id} id={(value as {id:string}).id} />)}<p className="text-xs">يُرسلان كصورة حية واحدة،وليست ألبوماً أو فيديو منفرداً.</p></section> : null}
@@ -620,7 +620,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         </div> : null}
         </details>
           {artifact.review_status === "APPROVED" && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <CentralPlatformCopiesPanel id={artifact.id} kind={artifact.kind} onPlan={() => {setSelectedMediaIds([artifact.id]); requestAnimationFrame(() => document.querySelector('[aria-label="معاينة دفعة Telegram"]')?.scrollIntoView({behavior:'smooth',block:'start'}));}} /> : null}
-        <details open={!compact} className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold">أدوات إضافية قديمة: اشتقاق ومسودة من الأصل</summary>
+        <details open={!compact} className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold">خيارات متقدمة: اشتقاق نسخة ومسودة من الأصل</summary>
         {status === "APPROVED" && ["TEXT", "IMAGE", "VIDEO"].includes(artifact.kind) && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 p-3">
           <label className="w-full text-sm font-semibold sm:w-auto">اشتقاق نسخة بحدود منصة
             <select aria-label={`منصة النسخة ${artifact.id}`} value={variantPlatform[artifact.id] ?? ""} onChange={(event) => setVariantPlatform((current) => ({ ...current, [artifact.id]: event.target.value }))} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal sm:mt-0 sm:w-auto">
@@ -670,10 +670,16 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           {drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? "")) ? <p role="status" className="text-sm">توجد تعديلات غير محفوظة؛ احفظها قبل الاعتماد.</p> : null}
         </section> : null}
         {artifact.metadata.source_type === "PLATFORM_VARIANT" && variantLength(artifact, drafts[artifact.id]?.content) > Number((artifact.metadata.constraints as Record<string,unknown>)?.max_text ?? Infinity) ? <p role="alert" className="text-sm text-rose-700">تجاوزت النسخة حد المنصة. قصّر النص قبل الحفظ والاعتماد.</p> : null}
-        {artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <DistributionReadinessPanel ids={[artifact.id]} /> : null}
-        <ArtifactPublicationLedger id={artifact.id} />
+        <section id={`review-${artifact.id}`} aria-label="قرار مراجعة المادة" className="scroll-mt-24 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><h4 className="font-bold">الخطوة التالية: {status==="DRAFT"?"راجع الأصل ثم اعتمد المادة":"المادة معتمدة، اختر وجهاتها وافحص متطلباتها"}</h4><p className="text-xs leading-6">اعتماد المادة يثبت مراجعتها فقط، ولا ينشرها. اختر الوجهات بعد المراجعة؛ إذن التنفيذ منفصل.</p>        {status==='DRAFT'?<input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>:null}
+        {status === "DRAFT" ? <div className="flex flex-wrap gap-2">
+          {(artifact.content !== null || typeof artifact.metadata.caption === "string") ? <button type="button" onClick={() => save.mutate(artifact.id)} disabled={save.isPending} className="rounded-lg border px-3 py-2 text-sm font-semibold">حفظ التعديل</button> : null}
+          <button type="button" onClick={() => approve.mutate(artifact.id)} disabled={approve.isPending || drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? ""))} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">اعتماد المادة فقط، دون نشر</button>
+          <button type="button" onClick={() => reject.mutate(artifact.id)} disabled={reject.isPending || !(drafts[artifact.id]?.review_note ?? "").trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white">رفض المخرج</button>
+        </div> : null}</section>
+        {artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <div id={`destinations-${artifact.id}`} className="scroll-mt-24"><DistributionReadinessPanel ids={[artifact.id]} /></div> : null}
+        <div id={`history-${artifact.id}`} className="scroll-mt-24"><ArtifactPublicationLedger id={artifact.id} /></div>
 
-        <p className="break-all text-xs text-slate-500">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p>
+        <details className="text-xs text-slate-500"><summary>تفاصيل تقنية للمادة</summary><p className="break-all">عقد المخرج: {artifact.output_contract_key ?? "غير محدد"} · الإصدار {artifact.output_contract_version ?? "—"}</p></details>
         {typeof artifact.metadata.caption === "string" ? <><p dir="auto" className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm leading-7 text-slate-800">{String(artifact.metadata.caption)}</p>{status === "DRAFT" && artifact.content === null && artifact.metadata.source_type !== "PLATFORM_VARIANT" ? <label className="block text-sm">تعديل تعليق الوسيط<textarea rows={7} aria-label={`تعليق الوسيط ${artifact.id}`} value={drafts[artifact.id]?.content ?? artifact.metadata.caption} onChange={e=>setDrafts(current=>({...current,[artifact.id]:{...current[artifact.id],content:e.target.value}}))} className="block w-full rounded border p-3" dir="auto"/></label> : null}</> : null}
         {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
           <summary className="cursor-pointer text-sm font-bold text-indigo-900">النص الأصلي ونسخ المنصات</summary>
@@ -687,12 +693,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           <p className="mt-3 text-xs leading-6 text-indigo-800">نسخ منفصلة للمراجعة. حفظها لا يغيّر تعليق النشر الحالي ولا ينشر شيئاً. تعليمات التحرير محفوظة مع الأصل ولا تضاف تلقائياً إلى نسخ المنصات.</p>
         </details> : null}
         
-        {status==='DRAFT'?<input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>:null}
-        {status === "DRAFT" ? <div className="flex flex-wrap gap-2">
-          {(artifact.content !== null || typeof artifact.metadata.caption === "string") ? <button type="button" onClick={() => save.mutate(artifact.id)} disabled={save.isPending} className="rounded-lg border px-3 py-2 text-sm font-semibold">حفظ التعديل</button> : null}
-          <button type="button" onClick={() => approve.mutate(artifact.id)} disabled={approve.isPending || drafts[artifact.id]?.content !== undefined && drafts[artifact.id]?.content !== (artifact.content ?? String(artifact.metadata.caption ?? ""))} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">اعتماد المخرج</button>
-          <button type="button" onClick={() => reject.mutate(artifact.id)} disabled={reject.isPending || !(drafts[artifact.id]?.review_note ?? "").trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white">رفض المخرج</button>
-        </div> : null}
+
         </div>:null}
       </article>)}
     </div>
@@ -764,4 +765,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-                                       }
+}

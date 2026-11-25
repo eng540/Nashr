@@ -161,7 +161,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   const [editing, setEditing] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [reviewNote, setReviewNote] = useState("");
-  const [productionSourceId, setProductionSourceId] = useState(() => pendingRequestFromStorage()?.source_id ?? "");
+  const [productionSourceId, setProductionSourceId] = useState(() => searchParams.get("source_id") ?? pendingRequestFromStorage()?.source_id ?? "");
   const [identityKey, setIdentityKey] = useState(() => pendingRequestFromStorage()?.identity_key ?? "");
   const [productKey, setProductKey] = useState(() => pendingRequestFromStorage()?.product_key ?? "ARABIC_LITERATURE_TELEGRAM_POST");
   const [productionMode, setProductionMode] = useState<"ALL" | "NEEDS" | "DONE">(() => pendingRequestFromStorage() ? "ALL" : "NEEDS");
@@ -203,7 +203,9 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
     queryKey: ["production", "sources", resolvedLineFilter.product_key, resolvedLineFilter.product_version, resolvedLineFilter.identity_key, resolvedLineFilter.identity_version, resolvedLineFilter.recipe_key, resolvedLineFilter.recipe_version],
     queryFn: () => productionJobsApi.sources(lineFilter),
   });
-  const thematicSourceList = (sources.data ?? []).filter((source) => source.material_count > 0);
+  const [includeOtherSources,setIncludeOtherSources]=useState(searchParams.has("other_sources"));
+  const visibleSourceList=(sources.data??[]).filter(source=>includeOtherSources||source.mime_type==="application/pdf");
+  const thematicSourceList = visibleSourceList.filter((source) => source.material_count > 0);
   const thematicBookMaps = useQueries({
     queries: isThematicProduct ? thematicSourceList.map((source) => ({
       queryKey: ["production", "thematic-book-map", source.id, resolvedLineFilter.product_key, resolvedLineFilter.product_version, resolvedLineFilter.recipe_key, resolvedLineFilter.recipe_version],
@@ -309,7 +311,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   const activeProductVersion = selectedProduct?.versions.find((version) => version.version === selectedProduct.active_version);
   const pinnedIdentity = activeProductVersion?.definition.component_versions?.identity;
   const isPostProduct = activeProductVersion ? activeProductVersion.definition.output_contract_key === "TELEGRAM_POST" : true;
-  const productionSources = (sources.data ?? []).filter((source) => productionModeChoice === "CUSTOM" ? source.material_count > 0 : !isPostProduct
+  const productionSources = visibleSourceList.filter((source) => productionModeChoice === "CUSTOM" ? source.material_count > 0 : !isPostProduct
     ? source.material_count > 0
     : productionMode === "ALL" || productionMode === "NEEDS" && source.pending_count > 0 || productionMode === "DONE" && source.pending_count === 0 && source.material_count > 0);
   const visibleTopics = topics.filter((topic) => !isPostProduct
@@ -389,10 +391,11 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
       <button type="button" onClick={() => navigate("/bank")} className="rounded-xl px-4 py-3 text-right text-sm font-bold hover:bg-slate-50"><span className="block">بنك المحتوى والمراجعة</span><span className="mt-1 block text-xs font-normal text-slate-500">إدارة المحتوى ومراجعته واعتماده في مساحة مستقلة</span></button>
     </nav> : null}
 
+    <label className="block text-xs text-slate-600"><input type="checkbox" checked={includeOtherSources} onChange={e=>setIncludeOtherSources(e.target.checked)}/> إظهار مصادر غير الكتب في قوائم الاختيار. تبقى جميع المواد محفوظة في بنك المحتوى.</label>
     {workspaceView === "review" && <section id="editorial-posts" className="scroll-mt-24 rounded-2xl border bg-white p-5 shadow-sm" data-testid="post-bank-filters">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-bold">مكتبة المنشورات التحريرية</h3><p className="mt-1 text-sm text-slate-500">تصفح المنشورات التحريرية وحررها واعتمدها. اختر نطاق العمل أولًا؛ لن يتم تحميل القائمة كاملة تلقائيًا.</p></div>{hasLoaded && <button type="button" onClick={loadBank} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث النتائج</button>}</div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-        <label className="text-sm font-semibold">الكتاب<select aria-label="كتاب بنك المنشورات" value={filterSourceId} onChange={(e) => { setFilterSourceId(e.target.value); setTopicId(""); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value={ALL_SOURCES}>كل الكتب</option>{(sources.data ?? []).map((source) => <option key={source.id} value={source.id}>{source.book_title || source.filename}</option>)}</select></label>
+        <label className="text-sm font-semibold">الكتاب<select aria-label="كتاب بنك المنشورات" value={filterSourceId} onChange={(e) => { setFilterSourceId(e.target.value); setTopicId(""); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value={ALL_SOURCES}>كل الكتب</option>{visibleSourceList.map((source) => <option key={source.id} value={source.id}>{source.book_title || source.filename}</option>)}</select></label>
         <label className="text-sm font-semibold">الحالة<select aria-label="حالة المنشور" value={status} onChange={(e) => { setStatus(e.target.value); setSearchParams(e.target.value ? { status: e.target.value } : {}); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="APPROVED">معتمد</option><option value="REJECTED">مرفوض</option></select></label>
         <label className="text-sm font-semibold">النوع<select aria-label="نوع المادة" value={kind} onChange={(e) => setKind(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الأنواع</option>{(filterOptions.data?.kinds ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label className="text-sm font-semibold">المحور<select aria-label="محور المادة" value={topicId} disabled={filterSourceId === ALL_SOURCES} onChange={(e) => setTopicId(e.target.value)} className="mt-2 w-full rounded-xl border p-3 font-normal disabled:bg-slate-100"><option value="">كل المحاور</option>{filterTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.position}. {topic.title}</option>)}</select></label>
@@ -521,4 +524,4 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
     {workspaceView === "review" && editing && <div className="fixed inset-0 z-20 grid place-items-center bg-slate-950/30 p-4"><div role="dialog" className="max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><h3 className="text-xl font-bold">مراجعة المنشور</h3><textarea aria-label="محتوى المنشور" value={content} onChange={(e) => setContent(e.target.value)} className="mt-4 min-h-48 w-full rounded-xl border p-4"/><p className="mt-2 text-xs leading-6 text-slate-500">يمكن استخدام تنسيق تيليجرام HTML مثل &lt;b&gt;النص البارز&lt;/b&gt; و&lt;blockquote&gt;الاقتباس&lt;/blockquote&gt;. المعاينة أدناه لعرض التنسيق فقط؛ الحكم التحريري لك.</p><TelegramPreview content={content} /><input aria-label="ملاحظة المراجعة" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="ملاحظة أو سبب الرفض" className="mt-3 w-full rounded-xl border p-3"/><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={() => save.mutate()} disabled={save.isPending} className="rounded-xl border px-4 py-2 font-semibold">حفظ</button><button type="button" onClick={() => review.mutate({ id: editing, action: "approve" })} disabled={review.isPending} className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white">اعتماد</button><button type="button" onClick={() => review.mutate({ id: editing, action: "reject" })} disabled={review.isPending || !reviewNote.trim()} className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white">رفض</button><button type="button" onClick={() => setEditing(null)} className="rounded-xl bg-slate-100 px-4 py-2 font-semibold">إغلاق</button></div></div></div>}
     
   </section>;
-}
+          }

@@ -49,7 +49,7 @@ test("React factory reuses the same production claim key after an ambiguous netw
       } });
     }
     return route.fulfill({ json: [{
-      id: sourceId, filename: "e2e.pdf", book_title: "E2E Book", status: "READY",
+      id: sourceId, filename: "e2e.pdf", mime_type: "application/pdf", book_title: "E2E Book", status: "READY",
       material_count: 1, produced_count: 0, pending_count: 1,
     }] });
   });
@@ -153,7 +153,7 @@ test("manual production selection includes materials that have no topic assignme
       } });
     }
     return route.fulfill({ json: [{
-      id: sourceId, filename: "legacy.pdf", book_title: "Legacy Book", status: "READY",
+      id: sourceId, filename: "legacy.pdf", mime_type: "application/pdf", book_title: "Legacy Book", status: "READY",
       material_count: materials.length, produced_count: 0, pending_count: materials.length,
     }] });
   });
@@ -230,7 +230,7 @@ test("production wizard selects SOURCE, TOPIC and SELECTION before review and su
       topics: [{ id: topicId, position: 1, title: "Reviewed Topic", description: "", materials: [materials[0]] }],
     } });
     return route.fulfill({ json: [{
-      id: sourceId, filename: "reviewed.pdf", book_title: "Reviewed Book", status: "READY",
+      id: sourceId, filename: "reviewed.pdf", mime_type: "application/pdf", book_title: "Reviewed Book", status: "READY",
       material_count: materials.length, produced_count: 0, pending_count: materials.length,
     }] });
   });
