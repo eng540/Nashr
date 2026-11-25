@@ -117,3 +117,20 @@ attention status. Saved platforms lacking any confirmed historical result are
 listed separately. This is history, not delivery of the current copy, completion
 of all selected destinations, connection readiness or permission to retry.
 No content, choices, plans or publication records are changed by reading it.
+
+## Connector result history, 2026-11-25
+
+The read-only artifact ledger also includes scoped Instagram Unified and Facebook
+Reel execution records. Drafts, cancelled jobs, unbound synthetic Instagram jobs
+and the dormant Facebook text/photo table are excluded. Exact-decision provenance
+is required. Confirmed results need a published lifecycle state, numeric external
+ID and an expected-platform result URL. Nonconfirmed links are never rendered.
+No raw snapshots, token hashes, media grants or approval evidence references are
+returned. Connector results remain a separate record scope rather than being
+copied into PublicationModel or added to its deduplicated target counts.
+
+The queue recognizes confirmed connector history and flags nonconfirmed started
+operations for review, not retry. A selected platform with connector confirmation
+is no longer described as lacking all historical evidence. Earlier uncertain
+jobs are not silently cleared by another job. Historical results still do not
+prove current-copy delivery, all-destination completion or live account readiness.
