@@ -3,6 +3,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, union_all, literal, func, cast, String, exists, case, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from app.infrastructure.database.session import get_session
 from app.infrastructure.database.models import (ArtifactModel, PostModel, KnowledgeUnitModel,
     PublicationModel, ScheduleItemModel, ScheduleModel, DistributionSelectionModel, PlatformCopyModel)
@@ -10,15 +11,48 @@ from app.infrastructure.database.models import (ArtifactModel, PostModel, Knowle
 router = APIRouter(prefix='/api/publishing-queue', tags=['publishing-queue'])
 
 
+def _confirmed(publication):
+    return (publication.status == 'PUBLISHED') & or_(
+        func.length(func.trim(func.coalesce(publication.external_id, ''))) > 0,
+        func.jsonb_array_length(func.coalesce(publication.external_ids, literal('[]').cast(JSONB))) > 0)
+
+
+def _unresolved_publication_failure(reference, content_type):
+    failed = aliased(PublicationModel)
+    recovered = aliased(PublicationModel)
+    failed_ref = failed.post_id if content_type == 'POST' else failed.artifact_id
+    recovered_ref = recovered.post_id if content_type == 'POST' else recovered.artifact_id
+    # Only a later confirmed result for the exact same platform, destination and
+    # connection supersedes this failure. Another channel's success proves nothing.
+    recovery = exists(select(recovered.id).where(recovered_ref == failed_ref,
+        recovered.platform == failed.platform, recovered.destination == failed.destination,
+        recovered.content == failed.content,
+        recovered.connection_id.is_not_distinct_from(failed.connection_id), _confirmed(recovered),
+        func.coalesce(recovered.published_at, recovered.created_at) > failed.created_at)).correlate(failed)
+    return exists(select(failed.id).where(failed_ref == reference,
+        failed.status == 'FAILED', ~recovery))
+
+
+def _failed_item():
+    # A scheduler item can retain FAILED while result recovery records delivery.
+    # Only its linked confirmed publication proves recovery, never an unrelated send.
+    recovered = exists(select(PublicationModel.id).where(
+        PublicationModel.id == ScheduleItemModel.publication_id,
+        PublicationModel.post_id.is_not_distinct_from(ScheduleItemModel.post_id),
+        PublicationModel.artifact_id.is_not_distinct_from(ScheduleItemModel.artifact_id),
+        _confirmed(PublicationModel))).correlate(ScheduleItemModel)
+    return (ScheduleItemModel.status == 'FAILED') & ~recovered
+
+
 def _state(reference, content_type):
     pub_ref = PublicationModel.post_id if content_type == 'POST' else PublicationModel.artifact_id
     item_ref = ScheduleItemModel.post_id if content_type == 'POST' else ScheduleItemModel.artifact_id
-    published = exists(select(PublicationModel.id).where(pub_ref == reference,
-        PublicationModel.status == 'PUBLISHED', or_(func.length(func.trim(func.coalesce(PublicationModel.external_id, ''))) > 0,
-        func.jsonb_array_length(func.coalesce(PublicationModel.external_ids, literal('[]').cast(JSONB))) > 0)))
+    published = exists(select(PublicationModel.id).where(pub_ref == reference, _confirmed(PublicationModel)))
     planned = exists(select(ScheduleItemModel.id).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
-        .where(item_ref == reference, ScheduleModel.status.in_(['DRAFT','ACTIVE','PAUSED']), ScheduleItemModel.status.in_(['PENDING','PROCESSING','FAILED'])))
-    failed = or_(exists(select(PublicationModel.id).where(pub_ref == reference, PublicationModel.status == 'FAILED')), exists(select(ScheduleItemModel.id).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id).where(item_ref == reference, ScheduleItemModel.status == 'FAILED', ScheduleModel.status != 'CANCELLED')))
+        .where(item_ref == reference, ScheduleModel.status.in_(['DRAFT','ACTIVE','PAUSED']), ScheduleItemModel.status.in_(['PENDING','PROCESSING'])))
+    failed = or_(_unresolved_publication_failure(reference, content_type),
+        exists(select(ScheduleItemModel.id).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
+            .where(item_ref == reference, _failed_item(), ScheduleModel.status != 'CANCELLED')))
     return case((failed, 'ATTENTION'), (planned, 'PLANNED'), (published, 'PUBLISHED'), else_='APPROVED')
 
 
@@ -59,9 +93,17 @@ async def publishing_queue(q: str = Query(default='', max_length=500),
             copies.setdefault(copy.artifact_id, []).append(copy)
     plans = {}
     if ids:
-        plan_rows = (await session.execute(select(ScheduleItemModel.post_id, ScheduleItemModel.artifact_id, ScheduleModel.id, ScheduleModel.status).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id).where(or_(ScheduleItemModel.post_id.in_(ids), ScheduleItemModel.artifact_id.in_(ids))).order_by(ScheduleModel.created_at.desc()))).all()
-        for post_id, artifact_id, plan_id, plan_status in plan_rows:
-            plans.setdefault(('POST' if post_id else 'ARTIFACT', post_id or artifact_id), (str(plan_id), plan_status))
+        relevant = ScheduleModel.status.in_(['DRAFT', 'ACTIVE', 'PAUSED']) & ScheduleItemModel.status.in_(['PENDING', 'PROCESSING'])
+        needs_attention = (ScheduleModel.status != 'CANCELLED') & _failed_item()
+        plan_rows = (await session.execute(select(ScheduleItemModel.post_id, ScheduleItemModel.artifact_id,
+            ScheduleModel.id, ScheduleModel.status, needs_attention.label('needs_attention'), relevant.label('relevant'))
+            .join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
+            .where(or_(ScheduleItemModel.post_id.in_(ids), ScheduleItemModel.artifact_id.in_(ids)))
+            .order_by(case((needs_attention, 0), (relevant, 1), else_=2),
+                      ScheduleModel.created_at.desc(), ScheduleModel.id))).all()
+        for post_id, artifact_id, plan_id, plan_status, attention, active in plan_rows:
+            plans.setdefault(('POST' if post_id else 'ARTIFACT', post_id or artifact_id),
+                (str(plan_id), plan_status, 'ATTENTION' if attention else 'CURRENT' if active else 'HISTORY'))
     from app.application.central_platform_copies import evaluate
     from app.application.distribution_readiness import source_fingerprint
     items=[]
@@ -71,11 +113,11 @@ async def publishing_queue(q: str = Query(default='', max_length=500),
         selection = selections.get(row['id']) if artifact else None
         prepared=copies.get(row['id'],[]) if artifact else []
         plan = plans.get((row['origin'],row['id']))
-        data.update(latest_plan_id=plan[0] if plan else None, latest_plan_status=plan[1] if plan else None, selected_platforms=selection.platforms if selection else [],
+        data.update(latest_plan_id=plan[0] if plan else None, latest_plan_status=plan[1] if plan else None, plan_link_reason=plan[2] if plan else None, selected_platforms=selection.platforms if selection else [],
             selection_stale=bool(selection and selection.source_fingerprint != source_fingerprint(artifact)),
             prepared_copies=len(prepared), fields_validated=sum(evaluate(artifact,c)['field_status']=='FIELDS_VALIDATED' for c in prepared),
             execution_ready=False,
             preparation_scope='CENTRAL_COPIES' if artifact else 'LEGACY_TELEGRAM')
         items.append(data)
     return {'items':items,'total':total,'limit':limit,'offset':offset,
-        'caveat':'الاعتماد ليس إذناً بالتنفيذ. حالة النشر مبنية على سجل مؤكد بمعرّف خارجي؛ روابط التفاصيل تعرض الوجهات والنتائج. الحقول المقبولة مبدئياً ليست تحققاً من الوسائط أو صلاحيات الحساب.'}
+        'caveat':'الاعتماد ليس إذناً بالتنفيذ. الفشل يبقى ظاهراً ما لم يثبت تجاوزه لنفس الوجهة والحساب؛ نجاح وجهة لا يغطي فشل أخرى. حالة النشر مبنية على سجل مؤكد بمعرّف خارجي؛ روابط التفاصيل تعرض الوجهات والنتائج. الحقول المقبولة مبدئياً ليست تحققاً من الوسائط أو صلاحيات الحساب.'}
