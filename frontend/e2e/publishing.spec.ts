@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("approved post can be scheduled through the real API", async ({ page }) => {
-  await page.goto("/publishing");
+  await page.goto("/publishing?ready_task=editorial");
   await expect(page.getByTestId("publishing-workspace")).toBeVisible();
 
   const checkbox = page.getByRole("checkbox").first();
@@ -37,7 +37,7 @@ test("approved post can be scheduled through the real API", async ({ page }) => 
 
 
 test("publishing workspace separates ready, plans, and calendar sections", async ({ page }) => {
-  await page.goto("/publishing");
+  await page.goto("/publishing?ready_task=editorial");
   await expect(page.getByTestId("publishing-workspace")).toBeVisible();
 
   await expect(page.getByTestId("publishing-ready")).toBeVisible();
@@ -95,7 +95,7 @@ test("publishing can attach and preview an approved visual artifact without publ
   await page.route("**/api/artifacts/image-visual-e2e/media-url", async (route) => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jv9sAAAAASUVORK5CYII=", expires_in: 300 }),
   }));
-  await page.goto("/publishing");
+  await page.goto("/publishing?ready_task=editorial");
   await expect(page.getByTestId("ready-post-post-visual-e2e")).toBeVisible();
   await page.getByLabel("تصميم معتمد لـ عنوان الاختبار").selectOption("image-visual-e2e");
   await page.getByRole("button", { name: "إرفاق التصميم" }).click();
