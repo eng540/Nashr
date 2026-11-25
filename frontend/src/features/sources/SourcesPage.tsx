@@ -107,7 +107,7 @@ export function SourcesPage() {
         <h3 className="font-bold">إضافة مصدر جديد</h3>
         <p className="mt-1 text-sm text-slate-600">ارفع ملف PDF لحفظه أولاً، ثم افتح تحليل الكتاب وابدأ استخراج مواده بقرارك. الرفع وحده لا يبدأ التحليل.</p>
         <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="text-sm font-semibold">ملف PDF
+          <label className="min-w-0 max-w-full text-sm font-semibold">ملف PDF
             <input
               aria-label="ملف المصدر الجديد"
               type="file"
@@ -133,7 +133,7 @@ export function SourcesPage() {
       <section className="rounded-2xl border bg-white p-5 shadow-sm" aria-label="قائمة المصادر">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-xl font-bold">{showOther?"جميع المصادر المحفوظة":"كتب PDF فقط"}</h3><label className="text-xs"><input type="checkbox" checked={showOther} onChange={e=>setShowOther(e.target.checked)}/> إظهار بقية الملفات والمصادر دون حذفها</label>
-          <label className="text-sm font-semibold">
+          <label className="min-w-0 max-w-full text-sm font-semibold">
             <span className="sr-only">بحث المصادر</span>
             <input
               aria-label="بحث المصادر"
@@ -175,7 +175,7 @@ export function SourcesPage() {
                 >
                   {expandedId === source.id ? "إخفاء البنية" : "عرض بنية الكتاب"}
                 </button>:null}
-                {source.mime_type==="application/pdf"?<button type="button" onClick={()=>{setAnalysisId(source.id);setAnalysis(true);}} className="rounded-lg border px-3 py-2 text-sm">فتح تحليل هذا الكتاب</button>:null}<Link to={`/production?source_id=${encodeURIComponent(source.id)}`} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">الإنتاج من هذا المصدر</Link>
+                {source.mime_type==="application/pdf"?<button type="button" onClick={()=>{setAnalysisId(source.id);setAnalysis(true);}} className="rounded-lg border px-3 py-2 text-sm">فتح تحليل هذا الكتاب</button>:null}<Link to={`/production?source_id=${encodeURIComponent(source.id)}${source.mime_type!=="application/pdf"?"&other_sources=1":""}`} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">الإنتاج من هذا المصدر</Link>
               </div>
               {expandedId === source.id ? <SourceBookMap sourceId={source.id} /> : null}
             </article>
