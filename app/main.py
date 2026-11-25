@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import os
 
 from contextlib import asynccontextmanager
@@ -60,7 +61,7 @@ def schedule_trigger_interval() -> float:
             DEFAULT_SCHEDULE_TRIGGER_INTERVAL_SECONDS,
         )
         return DEFAULT_SCHEDULE_TRIGGER_INTERVAL_SECONDS
-    if value < MIN_SCHEDULE_TRIGGER_INTERVAL_SECONDS:
+    if not math.isfinite(value) or value < MIN_SCHEDULE_TRIGGER_INTERVAL_SECONDS:
         logger.warning(
             "event=SCHEDULE_TRIGGER_INTERVAL_TOO_SMALL value=%s minimum=%s fallback=%s",
             value,
