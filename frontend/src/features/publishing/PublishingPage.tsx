@@ -68,7 +68,7 @@ export function PublishingPage() {
     queryKey: ["publishing", "filter-options", readySourceId],
     queryFn: () => postsApi.filterOptions(readySourceId || undefined, "ELIGIBLE"),
   });
-  const schedules = useQuery({ queryKey: ["publishing", "schedules"], queryFn: schedulesApi.list });
+  const schedules = useQuery({ queryKey: ["publishing", "schedules",planPage,planQuery,planStatus,searchParams.has("failures")], queryFn: ()=>schedulesApi.list({limit:PAGE_SIZE,offset:planPage*PAGE_SIZE,query:planQuery.trim(),status:planStatus,failedOnly:searchParams.has("failures")}) });
   const upcoming = useQuery({ queryKey: ["publishing", "upcoming"], queryFn: schedulesApi.upcoming });
   const platformVariants = useQuery({ queryKey: ["publishing", "platform-variants"], queryFn: genericArtifactsApi.listPlatformVariants });
   const calendar = useQuery({
@@ -243,25 +243,17 @@ export function PublishingPage() {
   const readyPageCount = Math.max(1, Math.ceil(readyTotal / PAGE_SIZE));
   const readyPageIds = readyItems.map((post) => post.post_id);
   const allReadySelected = readyPageIds.length > 0 && readyPageIds.every((id) => selectedIds.includes(id));
-  const planItems = useMemo(() => {
-    const query = planQuery.trim().toLowerCase();
-    return (schedules.data?.items ?? []).filter((schedule) => {
-      const matchesQuery = !query || (schedule.name+" "+(schedule.content_summary??[]).map(i=>i.title).join(" ")).toLowerCase().includes(query) || schedule.timezone.toLowerCase().includes(query);
-      const matchesStatus = !planStatus || schedule.status === planStatus;
-      return matchesQuery && matchesStatus && (!searchParams.has("failures") || schedule.failed_items>0);
-    });
-  }, [planQuery, planStatus, schedules.data?.items,searchParams]);
   useEffect(()=>{if(detail&&section==="plans")requestAnimationFrame(()=>document.getElementById("selected-plan-detail")?.scrollIntoView({block:"start",behavior:"smooth"}));},[detail?.id,section]);
-  const planPageCount = Math.max(1, Math.ceil(planItems.length / PAGE_SIZE));
-  const visiblePlans = planItems.slice(planPage * PAGE_SIZE, (planPage + 1) * PAGE_SIZE);
+  const planPageCount = Math.max(1, Math.ceil((schedules.data?.total??0) / PAGE_SIZE));
+  const visiblePlans = schedules.data?.items??[];
+  useEffect(()=>{if(schedules.data&&planPage>=planPageCount)setPlanPage(planPageCount-1);},[schedules.data,planPage,planPageCount]);
 
   const switchSection = (next: Section) => {
     setSection(next);
     if (next !== "plans") setDetail(null);
   };
 
-  if (posts.isLoading && !posts.data) return <Status title="جاري تحميل المنشورات الجاهزة" />;
-  if (posts.isError && !posts.data) return <Status title="تعذر تحميل المنشورات" detail={posts.error.message} error />;
+
 
   return (
     <section data-testid="publishing-workspace" className="space-y-6">
@@ -272,13 +264,13 @@ export function PublishingPage() {
         actions={<Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">العودة إلى بنك المحتوى</Link>}
       />
 
-      <div className="workspace-stats" aria-label="ملخص النشر"><div className="workspace-stat"><small>خطط النشر</small><strong>{schedules.data?.total??schedules.data?.items.length??"—"}</strong><span>جميع الحالات المحفوظة</span></div><div className="workspace-stat"><small>القادم</small><strong>{upcoming.data?.items.length??"—"}</strong><span>عناصر في القائمة القادمة</span></div><div className="workspace-stat"><small>نسخ المنصات</small><strong>{platformVariants.data?.length??"—"}</strong><span>تجهيز يدوي، لا نشر آلي</span></div></div>
+      <div className="workspace-stats" aria-label="ملخص النشر"><div className="workspace-stat"><small>خطط النشر</small><strong>{schedules.isError?"—":schedules.data?.total??schedules.data?.items.length??"—"}</strong><span>مطابقة لبحث الخطط ومرشحاتها</span></div><div className="workspace-stat"><small>القادم</small><strong>{upcoming.data?.items.length??"—"}</strong><span>عناصر في القائمة القادمة</span></div><div className="workspace-stat"><small>نسخ المنصات</small><strong>{platformVariants.data?.length??"—"}</strong><span>تجهيز يدوي، لا نشر آلي</span></div></div>
       <nav aria-label="أقسام مساحة النشر" className="workspace-tabs">
         {([
           ["ready", "المحتوى والتجهيز", "↗", "قائمة موحدة، ثم أدوات جدولة النصوص"],
-          ["plans", "خطط النشر", schedules.data?.total ?? schedules.data?.items.length ?? 0, "الخطط المحفوظة وحالاتها"],
-          ["calendar", "التقويم", upcoming.data?.items.length ?? 0, "القادم وجدول اليوم"],
-          ["platforms", "مسودات المنصات", platformVariants.data?.length ?? 0, "تحضير يدوي فقط، بلا نشر آلي"],
+          ["plans", "خطط النشر", schedules.isError?"—":schedules.data?.total ?? schedules.data?.items.length ?? "—", "الخطط المحفوظة وحالاتها"],
+          ["calendar", "التقويم", upcoming.data?.items.length ?? "—", "القادم وجدول اليوم"],
+          ["platforms", "مسودات المنصات", platformVariants.data?.length ?? "—", "تحضير يدوي فقط، بلا نشر آلي"],
         ] as const).map(([key, label, count, hint]) => (
           <button key={key} type="button" onClick={() => switchSection(key)} aria-pressed={section===key} className="text-right">
             <div className="flex items-center justify-between gap-3"><strong>{label}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{count}</span></div>
@@ -314,7 +306,7 @@ export function PublishingPage() {
             </div>
           </div>
 
-          {readyItems.length === 0
+          {posts.isLoading?<Status title="جاري تحميل المنشورات الجاهزة"/>:posts.isError?<div role="alert" className="rounded-xl border bg-white p-4"><p>تعذر تحميل المنشورات التحريرية. تبقى الخطط والتقويم والقائمة الموحدة مستقلة.</p><button type="button" onClick={()=>void posts.refetch()} className="underline">إعادة تحميل المنشورات</button></div>:readyItems.length === 0
             ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد منشورات جاهزة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير عبارة البحث، أو عد إلى بنك المحتوى لاعتماد منشورات جديدة.</p></div>
             : <div className="space-y-3">{readyItems.map((post) => {
               const matchingImages = (approvedImages.data ?? []).filter((image) => image.source_knowledge_unit_id === post.knowledge_unit_id);
@@ -352,11 +344,11 @@ export function PublishingPage() {
       {section === "plans" && (
         <section className="space-y-4" data-testid="publishing-plans">
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-bold">خطط النشر</h3><p className="mt-1 text-sm text-slate-500">راجع الخطط حسب الحالة وافتح الخطة المطلوبة فقط. تظهر أحدث 50 خطة، والملخص يحفظ عنوان الخطة الأصلي.</p></div><button type="button" onClick={() => void refresh()} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث</button></div>
-            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]"><label className="text-sm font-semibold"><span className="sr-only">بحث الخطط</span><input aria-label="بحث الخطط" value={planQuery} onChange={(e) => { setPlanQuery(e.target.value); setPlanPage(0); }} placeholder="ابحث باسم الخطة أو المنطقة الزمنية..." className="mt-2 w-full rounded-xl border p-3 font-normal"/></label><label className="text-sm font-semibold">الحالة<select aria-label="حالة الخطة" value={planStatus} onChange={(e) => { setPlanStatus(e.target.value); setPlanPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="ACTIVE">نشطة</option><option value="PAUSED">متوقفة</option><option value="COMPLETED">مكتملة</option><option value="CANCELLED">ملغاة</option></select></label></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-bold">خطط النشر</h3><p className="mt-1 text-sm text-slate-500">راجع الخطط حسب الحالة وافتح الخطة المطلوبة فقط. البحث والحالة ومرشح التعثر يشملون كل الخطط المحفوظة، مع عرض النتائج على صفحات. عنوان الخطة الأصلي محفوظ.</p></div><button type="button" onClick={() => void refresh()} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث</button></div>
+            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]"><label className="text-sm font-semibold"><span className="sr-only">بحث الخطط</span><input aria-label="بحث الخطط" value={planQuery} onChange={(e) => { setPlanQuery(e.target.value); setPlanPage(0); }} placeholder="ابحث باسم الخطة أو محتواها أو المنطقة الزمنية..." className="mt-2 w-full rounded-xl border p-3 font-normal"/></label><label className="text-sm font-semibold">الحالة<select aria-label="حالة الخطة" value={planStatus} onChange={(e) => { setPlanStatus(e.target.value); setPlanPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="ACTIVE">نشطة</option><option value="PAUSED">متوقفة</option><option value="COMPLETED">مكتملة</option><option value="CANCELLED">ملغاة</option></select></label></div>
           </div>
-          {!visiblePlans.length ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد خطط مطابقة</h3>{searchParams.has("failures")?<a href="/publishing?view=plans" className="underline">عرض الخطط دون مرشح التعثر</a>:null}<p className="mt-2 text-sm text-slate-500">أنشئ خطة من قسم «الجاهز للنشر» أو غيّر الفلاتر.</p></div> : <div className="space-y-2">{visiblePlans.map((s) => <button key={s.id} type="button" onClick={() => void openDetail(s.id)} className={`w-full rounded-2xl border bg-white p-4 text-right shadow-sm transition hover:border-indigo-300 ${detail?.id === s.id ? "border-indigo-300 ring-1 ring-indigo-200" : ""}`}><div className="flex flex-wrap items-center justify-between gap-3"><strong className="min-w-0 break-words">{s.content_summary?.[0]?.title || s.name}</strong><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{stateLabel(s.status)}</span></div><p className="mt-1 text-xs text-slate-600">{s.platform==="telegram"?"Telegram":"منصة غير موضحة"}{s.destination_label?` · ${s.destination_label}`:" · راجع الوجهة في تفاصيل الخطة"}</p>{s.content_summary?.length?<><p className="mt-1 text-xs text-slate-500">{s.name} · {s.content_summary.map(i=>({VIDEO:"فيديو",IMAGE:"صورة",POST:"منشور",TEXT:"نص",AUDIO:"صوت",DOCUMENT:"ملف"} as Record<string,string>)[i.kind]??i.kind).join("، ")}</p>{s.content_summary.slice(1).map((i,index)=><p key={index} className="mt-1 break-words text-xs">{i.title}</p>)}</>:null}<div className="mt-2 text-xs text-slate-500">{s.total_items} عناصر · {s.published_items} منشور · {s.failed_items} فشل · {s.timezone}</div></button>)}</div>}
-          <Pagination page={planPage} pageCount={planPageCount} onChange={setPlanPage} loading={schedules.isFetching} label="صفحات خطط النشر" />
+          {schedules.isLoading?<Status title="تحميل الخطط..."/>:schedules.isError?<div role="alert" className="rounded-xl border bg-white p-4"><p>تعذر تحميل الخطط. لا نعتبر القائمة فارغة.</p><button type="button" onClick={()=>void schedules.refetch()} className="underline">إعادة تحميل الخطط</button></div>:!visiblePlans.length ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد خطط مطابقة</h3>{searchParams.has("failures")?<a href="/publishing?view=plans" className="underline">عرض الخطط دون مرشح التعثر</a>:null}<p className="mt-2 text-sm text-slate-500">أنشئ خطة من قسم «الجاهز للنشر» أو غيّر الفلاتر.</p></div> : <div className="space-y-2">{visiblePlans.map((s) => <button key={s.id} type="button" onClick={() => void openDetail(s.id)} className={`w-full rounded-2xl border bg-white p-4 text-right shadow-sm transition hover:border-indigo-300 ${detail?.id === s.id ? "border-indigo-300 ring-1 ring-indigo-200" : ""}`}><div className="flex flex-wrap items-center justify-between gap-3"><strong className="min-w-0 break-words">{s.content_summary?.[0]?.title || s.name}</strong><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{stateLabel(s.status)}</span></div><p className="mt-1 text-xs text-slate-600">{s.platform==="telegram"?"Telegram":"منصة غير موضحة"}{s.destination_label?` · ${s.destination_label}`:" · راجع الوجهة في تفاصيل الخطة"}</p>{s.content_summary?.length?<><p className="mt-1 text-xs text-slate-500">{s.name} · {s.content_summary.map(i=>({VIDEO:"فيديو",IMAGE:"صورة",POST:"منشور",TEXT:"نص",AUDIO:"صوت",DOCUMENT:"ملف"} as Record<string,string>)[i.kind]??i.kind).join("، ")}</p>{s.content_summary.slice(1).map((i,index)=><p key={index} className="mt-1 break-words text-xs">{i.title}</p>)}</>:null}<div className="mt-2 text-xs text-slate-500">{s.total_items} عناصر · {s.published_items} منشور · {s.failed_items} فشل · {s.timezone}</div></button>)}</div>}
+          {!schedules.isError&&<Pagination page={planPage} pageCount={planPageCount} onChange={setPlanPage} loading={schedules.isFetching} label="صفحات خطط النشر" />}
         </section>
       )}
 
