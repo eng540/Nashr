@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artifactSearchText, artifactSeriesKey } from "./artifactLibrary";
+import { artifactSearchText, artifactSeriesKey, isSelectableOriginal } from "./artifactLibrary";
 import type { GenericReviewableArtifact } from "../api/artifactsApi";
 
 const sample = (name: string): GenericReviewableArtifact => ({ id: "fixed-id", kind: "VIDEO", content: null,
@@ -28,4 +28,13 @@ it("explicit catalog labels override inferred series and remain searchable",()=>
  expect(artifactSeriesKey(item)).toBe("سلسلة صريحة");
  expect(artifactSearchText(item)).toContain("تصنيف معين");
  expect(artifactSearchText(item)).toContain("عنوان فهرسة");
+});
+
+it("selection includes originals needing media repair but excludes unavailable or derived records",()=>{
+ const item={...sample("missing.mp4"),review_status:"APPROVED",status:"AVAILABLE",storage_uri:null} as GenericReviewableArtifact;
+ expect(isSelectableOriginal(item)).toBe(true);
+ expect(isSelectableOriginal({...item,status:"DELETED"})).toBe(false);
+ expect(isSelectableOriginal({...item,review_status:"DRAFT"})).toBe(false);
+ expect(isSelectableOriginal({...item,metadata:{source_type:"PLATFORM_VARIANT"}})).toBe(false);
+ expect(isSelectableOriginal({...item,kind:"POST"} as unknown as GenericReviewableArtifact)).toBe(false);
 });
