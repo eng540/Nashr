@@ -58,9 +58,17 @@ async def test_operation_index_private_paginated_no_secrets(config,monkeypatch):
     jid,did,due=await approved(monkeypatch)
     async with SessionFactory() as s:
         await dispatch.schedule(s,jid,did)
+        job=await s.get(Instagram,jid)
+        artifact=await s.get(ArtifactModel,job.artifact_id)
+        artifact.artifact_metadata={**(artifact.artifact_metadata or {}),'caption':'عنوان واضح من التعليق'}
+        await s.commit()
     async with browser() as c:
         r=await c.get('/api/platform-operations?limit=1');assert r.status_code==200,r.text
         d=r.json();assert d['total']>=1 and len(d['items'])==1
+        assert d['counts']['total']==d['total'] and d['counts']['waiting']>=1
+        assert len(d['items'][0]['title'])<=120
+        all_rows=(await c.get('/api/platform-operations?limit=100')).json()['items']
+        assert next(x for x in all_rows if x['id']==str(jid))['title']=='عنوان واضح من التعليق'
         assert r.headers['cache-control']=='no-store'
         if d['items'][0]['due_at']:assert 'T' in d['items'][0]['due_at']
         assert not any(x in r.text for x in ['evidence_ref','token_hash','private-token','connection_binding','snapshot_hash'])
