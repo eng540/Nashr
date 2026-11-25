@@ -147,7 +147,7 @@ test("approved text can create a card, receive independent visual approval, and 
   await expect(page.getByText("IMAGE · image/png")).toBeVisible();
   await expect(page.getByText("TEXT · text/plain")).toBeVisible();
 
-  await page.goto("/publishing");
+  await page.goto("/publishing?ready_task=editorial");
   await expect(page.getByTestId(`ready-post-${postId}`)).toBeVisible();
   await page.getByLabel(`تصميم معتمد لـ منشور الاختبار`).selectOption(imageId);
   await page.getByRole("button", { name: "إرفاق التصميم" }).click();

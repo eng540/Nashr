@@ -65,7 +65,7 @@ def connection_payload(row,c):
         'state':'DISABLED' if row.enabled is False else 'RECONNECT_REQUIRED' if stale or expired or row.last_check_ok is False else 'CONNECTED_AT_LAST_CHECK',
         'enabled':row.enabled,'client_business_id':row.client_business_id,'token_type':row.token_type,'last_check_at':row.last_check_at.isoformat() if row.last_check_at else None,'last_check_ok':row.last_check_ok,'last_check_error':row.last_check_error,
         'scopes':row.scopes,'execution_authorized':False,
-        'caveat':'آخر تحقق وقت الربط فقط؛ قد تُلغى الصلاحية خارج Nashr. لا موصل نشر أو إذن تنفيذ من هذا الربط.'}
+        'caveat':'هذه هوية محفوظة من آخر تحقق، وقد تُلغى الصلاحية خارج Nashr. توفر هوية الحساب لا يثبت جاهزية مادة للنشر؛ التنفيذ يحتاج مراجعة المادة والحساب وقرارًا منفصلًا.'}
 
 async def status(session,session_token,browser):
     c=await configuration_for(session);row=await session.get(Connection,1) if session_token else None

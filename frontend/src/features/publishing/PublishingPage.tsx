@@ -23,6 +23,8 @@ export function PublishingPage() {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [section, setSection] = useState<Section>(searchParams.get("connections")==="instagram"?"platforms":searchParams.get("schedule_id")||searchParams.get("view")==="plans"?"plans":"ready");
+  const [readyTask,setReadyTask]=useState<"distribution"|"editorial">(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial"?"editorial":"distribution");
+  useEffect(()=>{setReadyTask(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial"?"editorial":"distribution");},[searchParams]);
   const [operationGroup,setOperationGroup]=useState<OperationGroup>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
@@ -300,7 +302,9 @@ export function PublishingPage() {
 
       {section === "ready" && (
         <section className="space-y-4" data-testid="publishing-ready">
-          <UnifiedPublishingQueue/>
+          <nav aria-label="ماذا تريد أن تفعل بالمحتوى؟" className="workspace-surface p-4 space-y-3"><h2 className="font-bold">ماذا تريد أن تفعل؟</h2><div className="grid gap-3 sm:grid-cols-2">{([["distribution","متابعة مادة وتجهيز وجهاتها","كل المواد المعتمدة: نصوص وصور وفيديو، مع الخطوة التالية وسجل النشر."],["editorial","جدولة نصوص Telegram","اختر المنشورات التحريرية المؤهلة، ثم راجع المواعيد قبل حفظ خطة."]] as const).map(([key,title,hint])=><button key={key} type="button" aria-pressed={readyTask===key} className="workspace-secondary text-right" onClick={()=>{setReadyTask(key);setSearchParams(previous=>{const next=new URLSearchParams(previous);if(key==="editorial")next.set("ready_task","editorial");else next.delete("ready_task");return next;});}}><strong className="block">{title}</strong><span className="block mt-1 text-xs leading-6 font-normal">{hint}</span></button>)}</div><p className="text-xs leading-6 text-slate-600">الصور والفيديو لها مراجعة وتجهيز داخل المادة. هذا الاختيار يغيّر ما تعرضه الصفحة فقط، ولا يحفظ خطة أو يرسل محتوى.</p></nav>
+          {readyTask==="distribution"?<UnifiedPublishingQueue/>:<>
+
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div><h3 className="text-xl font-bold">جدولة المنشورات التحريرية المؤهلة</h3><p className="mt-1 text-sm text-slate-500">لا يظهر هنا إلا ما هو معتمد ومؤهل للنشر.</p></div>
@@ -354,6 +358,7 @@ export function PublishingPage() {
             })}</div>}
 
           <Pagination page={readyPage} pageCount={readyPageCount} onChange={setReadyPage} loading={posts.isFetching} label="صفحات المنشورات الجاهزة" />
+          </>}
         </section>
       )}
 

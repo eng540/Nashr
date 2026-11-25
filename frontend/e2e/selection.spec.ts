@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("publishing selection follows 0 -> 1 -> 0 contract", async ({ page }) => {
-  await page.goto("/publishing");
+  await page.goto("/publishing?ready_task=editorial");
   const createPlan = page.getByTestId("create-plan");
   await expect(createPlan).toHaveCount(0);
 
