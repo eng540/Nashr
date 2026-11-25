@@ -94,9 +94,14 @@ test("factory flow stays usable in RTL on a phone: scope selection, pagination, 
   await mockFactoryApi(page);
   await page.goto("/posts/workspace");
   await expect(page.getByLabel("المنتج")).toBeVisible();
+  await expect(page.getByLabel("دليل إعداد الإنتاج")).toContainText("وليس عملية شراء");
+  await expect(page.getByLabel("دليل إعداد الإنتاج")).toContainText("وليست حساب النشر");
   await expectNoHorizontalOverflow(page, "الإعداد الأول");
 
   await page.getByLabel("المنتج").selectOption(productKey);
+  await expect(page.getByLabel("شرح الإعداد المختار")).toContainText("readers");
+  await expect(page.getByLabel("شرح الإعداد المختار")).toContainText("test");
+  await page.screenshot({ path: "/downloads/nashr307-production-mobile.png", fullPage: true });
   await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
   await page.getByLabel("الكتاب للإنتاج").selectOption(sourceId);
