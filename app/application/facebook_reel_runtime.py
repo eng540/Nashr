@@ -30,7 +30,9 @@ async def pinned(s,uid):
     a=await s.get(ArtifactModel,uid,populate_existing=True);p=await s.get(PlatformCopyModel,(uid,'facebook'),populate_existing=True)
     if not a or not p or a.kind!='VIDEO' or a.review_status!='APPROVED' or a.status!='AVAILABLE' or source_fingerprint(a)!=p.source_fingerprint:raise ValueError('فيديو أصلي معتمد ونسخة Facebook حديثة مطلوبان.')
     f=dict(p.fields);version=p.version;source_fp=p.source_fingerprint
-    if not isinstance(f.get('description'),str) or len(f['description'])>2200 or any(f.get(k) for k in ['title','tags','alt_text']):raise ValueError('هذا المسار يدعم الوصف الكامل حتى2200حرف فقط، دون تجاهل حقول إضافية.')
+    from app.application.facebook_copy_fields import blockers
+    reasons=blockers('VIDEO',f)
+    if reasons:raise ValueError('; '.join(reasons))
     asset=await s.get(PlatformCopyMediaModel,p.selected_media_id,populate_existing=True) if p.selected_media_id else a
     if not asset or asset.mime_type!='video/mp4' or (p.selected_media_id and (asset.artifact_id!=uid or asset.platform!='facebook' or asset.source_fingerprint!=p.source_fingerprint)):raise ValueError('وسيط MP4 حالي لهذه المادة والمنصة مطلوب.')
     data=await S3ArtifactStorage.from_environment().get_bytes(asset.storage_uri,max_bytes=50_000_000)

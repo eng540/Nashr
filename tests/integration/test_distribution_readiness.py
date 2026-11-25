@@ -25,7 +25,9 @@ async def test_unchanged_fallback_inherits_approval_and_never_cuts_or_creates_pu
         assert body['central_approval'] == 'APPROVED'
         assert all(target['approval'] == 'INHERITED' for target in body['targets'])
         assert all(target['execution_status'] == 'NOT_AUTHORIZED' for target in body['targets'])
-        assert all(target['copy_status'] == 'BLOCKED' for target in body['targets'])
+        assert all(target['copy_status'] == ('FIELDS_VALIDATED' if target['platform']=='facebook' else 'BLOCKED') for target in body['targets'])
+        facebook=next(t for t in body['targets'] if t['platform']=='facebook')
+        assert facebook['copy_blockers']==[] and facebook['execution_blockers']
         async with SessionFactory() as session:
             after = [(await session.execute(select(func.count()).select_from(model))).scalar_one() for model in [PublicationModel, ScheduleModel]]
         assert before == after
