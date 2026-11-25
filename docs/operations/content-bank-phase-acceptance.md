@@ -163,3 +163,7 @@ Saved-plan search, status and failed-item filters now apply before server pagina
 ## Truthful loading and failure-filter polish
 
 Pagination now says that a page is loading rather than showing a temporary incompatible page/total pair. Both navigation buttons stay disabled during that fetch. Unknown/error counts remain unknown. An active failure-only plan filter is always visible and can be cleared even when it has results. This is read-only display/navigation work, with a deliberately delayed isolated browser response validating the intermediate state.
+
+## Copy-count scope correction
+
+Home progress counts central platform_copies saved-field records and legacy PLATFORM_VARIANT output artifacts separately. The former total was incorrectly derived from legacy outputs only. Neither is an original-material count, a sum of unique materials or proof of readiness. Read-only source correction preserves all records. Integration/browser coverage seeds both types independently and verifies their separate labels/counts.
