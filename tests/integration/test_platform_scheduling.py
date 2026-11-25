@@ -138,3 +138,43 @@ async def test_index_needs_owner():
     from app.main import app
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://test') as c:
         assert (await c.get('/api/platform-operations')).status_code==401
+
+@pytest.mark.asyncio
+async def test_operation_calendar_filters_day_in_requested_zone_and_rejects_invalid_input(config,monkeypatch):
+    jid,did,due=await approved(monkeypatch)
+    from datetime import datetime,timezone,timedelta
+    async with SessionFactory() as s:
+        row=await dispatch.schedule(s,jid,did)
+        row.due_at=datetime(2030,1,1,22,30,tzinfo=timezone.utc)
+        await s.commit()
+    async with browser() as c:
+        for zone,day,present in [('Asia/Riyadh','2030-01-02',True),('UTC','2030-01-01',True),('Asia/Riyadh','2030-01-01',False)]:
+            response=await c.get('/api/platform-operations',params={'date':day,'timezone':zone})
+            assert response.status_code==200,response.text
+            body=response.json()
+            assert body['date']==day and body['timezone']==zone
+            assert (str(jid) in [x['id'] for x in body['items']]) is present
+            assert response.headers['cache-control']=='no-store'
+            assert not any(secret in response.text for secret in ['evidence_ref','connection_binding','snapshot_hash'])
+        assert (await c.get('/api/platform-operations?date=2030-02-30&timezone=UTC')).status_code==400
+        assert (await c.get('/api/platform-operations?date=2030-01-01&timezone=No/Zone')).status_code==400
+        assert (await c.get('/api/platform-operations?date=not-a-day')).status_code==422
+
+@pytest.mark.asyncio
+async def test_operation_calendar_half_open_dst_day_filters_all_reel_states_and_paginates(config):
+    from tests.integration.test_media_scheduling import _media_artifact
+    uid=await _media_artifact();created=[]
+    # New York's spring transition is a23-hour local day, not a fixed UTC24hours.
+    times=[datetime(2030,3,10,4,59,tzinfo=timezone.utc),datetime(2030,3,10,5,tzinfo=timezone.utc),datetime(2030,3,11,3,59,tzinfo=timezone.utc),datetime(2030,3,11,4,tzinfo=timezone.utc),None]
+    async with SessionFactory() as s:
+        for index,due in enumerate(times):
+            row=Facebook(artifact_id=uid,snapshot={'due_at':due.isoformat() if due else None,'timezone':'UTC','connection':{'page_name':'synthetic'}},snapshot_hash=str(index)*64,state='CANCELLED' if index==2 else 'OUTCOME_UNKNOWN',evidence_ref='trusted-message:synthetic-only-123',created_at=datetime.now(timezone.utc),updated_at=datetime.now(timezone.utc))
+            s.add(row);await s.flush();created.append(str(row.id))
+        await s.commit()
+    async with browser() as c:
+        first=(await c.get('/api/platform-operations',params={'date':'2030-03-10','timezone':'America/New_York','limit':1})).json()
+        second=(await c.get('/api/platform-operations',params={'date':'2030-03-10','timezone':'America/New_York','limit':1,'offset':1})).json()
+        assert first['total']==second['total']==2
+        assert first['items'][0]['id']==created[1] and second['items'][0]['id']==created[2]
+        assert first['items'][0]['state']=='OUTCOME_UNKNOWN' and second['items'][0]['state']=='CANCELLED'
+        assert first['counts']['attention']==1 and first['counts']['total']==2
