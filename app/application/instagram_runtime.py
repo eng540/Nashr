@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 import httpx
 from sqlalchemy import select,or_,and_
 from app.infrastructure.database.session import SessionFactory
-from app.infrastructure.database.models import InstagramDispatchModel as Dispatch,InstagramExecutionModel as Job
+from app.infrastructure.database.models import InstagramDispatchModel as Dispatch,InstagramExecutionModel as Job,InstagramPublishDecisionModel as Decision
 from app.application import instagram_dispatch as dispatch,instagram_unified_execution as execution,instagram_publish_decisions as decisions
 
 
@@ -22,7 +22,14 @@ async def process_approved():
             row=await s.get(Dispatch,did);job=await s.get(Job,row.execution_id)
             try:
                 if not (job.state=='PUBLISHED_ID_KNOWN' and job.media_id):
+                    decision=await s.get(Decision,row.decision_id,populate_existing=True)
+                    if not decision or decision.state!='APPROVED' or decision.expires_at<=decisions.now():raise ValueError('Decision expired or revoked')
+                    # Future decisions must not depend on a five-minute-old UI check.
+                    await execution.refresh_due_binding(s,job)
                     await decisions.validate(s,job,row.decision_id)
+                else:
+                    # Confirmed ID recovery is read-only even after approval expiry.
+                    await execution.refresh_due_binding(s,job)
                 async with httpx.AsyncClient(timeout=30,follow_redirects=False) as client:
                     provider=await execution.verified_provider(s,job,client)
                     if row.state=='PENDING':

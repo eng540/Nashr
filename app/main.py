@@ -35,6 +35,7 @@ from app.api.instagram_direct_connections import router as instagram_direct_conn
 from app.api.youtube_reviews import router as youtube_reviews_router
 from app.api.facebook_reviews import router as facebook_reviews_router
 from app.api.publishing_queue import router as publishing_queue_router
+from app.api.platform_operations import router as platform_operations_router
 from app.api.routes import router
 from app.application.discovery_jobs import recover_stale_jobs, run_discovery_job
 from app.application.production_jobs import recover_stale_production_jobs, run_production_job
@@ -237,6 +238,7 @@ def create_app() -> FastAPI:
     application.include_router(generic_artifacts_router)
     application.include_router(library_import_router)
     application.include_router(publishing_queue_router)
+    application.include_router(platform_operations_router)
     application.include_router(facebook_page_connections_router)
     application.include_router(facebook_reel_execution_router)
     application.include_router(tiktok_connections_router)

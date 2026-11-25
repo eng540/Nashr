@@ -26,7 +26,7 @@ test("approved post can be scheduled through the real API", async ({ page }) => 
   const request = response.request().postDataJSON();
   expect(request.post_ids).toHaveLength(1);
   expect(request.name).toBe("E2E خطة نشر");
-  await expect(page.getByRole("status")).toContainText("تم إنشاء الخطة بنجاح");
+  await expect(page.getByRole("status").filter({hasText:"تم إنشاء الخطة بنجاح"})).toContainText("تم إنشاء الخطة بنجاح");
 
   // Isolation: a DRAFT schedule makes its post ineligible for other tests;
   // cancel it so shared seeded state is restored.

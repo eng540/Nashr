@@ -31,6 +31,8 @@ async def proposal(session,jid,*,due_at,timezone_name):
     job=await session.get(Job,jid,populate_existing=True)
     if not job or job.state!='DRAFT':raise ValueError('Unclaimed direct execution draft required')
     await direct.validate_binding(session,job)
+    from app.application.exact_schedule_time import timing
+    timing(due_at,timezone_name,now=now())
     value=snapshot(job,due_at=due_at,timezone_name=timezone_name)
     return {**value,'decision_hash':fingerprint(value),'execution_enabled':False,'media_exposure_enabled':False}
 

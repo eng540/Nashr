@@ -171,3 +171,40 @@ Home progress counts central platform_copies saved-field records and legacy PLAT
 ## Readiness to saved-copy review handoff
 
 Single-original readiness details can open that platform's saved-copy panel by GET only, keeping the original identity and central approval. Missing copies remain missing until explicit preparation; no GET prepares them. Dirty copy fields block a requested platform switch without clearing edits. The copy panel follows readiness in the review journey. Existing Instagram and YouTube reviews remain distinct from account/media/execution readiness. Facebook VIDEO now links to its implemented separate Reel review with the original UUID prefilled; merely following it creates no preview, transfer or authorization. Unsupported X/TikTok execution remains explicit. Isolated browser coverage follows the handoff to Reel review, rejects dirty switching and verifies zero writes.
+
+## Exact app-local platform scheduling
+
+Unified Instagram already had a due-time decision/dispatch runtime. Its UI now
+accepts an explicit local start time and IANA zone rather than always choosing
+two minutes ahead. Facebook Reel previews can pin the same bounded future intent.
+Both use a maximum seven-day app-local horizon. Telegram plans remain unchanged.
+This does not add executors for TikTok, X, Snapchat, YouTube, or Facebook text/image.
+
+The chosen time is the start of verification/upload, never guaranteed remote
+appearance. No early Instagram container/grant or Facebook upload is created by
+saving the scheduled decision. Instagram due-time verification refreshes the same
+pinned connection read-only, then keeps the existing identity/content/media gates.
+Changed/revoked/expired configuration blocks rather than selecting another account.
+Facebook uses its existing platform-specific derivative and exact-byte checks,
+not an assumption that the Instagram original meets Facebook audio requirements.
+
+Decisions expire fifteen minutes after the Instagram due time or thirty minutes
+after the Facebook due time. Processing that exceeds that window cannot cause a
+new publish mutation; known published identifiers can still be reconciled by reads.
+Unknown writes never replay. Facebook pre-send cancellation shares the worker's
+advisory lock; after a write begins, local cancellation cannot promise remote undo.
+Rescheduling requires cancellation/revocation and a new exact review/approval.
+Legacy Facebook NOW snapshots are not rewritten or reapproved.
+
+The owner-only operations index returns due times, public account labels, states,
+and confirmed result links, never raw snapshots, private evidence or token hashes.
+It is paginated separately from Telegram plans and is read-only. No deployment
+creates or approves a job, changes any existing schedule, or triggers a new post.
+
+Provider constraints checked 2026-11-25:
+- https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/media
+  documents 24-hour container expiry and 400 containers per rolling 24 hours.
+- https://developers.facebook.com/documentation/video-api/guides/reels-publishing.md
+  documents Page CREATE_CONTENT and pages_* permissions and 30 API-published Reels
+  per rolling 24 hours. Provider limits/eligibility still apply at execution.
+  Native SCHEDULED is not used; local dispatch preserves current failure semantics.
