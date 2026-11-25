@@ -1,3 +1,4 @@
+import {BatchPlatformCopiesPanel} from './BatchPlatformCopiesPanel';
 import { ApprovedBatchHandoff } from "./ApprovedBatchHandoff";
 import { BatchReviewPanel } from "./BatchReviewPanel";
 import { useSearchParams } from "react-router";
@@ -195,6 +196,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const reviewBatchIds=useMemo(()=>reviewBatchRaw===null?[]:reviewBatchRaw.split(","),[reviewBatchRaw]);
   const finishBatchReview=(ids:string[])=>{const next=new URLSearchParams(libraryParams);next.set("artifact_status","APPROVED");next.set("review_batch",ids.join(","));next.delete("artifact_id");setSelectedMediaIds([]);setStatus("APPROVED");setFocusedState(null);setSearch("");setKindFilter("ALL");setSourceFilter("ALL");setSeriesFilter("ALL");setCategoryFilter("ALL");setPage(0);setLibraryParams(next,{preventScrollReset:true});void refresh();};
 
+  const [copiesRevision,setCopiesRevision]=useState(0);
   const [batchNote, setBatchNote] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState("");
@@ -570,7 +572,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         {batchNote ? <p role="status" className="w-full text-sm font-semibold text-emerald-800">{batchNote}</p> : null}
       </div> : null}
       {batchMediaDrafts.isError ? <p role="alert" className="text-sm text-rose-700">{batchMediaDrafts.error.message}</p> : null}
-      {status === "APPROVED" && selectedMediaIds.length > 0 ? <><TelegramBatchPreviewPanel ids={selectedMediaIds} /><DistributionReadinessPanel ids={selectedMediaIds} /></> : null}
+      {status === "APPROVED" && selectedMediaIds.length > 0 ? <><BatchPlatformCopiesPanel ids={selectedMediaIds} items={allArtifacts} onPreparing={()=>setCopiesRevision(r=>r+1)}/><DistributionReadinessPanel key={copiesRevision} ids={selectedMediaIds} /><TelegramBatchPreviewPanel ids={selectedMediaIds} copiesRevision={copiesRevision}/></> : null}
     </div>
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <div role="alert" className="workspace-surface p-4 text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}<button className="workspace-secondary" onClick={()=>void artifacts.refetch()}>إعادة قراءة مكتبة المحتوى</button><p>لا نعتبر فشل القراءة حذفاً للمادة.</p></div> : null}
@@ -791,4 +793,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-        }
+                                                                    }
