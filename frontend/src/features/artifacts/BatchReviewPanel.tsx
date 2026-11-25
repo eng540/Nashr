@@ -4,7 +4,7 @@ import { genericArtifactsApi, type GenericReviewableArtifact } from "../../share
 type Snapshot = GenericReviewableArtifact & { review_fingerprint: string };
 export function BatchReviewPanel({ items, pageItems, unsavedIds, renderMedia, onApproved }: {
   items: GenericReviewableArtifact[]; pageItems: GenericReviewableArtifact[]; unsavedIds: string[];
-  renderMedia: (item: GenericReviewableArtifact) => ReactNode; onApproved: () => void;
+  renderMedia: (item: GenericReviewableArtifact) => ReactNode; onApproved: (ids:string[]) => void;
 }) {
   const [ids, setIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<Snapshot[] | null>(null);
@@ -25,7 +25,7 @@ export function BatchReviewPanel({ items, pageItems, unsavedIds, renderMedia, on
   const approve = async () => {
     if(!preview || unsaved) return;
     setBusy(true); setError("");
-    try { const result = await genericArtifactsApi.approveBatchReview(preview); setDone(`اعتمدت ${result.approved_ids.length} مادة وجهزت نسخ المنصات. لم ينشر أو يجدول شيء.`); setPreview(null); setReviewed([]); setIds([]); onApproved(); }
+    try { const result = await genericArtifactsApi.approveBatchReview(preview); setDone(`اعتمدت ${result.approved_ids.length} مادة وجهزت نسخ المنصات. لم ينشر أو يجدول شيء.`); setPreview(null); setReviewed([]); setIds([]); onApproved(result.approved_ids); }
     catch(e) { setError((e as Error).message); setPreview(null); setReviewed([]); }
     finally { setBusy(false); }
   };
