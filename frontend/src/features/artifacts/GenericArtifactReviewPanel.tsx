@@ -789,7 +789,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     </div>
     <div hidden={creationTask!=="variant"} className="space-y-3 rounded-xl border border-sky-100 bg-sky-50/50 p-4">
       <h3 tabIndex={-1} id="library-task-variant" className="scroll-mt-24 font-bold">اشتقاق نسخة بحدود منصة من منشور معتمد</h3>
-      <p className="text-sm text-slate-600">ينشئ نسخة نصية منفصلة من منشور معتمد، مقصوصة عند حدود آمنة ضمن حد المنصة الموثق. تجهيز طول فقط دون إعادة صياغة؛ المنشور الأصلي لا يتغير، والنسخة تُحفظ قيد المراجعة، ولا يُنشر شيء خارجيًا.</p>
+      <p className="text-sm text-slate-600">ينشئ نسخة مراجعة منفصلة من منشور تحريري معتمد. يحتفظ بالنص؛ إذا تجاوز حد المنصة يرفض الطلب بسبب واضح، ولا يقصه تلقائياً. قد تبقى نسخ قديمة مقصوصة وموسومة بذلك، ولا نستبدلها. هذا المسار لا يختار وجهات النشر. لمواد مكتبة المحتوى استخدم النسخ والوجهات داخل المادة. لا يُنشر شيء خارجيًا.</p>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold">المنشور المصدر
           <select aria-label="المنشور المصدر للنسخة" value={variantPostId} onChange={(event) => setVariantPostId(event.target.value)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal">
@@ -817,4 +817,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-            }
+}
