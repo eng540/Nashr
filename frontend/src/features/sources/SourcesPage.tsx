@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 
@@ -57,6 +57,26 @@ function SourceBookMap({ sourceId }: { sourceId: string }) {
   );
 }
 
+function BookAnalysisFrame({sourceId}:{sourceId:string}) {
+  const ref=useRef<HTMLIFrameElement>(null);
+  const [height,setHeight]=useState(320);
+  useEffect(()=>{
+    const frame=ref.current;
+    if(!frame)return;
+    let observer:ResizeObserver|undefined;
+    const watch=()=>{
+      observer?.disconnect();
+      const main=frame.contentDocument?.querySelector("main");
+      if(!main)return;
+      const resize=()=>setHeight(Math.max(280,Math.ceil(main.getBoundingClientRect().height)+24));
+      observer=new ResizeObserver(resize);observer.observe(main);resize();
+    };
+    frame.addEventListener("load",watch);watch();
+    return()=>{frame.removeEventListener("load",watch);observer?.disconnect();};
+  },[sourceId]);
+  return <iframe ref={ref} title="أداة تحليل الكتاب" src={`/sources/book-analysis${sourceId?`?source_id=${encodeURIComponent(sourceId)}`:""}`} style={{height}} className="mt-3 w-full rounded-xl border"/>;
+}
+
 export function SourcesPage() {
   const [params]=useSearchParams();
   const [analysis,setAnalysis]=useState(params.has("analysis"));
@@ -103,7 +123,7 @@ export function SourcesPage() {
         </>}
       />
 
-      <section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5" aria-label="إضافة مصدر جديد">
+      {!analysis?<section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5" aria-label="إضافة مصدر جديد">
         <h3 className="font-bold">إضافة مصدر جديد</h3>
         <p className="mt-1 text-sm text-slate-600">ارفع ملف PDF لحفظه أولاً، ثم افتح تحليل الكتاب وابدأ استخراج مواده بقرارك. الرفع وحده لا يبدأ التحليل.</p>
         <div className="mt-3 flex flex-wrap items-end gap-3">
@@ -127,9 +147,9 @@ export function SourcesPage() {
         </div>
         {upload.isError ? <p role="alert" className="mt-2 text-sm text-rose-700">{upload.error.message}</p> : null}
         {upload.isSuccess ? <p role="status" className="mt-2 text-sm text-emerald-800">حُفظ الملف. الخطوة التالية: افتح تحليل الكتاب، ثم ابدأ التحليل إن أردت.</p> : null}
-      </section>
+      </section>:null}
 
-      {analysis?<section className="rounded-2xl border bg-white p-3" aria-label="تحليل الكتاب"><h3 className="font-bold">تحليل الكتاب واستخراج المواد</h3><p className="text-xs leading-6">أداة تحليل ضمن مساحة العمل. فتحها لا يبدأ التحليل تلقائياً. ارجع إلى الإنتاج بعد مراجعة المواد المستخرجة.</p><iframe title="أداة تحليل الكتاب" src={`/sources/book-analysis${analysisId?`?source_id=${encodeURIComponent(analysisId)}`:""}`} className="mt-3 h-[850px] w-full rounded-xl border"/></section>:null}
+      {analysis?<section className="rounded-2xl border bg-white p-3" aria-label="تحليل الكتاب"><h3 className="font-bold">تحليل الكتاب واستخراج المواد</h3><p className="text-xs leading-6">أداة تحليل ضمن مساحة العمل. فتحها لا يبدأ التحليل تلقائياً. ارجع إلى الإنتاج بعد مراجعة المواد المستخرجة.</p><BookAnalysisFrame sourceId={analysisId}/></section>:null}
       <section className="rounded-2xl border bg-white p-5 shadow-sm" aria-label="قائمة المصادر">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-xl font-bold">{showOther?"جميع المصادر المحفوظة":"كتب PDF فقط"}</h3><label className="text-xs"><input type="checkbox" checked={showOther} onChange={e=>setShowOther(e.target.checked)}/> إظهار بقية الملفات والمصادر دون حذفها</label>
