@@ -78,3 +78,19 @@ with fake tests and strict unchanged-original fallback. A configured key does no
 prove provider availability, free usage or spend authority. Do not activate paid
 calls just to claim this checklist complete. No new subscription or generation
 cost is part of this phase.
+
+## Distribution follow-through, 2026-11-25
+
+The read-only unified queue keeps unresolved failures visible. A later confirmed
+publication supersedes an earlier failed publication only for the same original,
+platform, exact destination, saved connection identity and identical content.
+A different channel or changed copy does not clear the failure. Editorial target
+records remain unique and an in-place confirmed retry naturally leaves FAILED.
+A failed schedule item is treated as recovered only when its linked publication
+confirms delivery for that same original. None of this retries or changes records.
+
+The plan handoff prioritizes an unresolved failed plan, then an existing pending
+or processing plan, then history. A newer cancelled plan cannot hide the relevant
+active or failed plan. The link explains which case it represents. Published
+status still requires an external identifier and never means every destination
+has completed. Account, media and execution checks remain separate.
