@@ -4,9 +4,10 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<base target="_top"><title>Nashr — مساحة العمل</title><script src="https://cdn.tailwindcss.com"></script>
+<script>if(window.self!==window.top)document.documentElement.classList.add("embedded")</script><base target="_top"><title>Nashr — مساحة العمل</title><script src="https://cdn.tailwindcss.com"></script>
 <style>
   *{box-sizing:border-box;min-width:0}html,body{width:100%;margin:0}select,input,button{max-width:100%}select{width:100%}p,h1,h2,h3{overflow-wrap:anywhere}
+  .embedded header,.embedded section[aria-label="رحلة العمل"]{display:none}.embedded main{padding:12px}
   body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
   .step{transition:all .2s ease}.step.active{border-color:#4f46e5;background:#eef2ff}.step.done{border-color:#10b981;background:#ecfdf5}
   .drop-zone{transition:all .2s ease}.drop-zone.dragging,.drop-zone:focus-within{border-color:#4f46e5;background:#eef2ff}
