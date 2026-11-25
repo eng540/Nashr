@@ -677,7 +677,6 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         {artifact.metadata.video_library && typeof artifact.metadata.video_library === "object" ? <details className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
           <summary className="cursor-pointer text-sm font-bold text-indigo-900">النص الأصلي ونسخ المنصات</summary>
           {([
-            ["source_original", "النص الأصلي الكامل"],
             ["tiktok_text", "وصف تيك توك الكامل"],
             ["telegram_caption", "تعليق Telegram المقترح"],
           ] as const).map(([key, label]) => <section key={key} className="mt-3 space-y-1">
@@ -686,7 +685,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           </section>)}
           <p className="mt-3 text-xs leading-6 text-indigo-800">نسخ منفصلة للمراجعة. حفظها لا يغيّر تعليق النشر الحالي ولا ينشر شيئاً. تعليمات التحرير محفوظة مع الأصل ولا تضاف تلقائياً إلى نسخ المنصات.</p>
         </details> : null}
-        {Object.keys(artifact.metadata).length > 0 ? <details className="rounded-lg bg-slate-50 p-3 text-xs"><summary className="cursor-pointer font-semibold text-slate-600">تفاصيل تقنية</summary><pre dir="ltr" className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-left">{JSON.stringify(artifact.metadata, null, 2)}</pre></details> : null}
+        
         {status==='DRAFT'?<input aria-label={`ملاحظة مراجعة المخرج ${artifact.id}`} value={drafts[artifact.id]?.review_note ?? artifact.review_note ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [artifact.id]: { ...current[artifact.id], review_note: event.target.value } }))} placeholder="ملاحظة المراجعة أو سبب الرفض" disabled={status !== "DRAFT"} className="w-full rounded-xl border p-3 text-sm"/>:null}
         {status === "DRAFT" ? <div className="flex flex-wrap gap-2">
           {(artifact.content !== null || typeof artifact.metadata.caption === "string") ? <button type="button" onClick={() => save.mutate(artifact.id)} disabled={save.isPending} className="rounded-lg border px-3 py-2 text-sm font-semibold">حفظ التعديل</button> : null}
