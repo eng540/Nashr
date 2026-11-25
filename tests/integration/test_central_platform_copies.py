@@ -14,6 +14,11 @@ async def test_copies_prepare_on_approval_preserve_edits_and_enforce_version_and
         assert (await client.post(f'/api/artifacts/{uid}/approve',json={})).status_code==200
         data=(await client.get(f'/api/artifacts/{uid}/platform-copies')).json()
         assert len(data['items'])==6
+        for copy in data['items']:
+            assert copy['execution_status'] == 'NOT_AUTHORIZED'
+            assert 'لا يربط حساباً' in copy['execution_blockers'][0]
+            assert 'مسار المنصة المنفصل' in copy['execution_blockers'][0]
+            assert 'لا موصل نشر' not in copy['execution_blockers'][0]
         original={row['platform']:row for row in data['items']}
         assert original['telegram']['fields']['description']=='نص كامل لا يُقص'
         youtube=original['youtube']
