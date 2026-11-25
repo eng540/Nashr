@@ -199,3 +199,55 @@ async def test_queue_plan_link_matches_unresolved_failure_then_current_plan_not_
             failed = await session.get(ScheduleItemModel, failed_id)
             failed.status = 'PUBLISHED'
             await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_queue_uses_saved_catalog_labels_and_explicit_artifact_destination_filters():
+    from app.infrastructure.database.models import ArtifactOrganizationModel, DistributionSelectionModel
+    from app.application.distribution_readiness import source_fingerprint
+    token = 'queue-catalog-' + uuid4().hex
+    ids = [await _seed_text_artifact(token + str(i)) for i in range(3)]
+    async with SessionFactory() as session:
+        for i, uid in enumerate(ids):
+            artifact = await session.get(ArtifactModel, UUID(uid))
+            artifact.review_status = 'APPROVED'
+            artifact.artifact_metadata = {'title': 'Old imported title'}
+            if i < 2:
+                session.add(ArtifactOrganizationModel(artifact_id=artifact.id, title='Saved title '+str(i),
+                    series='Series %_'+token, category='Concrete '+token, version=1, updated_at=datetime.now(timezone.utc)))
+            if i == 0:
+                session.add(DistributionSelectionModel(artifact_id=artifact.id, platforms=['instagram'],
+                    source_fingerprint='old-source', saved_at=datetime.now(timezone.utc)))
+            if i == 1:
+                session.add(DistributionSelectionModel(artifact_id=artifact.id, platforms=[],
+                    source_fingerprint=source_fingerprint(artifact), saved_at=datetime.now(timezone.utc)))
+        post = PostModel(knowledge_unit_id=artifact.source_knowledge_unit_id, content=token+' editorial', status='APPROVED')
+        session.add(post)
+        await session.commit()
+        before = [(await session.execute(select(func.count()).select_from(model))).scalar_one()
+                  for model in [PublicationModel, ScheduleModel, DistributionSelectionModel, ArtifactOrganizationModel]]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        async def get(**filters):
+            response = await client.get('/api/publishing-queue', params={'q': token, **filters})
+            assert response.status_code == 200, response.text
+            return response.json()
+        rows = (await get())['items']
+        assert {row['id']:row['title'] for row in rows}[ids[0]] == 'Saved title 0'
+        assert (await get(series='Series %_'+token))['total'] == 2
+        assert (await get(category='Concrete '+token, platform='instagram'))['total'] == 1
+        selected = (await get(platform='instagram'))['items'][0]
+        assert selected['id'] == ids[0] and selected['selection_stale'] is True
+        assert {row['id'] for row in (await get(platform='NONE'))['items']} == set(ids[1:])
+        assert (await get(platform='instagram', origin='POST'))['total'] == 0
+        assert (await get(series='Series '+token))['total'] == 0
+        assert (await get(q='Series %_'+token))['total'] == 2
+        assert (await get(q='Saved title 0'))['total'] == 1
+        assert (await get(series='Series %_'+token, limit=1, offset=1))['total'] == 2
+        assert (await client.get('/api/publishing-queue', params={'platform':'unknown'})).status_code == 422
+    async with SessionFactory() as session:
+        after = [(await session.execute(select(func.count()).select_from(model))).scalar_one()
+                 for model in [PublicationModel, ScheduleModel, DistributionSelectionModel, ArtifactOrganizationModel]]
+        assert before == after
+        artifact = await session.get(ArtifactModel, UUID(ids[0]))
+        assert artifact.artifact_metadata['title'] == 'Old imported title'
+        assert artifact.content == token+'0'
