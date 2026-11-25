@@ -23,9 +23,9 @@ async def original(session, uid):
         raise ValueError('Approved original text or photo and saved Page copy required')
     if source_fingerprint(row) != copy.source_fingerprint or copy.selected_media_id is not None:
         raise ValueError('Changed source or derived media not supported in dormant core')
-    FacebookPagePublisher.validate_message(copy.fields.get('description'), allow_empty=row.kind == 'IMAGE')
-    if copy.fields.get('title') or copy.fields.get('tags') or copy.fields.get('alt_text'):
-        raise ValueError('Only exact Page message supported; never silently discard title, tags or alt text')
+    from app.application.facebook_copy_fields import blockers
+    reasons=blockers(row.kind,copy.fields)
+    if reasons:raise ValueError('; '.join(reasons))
     return row, copy
 
 
