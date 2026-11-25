@@ -208,3 +208,25 @@ Provider constraints checked 2026-11-25:
   documents Page CREATE_CONTENT and pages_* permissions and 30 API-published Reels
   per rolling 24 hours. Provider limits/eligibility still apply at execution.
   Native SCHEDULED is not used; local dispatch preserves current failure semantics.
+
+## YouTube account connector, read-only (2026-11-25)
+
+- Separate Google Web OAuth configuration, encrypted client secret and offline tokens.
+- Exact callback: `/api/connections/youtube/callback`, HTTPS and same host.
+- Only `https://www.googleapis.com/auth/youtube.readonly`, never upload/modify/delete.
+- Google-returned complete channel list, explicit choice, fresh channel identity check before saving. A hand-entered channel ID or old private review draft is not a connection.
+- Browser/session/config-bound one-use ten-minute OAuth flow. Existing connection remains until successful explicit selection. Expired temporary credentials are cleaned up.
+- Status GET does not contact Google. Explicit verify may refresh access credentials, preserving rotated refresh tokens and the selected channel. Missing/changed channel never switches silently.
+- External Testing is explicitly recorded and caps refresh authorization at seven days from grant, never extended by refresh. Provider's earlier expiry and revocation also win. Published/Internal is not proof of indefinite refresh lifetime.
+- Disconnect deletes local credentials and pending flows only, no remote revocation and no content deletion.
+- No upload, execution or scheduling route added. Dormant resumable-upload code remains isolated, independent rights/privacy/audience review remains required.
+- No live Google account/app or channel proof from synthetic tests. Cloud project/API/consent configuration and owner channel choice remain prerequisites.
+
+Official sources checked 2026-11-25:
+- https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps
+- https://developers.google.com/identity/protocols/oauth2
+- https://developers.google.com/youtube/v3/docs/channels/list
+- https://developers.google.com/youtube/data/reference/rest/v3/videos/insert
+- https://developers.google.com/youtube/data/guides/quota_and_compliance_audits
+
+Current Google pages no longer impose the former unverified-project private-only upload restriction. Do not use that stale rule as an account blocker. This does not activate uploads or waive OAuth/account requirements.

@@ -5,6 +5,7 @@ test('direct Instagram settings and selection stay independent and private',asyn
  const account={account_id:'789',username:'creator',app_scoped_id:'456'};
  await page.route('**/api/connections**',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
  if(p==='/api/connections')return route.fulfill({json:{telegram:{credential_storage_ready:true,items:[],legacy_imported:false},platforms:[]}});
+ if(p==='/api/connections/youtube'&&route.request().method()==='GET')return route.fulfill({json:{configured:false,connection:null,pending:null}});
  if(p==='/api/connections/tiktok')return route.fulfill({json:{configured:false,connection:null,pending:null}});
  if(p==='/api/connections/tiktok/requirements')return route.fulfill({json:{reviewed_on:'2026-11-24',modes:[],media_requirements:[],sources:[]}});
  if(p==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
