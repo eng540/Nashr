@@ -125,8 +125,9 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   const [materialIds, setMaterialIds] = useState<string[]>(() => pendingRequestFromStorage()?.knowledge_unit_ids ?? []);
   const linkedPostId=searchParams.get("post_id");
   const linkedPostTarget=useRef<HTMLElement>(null);
-  useEffect(()=>{if(!linkedPostId)return;const frame=requestAnimationFrame(()=>{const target=linkedPostTarget.current;if(target){target.focus({preventScroll:true});window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-96),behavior:"instant"});}});return()=>cancelAnimationFrame(frame);},[linkedPostId]);
+
   const linkedPost=useQuery({queryKey:["production-linked-post",linkedPostId],queryFn:()=>postsApi.get(linkedPostId!),enabled:Boolean(linkedPostId),retry:false});
+  useEffect(()=>{if(!linkedPostId||!linkedPost.data)return;const frame=requestAnimationFrame(()=>{const target=linkedPostTarget.current;if(target){target.focus({preventScroll:true});window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-96),behavior:"instant"});}});return()=>cancelAnimationFrame(frame);},[linkedPostId,linkedPost.data]);
   const [jobId, setJobId] = useState<string | null>(() => searchParams.get("job_id"));
   const [message, setMessage] = useState("");
   const [productionStep, setProductionStep] = useState<1 | 2 | 3>(1);
@@ -335,8 +336,9 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
         <Link to="/publishing" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">مساحة النشر</Link>
       </>}
     />
-    {workspaceView === "review" ? <WorkspaceProgress/>:null}
     {workspaceView === "review" && linkedPostId && <section ref={linkedPostTarget} tabIndex={-1} aria-label="المنشور المرتبط بمهمة الإنتاج" className="space-y-3 rounded-2xl border bg-white p-5"><h3 className="font-bold">المنشور المرتبط بمهمة الإنتاج</h3>{linkedPost.isPending?<p role="status">جارٍ قراءة المنشور المحفوظ...</p>:linkedPost.isError?<div role="alert">تعذر قراءة المنشور المرتبط.<button className="mr-2 underline" onClick={()=>void linkedPost.refetch()}>إعادة قراءة المنشور المرتبط</button></div>:linkedPost.data?<><strong className="block">{linkedPost.data.title}</strong><p className="text-xs">{linkedPost.data.source_title} · {linkedPost.data.status}</p><p className="whitespace-pre-wrap text-sm leading-7">{linkedPost.data.content}</p><button className="rounded-lg border px-4 py-2" onClick={()=>{const post=linkedPost.data;save.reset();review.reset();setEditing(post.post_id);setContent(post.content);setSavedContent(post.content);setReviewNote(post.review_note??"");}}>فتح مراجعة المنشور</button><p className="text-xs text-slate-500">قراءة المنشور لا تحفظ أو تعتمد أو تنشر شيئاً.</p></>:null}</section>}
+    {workspaceView === "review" ? <WorkspaceProgress/>:null}
+
     {workspaceView === "review" ? <GenericArtifactReviewPanel showDesignCard={false} /> : null}
 
     {workspaceView !== "review" ? <nav aria-label="أقسام الإنتاج" className="grid gap-2 rounded-2xl border bg-white p-2 sm:grid-cols-3">
