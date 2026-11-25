@@ -27,7 +27,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 SESSION_COOKIE = "nashr_session"
 SESSION_MAX_AGE_SECONDS = 7 * 24 * 3600
-_OPEN_PATHS = frozenset({"/health", "/login", "/api/auth/login", "/tiktokQDsoHAsAIEswE2q0vxreoi4iWCJbhDsS.txt"})
+_OPEN_PATHS = frozenset({"/health", "/terms", "/privacy", "/login", "/api/auth/login", "/tiktokQDsoHAsAIEswE2q0vxreoi4iWCJbhDsS.txt"})
 
 LOGIN_PAGE_HTML = """<!DOCTYPE html>
 <html lang="ar" dir="rtl">
