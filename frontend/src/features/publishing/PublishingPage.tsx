@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
 import { genericArtifactsApi, type PlatformVariantDraft } from "../../shared/api/artifactsApi";
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
@@ -29,6 +29,9 @@ export function PublishingPage() {
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [visualArtifactSelections, setVisualArtifactSelections] = useState<Record<string, string>>({});
   const [visualPreviewUrls, setVisualPreviewUrls] = useState<Record<string, string>>({});
+  const detailRequest=useRef(0);
+  const [detailPending,setDetailPending]=useState<string|null>(null);
+  const [detailError,setDetailError]=useState<{id:string;message:string}|null>(null);
   const [detail, setDetail] = useState<ScheduleDetail | null>(null);
   const [itemTimes, setItemTimes] = useState<Record<string,string>>({});
   const [readyQuery, setReadyQuery] = useState("");
@@ -173,19 +176,21 @@ export function PublishingPage() {
     },
   });
   const openDetail = async (id: string) => {
+    const request=++detailRequest.current;
+    setDetail(null);setDetailError(null);setDetailPending(id);setSection("plans");
     try {
-      setDetail(await schedulesApi.get(id));
-      setSection("plans");
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "تعذر تحميل الخطة.");
+      const value=await schedulesApi.get(id);
+      if(request===detailRequest.current)setDetail(value);
+    } catch (error) {
+      if(request===detailRequest.current)setDetailError({id,message:error instanceof Error?error.message:"تعذر تحميل الخطة."});
+    } finally {
+      if(request===detailRequest.current)setDetailPending(null);
     }
   };
   const linkedScheduleId=searchParams.get('schedule_id');
   useEffect(()=>{
-    if(!linkedScheduleId)return;
-    let active=true;
-    void schedulesApi.get(linkedScheduleId).then(value=>{if(active){setDetail(value);setSection('plans');}}).catch(error=>{if(active)setMessage(error instanceof Error?error.message:'تعذر تحميل الخطة.');});
-    return ()=>{active=false;};
+    if(linkedScheduleId)void openDetail(linkedScheduleId);
+    return ()=>{detailRequest.current++;};
   },[linkedScheduleId]);
   const setSelection = (id: string, checked: boolean) => {
     const next = toggleSelection(selectedIds, id, checked);
@@ -253,7 +258,7 @@ export function PublishingPage() {
 
   const switchSection = (next: Section) => {
     setSection(next);
-    if (next !== "plans") setDetail(null);
+    if (next !== "plans") {detailRequest.current++;setDetail(null);setDetailPending(null);setDetailError(null);}
   };
 
 
@@ -363,6 +368,8 @@ export function PublishingPage() {
         </section>
       )}
 
+      {section === "plans" && detailPending?<p role="status" className="rounded-xl border bg-white p-4">جارٍ تحميل تفاصيل الخطة المختارة. لا تتاح إجراءاتها حتى اكتمال القراءة.</p>:null}
+      {section === "plans" && detailError?<div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4"><p>تعذر تحميل تفاصيل الخطة المختارة: {detailError.message}</p><button type="button" onClick={()=>void openDetail(detailError.id)} className="mt-2 rounded-lg border bg-white px-3 py-2">إعادة تحميل تفاصيل الخطة</button></div>:null}
       {section === "plans" && detail && (
         <section className="rounded-2xl border-2 border-indigo-200 bg-white p-5 shadow-sm" id="selected-plan-detail" tabIndex={-1} data-testid="schedule-detail" style={{scrollMarginTop:90}}>
           <div className="flex flex-wrap items-start justify-between gap-3">
