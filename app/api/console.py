@@ -8,6 +8,7 @@ NASHR_CONSOLE_HTML = '''<!DOCTYPE html>
 <style>
   *{box-sizing:border-box;min-width:0}html,body{width:100%;margin:0}select,input,button{max-width:100%}select{width:100%}p,h1,h2,h3{overflow-wrap:anywhere}
   .embedded header,.embedded section[aria-label="رحلة العمل"]{display:none}.embedded main{padding:12px}
+  @media(max-width:420px){.embedded #source-select{flex-basis:100%;width:100%}.embedded #source-select+button{flex-basis:100%}.embedded div:has(>#source-select){flex-wrap:wrap}.embedded #source-btn{width:100%}}
   body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
   .step{transition:all .2s ease}.step.active{border-color:#4f46e5;background:#eef2ff}.step.done{border-color:#10b981;background:#ecfdf5}
   .drop-zone{transition:all .2s ease}.drop-zone.dragging,.drop-zone:focus-within{border-color:#4f46e5;background:#eef2ff}
