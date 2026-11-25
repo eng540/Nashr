@@ -6,8 +6,9 @@ import { genericArtifactsApi, type PlatformVariantDraft } from "../../shared/api
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime, dateInTimezone, scheduleTimePreview } from "../../shared/utils/timezone";
-import { TelegramPreview } from "../post-bank/PostBankPage";
+import { TelegramPreview } from "../../shared/components/TelegramPreview";
 
+import {get} from "../../shared/api/client";
 import {PlatformOperations} from './PlatformOperations';
 import {UnifiedPublishingQueue} from "./UnifiedPublishingQueue";
 import { PageHeader } from "../../shared/components/ui";
@@ -70,6 +71,7 @@ export function PublishingPage() {
     queryFn: () => postsApi.filterOptions(readySourceId || undefined, "ELIGIBLE"),
   });
   const schedules = useQuery({ queryKey: ["publishing", "schedules",planPage,planQuery,planStatus,searchParams.has("failures")], queryFn: ()=>schedulesApi.list({limit:PAGE_SIZE,offset:planPage*PAGE_SIZE,query:planQuery.trim(),status:planStatus,failedOnly:searchParams.has("failures")}) });
+  const operationsSummary=useQuery({queryKey:['platform-operation-summary'],queryFn:()=>get<{counts:{waiting:number;published:number;attention:number;total:number}}>('/api/platform-operations?limit=1'),retry:false});
   const upcoming = useQuery({ queryKey: ["publishing", "upcoming"], queryFn: schedulesApi.upcoming });
   const platformVariants = useQuery({ queryKey: ["publishing", "platform-variants"], queryFn: genericArtifactsApi.listPlatformVariants });
   const calendar = useQuery({
@@ -265,12 +267,18 @@ export function PublishingPage() {
         actions={<Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">العودة إلى بنك المحتوى</Link>}
       />
 
-      <div className="workspace-stats" aria-label="ملخص النشر"><div className="workspace-stat"><small>خطط النشر</small><strong>{schedules.isError?"—":schedules.data?.total??schedules.data?.items.length??"—"}</strong><span>مطابقة لبحث الخطط ومرشحاتها</span></div><div className="workspace-stat"><small>القادم</small><strong>{upcoming.isError?"—":upcoming.data?.items.length??"—"}</strong><span>عناصر في القائمة القادمة</span></div><div className="workspace-stat"><small>نسخ المنصات</small><strong>{platformVariants.isError?"—":platformVariants.data?.length??"—"}</strong><span>تجهيز يدوي، لا نشر آلي</span></div></div>
+      <div className="workspace-stats publishing-stats" aria-label="ملخص النشر">
+        <button className="workspace-stat" onClick={()=>switchSection('plans')}><small>عمليات Meta القادمة أو الجارية</small><strong>{operationsSummary.data?.counts?.waiting??'—'}</strong><span>Instagram وFacebook · قرارات معتمدة</span></button>
+        <button className="workspace-stat" onClick={()=>switchSection('plans')}><small>نشر Meta المؤكد</small><strong>{operationsSummary.data?.counts?.published??'—'}</strong><span>نتائج محفوظة من المنصة</span></button>
+        <button className="workspace-stat" onClick={()=>switchSection('plans')}><small>عمليات تحتاج مراجعة</small><strong>{operationsSummary.data?.counts?.attention??'—'}</strong><span>لا نعيد إرسال نتيجة غير محسومة</span></button>
+        <button className="workspace-stat" onClick={()=>switchSection('calendar')}><small>قادم خطط Telegram</small><strong>{upcoming.isError?'—':upcoming.data?.items.length??'—'}</strong><span>قائمة منفصلة، لا تشمل Meta</span></button>
+      </div>
+      {operationsSummary.isError?<p role="alert" className="service-alert">تعذر تحميل ملخص Meta. لا نستنتج أن العدد صفر. <button onClick={()=>void operationsSummary.refetch()}>إعادة المحاولة</button></p>:null}
       <nav aria-label="أقسام مساحة النشر" className="workspace-tabs">
         {([
           ["ready", "المحتوى والتجهيز", "↗", "قائمة موحدة، ثم أدوات جدولة النصوص"],
           ["plans", "خطط النشر", schedules.isError?"—":schedules.data?.total ?? schedules.data?.items.length ?? "—", "الخطط المحفوظة وحالاتها"],
-          ["calendar", "التقويم", upcoming.data?.items.length ?? "—", "القادم وجدول اليوم"],
+          ["calendar", "تقويم Telegram", upcoming.data?.items.length ?? "—", "القادم وجدول اليوم"],
           ["platforms", "مسودات المنصات", platformVariants.data?.length ?? "—", "تحضير يدوي فقط، بلا نشر آلي"],
         ] as const).map(([key, label, count, hint]) => (
           <button key={key} type="button" onClick={() => switchSection(key)} aria-pressed={section===key} className="text-right">
@@ -377,7 +385,7 @@ export function PublishingPage() {
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-xl font-bold">التقويم</h3><p className="mt-1 text-sm text-slate-500">راجع ما سيُنشر حسب اليوم قبل التنفيذ.</p></div><label className="text-sm font-semibold">اليوم<input aria-label="تاريخ التقويم" type="date" value={calendarDate} onChange={(e) => setCalendarDate(e.target.value)} className="mr-2 rounded-lg border p-2 font-normal"/></label></div>
           </div>
           <form className="flex flex-wrap items-end gap-3 rounded-2xl border bg-white p-5 text-sm" onSubmit={e=>{e.preventDefault();try{dateInTimezone(calendarTimezoneInput.trim());setCalendarTimezone(calendarTimezoneInput.trim());setCalendarZoneError('');}catch{setCalendarZoneError('منطقة زمنية غير صالحة. استخدم اسماً مثل Asia/Riyadh.');}}}><label className="min-w-0">منطقة عرض تقويم اليوم<input aria-label="منطقة عرض تقويم اليوم" dir="ltr" className="mt-1 block w-full rounded border p-2" value={calendarTimezoneInput} onChange={e=>setCalendarTimezoneInput(e.target.value)}/></label><button className="rounded border p-2" type="submit">تطبيق منطقة العرض</button><button className="rounded border p-2" type="button" onClick={()=>setCalendarDate(dateInTimezone(calendarTimezone))}>اليوم في منطقة العرض</button><p className="w-full text-xs text-slate-500">تغيير العرض لا يغير منطقة أي خطة أو مواعيدها. القادم يعرض كل خطة بمنطقتها المحفوظة.</p>{calendarZoneError?<p role="alert">{calendarZoneError}</p>:null}</form>
-          <div className="rounded-2xl border bg-white p-5 shadow-sm"><h3 className="font-bold">القادم 7 أيام</h3>{upcoming.isError?<p role="alert" className="mt-4 text-rose-700">تعذر تحميل القادم. أعد المحاولة، لا نستنتج أن القائمة فارغة.</p>:!(upcoming.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد عناصر مجدولة في الأيام القادمة.</p> : <div className="mt-4 space-y-2">{upcoming.data!.items.map((i) => <button key={i.id} type="button" onClick={() => void openDetail(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span className="text-xs text-slate-500">{new Date(i.scheduled_at).toLocaleString("ar", { timeZone: i.timezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}</div>
+          <div className="rounded-2xl border bg-white p-5 shadow-sm"><h3 className="font-bold">قادم خطط Telegram خلال 7 أيام</h3>{upcoming.isError?<p role="alert" className="mt-4 text-rose-700">تعذر تحميل القادم. أعد المحاولة، لا نستنتج أن القائمة فارغة.</p>:!(upcoming.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد عناصر Telegram في هذه القائمة. عمليات Instagram وFacebook تظهر في خطط النشر.</p> : <div className="mt-4 space-y-2">{upcoming.data!.items.map((i) => <button key={i.id} type="button" onClick={() => void openDetail(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span className="text-xs text-slate-500">{new Date(i.scheduled_at).toLocaleString("ar", { timeZone: i.timezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}</div>
           <div className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">تقويم اليوم</h3><span className="text-xs text-slate-500">{calendar.data?.timezone ?? calendarTimezone}</span></div>{calendar.isError?<p role="alert" className="mt-4 text-rose-700">تعذر تحميل التقويم. أعد المحاولة، لا نستنتج عدم وجود مواد.</p>:!(calendar.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد منشورات مجدولة لهذا اليوم.</p> : <div className="mt-4 space-y-2">{calendar.data!.items.map((i) => <button key={i.id} type="button" onClick={() => void openDetail(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span>{new Date(i.scheduled_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit", timeZone: calendar.data?.timezone ?? calendarTimezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}</div>
         </section>
       )}
