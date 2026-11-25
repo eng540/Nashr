@@ -59,6 +59,9 @@ async def validate(s,j,*,approval=False):
     f=await facts(s,j.artifact_id)
     if any(j.runtime_snapshot.get(k)!=v for k,v in f.items()):
         raise ValueError('تغير الأصل أو نسخة Facebook أو ربط الصفحة. راجع قراراً جديداً.')
+    conflicting=(await s.execute(select(Job.id).where(Job.artifact_id==j.artifact_id,Job.id!=j.id,Job.runtime_snapshot.is_not(None),Job.state.in_(['APPROVED','SENDING','OUTCOME_UNKNOWN'])))).first()
+    if conflicting:
+        raise ValueError('قرار آخر نشط أو إرسال غير محسوم لهذه المادة. لا نشر متوازٍ أو إعادة ضمنية.')
     if not approval and (not j.evidence_ref or not j.approved_until or j.approved_until<=now()):
         raise ValueError('انتهى قرار التنفيذ أو لا توجد موافقة صريحة.')
 
