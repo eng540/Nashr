@@ -9,6 +9,8 @@ import { productionJobsApi, type SourceSummary } from "../../shared/api/producti
 function sourceStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     READY: "جاهز",
+    EXTRACTED: "استُخرجت المواد",
+    EXTRACTING: "جارٍ استخراج المواد",
     STORED: "محفوظ، لم يبدأ التحليل",
     PROCESSING: "قيد المعالجة",
     PENDING: "قيد الانتظار",
