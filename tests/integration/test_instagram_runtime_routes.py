@@ -84,4 +84,6 @@ async def test_known_published_reconciles_after_decision_expiry_without_mutation
     monkeypatch.setattr(decisions,'validate',forbidden)
     monkeypatch.setattr(dispatch,'run',forbidden);monkeypatch.setattr(dispatch,'resume_media',forbidden)
     monkeypatch.setattr(execution,'verified_provider',provider);monkeypatch.setattr(dispatch,'reconcile',reconcile)
+    async def refresh(*a):pass
+    monkeypatch.setattr(execution,'refresh_due_binding',refresh)
     await runtime.process_approved();assert len(seen)==1
