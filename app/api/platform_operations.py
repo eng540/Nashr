@@ -18,12 +18,18 @@ async def operations(request:Request,limit:int=Query(20,ge=1,le=100),offset:int=
     ft=select(FacebookText.id,FacebookText.artifact_id,case((FacebookText.kind=='IMAGE','facebook_photo'),else_='facebook_text'),FacebookText.due_at,FacebookText.runtime_snapshot['timezone'].astext,FacebookText.state,FacebookText.state,FacebookText.runtime_snapshot['connection']['page_name'].astext,FacebookText.permalink,FacebookText.updated_at).where(FacebookText.runtime_snapshot.is_not(None),FacebookText.evidence_ref.op('~')(EVIDENCE))
     view=union_all(ig,fb,ft).subquery()
     total=await session.scalar(select(func.count()).select_from(view))
-    rows=(await session.execute(select(view,ArtifactModel.artifact_metadata.label('metadata')).join(ArtifactModel,ArtifactModel.id==view.c.artifact_id).order_by(view.c.updated_at.desc(),view.c.id).offset(offset).limit(limit))).mappings().all()
+    grouped=(await session.execute(select(view.c.state,func.count()).group_by(view.c.state))).all()
+    counts=dict(waiting=0,published=0,attention=0,total=total)
+    for state,n in grouped:
+        if state in {'APPROVED','PENDING','WAITING_MEDIA','CLAIMED','PROCESSING','POST_ID_KNOWN','RESULT_KNOWN','SENDING','FINISH_ACCEPTED'}:counts['waiting']+=n
+        elif state in {'PUBLISHED','PUBLISHED_AT_LAST_CHECK'}:counts['published']+=n
+        elif state in {'BLOCKED','FAILED','RESULT_CHANGED','OUTCOME_UNKNOWN','RECONCILE_ONLY','NOT_CONFIRMED_PUBLISHED'}:counts['attention']+=n
+    rows=(await session.execute(select(view,ArtifactModel.artifact_metadata.label('metadata'),ArtifactModel.content.label('content')).join(ArtifactModel,ArtifactModel.id==view.c.artifact_id).order_by(view.c.updated_at.desc(),view.c.id).offset(offset).limit(limit))).mappings().all()
     items=[]
     import re
     for r in rows:
         link=r['permalink'] or ''
         pattern=r'^https://(www\.)?instagram\.com/(p|reel)/[A-Za-z0-9_-]+/?$' if r['platform']=='instagram' else r'^https://(www\.|m\.)?facebook\.com/(reel/[0-9]+/?|[0-9]+/videos/[0-9]+/?)$'
         if r['platform'] in {'facebook_text','facebook_photo'}:pattern=r'^https://(www\.)?facebook\.com/[^\s]+$'
-        items.append(dict(id=str(r['id']),artifact_id=str(r['artifact_id']),platform=r['platform'],due_at=r['due_at'].isoformat() if r['due_at'] else None,timezone=r['timezone'],state=r['state'],execution_state=r['execution_state'],destination=r['destination'],title=(r['metadata'] or {}).get('title') or 'مادة محفوظة',permalink=link if r['execution_state'] in {'PUBLISHED','PUBLISHED_AT_LAST_CHECK'} and re.fullmatch(pattern,link) else None))
-    return JSONResponse(dict(items=items,total=total,limit=limit,offset=offset),headers=HEADERS)
+        items.append(dict(id=str(r['id']),artifact_id=str(r['artifact_id']),platform=r['platform'],due_at=r['due_at'].isoformat() if r['due_at'] else None,timezone=r['timezone'],state=r['state'],execution_state=r['execution_state'],destination=r['destination'],title=str((r['metadata'] or {}).get('title') or (r['metadata'] or {}).get('caption') or r['content'] or 'مادة '+str(r['artifact_id'])[:8]).split('\n')[0][:120],permalink=link if r['execution_state'] in {'PUBLISHED','PUBLISHED_AT_LAST_CHECK'} and re.fullmatch(pattern,link) else None))
+    return JSONResponse(dict(items=items,total=total,limit=limit,offset=offset,counts=counts),headers=HEADERS)
