@@ -94,7 +94,7 @@ export const genericArtifactsApi = {
   telegramBatchPreview(ids:string[]):Promise<TelegramBatchPreview> { return post('/api/artifacts/telegram-batch-preview',{artifact_ids:ids}); },
   readiness(id:string):Promise<DistributionReadiness> { return get(`/api/artifacts/${id}/distribution-readiness`); },
   saveDistribution(input:{artifact_ids:string[];platforms:string[];fingerprints:Record<string,string>;mode?:'replace'|'add'|'remove';selection_versions?:Record<string,string>}):Promise<{saved:number;items:DistributionReadiness[]}> { return post('/api/artifacts/distribution-selection',input); },
-  publications(id:string):Promise<{items:ArtifactPublicationRecord[];total:number}> { return get(`/api/artifacts/${id}/publications`); },
+  publications(id:string):Promise<{items:ArtifactPublicationRecord[];total:number;connector_items?:Array<{id:string;record_type:string;platform:string;destination:string;content:string;status:string;external_id:string|null;permalink:string|null;confirmed:boolean;updated_at:string}>}> { return get(`/api/artifacts/${id}/publications`); },
   liveLocations(id: string): Promise<LiveLocationRecord[]> { return get(`/api/artifacts/${id}/live-locations`); },
   locationOperation(publicationId: string, input: {action: string; latitude?: number; longitude?: number}): Promise<LiveLocationOperation> { return post(`/api/artifacts/live-locations/${publicationId}/operations`, input); },
   cancelLocationOperation(id: string): Promise<LiveLocationOperation> { return post(`/api/artifacts/live-location-operations/${id}/cancel`); },
