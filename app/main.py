@@ -222,7 +222,7 @@ def create_app() -> FastAPI:
     async def tiktok_sandbox_domain_verification():
         from pathlib import Path
         from fastapi.responses import Response
-        proof = (Path(__file__).parent / "static" / "tiktokePPmBzm3Ej1QWBVM7rVXy8eiIbCCGpJj.txt").read_bytes()
+        proof = (Path(__file__).parent / "static" / "tiktokePPmBzm3Ej1QWBVM7rVXy8eiIbCCGpJj.txt").read_bytes().rstrip(b"\n")
         return Response(proof, media_type="text/plain")
 
     application.include_router(auth_router)
