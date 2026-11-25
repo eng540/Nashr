@@ -1,3 +1,4 @@
+import {NativeTelegramFields,blankNative,nativeError} from './NativeTelegramFields';
 import {BatchPlatformCopiesPanel} from './BatchPlatformCopiesPanel';
 import { ApprovedBatchHandoff } from "./ApprovedBatchHandoff";
 import { BatchReviewPanel } from "./BatchReviewPanel";
@@ -335,7 +336,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   });
   const createManual = useMutation({
     mutationFn: () => genericArtifactsApi.manualDraft({ kind: manualKind === "QUIZ" ? "QUIZ" : "TEXT", title: manualTitle, content: manualContent,
-      ...(NATIVE_TEMPLATES[manualKind] ? { native: JSON.parse(nativeJson) as Record<string, unknown> } : {}),
+      ...(NATIVE_TEMPLATES[manualKind] ? { native: (()=>{const error=nativeError(nativeJson);if(error)throw new Error(error);const parsed=JSON.parse(nativeJson);if(parsed.type!==manualKind)throw new Error("نوع البيانات لا يطابق نوع المسودة المختار.");if(parsed.last_name==="")delete parsed.last_name;return parsed;})() as Record<string, unknown> } : {}),
       ...(manualKind === "QUIZ" ? { quiz: { question: manualContent, options: quizOptions.split("\n").map(v => v.trim()).filter(Boolean), correct_option_id: quizAnswer } } : {}) }),
     onSuccess: () => { setStatus("DRAFT"); setManualTitle(""); setManualContent(""); refresh(); },
   });
@@ -749,12 +750,13 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       <div className="mt-3 space-y-3">
     <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
       <h3 id="library-task-manual" className="scroll-mt-24 font-bold">نص أو اختبار تفاعلي</h3>
-      <select aria-label="نوع المسودة اليدوية" value={manualKind} onChange={e => { setManualKind(e.target.value); if (NATIVE_TEMPLATES[e.target.value]) setNativeJson(JSON.stringify(NATIVE_TEMPLATES[e.target.value], null, 2)); }} className="w-full rounded-lg border p-2"><option value="TEXT">نص</option><option value="QUIZ">اختبار</option><option value="POLL">استطلاع</option><option value="LOCATION">موقع</option><option value="LIVE_LOCATION">موقع حي محدود المدة</option><option value="VENUE">مكان</option><option value="CONTACT">جهة اتصال</option><option value="DICE">نرد تفاعلي</option></select>
+      <select aria-label="نوع المسودة اليدوية" value={manualKind} onChange={e => { setManualKind(e.target.value); if (NATIVE_TEMPLATES[e.target.value]) setNativeJson(JSON.stringify(blankNative(e.target.value), null, 2)); }} className="w-full rounded-lg border p-2"><option value="TEXT">نص</option><option value="QUIZ">اختبار</option><option value="POLL">استطلاع</option><option value="LOCATION">موقع</option><option value="LIVE_LOCATION">موقع حي محدود المدة</option><option value="VENUE">مكان</option><option value="CONTACT">جهة اتصال</option><option value="DICE">نرد تفاعلي</option></select>
       <input aria-label="عنوان المسودة اليدوية" value={manualTitle} onChange={e => setManualTitle(e.target.value)} placeholder="عنوان داخلي" className="w-full rounded-lg border p-2" />
       <textarea aria-label="نص المسودة اليدوية" value={manualContent} onChange={e => setManualContent(e.target.value)} placeholder={manualKind === "QUIZ" ? "سؤال الاختبار" : "النص الكامل"} className="min-h-32 w-full rounded-lg border p-2" />
-      {NATIVE_TEMPLATES[manualKind] ? <label className="block text-sm">البيانات المنظمة(JSON)،عدّل القيم قبل الحفظ<textarea aria-label="بيانات Telegram المنظمة" value={nativeJson} onChange={e => setNativeJson(e.target.value)} dir="ltr" className="min-h-48 w-full rounded-lg border p-3 font-mono text-xs" /></label> : null}
+      {NATIVE_TEMPLATES[manualKind] ? <p className="text-sm leading-7">العنوان والنص أعلاه وصف داخلي للمراجعة، وليس رسالة إضافية. تفاصيل Telegram أدناه هي المحتوى الذي سيُراجع للإرسال.</p> : null}
+      {NATIVE_TEMPLATES[manualKind] ? <NativeTelegramFields key={manualKind} kind={manualKind} value={nativeJson} onChange={setNativeJson}/> : null}
       {manualKind === "QUIZ" ? <><textarea aria-label="خيارات الاختبار" value={quizOptions} onChange={e => setQuizOptions(e.target.value)} placeholder="كل خيار في سطر" className="w-full rounded-lg border p-2" /><label className="block">رقم الإجابة الصحيحة بدءاً من1<input aria-label="رقم الإجابة الصحيحة" type="number" min="1" value={quizAnswer + 1} onChange={e => setQuizAnswer(Number(e.target.value) - 1)} className="mx-2 rounded border p-2" /></label></> : null}
-      <button type="button" onClick={() => createManual.mutate()} disabled={!manualTitle.trim() || !manualContent.trim() || createManual.isPending} className="rounded-lg bg-indigo-700 px-3 py-2 text-white">حفظ مسودة للمراجعة</button>
+      <button type="button" onClick={() => createManual.mutate()} disabled={!manualTitle.trim() || !manualContent.trim() || Boolean(NATIVE_TEMPLATES[manualKind]&&nativeError(nativeJson)) || createManual.isPending} className="rounded-lg bg-indigo-700 px-3 py-2 text-white">حفظ مسودة للمراجعة</button>
       {createManual.isError ? <p role="alert" className="text-rose-700">{createManual.error.message}</p> : null}
       {createManual.isSuccess ? <p role="status">حُفظت المسودة،لا نشر ولا اعتماد تلقائي.</p> : null}
       <h3 id="library-task-upload" className="scroll-mt-24 border-t pt-4 font-bold">بنك الوسائط الجاهزة</h3>
@@ -807,4 +809,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-    }
+              }
