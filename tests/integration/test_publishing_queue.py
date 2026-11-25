@@ -79,3 +79,123 @@ async def test_queue_reports_failed_plan_and_stale_selection_without_preparing_m
         assert row['selected_platforms']==['telegram'];assert row['prepared_copies']==6
         assert row['fields_validated']==0
         assert (await c.get('/api/publishing-queue',params={'q':token,'state':'PUBLISHED'})).json()['total']==0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('origin', ['POST', 'ARTIFACT'])
+async def test_queue_failed_attempt_is_superseded_only_by_later_confirmed_same_target(origin):
+    from datetime import timedelta
+    token = 'queue-recovery-' + uuid4().hex
+    uid = await _seed_text_artifact(token)
+    now = datetime.now(timezone.utc)
+    async with SessionFactory() as session:
+        artifact = await session.get(ArtifactModel, UUID(uid))
+        artifact.review_status = 'APPROVED'
+        ref = {'artifact_id': artifact.id}
+        if origin == 'POST':
+            post = PostModel(knowledge_unit_id=artifact.source_knowledge_unit_id, content=token, status='APPROVED')
+            session.add(post)
+            await session.flush()
+            ref = {'post_id': post.id}
+        common = dict(knowledge_unit_id=artifact.source_knowledge_unit_id, content=token, platform='telegram', **ref)
+        failure = PublicationModel(**common, destination='channel-a', status='FAILED', created_at=now)
+        success = PublicationModel(**common, destination='channel-b', status='PUBLISHED', external_id='confirmed', created_at=now + timedelta(seconds=1))
+        session.add_all([failure, success])
+        await session.commit()
+        success_id = success.id
+        failure_id = failure.id
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        async def get():
+            return (await client.get('/api/publishing-queue', params={'q': token, 'origin': origin})).json()['items'][0]
+        assert (await get())['state'] == 'ATTENTION'
+        if origin == 'POST':
+            # Editorial posts retry the same unique target record in place.
+            async with SessionFactory() as session:
+                failure = await session.get(PublicationModel, failure_id)
+                failure.status = 'PUBLISHED'
+                failure.external_id = 'recovered-in-place'
+                await session.commit()
+            assert (await get())['state'] == 'PUBLISHED'
+            return
+        async with SessionFactory() as session:
+            success = await session.get(PublicationModel, success_id)
+            success.destination = 'channel-a'
+            success.external_id = None
+            await session.commit()
+        assert (await get())['state'] == 'ATTENTION'
+        async with SessionFactory() as session:
+            success = await session.get(PublicationModel, success_id)
+            success.external_id = 'confirmed'
+            success.created_at = now - timedelta(seconds=1)
+            await session.commit()
+        assert (await get())['state'] == 'ATTENTION'
+        async with SessionFactory() as session:
+            success = await session.get(PublicationModel, success_id)
+            success.published_at = now + timedelta(seconds=2)
+            success.content = token + ' changed copy'
+            await session.commit()
+        assert (await get())['state'] == 'ATTENTION'
+        async with SessionFactory() as session:
+            success = await session.get(PublicationModel, success_id)
+            success.content = token
+            await session.commit()
+        assert (await get())['state'] == 'PUBLISHED'
+        assert (await client.get('/api/publishing-queue', params={'q': token, 'origin': origin, 'state': 'ATTENTION'})).json()['total'] == 0
+        async with SessionFactory() as session:
+            session.add(PublicationModel(**common, destination='channel-a', status='FAILED', created_at=now + timedelta(seconds=3)))
+            await session.commit()
+        assert (await get())['state'] == 'ATTENTION'
+
+
+@pytest.mark.asyncio
+async def test_queue_plan_link_matches_unresolved_failure_then_current_plan_not_newer_cancelled():
+    from datetime import timedelta
+    token = 'queue-plan-link-' + uuid4().hex
+    uid = await _seed_text_artifact(token)
+    now = datetime.now(timezone.utc)
+    async with SessionFactory() as session:
+        artifact = await session.get(ArtifactModel, UUID(uid))
+        artifact.review_status = 'APPROVED'
+        plans = [ScheduleModel(name=token+str(i), status=status, timezone='Asia/Riyadh', created_at=now+timedelta(seconds=i))
+                 for i, status in enumerate(['PAUSED', 'ACTIVE', 'CANCELLED'])]
+        session.add_all(plans)
+        await session.flush()
+        failed = ScheduleItemModel(schedule_id=plans[0].id, artifact_id=artifact.id, position=1, scheduled_at=now, status='FAILED')
+        session.add(failed)
+        session.add_all([ScheduleItemModel(schedule_id=plan.id, artifact_id=artifact.id, position=1, scheduled_at=now, status='PENDING') for plan in plans[1:]])
+        publication = PublicationModel(knowledge_unit_id=artifact.source_knowledge_unit_id, artifact_id=artifact.id,
+            platform='telegram', destination='test', content=token, status='PUBLISHED', external_id='confirmed')
+        session.add(publication)
+        await session.commit()
+        plan_ids = [str(plan.id) for plan in plans]
+        failed_id, publication_id = failed.id, publication.id
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        async def get():
+            return (await client.get('/api/publishing-queue', params={'q': token})).json()['items'][0]
+        row = await get()
+        assert (row['state'], row['latest_plan_id'], row['plan_link_reason']) == ('ATTENTION', plan_ids[0], 'ATTENTION')
+        async with SessionFactory() as session:
+            failed = await session.get(ScheduleItemModel, failed_id)
+            failed.publication_id = publication_id
+            publication = await session.get(PublicationModel, publication_id)
+            publication.external_id = None
+            await session.commit()
+        assert (await get())['state'] == 'ATTENTION'
+        async with SessionFactory() as session:
+            publication = await session.get(PublicationModel, publication_id)
+            publication.external_ids = ['confirmed-batch-message']
+            await session.commit()
+        row = await get()
+        assert (row['state'], row['latest_plan_id'], row['plan_link_reason']) == ('PLANNED', plan_ids[1], 'CURRENT')
+        async with SessionFactory() as session:
+            plan = await session.get(ScheduleModel, UUID(plan_ids[1]))
+            plan.status = 'COMPLETED'
+            for item in (await session.execute(select(ScheduleItemModel).where(ScheduleItemModel.schedule_id==plan.id))).scalars():
+                item.status = 'PUBLISHED'
+            await session.commit()
+        row = await get()
+        assert (row['state'], row['latest_plan_id'], row['plan_link_reason']) == ('PUBLISHED', plan_ids[2], 'HISTORY')
+        async with SessionFactory() as session:
+            failed = await session.get(ScheduleItemModel, failed_id)
+            failed.status = 'PUBLISHED'
+            await session.commit()
