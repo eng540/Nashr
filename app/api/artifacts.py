@@ -513,6 +513,31 @@ async def update_generic_artifact(
         raise _handle_error(exc) from exc
 
 
+class BatchReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    artifact_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class BatchReviewApproval(BatchReviewRequest):
+    fingerprints: dict[str, str]
+
+
+@router.post("/batch-review/preview")
+async def preview_batch_review(payload: BatchReviewRequest, session: AsyncSession = Depends(get_session)):
+    try:
+        return await GenericArtifactReviewService(session).preview_batch_approval(payload.artifact_ids)
+    except (LookupError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/batch-review/approve")
+async def approve_batch_review(payload: BatchReviewApproval, session: AsyncSession = Depends(get_session)):
+    try:
+        return await GenericArtifactReviewService(session).approve_batch(payload.artifact_ids, payload.fingerprints)
+    except (LookupError, ValueError) as exc:
+        raise _handle_error(exc) from exc
+
+
 @router.post("/{artifact_id}/approve")
 async def approve_generic_artifact(
     artifact_id: UUID, payload: ArtifactReviewDecision, session: AsyncSession = Depends(get_session)
