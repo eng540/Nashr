@@ -1371,8 +1371,8 @@ async def upcoming_schedule_items(
 
 
 @router.get("/schedules")
-async def list_schedules(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    rows, total = await list_schedule_rows(session, limit, offset)
+async def list_schedules(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), query: str = Query(default="", max_length=200), status: str = Query(default="", max_length=30), failed_only: bool = Query(default=False), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    rows, total = await list_schedule_rows(session, limit, offset, query=query, status=status, failed_only=failed_only)
     return {"items": [_schedule_payload(row) for row in rows], "total": total, "limit": limit, "offset": offset}
 
 
@@ -2925,8 +2925,8 @@ async def upcoming_schedule_items(
 
 
 @router.get("/schedules")
-async def list_schedules(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    rows, total = await list_schedule_rows(session, limit, offset)
+async def list_schedules(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), query: str = Query(default="", max_length=200), status: str = Query(default="", max_length=30), failed_only: bool = Query(default=False), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    rows, total = await list_schedule_rows(session, limit, offset, query=query, status=status, failed_only=failed_only)
     return {"items": [_schedule_payload(row) for row in rows], "total": total, "limit": limit, "offset": offset}
 
 

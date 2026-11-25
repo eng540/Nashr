@@ -267,10 +267,22 @@ def schedule_counts(schedule: ScheduleModel) -> dict[str, int]:
     return counts
 
 
-async def list_schedule_rows(session: AsyncSession, limit: int, offset: int) -> tuple[list[ScheduleModel], int]:
-    total = int((await session.execute(select(func.count(ScheduleModel.id)))).scalar_one() or 0)
+async def list_schedule_rows(session: AsyncSession, limit: int, offset: int, *, query: str = "", status: str = "", failed_only: bool = False) -> tuple[list[ScheduleModel], int]:
+    filters = []
+    if status:
+        filters.append(ScheduleModel.status == status)
+    if failed_only:
+        filters.append(ScheduleModel.items.any(ScheduleItemModel.status == "FAILED"))
+    if query.strip():
+        # Literal substring, not a caller-controlled LIKE expression.
+        term = "%" + query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        filters.append(or_(ScheduleModel.name.ilike(term, escape="\\"), ScheduleModel.timezone.ilike(term, escape="\\"), ScheduleModel.items.any(or_(
+            ScheduleItemModel.artifact.has(or_(ArtifactModel.content.ilike(term, escape="\\"), ArtifactModel.artifact_metadata["title"].astext.ilike(term, escape="\\"), ArtifactModel.artifact_metadata["caption"].astext.ilike(term, escape="\\"))),
+            ScheduleItemModel.post.has(or_(PostModel.content.ilike(term, escape="\\"), PostModel.knowledge_unit.has(KnowledgeUnitModel.title.ilike(term, escape="\\"))))))))
+    total = int((await session.execute(select(func.count(ScheduleModel.id)).where(*filters))).scalar_one() or 0)
     result = await session.execute(
         select(ScheduleModel)
+        .where(*filters)
         .options(
             selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.artifact),
             selectinload(ScheduleModel.items).selectinload(ScheduleItemModel.post).selectinload(PostModel.knowledge_unit).selectinload(KnowledgeUnitModel.topic).selectinload(TopicModel.source),
