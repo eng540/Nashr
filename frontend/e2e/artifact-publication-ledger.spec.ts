@@ -5,7 +5,7 @@ test('read only publication ledger shows destination all message ids and attempt
  await page.route('**/*',async route=>{const request=route.request();const p=new URL(request.url()).pathname;
  if(p.startsWith('/api/')&&request.method()!=='GET')writes++;
  if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
- if(p==='/api/artifacts/audit/publications')return route.fulfill({json:{total:1,items:[{id:'ledger-id',platform:'telegram',destination:'synthetic-private-channel',status:'PUBLISHED',content:'النص المرسل',external_ids:['test-1','test-2'],error_message:null,published_at:'2026-11-23T20:00:00Z',schedules:[{schedule_id:'test-schedule',name:'جدول تجريبي',schedule_status:'COMPLETED',item_status:'PUBLISHED',attempts:1,scheduled_at:'2026-11-23T20:00:00Z'}]}]}});
+ if(p==='/api/artifacts/audit/publications')return route.fulfill({json:{connector_items:[{id:'ig-result',record_type:'INSTAGRAM_EXECUTION',platform:'instagram',destination:'123456',status:'PUBLISHED',content:'النص المحفوظ للموصل',external_id:'7890',permalink:'https://www.instagram.com/reel/Verified_1/',confirmed:true,updated_at:'2026-11-25T03:00:00Z'}],total:1,items:[{id:'ledger-id',platform:'telegram',destination:'synthetic-private-channel',status:'PUBLISHED',content:'النص المرسل',external_ids:['test-1','test-2'],error_message:null,published_at:'2026-11-23T20:00:00Z',schedules:[{schedule_id:'test-schedule',name:'جدول تجريبي',schedule_status:'COMPLETED',item_status:'PUBLISHED',attempts:1,scheduled_at:'2026-11-23T20:00:00Z'}]}]}});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
  await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  await page.getByRole('button',{name:'عرض وتحديث سجل النشر',exact:true}).click();
@@ -13,8 +13,9 @@ test('read only publication ledger shows destination all message ids and attempt
  await expect(ledger.getByText('synthetic-private-channel',{exact:true})).toBeVisible();
  await expect(ledger.getByText('test-1, test-2',{exact:true})).toBeVisible();
  await ledger.getByText('النص المحفوظ في سجل النشر',{exact:true}).click();await expect(ledger.getByText('النص المرسل',{exact:true})).toBeVisible();
- await page.screenshot({path:info.outputPath('ledger-desktop.png'),fullPage:true});
- await page.setViewportSize({width:390,height:844});await ledger.scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('ledger-mobile.png')});
+ await expect(ledger.getByRole('link',{name:'فتح نتيجة النشر المثبتة'})).toHaveAttribute('href','https://www.instagram.com/reel/Verified_1/');await expect(ledger).toContainText('سجل الموصل المستقل');
+ await ledger.screenshot({path:info.outputPath('ledger-desktop.png')});
+ await page.setViewportSize({width:390,height:844});await ledger.scrollIntoViewIfNeeded();await ledger.screenshot({path:info.outputPath('ledger-mobile.png')});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await page.getByRole('button',{name:'عرض وتحديث سجل النشر',exact:true}).click();expect(writes).toBe(0);
 });
