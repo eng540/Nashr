@@ -143,7 +143,7 @@ function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewable
     return <img src={media.data.url} alt={title} className="max-h-64 max-w-full rounded-xl border object-contain" />;
   }
   if (["VIDEO", "VIDEO_NOTE"].includes(artifact.kind) || artifact.kind === "ANIMATION" && artifact.mime_type === "video/mp4") {
-    return <video src={media.data.url} controls preload="metadata" className="max-h-64 w-full rounded-xl border object-contain bg-black" />;
+    return <video aria-label="معاينة الفيديو الأصلي" src={media.data.url} controls playsInline preload="metadata" className="mx-auto h-auto max-h-[min(80svh,960px)] w-auto max-w-full rounded-xl border object-contain bg-black" />;
   }
   if (["AUDIO", "VOICE"].includes(artifact.kind)) {
     return <audio src={media.data.url} controls preload="metadata" className="w-full" />;
