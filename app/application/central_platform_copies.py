@@ -73,7 +73,7 @@ def evaluate(row, copy):
             'origin':copy.origin,'source_stale':stale,'central_approval':row.review_status,
             'field_status':'BLOCKED' if blockers else 'FIELDS_VALIDATED','blockers':blockers,'warnings':warnings,
             'media_checks_pending':media,'execution_status':'NOT_AUTHORIZED',
-            'execution_blockers':['هذه نسخة تجهيز فقط. لا موصل نشر أو حساب أو موعد أو إذن تنفيذ من هذا الحفظ.'],
+            'execution_blockers':['حفظ حقول النسخة لا يربط حساباً ولا ينشئ موعداً أو إذن تنفيذ. راجع مسار المنصة المنفصل للتحقق من الاتصال والوسيط وقرار النشر.'],
             'sources':SOURCES.get(copy.platform,[]),'checked_on':'2026-11-24',
             'updated_at':copy.updated_at.isoformat() if copy.updated_at else None}
 
