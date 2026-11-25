@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { postsApi } from "../../shared/api/postsApi";
 import { productionJobsApi, type ProductionLineFilter, type ProductionScope, type ProductionProductOption, type EditorialIdentityOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
 import { GenericArtifactReviewPanel } from "../artifacts/GenericArtifactReviewPanel";
@@ -79,68 +79,8 @@ function clearPendingClaim(key?: string) {
 
 type SortMode = "created" | "title" | "kind" | "topic";
 
-const TELEGRAM_HTML_TAGS = new Set(["b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "span", "br"]);
-
-function isTelegramMarkupValid(content: string): boolean {
-  const tagPattern = /<\/?([a-zA-Z][\w-]*)([^>]*)>/g;
-  const tags = Array.from(content.matchAll(tagPattern));
-  const hasRichTag = tags.some((match) => TELEGRAM_HTML_TAGS.has(match[1].toLowerCase()));
-  if (!hasRichTag) return true;
-  const stack: string[] = [];
-  for (const match of tags) {
-    const tag = match[1].toLowerCase();
-    const closing = match[0].startsWith("</");
-    const selfClosing = /\/>$/.test(match[0]) || tag === "br";
-    if (!TELEGRAM_HTML_TAGS.has(tag)) return false;
-    if (closing) {
-      if (stack.pop() !== tag) return false;
-    } else if (!selfClosing) {
-      stack.push(tag);
-    }
-  }
-  return stack.length === 0;
-}
-
-function renderTelegramNode(node: Node, key: string): ReactNode {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
-  if (!(node instanceof HTMLElement)) return null;
-  const tag = node.tagName.toLowerCase();
-  const children = Array.from(node.childNodes).map((child, index) => renderTelegramNode(child, `${key}-${index}`));
-  switch (tag) {
-    case "b": case "strong": return <strong key={key}>{children}</strong>;
-    case "i": case "em": return <em key={key}>{children}</em>;
-    case "u": case "ins": return <u key={key}>{children}</u>;
-    case "s": case "strike": case "del": return <del key={key}>{children}</del>;
-    case "code": return <code key={key} className="rounded bg-slate-100 px-1">{children}</code>;
-    case "pre": return <pre key={key} className="overflow-x-auto rounded-lg bg-slate-100 p-3 text-left" dir="ltr">{children}</pre>;
-    case "blockquote": return <blockquote key={key} className="my-2 border-r-4 border-slate-300 pr-3 text-slate-600">{children}</blockquote>;
-    case "br": return <br key={key} />;
-    case "span": return node.classList.contains("tg-spoiler") ? <span key={key} className="rounded bg-slate-800 text-slate-800 hover:text-white">{children}</span> : <span key={key}>{children}</span>;
-    case "a": {
-      const href = node.getAttribute("href") ?? "";
-      if (!/^(https?:\/\/|tg:\/\/)/i.test(href)) return <span key={key}>{children}</span>;
-      return <a key={key} href={href} target="_blank" rel="noreferrer" className="text-indigo-700 underline">{children}</a>;
-    }
-    default: return <span key={key}>{children}</span>;
-  }
-}
-
-export function TelegramPreview({ content, onClose }: { content: string; onClose?: () => void }) {
-  const valid = isTelegramMarkupValid(content);
-  const nodes = useMemo(() => {
-    if (!valid) return null;
-    const doc = new DOMParser().parseFromString(content, "text/html");
-    const hasRichTag = Array.from(doc.body.querySelectorAll("*")).some((element) => TELEGRAM_HTML_TAGS.has(element.tagName.toLowerCase()));
-    if (!hasRichTag) return content;
-    return Array.from(doc.body.childNodes).map((node, index) => renderTelegramNode(node, `telegram-preview-${index}`));
-  }, [content, valid]);
-  return <section className="mt-4 rounded-xl border bg-slate-50 p-4" aria-label="معاينة تيليجرام">
-    <div className="mb-2 flex items-center justify-between gap-2"><h4 className="text-sm font-bold">معاينة تيليجرام</h4>{onClose ? <button type="button" onClick={onClose} className="rounded-lg border bg-white px-3 py-1 text-sm">إغلاق المعاينة</button> : <span className="text-xs text-slate-500">عرض تقني للتنسيق قبل الاعتماد</span>}</div>
-    {!valid
-      ? <p role="alert" className="text-sm text-rose-700">وسوم HTML غير متوازنة أو غير مدعومة. لن يقبل محول تيليجرام هذا التنسيق.</p>
-      : <div dir="auto" className="whitespace-pre-wrap break-words rounded-lg bg-white p-4 text-sm leading-7 text-slate-800">{nodes}</div>}
-  </section>;
-}
+export {TelegramPreview} from "../../shared/components/TelegramPreview";
+import {TelegramPreview} from "../../shared/components/TelegramPreview";
 
 
 export function PostBankPage({ initialView }: { initialView?: "production" | "job" | "review" }) {
@@ -526,4 +466,4 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
     {workspaceView === "review" && editing && <div className="fixed inset-0 z-20 grid place-items-center bg-slate-950/30 p-4"><div role="dialog" className="max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><h3 className="text-xl font-bold">مراجعة المنشور</h3><textarea aria-label="محتوى المنشور" value={content} onChange={(e) => setContent(e.target.value)} className="mt-4 min-h-48 w-full rounded-xl border p-4"/><p className="mt-2 text-xs leading-6 text-slate-500">يمكن استخدام تنسيق تيليجرام HTML مثل &lt;b&gt;النص البارز&lt;/b&gt; و&lt;blockquote&gt;الاقتباس&lt;/blockquote&gt;. المعاينة أدناه لعرض التنسيق فقط؛ الحكم التحريري لك.</p><TelegramPreview content={content} /><input aria-label="ملاحظة المراجعة" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="ملاحظة أو سبب الرفض" className="mt-3 w-full rounded-xl border p-3"/><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={() => save.mutate()} disabled={save.isPending} className="rounded-xl border px-4 py-2 font-semibold">حفظ</button><button type="button" onClick={() => review.mutate({ id: editing, action: "approve" })} disabled={review.isPending} className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white">اعتماد</button><button type="button" onClick={() => review.mutate({ id: editing, action: "reject" })} disabled={review.isPending || !reviewNote.trim()} className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white">رفض</button><button type="button" onClick={() => setEditing(null)} className="rounded-xl bg-slate-100 px-4 py-2 font-semibold">إغلاق</button></div></div></div>}
     
   </section>;
-        }
+                                                                                                         }
