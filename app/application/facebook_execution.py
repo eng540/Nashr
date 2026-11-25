@@ -90,7 +90,7 @@ async def reconcile(session,jid,*,provider):
     result=await provider.verify_post(job.post_id,expected_message=job.message)
     if result.post_id != job.post_id or result.state not in {'RESULT_CHANGED','NOT_CONFIRMED_PUBLISHED','PUBLISHED_AT_LAST_CHECK'}:
         raise ValueError('Provider result mismatch')
-    job.state=result.state;job.permalink=result.permalink;job.updated_at=now();await session.commit();return job
+    job.state=result.state;job.permalink=result.permalink if result.state=='PUBLISHED_AT_LAST_CHECK' else None;job.updated_at=now();await session.commit();return job
 
 
 async def cancel_draft(session,jid):
