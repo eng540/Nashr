@@ -173,6 +173,8 @@ class ProductionProductControlPlaneService:
             "produce_image_artifact": "IMAGE",
             "produce_video_artifact": "VIDEO",
             "produce_audio_artifact": "AUDIO",
+            "render_approved_text_card": "IMAGE",
+            "compose_thematic_artifact": "TEXT",
         }.get(final_capability)
         if capability_output_kind is None or contract_definition.artifact_kind != capability_output_kind:
             raise ValueError(
@@ -180,6 +182,11 @@ class ProductionProductControlPlaneService:
                 f"which is incompatible with output contract '{definition.output_contract_key}' "
                 f"({contract_definition.artifact_kind})."
             )
+        if any(stage.capability_key == "render_approved_text_card" for stage in recipe.stages):
+            if len(recipe.stages) != 1:
+                raise ValueError("A design-card recipe must contain only render_approved_text_card; it cannot trigger unrelated production stages.")
+            if contract_definition.mime_type != "image/png" or contract_definition.content_mode != "STORAGE_URI":
+                raise ValueError("render_approved_text_card requires a storage-backed image/png output contract.")
         if contract_definition.content_mode == "STORAGE_URI":
             try:
                 storage = S3ArtifactStorage.from_environment()
