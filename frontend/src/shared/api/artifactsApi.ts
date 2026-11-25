@@ -77,6 +77,8 @@ export interface PlatformMediaInspection {source_fingerprint:string;copy_version
 export interface JpegPreview {data_url:string;source_fingerprint:string;copy_version:number;measurements:Record<string,unknown>;blockers:string[];pending:string[];sha256:string;}
 export interface SavedMediaInspection {id:string;created_at:string;selected:boolean;media_id:string|null;sha256:string;copy_version:number;probe_version:string;stale:boolean;stale_reasons:string[];result:PlatformMediaInspection;caveat:string;}
 export const genericArtifactsApi = {
+  previewBatchReview: (ids: string[]) => post<{items:(GenericReviewableArtifact & {review_fingerprint:string})[];publishing_authorized:false}>("/api/artifacts/batch-review/preview",{artifact_ids:ids}),
+  approveBatchReview: (items:(GenericReviewableArtifact & {review_fingerprint:string})[]) => post<{approved_ids:string[];publishing_authorized:false}>("/api/artifacts/batch-review/approve",{artifact_ids:items.map(i=>i.id),fingerprints:Object.fromEntries(items.map(i=>[i.id,i.review_fingerprint]))}),
   mediaInspections(id:string,platform:string):Promise<{items:SavedMediaInspection[]}>{return get(`/api/artifacts/${id}/platform-copies/${platform}/media-inspections`);},
   saveMediaInspection(id:string,platform:string,input:{source_fingerprint:string;copy_version:number;selected:boolean}):Promise<SavedMediaInspection>{return post(`/api/artifacts/${id}/platform-copies/${platform}/media-inspections`,input);},
   copyMedia(id:string,platform:string):Promise<CopyMediaList>{return get(`/api/artifacts/${id}/platform-copies/${platform}/media`);},
