@@ -225,6 +225,8 @@ def create_app() -> FastAPI:
         proof = (Path(__file__).parent / "static" / "tiktokePPmBzm3Ej1QWBVM7rVXy8eiIbCCGpJj.txt").read_bytes().rstrip(b"\n")
         return Response(proof, media_type="text/plain")
 
+    from app.api.workspace_progress import router as workspace_progress_router
+    application.include_router(workspace_progress_router)
     application.include_router(auth_router)
     application.include_router(legal_router)
     register_gemini_error_handlers(application)

@@ -1,0 +1,12 @@
+import {useQuery} from '@tanstack/react-query';
+import {get} from '../api/client';
+type Progress={materials:Record<string,number>;editorial_posts:Record<string,number>;platform_copies:number;pdf_sources:number;schedule_items:{failed:number;pending_or_processing:number}};
+export function WorkspaceProgress(){
+ const q=useQuery({queryKey:['workspace-progress'],queryFn:()=>get<Progress>('/api/workspace/progress')});
+ const d=q.data;
+ if(q.isError)return <section className="rounded-xl border bg-white p-4" aria-label="حالة رحلة المحتوى"><p role="alert">تعذر تحميل ملخص العمل. لا نعتبره فارغاً.</p><button type="button" onClick={()=>void q.refetch()}>إعادة تحميل الملخص</button></section>;
+ if(!d?.materials||!d.editorial_posts||!d.schedule_items)return <p role="status">تحميل ملخص العمل...</p>;
+ const review=d.materials.DRAFT??0,approved=d.materials.APPROVED??0;
+ const cards=[{title:'مواد أصلية للمراجعة',count:review,to:'/bank?artifact_status=DRAFT',action:'راجع الأصل قبل الاعتماد'},{title:'مواد أصلية معتمدة',count:approved,to:'/publishing',action:'افحص النسخ والوجهات'},{title:'عناصر خطط تعثرت',count:d.schedule_items.failed,to:'/publishing?view=plans&failures=1',action:'افتح الخطط وراجع سبب التعثر'}];
+ return <section aria-label="حالة رحلة المحتوى" className="space-y-3 rounded-2xl border bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold">أين وصل العمل؟</h2><button type="button" onClick={()=>void q.refetch()} className="rounded border px-3 py-1 text-xs">تحديث الأعداد</button></div><div className="grid gap-3 sm:grid-cols-3">{cards.map(c=><a key={c.title} href={c.to} className="rounded-xl border p-3"><span className="block text-xs">{c.title}</span><strong className="my-1 block text-2xl">{c.count}</strong><span className="text-xs text-indigo-700">{c.action} ←</span></a>)}</div><p className="text-xs leading-6 text-slate-600">المنشورات التحريرية منفصلة: {d.editorial_posts.DRAFT??0} مسودة، {d.editorial_posts.APPROVED??0} معتمد. كتب PDF: {d.pdf_sources} · نسخ منصات محفوظة: {d.platform_copies}. لا نجمعها مع الأصول كي لا نكرر العد.</p><p className="text-xs leading-6 text-slate-500">أصول دون حالة مراجعة: {d.materials.UNREVIEWED??0}، لا تدخل في رقم المسودات. أعداد الأصول المتاحة فقط. مرشح التعثر يعرض أحدث 50 خطة، وقد تكون هناك خطط أقدم متعثرة. أعداد الحالة المحفوظة، وليست إذناً بالنشر أو دليلاً على جاهزية كل منصة. {d.schedule_items.pending_or_processing} عنصر خطة بانتظار التنفيذ أو جارٍ، وتشمل المسودات والخطط المتوقفة.</p></section>;
+}

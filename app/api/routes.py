@@ -1152,6 +1152,11 @@ def _schedule_payload(schedule: ScheduleModel, detail: bool = False) -> dict[str
         "started_at": schedule.started_at,
         "completed_at": schedule.completed_at,
     }
+    preview = [_schedule_item_payload(item) for item in items[:3]]
+    review = schedule.telegram_review or {}
+    payload["content_summary"] = [{"title": str(item["title"])[:160], "kind": items[index].artifact.kind if items[index].artifact is not None else "POST"} for index,item in enumerate(preview)]
+    payload["platform"] = "telegram"
+    payload["destination_label"] = review.get("channel_label") or review.get("destination") or None
     if detail:
         payload["items"] = [_schedule_item_payload(item) for item in items]
     return payload
@@ -2725,6 +2730,11 @@ def _schedule_payload(schedule: ScheduleModel, detail: bool = False) -> dict[str
         "started_at": schedule.started_at,
         "completed_at": schedule.completed_at,
     }
+    preview = [_schedule_item_payload(item) for item in items[:3]]
+    review = schedule.telegram_review or {}
+    payload["content_summary"] = [{"title": str(item["title"])[:160], "kind": items[index].artifact.kind if items[index].artifact is not None else "POST"} for index,item in enumerate(preview)]
+    payload["platform"] = "telegram"
+    payload["destination_label"] = review.get("channel_label") or review.get("destination") or None
     if detail:
         payload["items"] = [_schedule_item_payload(item) for item in items]
     return payload
