@@ -32,7 +32,7 @@ async def preview(uid:UUID,request:Request,payload:PreviewTime=PreviewTime(),ses
 @router.get('/{jid}')
 async def result(jid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
     owner(request);j=await session.get(Job,jid)
-    if not j or not j.runtime_snapshot:raise HTTPException(404,'محاولة نص غير موجودة.')
+    if not j or not j.runtime_snapshot or j.kind!='TEXT':raise HTTPException(404,'محاولة نص غير موجودة.')
     return JSONResponse(service.describe(j),headers=HEADERS)
 
 @router.post('/{jid}/approve')
@@ -40,7 +40,7 @@ async def approve(jid:UUID,payload:Approval,request:Request,session:AsyncSession
     token=mutation_owner(request)
     if any(x is not True for x in [payload.exact_words_approved,payload.public_page_approved,payload.rights_confirmed]):raise HTTPException(409,'يلزم اعتماد النص والصفحة العامة والحقوق صراحةً.')
     j=(await session.execute(select(Job).where(Job.id==jid).with_for_update())).scalar_one_or_none()
-    if not j or not j.runtime_snapshot:raise HTTPException(404,'محاولة نص غير موجودة.')
+    if not j or not j.runtime_snapshot or j.kind!='TEXT':raise HTTPException(404,'محاولة نص غير موجودة.')
     try:return JSONResponse(await service.approve(session,j,payload.snapshot_hash,'owner-session:'+digest(token)),headers=HEADERS)
     except ValueError as e:raise HTTPException(409,str(e)) from None
 
@@ -51,7 +51,7 @@ async def cancel(jid:UUID,request:Request,session:AsyncSession=Depends(get_sessi
         if not (await lock.execute(text(f'SELECT pg_try_advisory_lock({service.LOCK})'))).scalar():raise HTTPException(409,'التنفيذ جارٍ، اقرأ النتيجة أولاً.')
         try:
             j=(await session.execute(select(Job).where(Job.id==jid).with_for_update())).scalar_one_or_none()
-            if not j:raise HTTPException(404,'محاولة غير موجودة.')
+            if not j or j.kind!='TEXT':raise HTTPException(404,'محاولة غير موجودة.')
             try:return JSONResponse(await service.cancel(session,j),headers=HEADERS)
             except ValueError as e:raise HTTPException(409,str(e)) from None
         finally:await lock.execute(text(f'SELECT pg_advisory_unlock({service.LOCK})'));await lock.commit()
@@ -63,7 +63,7 @@ async def verify_result(jid:UUID,request:Request,session:AsyncSession=Depends(ge
         if not (await lock.execute(text(f'SELECT pg_try_advisory_lock({service.LOCK})'))).scalar():raise HTTPException(409,'التنفيذ جارٍ.')
         try:
             j=await session.get(Job,jid)
-            if not j or not j.runtime_snapshot or not j.post_id or j.state=='SENDING':raise HTTPException(409,'لا يوجد معرف نشر مؤكد للقراءة، لا إعادة إرسال.')
+            if not j or not j.runtime_snapshot or j.kind!='TEXT' or not j.post_id or j.state=='SENDING':raise HTTPException(409,'لا يوجد معرف نشر مؤكد للقراءة، لا إعادة إرسال.')
             try:
                 await service.process_one(session,j)
                 return JSONResponse(service.describe(j),headers=HEADERS)
