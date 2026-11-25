@@ -1,4 +1,5 @@
 import { useSearchParams } from "react-router";
+import {EditorialReviewNotes} from "./EditorialReviewNotes";
 import {ContentOrganizationPanel} from "./ContentOrganizationPanel";
 import { CentralPlatformCopiesPanel } from "./CentralPlatformCopiesPanel";
 import { TelegramBatchPreviewPanel } from "./TelegramBatchPreviewPanel";
@@ -575,6 +576,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         {!compact||focusedId===artifact.id?<div className="space-y-3" aria-label={`مساحة المادة ${artifact.id}`}>
         {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<ContentOrganizationPanel key={artifact.id+":"+(artifact.organization?.version??0)} items={[artifact]}/>:null}
         <nav aria-label="مراحل العمل على المادة" className="flex flex-wrap gap-2 rounded bg-slate-50 p-2 text-xs text-slate-600"><span>1. الأصل والمراجعة</span><span>← 2. نسخ المنصات والوجهات</span><span>← 3. معاينة وخطة</span><span>← 4. سجل النشر</span></nav>
+        <EditorialReviewNotes artifact={artifact}/>
         {(artifact.metadata.telegram_native as Record<string, unknown> | undefined)?.type === 'LIVE_LOCATION' ? <LiveLocationControls artifactId={artifact.id} /> : null}
         {artifact.metadata.telegram_live_photo ? <section className="rounded-xl border border-violet-200 bg-violet-50 p-3"><h4 className="font-bold">صورة حية،الصورة الثابتة ثم فيديو الحركة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(artifact.metadata.live_photo_preview, null, 2)}</pre>{(Array.isArray(artifact.metadata.live_photo_preview) ? artifact.metadata.live_photo_preview : []).map(value => <AlbumChildPreview key={(value as {id:string}).id} id={(value as {id:string}).id} />)}<p className="text-xs">يُرسلان كصورة حية واحدة،وليست ألبوماً أو فيديو منفرداً.</p></section> : null}
         {artifact.metadata.telegram_album ? <section className="rounded-xl border border-sky-200 bg-sky-50 p-3"><h4 className="font-bold">ألبوم Telegram،الترتيب والتعليقات المعتمدة</h4><pre dir="auto" className="whitespace-pre-wrap break-words text-sm">{JSON.stringify(artifact.metadata.album_preview, null, 2)}</pre><div className="grid gap-2 sm:grid-cols-2">{(Array.isArray(artifact.metadata.album_preview) ? artifact.metadata.album_preview : []).map((value) => { const item = value as { id: string }; return <AlbumChildPreview key={item.id} id={item.id} />; })}</div><p className="text-xs">الصور والفيديو معًا،أو صوت فقط،أو مستندات فقط. تتوقف العملية إذا تغيّر اعتماد أو محتوى أي عنصر.</p></section> : null}
