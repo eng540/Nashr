@@ -8,6 +8,7 @@ import { toggleSelection, selectionFromQuery } from "../../shared/utils/selectio
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime, dateInTimezone, scheduleTimePreview } from "../../shared/utils/timezone";
 import { TelegramPreview } from "../post-bank/PostBankPage";
 
+import {PlatformOperations} from './PlatformOperations';
 import {UnifiedPublishingQueue} from "./UnifiedPublishingQueue";
 import { PageHeader } from "../../shared/components/ui";
 
@@ -341,6 +342,7 @@ export function PublishingPage() {
         </section>
       )}
 
+      {section === "plans" && <PlatformOperations/>}
       {section === "plans" && (
         <section className="space-y-4" data-testid="publishing-plans">
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
