@@ -26,6 +26,8 @@ class FacebookResult:
     post_id: str | None = None
     photo_id: str | None = None
     permalink: str | None = None
+    observed_message: str | None = None
+    observed_published: bool | None = None
 
 
 class FacebookPagePublisher:
@@ -193,10 +195,6 @@ class FacebookPagePublisher:
             or author.get("id") != self.page_id
         ):
             raise FacebookProviderError("FACEBOOK_RESULT_MISMATCH")
-        if body.get("message", "") != expected_message:
-            return FacebookResult("RESULT_CHANGED", post_id)
-        if body.get("is_published") is not True:
-            return FacebookResult("NOT_CONFIRMED_PUBLISHED", post_id)
         # Provider URLs are facts, not execution instructions. Return only valid
         # Facebook HTTPS permalinks and never invent one from a known ID.
         from urllib.parse import urlsplit
@@ -218,4 +216,11 @@ class FacebookPagePublisher:
             or parsed.fragment
         ):
             link = None
-        return FacebookResult("PUBLISHED_AT_LAST_CHECK", post_id, permalink=link)
+        observed = body.get("message", "")
+        published = body.get("is_published") is True
+        state = ("RESULT_CHANGED" if observed != expected_message else
+                 "PUBLISHED_AT_LAST_CHECK" if published else "NOT_CONFIRMED_PUBLISHED")
+        # Diagnostic data never relaxes exact comparison or author validation.
+        return FacebookResult(state, post_id, permalink=link,
+                              observed_message=observed if isinstance(observed,str) else None,
+                              observed_published=published)
