@@ -1023,3 +1023,27 @@ def test_generated_interval_is_elapsed_minutes_across_dst(start):
     assert [uid for uid,_ in items]==ids
     assert all((items[i+1][1]-items[i][1]).total_seconds()==1800 for i in range(4))
     assert all(at.tzinfo==timezone.utc for _,at in items)
+
+@pytest.mark.asyncio
+async def test_saved_plan_filters_apply_before_offset_and_keep_older_failures():
+    from app.application.scheduling import list_schedule_rows
+    _,_,_,post_id = await _post('needle_259% محفوظ')
+    marker=str(uuid4())
+    older=uuid4()
+    async with SessionFactory() as session:
+        for index in range(55):
+            session.add(ScheduleModel(id=older if index==0 else uuid4(),name=f'{marker} {index}',status='PAUSED' if index==0 else 'COMPLETED',timezone='Asia/Riyadh',created_at=datetime(2026,1,1,tzinfo=timezone.utc)+timedelta(minutes=index)))
+        await session.flush()
+        session.add(ScheduleItemModel(schedule_id=older,post_id=post_id,position=1,status='FAILED',scheduled_at=datetime.now(timezone.utc)))
+        await session.commit()
+        rows,total=await list_schedule_rows(session,20,0,query=marker,failed_only=True)
+        assert total==1 and [r.id for r in rows]==[older]
+        rows,total=await list_schedule_rows(session,20,40,query=marker)
+        assert total==55 and len(rows)==15 and older in [r.id for r in rows]
+        rows,total=await list_schedule_rows(session,20,0,query='needle_259%',status='PAUSED')
+        assert total==1 and rows[0].id==older
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+        response=await client.get('/schedules',params={'query':marker,'failed_only':'true','limit':20})
+        assert response.status_code==200
+        assert response.json()['total']==1
+        assert response.json()['items'][0]['id']==str(older)
