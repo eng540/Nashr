@@ -1014,3 +1014,12 @@ async def test_failed_item_can_be_retried_individually() -> None:
         )).scalar_one()
     assert refreshed_a.status == "PENDING"
     assert refreshed_b.status == "PENDING"
+
+
+@pytest.mark.parametrize('start', ['2026-03-08T06:30:00+00:00', '2026-11-01T05:30:00+00:00'])
+def test_generated_interval_is_elapsed_minutes_across_dst(start):
+    ids=[uuid4() for _ in range(5)]
+    items=build_schedule_times(ids,datetime.fromisoformat(start),30,'America/New_York')
+    assert [uid for uid,_ in items]==ids
+    assert all((items[i+1][1]-items[i][1]).total_seconds()==1800 for i in range(4))
+    assert all(at.tzinfo==timezone.utc for _,at in items)

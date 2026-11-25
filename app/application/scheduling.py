@@ -61,18 +61,12 @@ def build_schedule_times(
     timezone_name = validate_timezone(timezone_name)
     if start_at.tzinfo is None or start_at.utcoffset() is None:
         raise ValueError("start_at must be timezone-aware.")
-    local_start = start_at.astimezone(ZoneInfo(timezone_name))
-    return [
-        (
-            post_id,
-            validate_scheduled_at(
-                (local_start + timedelta(minutes=index * interval_minutes)).astimezone(
-                    timezone.utc
-                )
-            ),
-        )
-        for index, post_id in enumerate(post_ids)
-    ]
+    # A minute interval is elapsed time, not wall-clock arithmetic. Local-time
+    # addition can repeat or reverse UTC instants during a DST transition.
+    utc_start = validate_scheduled_at(start_at)
+    return [(post_id, utc_start + timedelta(minutes=index * interval_minutes))
+            for index, post_id in enumerate(post_ids)]
+
 
 
 async def get_posts_publish_eligibility(

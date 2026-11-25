@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime, dateInTimezone } from "./timezone";
+import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime, dateInTimezone, scheduleTimePreview } from "./timezone";
 
 describe("schedule timezone conversion", () => {
   it("preserves an Asia/Aden wall-clock start time through UTC storage and display", () => {
@@ -30,4 +30,11 @@ describe("wall clock validation", () => {
     expect(dateInTimezone("Asia/Aden", new Date("2026-11-24T22:15:00Z"))).toBe("2026-11-25");
     expect(dateInTimezone("America/Los_Angeles", new Date("2026-11-25T02:15:00Z"))).toBe("2026-11-24");
   });
+});
+
+
+it("previews elapsed intervals across both DST transitions",()=>{
+  expect(scheduleTimePreview("2026-03-08T01:30","America/New_York",30,3)).toEqual(["2026-03-08T06:30:00.000Z","2026-03-08T07:00:00.000Z","2026-03-08T07:30:00.000Z"]);
+  expect(scheduleTimePreview("2026-11-01T00:30","America/New_York",60,3)).toEqual(["2026-11-01T04:30:00.000Z","2026-11-01T05:30:00.000Z","2026-11-01T06:30:00.000Z"]);
+  expect(()=>scheduleTimePreview("2026-11-25T10:00","Asia/Riyadh",1.5,2)).toThrow();
 });

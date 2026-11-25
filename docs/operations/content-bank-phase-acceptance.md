@@ -143,3 +143,7 @@ stored UTC timestamps and schedule zones are not rewritten. The daily calendar
 starts on the date in its displayed zone, lets the operator choose another valid
 IANA display zone and formats each daily item in that same zone. Upcoming items
 still show their saved plan zone. A view-only zone change never edits a plan.
+
+## Elapsed-minute scheduling review
+
+New editorial schedule generation now uses elapsed UTC minutes, avoiding repeated/reversed instants at DST boundaries. The creation form lists every selected item in selection order, its local date/time and explicit zone plus UTC instant before saving. Saving remains DRAFT, not activation. Invalid/non-integer intervals or invalid/ambiguous start times block saving. Existing schedules are not recalculated. Proof: fresh PostgreSQL suite1044passed1skipped;15frontend tests/typecheck/build; isolated calendar and schedule-preview browser tests. No production schedule creation or publication used for acceptance.

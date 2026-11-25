@@ -38,3 +38,10 @@ export function utcISOStringToLocalDateTime(value: string, timeZone: string): st
   const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
+
+
+export function scheduleTimePreview(start: string, zone: string, interval: number, count: number): string[] {
+  if (!Number.isInteger(interval) || interval < 1 || interval > 10080) throw new Error("الفاصل عدد صحيح من1إلى10080دقيقة.");
+  const first = Date.parse(localDateTimeToUtcISOString(start, zone));
+  return Array.from({length: count}, (_, index) => new Date(first + index * interval * 60000).toISOString());
+}
