@@ -5,7 +5,7 @@ test('successful review preserves only its exact batch through approved continua
  const item=(id:string,n:number,status:string)=>({id,kind:'TEXT',status:'AVAILABLE',content:`نص محفوظ ${n}`,storage_uri:null,mime_type:'text/plain',metadata:{title:`مادة دفعة ${n}`},review_status:status,created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z',review_fingerprint:`pin-${n}`});
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
  if(r.method()!=='GET')writes.push(p);
- if(p==='/api/artifacts/batch-review/preview')return route.fulfill({json:{items:ids.map((id,n)=>item(id,n,'DRAFT'))}});
+ if(p==='/api/artifacts/batch-review/preview')return route.fulfill({json:{items:ids.map((id,n)=>item(id,n,'DRAFT')),publishing_authorized:false}});
  if(p==='/api/artifacts/batch-review/approve'){approved=true;return route.fulfill({json:{approved_ids:ids,publishing_authorized:false}});}
  if(p==='/api/artifacts'){const status=new URL(r.url()).searchParams.get('review_status');let items=status==='APPROVED'&&approved?[...ids.map((id,n)=>item(id,n,'APPROVED')),item('f3333333-3333-4333-8333-333333333333',3,'APPROVED')]:!approved?ids.map((id,n)=>item(id,n,'DRAFT')):[];if(missing)items=items.filter(i=>i.id!==ids[1]);return route.fulfill({json:{items,total:items.length,limit:100,offset:0}});}
  if(p.startsWith('/api/'))return route.fulfill({json:p.includes('/control/')?[]:{items:[],total:0,telegram:{items:[]}}});
