@@ -88,7 +88,11 @@ test("React factory reuses the same production claim key after an ambiguous netw
   await page.getByLabel("المنتج").selectOption(productKey);
   await page.getByRole("button", { name: "متابعة إلى اختيار المصدر" }).click();
   await expect(page.getByLabel("الكتاب للإنتاج")).toBeVisible();
-  await expect(page.getByRole("button", { name: "متابعة إلى مراجعة إعداد الإنتاج" })).toBeEnabled();
+  // Route chunks and source options settle independently. Use the real source
+  // selector rather than racing the single-source auto-selection effect.
+  await expect(page.getByLabel("الكتاب للإنتاج").locator('option[value="'+sourceId+'"]')).toHaveCount(1);
+  await page.getByLabel("الكتاب للإنتاج").selectOption(sourceId);
+  await expect(page.getByRole("button", { name: "متابعة إلى مراجعة إعداد الإنتاج" })).toBeEnabled({timeout:15000});
   await page.getByRole("button", { name: "متابعة إلى مراجعة إعداد الإنتاج" }).click();
   await expect(page.getByTestId("production-summary")).toBeVisible();
   await expect(page.getByTestId("production-summary")).toContainText("سيشمل الطلب جميع المواد المرتبطة بهذا الكتاب");
