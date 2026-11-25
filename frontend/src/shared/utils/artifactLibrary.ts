@@ -17,3 +17,9 @@ export function artifactSearchText(artifact: GenericReviewableArtifact): string 
     artifactSeriesKey(artifact), library.source_original, library.tiktok_text, library.telegram_caption]
     .filter((value): value is string => typeof value === "string").join(" ").toLowerCase();
 }
+
+/** Selection is for reviewing originals, never proof that a platform can publish. */
+export function isSelectableOriginal(artifact: GenericReviewableArtifact): boolean {
+  return artifact.review_status === "APPROVED" && artifact.status === "AVAILABLE"
+    && String(artifact.kind) !== "POST" && artifact.metadata.source_type !== "PLATFORM_VARIANT";
+}
