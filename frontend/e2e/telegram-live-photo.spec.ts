@@ -19,7 +19,7 @@ test('approved photo and motion form a separate Live Photo review draft', async 
  await page.getByRole('button',{name:'إنشاء صورة حية (صورة وفيديو)',exact:true}).click();
  await expect.poll(()=>requested).not.toBeNull();expect(requested.photo_id).toBe('a');expect(requested.video_id).toBe('b');
  await expect(page.getByLabel('حالة مراجعة المخرجات')).toHaveValue('DRAFT');
- await expect(page.getByText('a.png',{exact:false}).first()).toBeVisible();
+ await expect(page.getByText('a.png',{exact:true}).first()).toBeVisible();
  await page.screenshot({path:testInfo.outputPath('live-photo-draft-desktop.png'),fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');
  await page.screenshot({path:testInfo.outputPath('live-photo-selection-mobile.png'),fullPage:true});
