@@ -56,8 +56,8 @@ test("thematic product selects source materials across books and submits one ord
       } });
     }
     return route.fulfill({ json: [
-      { id: sourceA, filename: "book-a.pdf", book_title: "الكتاب أ", status: "READY", material_count: 1, produced_count: 0, pending_count: 1 },
-      { id: sourceB, filename: "book-b.pdf", book_title: "الكتاب ب", status: "READY", material_count: 1, produced_count: 0, pending_count: 1 },
+      { id: sourceA, filename: "book-a.pdf", mime_type: "application/pdf", book_title: "الكتاب أ", status: "READY", material_count: 1, produced_count: 0, pending_count: 1 },
+      { id: sourceB, filename: "book-b.pdf", mime_type: "application/pdf", book_title: "الكتاب ب", status: "READY", material_count: 1, produced_count: 0, pending_count: 1 },
     ] });
   });
   await page.route("**/production-jobs", async (route) => {
