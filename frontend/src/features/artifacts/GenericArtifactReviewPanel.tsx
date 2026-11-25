@@ -4,7 +4,7 @@ import {ContentOrganizationPanel} from "./ContentOrganizationPanel";
 import { CentralPlatformCopiesPanel } from "./CentralPlatformCopiesPanel";
 import { TelegramBatchPreviewPanel } from "./TelegramBatchPreviewPanel";
 import { DistributionReadinessPanel } from "./DistributionReadinessPanel";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
@@ -155,10 +155,14 @@ function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewable
 
 export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDesignCard?: boolean; designCardOnly?: boolean } = {}) {
   const queryClient = useQueryClient();
-  const [libraryParams] = useSearchParams();
-  const [status, setStatus] = useState<GenericArtifactReviewStatus>(libraryParams.get("artifact_status") === "APPROVED" ? "APPROVED" : "DRAFT");
+  const [libraryParams,setLibraryParams] = useSearchParams();
+  const [status, setStatus] = useState<GenericArtifactReviewStatus>(["APPROVED","REJECTED"].includes(libraryParams.get("artifact_status")??"") ? libraryParams.get("artifact_status") as GenericArtifactReviewStatus : "DRAFT");
   const [copyRequests,setCopyRequests]=useState<Record<string,{platform:string;nonce:number}>>({});
-  const [focusedId,setFocusedId] = useState<string|null>(libraryParams.get("artifact_id"));
+  const [focusedId,setFocusedState] = useState<string|null>(libraryParams.get("artifact_id"));
+  const setFocusedId=(id:string|null)=>{setFocusedState(id);const next=new URLSearchParams(libraryParams);if(id){next.set("artifact_id",id);next.set("artifact_status",status);}else next.delete("artifact_id");if(id!==focusedId){next.delete("text_job_id");next.delete("photo_job_id");}setLibraryParams(next,{preventScrollReset:true});};
+  useEffect(()=>{setFocusedState(libraryParams.get("artifact_id"));const requested=libraryParams.get("artifact_status");if(requested&&["DRAFT","APPROVED","REJECTED"].includes(requested))setStatus(requested as GenericArtifactReviewStatus);},[libraryParams]);
+  const materialNav=useRef<HTMLElement>(null);
+  useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});materialNav.current?.scrollIntoView({block:"start",behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
   const [compact,setCompact] = useState(libraryParams.get("library_view")!=="expanded");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
@@ -171,7 +175,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const [variantPostId, setVariantPostId] = useState("");
   const [variantPostPlatform, setVariantPostPlatform] = useState("");
   const [variantPostNote, setVariantPostNote] = useState("");
-  const [search, setSearch] = useState(libraryParams.get("artifact_id")??"");
+  const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("ALL");
   const [sourceFilter, setSourceFilter] = useState("ALL");
   const [seriesFilter, setSeriesFilter] = useState("ALL");
@@ -249,6 +253,10 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const pageCount = Math.max(1, Math.ceil(filteredArtifacts.length / LIBRARY_PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pagedArtifacts = filteredArtifacts.slice(safePage * LIBRARY_PAGE_SIZE, safePage * LIBRARY_PAGE_SIZE + LIBRARY_PAGE_SIZE);
+  const focusedArtifact=focusedId?allArtifacts.find(item=>item.id===focusedId):null;
+  const focusIndex=filteredArtifacts.findIndex(item=>item.id===focusedId);
+  const displayArtifacts=focusedId?(focusedArtifact?[focusedArtifact]:[]):pagedArtifacts;
+  const returnToLibrary=()=>{if(focusIndex>=0)setPage(Math.floor(focusIndex/LIBRARY_PAGE_SIZE));setFocusedId(null);};
   const updateFilters = (apply: () => void) => { apply(); setPage(0); setFocusedId(null); };
   const save = useMutation({
     mutationFn: (id: string) => {
@@ -465,7 +473,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         <p className="mt-1 text-sm text-slate-500">تصفّح المواد، ثم افتح مادة لمراجعة أصلها وتجهيز وجهاتها.</p>
       </div>
       <label className="text-sm font-semibold">الحالة
-        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => {setFocusedId(null);setStatus(event.target.value as GenericArtifactReviewStatus);}} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
+        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => {const next=new URLSearchParams(libraryParams);next.delete("artifact_id");next.delete("text_job_id");next.delete("photo_job_id");next.set("artifact_status",event.target.value);setFocusedState(null);setStatus(event.target.value as GenericArtifactReviewStatus);setLibraryParams(next,{preventScrollReset:true});}} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
           <option value="DRAFT">قيد المراجعة</option>
           <option value="APPROVED">معتمد</option>
           <option value="REJECTED">مرفوض</option>
@@ -549,11 +557,12 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       {status === "APPROVED" && selectedMediaIds.length > 0 ? <><TelegramBatchPreviewPanel ids={selectedMediaIds} /><DistributionReadinessPanel ids={selectedMediaIds} /></> : null}
     </div>
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
-    {artifacts.isError ? <p role="alert" className="text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}</p> : null}
+    {artifacts.isError ? <div role="alert" className="workspace-surface p-4 text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}<button className="workspace-secondary" onClick={()=>void artifacts.refetch()}>إعادة قراءة مكتبة المحتوى</button><p>لا نعتبر فشل القراءة حذفاً للمادة.</p></div> : null}
     {!artifacts.isLoading && !artifacts.isError && filteredArtifacts.length === 0 ? <EmptyState title={allArtifacts.length === 0 ? "لا توجد مخرجات في هذه الحالة." : "لا توجد نتائج مطابقة للبحث أو الفلاتر الحالية."} /> : null}
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-slate-50 p-3"><p className="text-sm">افتح مادة للمراجعة والنسخ والخطط والسجل.</p><button type="button" onClick={()=>{setCompact(!compact);setFocusedId(null);}} className="rounded border bg-white p-2 text-xs font-bold">{compact?'فتح محررات جميع مواد الصفحة':'إغلاق المحررات والعودة للبطاقات'}</button></div>
+    {focusedId?<section ref={materialNav} tabIndex={-1} aria-label="تنقل مساحة المادة" className="workspace-surface scroll-mt-24 space-y-3 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><button className="workspace-secondary" onClick={returnToLibrary}>العودة إلى المكتبة</button><p className="text-sm">{focusIndex>=0?`المادة ${focusIndex+1} من ${filteredArtifacts.length} في النتائج الحالية`:"مادة مرتبطة بمعرّف مستقل"}</p><div className="flex flex-wrap gap-2"><button className="workspace-secondary" disabled={focusIndex<=0} onClick={()=>setFocusedId(filteredArtifacts[focusIndex-1].id)}>المادة السابقة</button><button className="workspace-secondary" disabled={focusIndex<0||focusIndex>=filteredArtifacts.length-1} onClick={()=>setFocusedId(filteredArtifacts[focusIndex+1].id)}>المادة التالية</button></div></div><p className="workspace-muted">التنقل لا يحفظ أو يعتمد أو ينشر. تعديلات هذه الصفحة غير المحفوظة تبقى عند الرجوع داخلها، وتُفقد عند إعادة تحميل الصفحة.</p>{focusedArtifact&&drafts[focusedArtifact.id]?.content!==undefined?<p role="status" className="text-sm text-amber-900">لهذه المادة تعديل غير محفوظ.</p>:null}{!artifacts.isLoading&&!artifacts.isError&&!focusedArtifact?<div role="status"><h3 className="font-bold">لم تظهر المادة في الحالة المختارة</h3><p className="text-sm leading-7">قد تكون حالة المراجعة تغيرت أو الرابط غير مطابق. لم نحذف شيئاً. جرّب الحالة الأخرى أو ارجع إلى المكتبة.</p><bdi className="break-all text-xs">{focusedId}</bdi></div>:null}</section>:null}
     <div className={`grid min-w-0 items-start gap-3 ${pagedArtifacts.length>1&&!focusedId?'xl:grid-cols-2':''}`}>
-      {pagedArtifacts.filter(artifact=>!focusedId||artifact.id===focusedId).map((artifact) => <article key={artifact.id} data-focused={focusedId===artifact.id} className="library-card min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+      {displayArtifacts.map((artifact) => <article key={artifact.id} data-focused={focusedId===artifact.id} className="library-card min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<label className="text-xs"><input type="checkbox" aria-label={`تنظيم المخرج ${artifact.id}`} checked={catalogIds.includes(artifact.id)} disabled={!catalogIds.includes(artifact.id)&&catalogIds.length>=100} onChange={e=>setCatalogIds(ids=>e.target.checked?[...ids,artifact.id]:ids.filter(id=>id!==artifact.id))}/> فهرسة</label>:null}
           {status === "APPROVED" && isTelegramMediaEligible(artifact) ? <input
@@ -574,7 +583,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{({DRAFT:"قيد المراجعة",APPROVED:"معتمد",REJECTED:"مرفوض"})[artifact.review_status]??artifact.review_status}</span>
         </div>
-        {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button type="button" aria-expanded={focusedId===artifact.id} onClick={()=>setFocusedId(focusedId===artifact.id?null:artifact.id)} className="library-card-primary rounded-lg px-4 py-2 text-sm font-bold">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
+        {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button type="button" aria-expanded={focusedId===artifact.id} onClick={()=>focusedId===artifact.id?returnToLibrary():setFocusedId(artifact.id)} className="library-card-primary rounded-lg px-4 py-2 text-sm font-bold">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
         {!compact||focusedId===artifact.id?<div className="space-y-3" aria-label={`مساحة المادة ${artifact.id}`}>
         {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<ContentOrganizationPanel key={artifact.id+":"+(artifact.organization?.version??0)} items={[artifact]}/>:null}
         <nav aria-label="مراحل العمل على المادة" className="flex flex-wrap gap-2 rounded bg-slate-50 p-2 text-xs text-slate-600"><a href={`#original-${artifact.id}`} className="underline">1. الأصل والملاحظات</a><a href={`#review-${artifact.id}`} aria-current={status==="DRAFT"?"step":undefined} className="underline">2. قرار المراجعة</a><a href={`#destinations-${artifact.id}`} aria-current={status==="APPROVED"?"step":undefined} className="underline">3. النسخ والوجهات والخطة</a><a href={`#history-${artifact.id}`} className="underline">4. سجل النشر</a></nav><div id={`original-${artifact.id}`} className="scroll-mt-24"/>
@@ -698,7 +707,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         </div>:null}
       </article>)}
     </div>
-    {pageCount > 1 ? <nav className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3" aria-label="ترقيم صفحات المخرجات">
+    {!focusedId&&pageCount > 1 ? <nav className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3" aria-label="ترقيم صفحات المخرجات">
       <button type="button" onClick={() => {setFocusedId(null);setPage((current) => Math.max(0, current - 1));}} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">السابق</button>
       <span className="text-xs font-semibold text-slate-500">صفحة {safePage + 1} من {pageCount} · عرض {pagedArtifacts.length} من {filteredArtifacts.length}</span>
       <button type="button" onClick={() => {setFocusedId(null);setPage((current) => Math.min(pageCount - 1, current + 1));}} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-bold text-slate-600 disabled:opacity-40">التالي</button>
@@ -766,4 +775,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-    }
+      }
