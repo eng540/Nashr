@@ -25,7 +25,7 @@ function SourceBookMap({ sourceId }: { sourceId: string }) {
     queryFn: () => productionJobsApi.bookMap(sourceId),
   });
   if (bookMap.isLoading) return <p role="status" className="mt-3 text-sm text-slate-500">جارٍ تحميل بنية الكتاب...</p>;
-  if (bookMap.isError) return <p role="alert" className="mt-3 text-sm text-rose-700">تعذر تحميل بنية الكتاب: {bookMap.error.message}</p>;
+  if (bookMap.isError) return <div role="alert" className="mt-3 text-sm text-rose-700">تعذر تحميل بنية الكتاب: {bookMap.error.message}<button type="button" onClick={() => bookMap.refetch()} className="mr-3 rounded-lg border px-3 py-2">إعادة تحميل بنية الكتاب</button></div>;
   const data = bookMap.data;
   if (!data) return null;
   return (
@@ -80,9 +80,23 @@ function BookAnalysisFrame({sourceId}:{sourceId:string}) {
 }
 
 export function SourcesPage() {
-  const [params]=useSearchParams();
-  const [analysis,setAnalysis]=useState(params.has("analysis"));
-  const [analysisId,setAnalysisId]=useState("");
+  const [params,setParams]=useSearchParams();
+  const analysis=params.has("analysis");
+  const analysisId=params.get("source_id")??"";
+  const analysisHeading=useRef<HTMLHeadingElement>(null);
+  const openAnalysis=(sourceId:string)=>{
+    const next=new URLSearchParams(params);next.set("analysis","1");
+    if(sourceId)next.set("source_id",sourceId);else next.delete("source_id");
+    setParams(next);
+  };
+  const closeAnalysis=()=>{
+    const next=new URLSearchParams(params);next.delete("analysis");next.delete("source_id");setParams(next);
+  };
+  useEffect(()=>{
+    if(!analysis)return;
+    const frame=requestAnimationFrame(()=>{analysisHeading.current?.focus({preventScroll:true});analysisHeading.current?.scrollIntoView({block:"start"});});
+    return()=>cancelAnimationFrame(frame);
+  },[analysis,analysisId]);
   const [showOther,setShowOther]=useState(false);
   const queryClient = useQueryClient();
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -121,7 +135,7 @@ export function SourcesPage() {
         description="احفظ كتاب PDF، ثم حلّله لاستخراج المواد، وراجعها قبل إرسالها إلى الإنتاج. الملفات الجاهزة للمراجعة توجد في بنك المحتوى."
         actions={<>
           <Link to="/production" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">الإنتاج من المصادر</Link>
-          <button type="button" onClick={()=>setAnalysis(v=>!v)} className="rounded-xl border bg-white px-4 py-2 text-sm font-bold">{analysis?"إغلاق تحليل الكتاب":"تحليل كتاب واستخراج المواد"}</button>
+          <button type="button" onClick={()=>analysis?closeAnalysis():openAnalysis("")} className="rounded-xl border bg-white px-4 py-2 text-sm font-bold">{analysis?"إغلاق تحليل الكتاب":"تحليل كتاب واستخراج المواد"}</button>
         </>}
       />
 
@@ -151,7 +165,7 @@ export function SourcesPage() {
         {upload.isSuccess ? <p role="status" className="mt-2 text-sm text-emerald-800">حُفظ الملف. الخطوة التالية: افتح تحليل الكتاب، ثم ابدأ التحليل إن أردت.</p> : null}
       </section>:null}
 
-      {analysis?<section className="rounded-2xl border bg-white p-3" aria-label="تحليل الكتاب"><h3 className="font-bold">تحليل الكتاب واستخراج المواد</h3><p className="text-xs leading-6">أداة تحليل ضمن مساحة العمل. فتحها لا يبدأ التحليل تلقائياً. ارجع إلى الإنتاج بعد مراجعة المواد المستخرجة.</p><BookAnalysisFrame sourceId={analysisId}/></section>:null}
+      {analysis?<section className="rounded-2xl border bg-white p-3" aria-label="تحليل الكتاب"><h3 ref={analysisHeading} tabIndex={-1} className="scroll-mt-24 font-bold">تحليل الكتاب واستخراج المواد</h3><p className="text-xs leading-6">أداة تحليل ضمن مساحة العمل. فتحها لا يبدأ التحليل تلقائياً. ارجع إلى الإنتاج بعد مراجعة المواد المستخرجة.</p><BookAnalysisFrame sourceId={analysisId}/></section>:null}
       <section className="rounded-2xl border bg-white p-5 shadow-sm" aria-label="قائمة المصادر">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-xl font-bold">{showOther?"جميع المصادر المحفوظة":"كتب PDF فقط"}</h3><label className="text-xs"><input type="checkbox" checked={showOther} onChange={e=>setShowOther(e.target.checked)}/> إظهار بقية الملفات والمصادر دون حذفها</label>
@@ -167,7 +181,7 @@ export function SourcesPage() {
           </label>
         </div>
         {sources.isLoading ? <p role="status" className="mt-4 text-sm text-slate-500">جارٍ تحميل المصادر...</p> : null}
-        {sources.isError ? <p role="alert" className="mt-4 text-sm text-rose-700">تعذر تحميل المصادر: {sources.error.message}</p> : null}
+        {sources.isError ? <div role="alert" className="mt-4 text-sm text-rose-700">تعذر تحميل المصادر: {sources.error.message}<button type="button" onClick={() => sources.refetch()} className="mr-3 rounded-lg border px-3 py-2">إعادة تحميل المصادر</button></div> : null}
         {sources.isSuccess && items.length === 0 ? (
           <div className="mt-4 rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">
             {query.trim() ? "لا توجد مصادر تطابق البحث." : "لا توجد مصادر بعد. ابدأ برفع ملف PDF من الأعلى."}
@@ -197,7 +211,7 @@ export function SourcesPage() {
                 >
                   {expandedId === source.id ? "إخفاء البنية" : "عرض بنية الكتاب"}
                 </button>:null}
-                {source.mime_type==="application/pdf"?<button type="button" onClick={()=>{setAnalysisId(source.id);setAnalysis(true);}} className="rounded-lg border px-3 py-2 text-sm">فتح تحليل هذا الكتاب</button>:null}<Link to={`/production?source_id=${encodeURIComponent(source.id)}${source.mime_type!=="application/pdf"?"&other_sources=1":""}`} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">الإنتاج من هذا المصدر</Link>
+                {source.mime_type==="application/pdf"?<button type="button" onClick={()=>openAnalysis(source.id)} className="rounded-lg border px-3 py-2 text-sm">فتح تحليل هذا الكتاب</button>:null}<Link to={`/production?source_id=${encodeURIComponent(source.id)}${source.mime_type!=="application/pdf"?"&other_sources=1":""}`} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">الإنتاج من هذا المصدر</Link>
               </div>
               {expandedId === source.id ? <SourceBookMap sourceId={source.id} /> : null}
             </article>
