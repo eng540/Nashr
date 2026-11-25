@@ -15,3 +15,18 @@ def test_public_exact_domain_proof(monkeypatch):
     assert response.headers["content-type"].startswith("text/plain")
     assert client.get("/api/connections/tiktok").status_code==401
     assert client.get("/tiktok-unregistered.txt",follow_redirects=False).status_code in {401,303,404}
+
+
+def test_public_exact_sandbox_proof_preserves_existing(monkeypatch):
+    monkeypatch.setenv("NASHR_AUTH_PASSWORD", "owner-test-only")
+    client=TestClient(create_app())
+    root=Path(__file__).resolve().parents[2]/"app"/"static"
+    for filename in ["tiktokePPmBzm3Ej1QWBVM7rVXy8eiIbCCGpJj.txt", "tiktokQDsoHAsAIEswE2q0vxreoi4iWCJbhDsS.txt"]:
+        response=client.get("/"+filename)
+        assert response.status_code==200
+        assert response.content==(root/filename).read_bytes().rstrip(b"\n")
+        assert len(response.content)==68
+    assert client.get("/api/connections/tiktok").status_code==401
+    import hashlib
+    assert hashlib.sha256(client.get("/tiktokePPmBzm3Ej1QWBVM7rVXy8eiIbCCGpJj.txt").content).hexdigest()=="5efaecff91c5f7f7b1b49388dd733bc6dc5452e79c2059c97317eb21c985488b"
+    assert client.get("/bank").status_code==401
