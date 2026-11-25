@@ -162,7 +162,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const setFocusedId=(id:string|null)=>{setFocusedState(id);const next=new URLSearchParams(libraryParams);if(id){next.set("artifact_id",id);next.set("artifact_status",status);}else next.delete("artifact_id");if(id!==focusedId){next.delete("text_job_id");next.delete("photo_job_id");}setLibraryParams(next,{preventScrollReset:true});};
   useEffect(()=>{setFocusedState(libraryParams.get("artifact_id"));const requested=libraryParams.get("artifact_status");if(requested&&["DRAFT","APPROVED","REJECTED"].includes(requested))setStatus(requested as GenericArtifactReviewStatus);},[libraryParams]);
   const materialNav=useRef<HTMLElement>(null);
-  useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});materialNav.current?.scrollIntoView({block:"start",behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
+  useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
   const [compact,setCompact] = useState(libraryParams.get("library_view")!=="expanded");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
   const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
@@ -775,4 +775,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-      }
+}
