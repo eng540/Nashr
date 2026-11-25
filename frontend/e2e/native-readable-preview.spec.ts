@@ -1,0 +1,11 @@
+import {test,expect} from '@playwright/test';
+test('saved native drafts show readable facts while technical JSON stays optional without writes',async({page},info)=>{
+ let writes=0;
+ const values=[{type:'POLL',question:'أي خيار تراجع؟',options:['الخيار الأول','الخيار الثاني'],allows_multiple_answers:true},{type:'LOCATION',latitude:21.5,longitude:39.2},{type:'LIVE_LOCATION',latitude:21.6,longitude:39.3,live_period:120},{type:'VENUE',latitude:21.7,longitude:39.4,title:'مكان محدد',address:'عنوان يراجعه المستخدم'},{type:'CONTACT',first_name:'اسم محفوظ',last_name:'العائلة',phone_number:'+966500000001'},{type:'DICE',emoji:'🎯'}];
+ const items=values.map((native,i)=>({id:'native-'+i,kind:'TEXT',status:'AVAILABLE',content:'وصف داخلي '+i,storage_uri:null,mime_type:'text/plain',metadata:{title:'مسودة '+i,telegram_native:native},review_status:'DRAFT',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
+ await page.route('**/*',route=>{const r=route.request(),p=new URL(r.url()).pathname;if(r.method()!=='GET')writes++;if(p==='/api/artifacts')return route.fulfill({json:items});if(p.startsWith('/api/')||p.startsWith('/posts')||p==='/sources')return route.fulfill({json:[]});return route.continue();});
+ await page.setViewportSize({width:390,height:844});await page.goto('/bank?library_view=expanded');
+ const previews=page.getByRole('region',{name:'معاينة محتوى Telegram',exact:true});await expect(previews).toHaveCount(6);
+ await expect(previews.nth(0)).toContainText('الخيار الأول');await expect(previews.nth(0)).toContainText('يسمح بأكثر من إجابة');await expect(previews.nth(1)).toContainText('خط العرض');await expect(previews.nth(2)).toContainText('120');await expect(previews.nth(3)).toContainText('عنوان يراجعه المستخدم');await expect(previews.nth(4)).toContainText('+966500000001');await expect(previews.nth(5)).toContainText('🎯');
+ for(const preview of await previews.all())await expect(preview.locator('pre')).toBeHidden();await previews.nth(0).scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('readable-native-mobile.png')});await previews.nth(0).getByText('بيانات تقنية اختيارية للمحتوى',{exact:true}).click();await expect(previews.nth(0).locator('pre')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();expect(writes).toBe(0);
+});
