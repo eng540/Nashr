@@ -12,6 +12,7 @@ import {genericArtifactsApi,type CentralPlatformCopy} from '../../shared/api/art
 export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;kind:string;onPlan?:()=>void;request?:{platform:string;nonce:number}}) {
  function fileSize(bytes:unknown) {const size=Number(bytes);return size<1024?`${size} بايت`:size<1024*1024?`${(size/1024).toFixed(1)} كيبيبايت`:`${(size/1024/1024).toFixed(2)} ميبيبايت`;}
  const panelRef=useRef<HTMLDetailsElement>(null);
+ const openedRead=useRef(false);
  const [handoff,setHandoff]=useState('');
  const [rows,setRows]=useState<CentralPlatformCopy[]>([]);
  const [active,setActive]=useState('telegram');
@@ -20,7 +21,7 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
  const [background,setBackground]=useState('');
  const [jpegOpen,setJpegOpen]=useState(false);
  const jpeg=useMutation({mutationFn:()=>genericArtifactsApi.jpegPreview(id,active,shown!.current_source_fingerprint,shown!.version,background)});
- const load=useMutation({mutationFn:()=>genericArtifactsApi.platformCopies(id),onSuccess:data=>{setRows(data.items);setDraft(null);setNote('');}});
+ const load=useMutation({mutationFn:()=>{openedRead.current=true;return genericArtifactsApi.platformCopies(id);},onSuccess:data=>{setRows(data.items);setDraft(null);setNote('');}});
  const prepare=useMutation({mutationFn:()=>genericArtifactsApi.prepareCopies(id),onSuccess:data=>{setRows(data.items);setDraft(null);setNote('جُهزت السجلات الناقصة فقط. النسخ المعدلة لم تُستبدل، والأصل لم يتغير.');}});
  const save=useMutation({mutationFn:()=>genericArtifactsApi.updateCopy(id,draft!),onSuccess:copy=>{setRows(current=>current.map(row=>row.platform===copy.platform?copy:row));setDraft(null);setNote('حُفظت حقول النسخة فقط. لا مسودة نشر أو جدول أو إرسال من هذا الحفظ.');}});
  const inspect=useMutation({mutationFn:()=>genericArtifactsApi.inspectMedia(id,active)});
@@ -45,10 +46,11 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
   setActive(request.platform);setHandoff('فتح السجلات المحفوظة فقط. لا تجهيز جديد أو نشر من هذا الانتقال.');load.mutate();
  },[request?.nonce]);
  function edit(field:keyof CentralPlatformCopy['fields'],value:string|string[]) {inspect.reset();jpeg.reset();if(shown)setDraft({...shown,fields:{...shown.fields,[field]:value}});setNote('');}
- return <details ref={panelRef} className="scroll-mt-24 rounded-xl border border-violet-200 bg-violet-50/50 p-3" aria-label={`نسخ المنصات ${id}`}>
+ return <details onToggle={e=>{if(e.target!==e.currentTarget||!e.currentTarget.open||openedRead.current||busy||draft)return;openedRead.current=true;load.mutate();}} ref={panelRef} className="scroll-mt-24 rounded-xl border border-violet-200 bg-violet-50/50 p-3" aria-label={`نسخ المنصات ${id}`}>
   <summary className="cursor-pointer text-xs font-bold">نسخ المنصات · حقول مرتبطة بالأصل</summary>
   <div className="mt-3 space-y-3 text-xs leading-6">{handoff?<p role="status" className="rounded border bg-white p-2">{handoff}</p>:null}<p>اعتماد الأصل واحد. ننسخ النص كما هو دون قص أو توليد؛ نتحقق من الحقول المعروفة ونبين ما ينقص. تعديل نسخة لا يغير الأصل أو بقية المنصات.</p>
    <div className="flex flex-wrap gap-2"><button type="button" disabled={busy||!!draft} onClick={()=>{inspect.reset();jpeg.reset();load.mutate();}} className="rounded border bg-white p-2">عرض النسخ المحفوظة</button><button type="button" disabled={busy||!!draft} onClick={()=>{inspect.reset();jpeg.reset();prepare.mutate();}} className="rounded border bg-white p-2">تجهيز النسخ الناقصة دون استبدال</button></div>
+   {load.isPending?<p role="status">جارٍ قراءة النسخ المحفوظة فقط، دون تجهيز أو تغيير...</p>:null}
    {load.isSuccess&&!rows.length?<p role="status">لا توجد نسخ مركزية محفوظة لهذه المادة بعد. استخدم تجهيز النسخ الناقصة بقرار منفصل؛ لا نجهزها تلقائياً عند فتح المسار.</p>:null}
    {rows.length?<><label className="block">المنصة<select aria-label={`منصة النسخة ${id}`} disabled={!!draft||busy} value={active} onChange={e=>{setActive(e.target.value);inspect.reset();jpeg.reset();setNote('');}} className="block w-full rounded border bg-white p-2">{rows.map(copy=><option key={copy.platform} value={copy.platform}>{copy.label} · {copy.field_status==='FIELDS_VALIDATED'?'الحقول مقبولة مبدئياً':'يلزم استكمال'}</option>)}</select></label>
     {shown?<><p className="rounded bg-white p-2">{shown.origin==='UNCHANGED_ORIGINAL'?'من الأصل دون تغيير':'حقول معدلة'} · إصدار {shown.version} · {shown.central_approval==='APPROVED'?'اعتماد الأصل محفوظ':'الأصل غير معتمد'}</p>
