@@ -1,6 +1,6 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "python -m pip install --no-cache-dir --disable-pip-version-check --no-binary=Pillow --target=/app/python-deps . && npm --prefix frontend ci && npm --prefix frontend run build"
+buildCommand = "sh scripts/build_runtime.sh"
 
 [deploy]
 startCommand = "sh -c 'export PYTHONPATH=\"/app/python-deps${PYTHONPATH:+:$PYTHONPATH}\"; python scripts/check_arabic_renderer.py && python scripts/migrate.py && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
