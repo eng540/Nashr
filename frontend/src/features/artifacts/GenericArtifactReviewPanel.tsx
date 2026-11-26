@@ -1,3 +1,4 @@
+import {MetaBatchReviewPanel} from './MetaBatchReviewPanel';
 import {NativeTelegramPreview} from './NativeTelegramPreview';
 import {NativeTelegramFields,blankNative,nativeError} from './NativeTelegramFields';
 import {BatchPlatformCopiesPanel} from './BatchPlatformCopiesPanel';
@@ -594,7 +595,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         {batchNote ? <p role="status" className="w-full text-sm font-semibold text-emerald-800">{batchNote}</p> : null}
       </div> : null}
       {batchMediaDrafts.isError ? <p role="alert" className="text-sm text-rose-700">{batchMediaDrafts.error.message}</p> : null}
-      {status === "APPROVED" && selectedMediaIds.length > 0 ? <><BatchPlatformCopiesPanel ids={selectedMediaIds} items={allArtifacts} onPreparing={()=>setCopiesRevision(r=>r+1)}/><DistributionReadinessPanel key={copiesRevision} ids={selectedMediaIds} /><TelegramBatchPreviewPanel ids={selectedMediaIds} copiesRevision={copiesRevision}/></> : null}
+      {status === "APPROVED" && selectedMediaIds.length > 0 ? <><BatchPlatformCopiesPanel ids={selectedMediaIds} items={allArtifacts} onPreparing={()=>setCopiesRevision(r=>r+1)}/><DistributionReadinessPanel key={copiesRevision} ids={selectedMediaIds} /><MetaBatchReviewPanel key={`meta:${copiesRevision}`} ids={selectedMediaIds} items={allArtifacts}/><TelegramBatchPreviewPanel ids={selectedMediaIds} copiesRevision={copiesRevision}/></> : null}
     </div>
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
     {artifacts.isError ? <div role="alert" className="workspace-surface p-4 text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}<button className="workspace-secondary" onClick={()=>void artifacts.refetch()}>إعادة قراءة مكتبة المحتوى</button><p>لا نعتبر فشل القراءة حذفاً للمادة.</p></div> : null}
