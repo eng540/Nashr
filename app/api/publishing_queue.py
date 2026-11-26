@@ -55,6 +55,9 @@ def _state(reference, content_type):
         published = or_(published, confirmed_for(reference))
     planned = exists(select(ScheduleItemModel.id).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
         .where(item_ref == reference, ScheduleModel.status.in_(['DRAFT','ACTIVE','PAUSED']), ScheduleItemModel.status.in_(['PENDING','PROCESSING'])))
+    if content_type == 'ARTIFACT':
+        from app.application.pending_meta_operations import planned_for
+        planned = or_(planned, planned_for(reference))
     failed = or_(_unresolved_publication_failure(reference, content_type),
         exists(select(ScheduleItemModel.id).join(ScheduleModel, ScheduleModel.id == ScheduleItemModel.schedule_id)
             .where(item_ref == reference, _failed_item(), ScheduleModel.status != 'CANCELLED')))
@@ -154,6 +157,14 @@ async def publishing_queue(q: str = Query(default='', max_length=500),
             group = outcomes.setdefault(('ARTIFACT', uid), [])
             group.append({'platform': platform_name, 'attempts': attempts,
                 'confirmed_targets': confirmed_targets, 'unresolved_failures': None, 'record_scope': 'CONNECTOR'})
+    pending = {}
+    if ids:
+        from app.application.pending_meta_operations import pending_operations
+        view = pending_operations()
+        for operation in (await session.execute(select(view).where(view.c.artifact_id.in_(ids))
+                .order_by(view.c.due_at, view.c.platform, view.c.id))).mappings():
+            pending.setdefault(operation['artifact_id'], []).append(dict(
+                id=str(operation['id']), platform=operation['platform'], due_at=operation['due_at'].isoformat()))
     from app.application.central_platform_copies import evaluate
     from app.application.distribution_readiness import source_fingerprint
     items=[]
@@ -168,6 +179,7 @@ async def publishing_queue(q: str = Query(default='', max_length=500),
             prepared_copies=len(prepared), fields_validated=sum(evaluate(artifact,c)['field_status']=='FIELDS_VALIDATED' for c in prepared),
             execution_ready=False,
             preparation_scope='CENTRAL_COPIES' if artifact else 'LEGACY_TELEGRAM')
+        data['pending_operations'] = pending.get(row['id'], []) if artifact else []
         data['publication_outcomes'] = outcomes.get((row['origin'], row['id']), [])
         confirmed_platforms = {item['platform'] for item in data['publication_outcomes'] if item['confirmed_targets']}
         data['selected_without_confirmed_history'] = [p for p in data['selected_platforms'] if p not in confirmed_platforms]
