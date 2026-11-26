@@ -26,3 +26,25 @@ test('search debounces, keeps stale results inert, recovers empty and failed rea
  await page.getByLabel('بحث قائمة المحتوى الموحدة').pressSequentially('pending',{delay:10});await expect.poll(()=>requests.filter(x=>x==='pending').length).toBe(1);expect(requests.length-before).toBe(1);await expect(queue).toContainText('تبقى آخر قائمة ظاهرة');await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();expect(await queue.locator('a').filter({hasText:'فتح المادة والتجهيز والخطة والسجل'}).evaluate(e=>!!e.closest('[inert]'))).toBeTruthy();release!();await expect(queue).toContainText('لا توجد مواد مطابقة.');await queue.getByRole('button',{name:'عرض كل المحتوى المعتمد'}).click();await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();
  fail=true;await queue.getByRole('button',{name:'تحديث قائمة المحتوى'}).click();await expect(queue.getByRole('alert')).toBeVisible({timeout:15000});fail=false;await queue.getByRole('button',{name:'إعادة تحميل قائمة المحتوى'}).click();await expect(queue.getByRole('alert')).toHaveCount(0);await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();expect(writes).toBe(0);
 });
+
+test('saved Meta schedules show exact operation links without execution controls',async({page},info)=>{
+ let writes=0;
+ await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
+ if(p.startsWith('/api/')||p.startsWith('/posts')||p.startsWith('/schedules')){
+ if(r.method()!=='GET')writes++;
+ if(p==='/api/publishing-queue')return route.fulfill({json:{items:[{id:'material-1',origin:'ARTIFACT',kind:'VIDEO',title:'مادة بموعد محفوظ',content_preview:'الأصل محفوظ',state:'PLANNED',prepared_copies:6,fields_validated:3,selected_platforms:['instagram','facebook'],selection_stale:false,pending_operations:[{id:'ig-exact',platform:'instagram',due_at:'2026-11-27T08:00:00+00:00'},{id:'fb-exact',platform:'facebook',due_at:'2026-11-27T09:00:00+00:00'},{id:'ft-exact',platform:'facebook_text',due_at:'2026-11-27T10:00:00+00:00'},{id:'fp-exact',platform:'facebook_photo',due_at:'2026-11-27T11:00:00+00:00'}]}],total:1,caveat:'لا نشر من القراءة'}});
+ if(p==='/api/platform-operations')return route.fulfill({json:{items:[],total:0,counts:{waiting:0,published:0,attention:0,total:0}}});
+ if(p==='/api/artifacts/platform-variants')return route.fulfill({json:[]});
+ return route.fulfill({json:{items:[],total:0,sources:[],kinds:[]}});}
+ return route.continue();});
+ await page.goto('/publishing');const queue=page.getByRole('region',{name:'قائمة المحتوى الموحدة',exact:true});
+ await expect(queue.getByText('مادة بموعد محفوظ',{exact:true})).toBeVisible();await expect(queue).toContainText('خطة محفوظة');
+ const pending=queue.getByLabel('مواعيد Meta المحفوظة');await expect(pending).toContainText('لم يبدأ إرسالها');await expect(pending.locator('time').first()).toContainText('11:00');
+ const links=pending.getByRole('link',{name:'مراجعة الموعد المحفوظ'});await expect(links).toHaveCount(4);
+ await expect(links.nth(0)).toHaveAttribute('href','/bank?artifact_status=APPROVED&artifact_id=material-1&copy_platform=instagram&instagram_job_id=ig-exact');
+ await expect(links.nth(1)).toHaveAttribute('href','/connections?reel_artifact_id=material-1&reel_job_id=fb-exact#platform-facebook');
+ await expect(links.nth(2)).toHaveAttribute('href','/bank?artifact_status=APPROVED&artifact_id=material-1&text_job_id=ft-exact');
+ await expect(links.nth(3)).toHaveAttribute('href','/bank?artifact_status=APPROVED&artifact_id=material-1&photo_job_id=fp-exact');
+ await expect(pending.getByRole('button')).toHaveCount(0);expect(writes).toBe(0);
+ await queue.getByTestId('queue-ARTIFACT-material-1').screenshot({path:info.outputPath('meta-planned-desktop.png')});await page.setViewportSize({width:390,height:844});await page.addStyleTag({content:'header{visibility:hidden}'});await queue.getByTestId('queue-ARTIFACT-material-1').screenshot({path:info.outputPath('meta-planned-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});
