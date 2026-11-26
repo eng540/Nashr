@@ -1083,3 +1083,19 @@ class TikTokInboxOAuthFlowModel(Base):
     consumed:Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
     token_ciphertext:Mapped[str|None]=mapped_column(Text,nullable=True)
     accounts:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
+
+
+class InstagramBatchDraftModel(Base):
+    """Dormant exact batch plan. No HTTP route or scheduler reads it."""
+    __tablename__='instagram_batch_drafts'
+    __table_args__=(CheckConstraint("state IN ('DRAFT','APPROVED')",name='ck_instagram_batch_draft_state'),)
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    request_key:Mapped[str]=mapped_column(String(100),nullable=False,unique=True)
+    request_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    snapshot_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    state:Mapped[str]=mapped_column(String(20),nullable=False)
+    decision_ids:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
+    evidence_ref:Mapped[str|None]=mapped_column(Text,nullable=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    approved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
