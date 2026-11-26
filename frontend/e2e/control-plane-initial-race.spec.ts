@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 for (const staleFails of [false,true]) {
- test(`stale initial read ${staleFails?'failure':'success'} cannot erase new product fields`,async({page})=>{
+ test(`stale initial read ${staleFails?'failure':'success'} cannot erase new product fields`,async({page},testInfo)=>{
   const counts:Record<string,number>={};
   let release!:()=>void;
   const gate=new Promise<void>(resolve=>{release=resolve;});
@@ -28,6 +28,6 @@ for (const staleFails of [false,true]) {
   await expect(page.getByLabel('الاسم',{exact:true})).toHaveValue('New product');
   await expect(page.getByText('stale request failed',{exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'جديد',exact:true})).toBeEnabled();
-  if (!staleFails) await page.screenshot({path:'/downloads/control-plane-read-fixed.png',fullPage:true});
+  if (!staleFails) await page.screenshot({path:testInfo.outputPath('control-plane-read-fixed.png'),fullPage:true});
  });
 }
