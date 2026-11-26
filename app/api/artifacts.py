@@ -344,6 +344,18 @@ async def copy_media_url(artifact_id: UUID,platform: str,media_id: UUID,session:
     except ValueError as exc: raise _handle_error(exc) from exc
 
 
+@router.get("/{artifact_id}/platform-copies/tiktok/manual-bundle")
+async def tiktok_manual_bundle(artifact_id: UUID, copy_version: int = Query(ge=1), source_fingerprint: str = Query(pattern=r"^[0-9a-f]{64}$"), session: AsyncSession = Depends(get_session)):
+    from app.application.tiktok_manual_handoff import export_bundle
+    from fastapi.responses import Response
+    try:
+        content = await export_bundle(session, artifact_id, copy_version, source_fingerprint)
+        return Response(content, media_type="application/zip", headers={"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff", "Content-Disposition":f'attachment; filename="tiktok-manual-{artifact_id}-v{copy_version}.zip"'})
+    except ArtifactStorageConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
+    except ArtifactStorageError as exc: raise HTTPException(502,str(exc)) from exc
+    except ValueError as exc: raise _handle_error(exc) from exc
+
+
 class JpegPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source_fingerprint: str = Field(min_length=64,max_length=64)
