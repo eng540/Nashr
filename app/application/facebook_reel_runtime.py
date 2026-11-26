@@ -36,6 +36,7 @@ async def pinned(s,uid):
     asset=await s.get(PlatformCopyMediaModel,p.selected_media_id,populate_existing=True) if p.selected_media_id else a
     if not asset or asset.mime_type!='video/mp4' or (p.selected_media_id and (asset.artifact_id!=uid or asset.platform!='facebook' or asset.source_fingerprint!=p.source_fingerprint)):raise ValueError('وسيط MP4 حالي لهذه المادة والمنصة مطلوب.')
     data=await S3ArtifactStorage.from_environment().get_bytes(asset.storage_uri,max_bytes=50_000_000)
+    if asset is not a and hashlib.sha256(data).hexdigest()!=asset.sha256:raise ValueError('بايتات الوسيط المختار اختلفت عن بصمته المسجلة.')
     from app.domain.platform_media_probe import inspect_media
     import asyncio
     m=await asyncio.to_thread(inspect_media,data,'VIDEO','video/mp4')
@@ -53,6 +54,8 @@ async def prepare_delivery(s,uid):
     from uuid import uuid4
     from app.application.platform_copy_media import current_copy
     a=await s.get(ArtifactModel,uid);ig=await s.get(PlatformCopyModel,(uid,'instagram'));fb=await s.get(PlatformCopyModel,(uid,'facebook'))
+    if fb and fb.selected_media_id is not None:
+        raise ValueError('وسيط Facebook مختار بالفعل. استخدم معاينته دون تحويل أو استبدال، أو عد إلى الأصل صراحةً أولاً.')
     if not a or not ig or not fb or a.kind!='VIDEO' or ig.selected_media_id is not None:raise ValueError('Original approved video and Instagram copy required')
     a,fb=await current_copy(s,uid,'facebook',source_fingerprint(a),fb.version)
     # Only copy exact existing words on the owner's selected material. No generation.
