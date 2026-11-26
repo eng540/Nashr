@@ -152,3 +152,31 @@ def test_relative_permalink_bound_to_known_video():
     assert r.normalize_permalink('/reel/999/','456') is None
     assert r.normalize_permalink('//evil.invalid/reel/456/','456') is None
     assert r.normalize_permalink('https://evil.invalid/reel/456/','456') is None
+
+@pytest.mark.asyncio
+async def test_prepare_delivery_never_replaces_selected_facebook_asset():
+    from types import SimpleNamespace
+    from uuid import uuid4
+    a=SimpleNamespace(kind='VIDEO');ig=SimpleNamespace(selected_media_id=None)
+    fb=SimpleNamespace(selected_media_id=uuid4(),fields={'description':'reviewed Facebook words'},version=7)
+    class S:
+        async def get(self,model,key):return a if model is r.ArtifactModel else ig if key[1]=='instagram' else fb
+    with pytest.raises(ValueError,match='Facebook'):
+        await r.prepare_delivery(S(),uuid4())
+    assert fb.version==7 and fb.fields=={'description':'reviewed Facebook words'}
+
+@pytest.mark.asyncio
+async def test_selected_facebook_asset_hash_is_checked_before_probe(monkeypatch):
+    from types import SimpleNamespace
+    from uuid import uuid4
+    uid=uuid4();mid=uuid4()
+    a=SimpleNamespace(kind='VIDEO',review_status='APPROVED',status='AVAILABLE')
+    p=SimpleNamespace(fields={'title':'','description':'words','tags':[],'alt_text':''},version=1,source_fingerprint='fp',selected_media_id=mid)
+    asset=SimpleNamespace(artifact_id=uid,platform='facebook',source_fingerprint='fp',mime_type='video/mp4',sha256='a'*64,storage_uri='private')
+    class S:
+        async def get(self,model,key,**kw):return a if model is r.ArtifactModel else p if model is r.PlatformCopyModel else asset
+    class Storage:
+        async def get_bytes(self,*a,**kw):return b'tampered'
+    monkeypatch.setattr(r,'source_fingerprint',lambda a:'fp')
+    monkeypatch.setattr(r.S3ArtifactStorage,'from_environment',lambda:Storage())
+    with pytest.raises(ValueError,match='بصمته'):await r.pinned(S(),uid)

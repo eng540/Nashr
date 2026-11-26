@@ -305,6 +305,25 @@ async def save_copy_jpeg(artifact_id: UUID,platform: str,payload: CopyMediaSaveR
         raise _handle_error(exc) from exc
 
 
+class VideoPrepareRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    source_fingerprint: str=Field(pattern=r"^[0-9a-f]{64}$")
+    copy_version: int=Field(ge=1)
+    full_frame_black_padding: bool
+
+
+@router.post("/{artifact_id}/platform-copies/{platform}/media/video")
+async def prepare_copy_video(artifact_id: UUID,platform: str,payload: VideoPrepareRequest,session: AsyncSession=Depends(get_session)):
+    from app.application.platform_copy_media import prepare_video
+    if payload.full_frame_black_padding is not True:raise HTTPException(409,"اختر حشو الإطار الكامل بالأسود صراحةً؛ لا قص.")
+    try:return await prepare_video(session,artifact_id,platform,fingerprint=payload.source_fingerprint,version=payload.copy_version)
+    except ArtifactStorageConfigurationError as exc:raise HTTPException(503,str(exc)) from exc
+    except ArtifactStorageError as exc:raise HTTPException(502,str(exc)) from exc
+    except ValueError as exc:
+        await session.rollback()
+        raise _handle_error(exc) from exc
+
+
 @router.post("/{artifact_id}/platform-copies/{platform}/media/selection")
 async def select_copy_media(artifact_id: UUID,platform: str,payload: CopyMediaSelectionRequest,session: AsyncSession=Depends(get_session)):
     from app.application.platform_copy_media import select_media

@@ -91,3 +91,33 @@ async def media_url(session,uid,platform,media_id):
     # Reviewing stale history is allowed, but it remains explicitly stale and cannot be selected.
     url=await S3ArtifactStorage.from_environment().presign_get(asset.storage_uri,expires_seconds=300)
     return {'url':url,'expires_in':300,**describe_media(row,asset),'execution_authorized':False}
+
+
+async def prepare_video(session,uid,platform,*,fingerprint,version):
+    """Explicit private format preparation; no new Artifact or execution decision."""
+    from app.domain.video_derivative import video_derivative
+    if platform not in {'instagram','facebook'}:raise ValueError('نسخ الفيديو لـInstagram وFacebook فقط.')
+    row=await session.get(ArtifactModel,uid);copy=await session.get(PlatformCopyModel,(uid,platform))
+    if row is None or copy is None or row.review_status!='APPROVED' or row.status!='AVAILABLE' or source_fingerprint(row)!=fingerprint or copy.source_fingerprint!=fingerprint or copy.version!=version:
+        raise ValueError('تغير الأصل أو نسخة المنصة؛ أعد تحميلها.')
+    if row.kind!='VIDEO' or row.mime_type not in {'video/mp4','video/quicktime'} or not row.storage_uri:
+        raise ValueError('اختر فيديوMP4/MOVأصلياً معتمداً.')
+    storage=S3ArtifactStorage.from_environment()
+    source=await storage.get_bytes(row.storage_uri,max_bytes=50_000_000)
+    try:content,measurements=await asyncio.to_thread(video_derivative,source,platform)
+    except ValueError:raise
+    except Exception as exc:raise ValueError('تعذر تجهيز نسخة فيديو آمنة. الأصل والاختيار لم يتغيرا.') from exc
+    # Conversion has no row locks. Serialize only the final save, then re-read.
+    row,copy=await current_copy(session,uid,platform,fingerprint,version)
+    await session.refresh(row);await session.refresh(copy)
+    if source_fingerprint(row)!=fingerprint or copy.source_fingerprint!=fingerprint or copy.version!=version or row.review_status!='APPROVED' or row.status!='AVAILABLE':
+        raise ValueError('تغير الأصل أو نسخة المنصة أثناء التحويل.')
+    recipe={'kind':'FULL_FRAME_VIDEO','version':1,'platform':platform,'canvas':'1080x1920','padding':'black','cropped':False,'trimmed':False,'audio':'AAC_STEREO_48K_'+('120K' if platform=='instagram' else '160K')}
+    digest=hashlib.sha256(content).hexdigest()
+    existing=(await session.execute(select(PlatformCopyMediaModel).where(PlatformCopyMediaModel.artifact_id==uid,PlatformCopyMediaModel.platform==platform,PlatformCopyMediaModel.source_fingerprint==fingerprint,PlatformCopyMediaModel.sha256==digest,PlatformCopyMediaModel.recipe==recipe))).scalars().first()
+    if existing is None:
+        mid=uuid4();uri=await storage.put(key=f'artifacts/platform-copies/{uid}/{platform}/{mid}.mp4',content=content,content_type='video/mp4')
+        existing=PlatformCopyMediaModel(id=mid,artifact_id=uid,platform=platform,source_fingerprint=fingerprint,source_sha256=hashlib.sha256(source).hexdigest(),sha256=digest,storage_uri=uri,mime_type='video/mp4',recipe=recipe,measurements=measurements);session.add(existing)
+    # Save for explicit visual review only. Selection requires its own version-bound action.
+    await session.commit()
+    return {'media':describe_media(row,existing),'copy_version':copy.version,'selected_media_id':str(copy.selected_media_id) if copy.selected_media_id else None,'execution_authorized':False,'original_changed':False,'selected':False}
