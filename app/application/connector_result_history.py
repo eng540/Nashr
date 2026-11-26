@@ -3,10 +3,10 @@
 No tokens, grants, approval evidence references or raw snapshots leave this view.
 Dormant synthetic execution tables are deliberately excluded.
 """
-from sqlalchemy import select, literal, union_all, exists
+from sqlalchemy import select, literal, union_all, exists, func, case
 from app.infrastructure.database.models import (
     InstagramExecutionModel as Instagram, InstagramPublishDecisionModel as Decision,
-    FacebookReelJobModel as Facebook,
+    FacebookReelJobModel as Facebook, FacebookExecutionModel as Page,
 )
 
 EVIDENCE = r'^(owner-session|trusted-message):[A-Za-z0-9_.:-]{8,240}$'
@@ -32,7 +32,28 @@ def results():
         Facebook.created_at, Facebook.updated_at,
         (Facebook.state == 'PUBLISHED') & Facebook.remote_session['video_id'].astext.op('~')(r'^[0-9]+$') & fb_link
     ).where(Facebook.evidence_ref.op('~')(EVIDENCE), Facebook.state.notin_(['DRAFT', 'CANCELLED']))
-    return union_all(ig, fb).subquery('connector_results')
+    # Only live-bound Page text/photo rows enter this historical projection.
+    # Expiry does not erase prior publication. A known ID alone is not proof.
+    page_identity = Page.page_id.bool_op('~')(r'^[0-9]{1,100}$') & Page.post_id.bool_op('~')(
+        r'^[0-9]{1,100}_[0-9]{1,100}$') & (func.split_part(Page.post_id, '_', 1) == Page.page_id)
+    page_confirmed = (Page.state == 'PUBLISHED_AT_LAST_CHECK') & page_identity
+    # Only known numeric Page/post permalink forms can be bound to this row.
+    # Unrecognized Facebook URLs remain withheld, even on the right domain.
+    normalized_link = func.replace(Page.permalink, 'https://www.facebook.com/', 'https://facebook.com/')
+    post_component = func.split_part(Page.post_id, '_', 2)
+    post_path = literal('https://facebook.com/') + Page.page_id + '/posts/' + post_component
+    permalink = literal('https://facebook.com/permalink.php?story_fbid=') + post_component + '&id=' + Page.page_id
+    reversed_permalink = literal('https://facebook.com/permalink.php?id=') + Page.page_id + '&story_fbid=' + post_component
+    page_link = page_identity & normalized_link.in_([post_path, post_path + '/', permalink, reversed_permalink])
+    page = select(Page.id, Page.artifact_id,
+        case((Page.kind == 'IMAGE', 'FACEBOOK_PHOTO'), else_='FACEBOOK_TEXT'), literal('facebook'),
+        Page.page_id, Page.message, Page.state, Page.post_id,
+        case((page_link, Page.permalink), else_=None), Page.created_at, Page.updated_at,
+        page_confirmed).where(func.jsonb_typeof(Page.runtime_snapshot) == 'object',
+        Page.runtime_snapshot['connection']['page_id'].astext == Page.page_id,
+        Page.kind.in_(['TEXT', 'IMAGE']), Page.evidence_ref.bool_op('~')(EVIDENCE),
+        Page.state.notin_(['DRAFT', 'CANCELLED']))
+    return union_all(ig, fb, page).subquery('connector_results')
 
 
 def confirmed_for(artifact_id):
