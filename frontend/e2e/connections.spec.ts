@@ -6,6 +6,7 @@ test('accounts dashboard protects secrets and preserves multi channel intent',as
  const p=new URL(route.request().url()).pathname;
  if(p==='/api/connections/tiktok/requirements')return route.fulfill({json:{reviewed_on:'2026-11-24',modes:[{key:'INBOX_DRAFT',label:'رفع كمسودة إلى إشعارات TikTok',scope:'video.upload',requirements:['وصول الإشعار ليس نشراً.']},{key:'DIRECT_POST',label:'نشر مباشر، قبول الاستخدام غير متحقق',scope:'video.publish',requirements:['أداة داخلية غير مؤهلة بحسب إرشادات النشر المباشر.']}],media_requirements:['لا نكشف الوسيط من هذه الصفحة.'],sources:[{label:'guidelines',url:'https://developers.tiktok.com/docs/en/content-sharing-guidelines'}]}});
  if(p==='/api/connections/youtube'&&route.request().method()==='GET')return route.fulfill({json:{configured:false,connection:null,pending:null}});
+ if(p==='/api/connections/tiktok-inbox'&&route.request().method()==='GET')return route.fulfill({json:{configured:false,connection:null,pending:null,execution_authorized:false,transfer_available:false,public_posting_available:false}});
  if(p==='/api/connections/tiktok')return route.fulfill({json:{configured:false,connection:null,pending:null}});
  if(p==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
  if(p==='/api/connections/instagram-direct')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,source:'https://developers.facebook.com'}});

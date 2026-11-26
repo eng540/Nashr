@@ -28,6 +28,7 @@ from app.api.library_import import router as library_import_router
 from app.api.connections import router as connections_router
 from app.api.facebook_page_connections import router as facebook_page_connections_router
 from app.api.tiktok_connections import router as tiktok_connections_router
+from app.api.tiktok_inbox_connections import router as tiktok_inbox_connections_router
 from app.api.facebook_photo_execution import router as facebook_photo_execution_router
 from app.api.facebook_text_execution import router as facebook_text_execution_router
 from app.api.facebook_reel_execution import router as facebook_reel_execution_router
@@ -87,6 +88,8 @@ async def run_schedule_trigger() -> None:
             try:
                 from app.application.tiktok_oauth import cleanup_expired_flows
                 await cleanup_expired_flows()
+                from app.application.tiktok_inbox_oauth import cleanup_expired_flows as cleanup_tiktok_inbox
+                await cleanup_tiktok_inbox()
                 from app.application.youtube_oauth import cleanup_expired_flows as cleanup_youtube
                 await cleanup_youtube()
             except asyncio.CancelledError:
@@ -254,6 +257,7 @@ def create_app() -> FastAPI:
     application.include_router(facebook_photo_execution_router)
     application.include_router(facebook_reel_execution_router)
     application.include_router(tiktok_connections_router)
+    application.include_router(tiktok_inbox_connections_router)
     application.include_router(instagram_connections_router)
     application.include_router(instagram_execution_router)
     application.include_router(instagram_page_connections_router)
