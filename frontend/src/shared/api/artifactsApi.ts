@@ -82,6 +82,7 @@ export const genericArtifactsApi = {
   mediaInspections(id:string,platform:string):Promise<{items:SavedMediaInspection[]}>{return get(`/api/artifacts/${id}/platform-copies/${platform}/media-inspections`);},
   saveMediaInspection(id:string,platform:string,input:{source_fingerprint:string;copy_version:number;selected:boolean}):Promise<SavedMediaInspection>{return post(`/api/artifacts/${id}/platform-copies/${platform}/media-inspections`,input);},
   copyMedia(id:string,platform:string):Promise<CopyMediaList>{return get(`/api/artifacts/${id}/platform-copies/${platform}/media`);},
+  prepareCopyVideo(id:string,platform:string,input:{source_fingerprint:string;copy_version:number;full_frame_black_padding:boolean}):Promise<{media:{id:string};selected:false}>{return post(`/api/artifacts/${id}/platform-copies/${platform}/media/video`,input);},
   saveCopyJpeg(id:string,platform:string,input:{source_fingerprint:string;copy_version:number;background:string;expected_sha256:string}):Promise<{copy_version:number}>{return post(`/api/artifacts/${id}/platform-copies/${platform}/media/jpeg`,input);},
   selectCopyMedia(id:string,platform:string,input:{source_fingerprint:string;copy_version:number;media_id:string|null}):Promise<{copy_version:number}>{return post(`/api/artifacts/${id}/platform-copies/${platform}/media/selection`,input);},
   copyMediaUrl(id:string,platform:string,mediaId:string):Promise<{url:string;source_stale:boolean}>{return get(`/api/artifacts/${id}/platform-copies/${platform}/media/${mediaId}/url`);},
