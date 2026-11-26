@@ -12,6 +12,21 @@ from app.infrastructure.database.models import (
 EVIDENCE = r'^(owner-session|trusted-message):[A-Za-z0-9_.:-]{8,240}$'
 
 
+def page_result_permalink():
+    """Bind a Page result URL to its saved numeric Page and post, or withhold it."""
+    page_identity = Page.page_id.bool_op('~')(r'^[0-9]{1,100}$') & Page.post_id.bool_op('~')(
+        r'^[0-9]{1,100}_[0-9]{1,100}$') & (func.split_part(Page.post_id, '_', 1) == Page.page_id)
+    # Only known numeric Page/post permalink forms can be bound to this row.
+    # Unrecognized Facebook URLs remain withheld, even on the right domain.
+    normalized_link = func.replace(Page.permalink, 'https://www.facebook.com/', 'https://facebook.com/')
+    post_component = func.split_part(Page.post_id, '_', 2)
+    post_path = literal('https://facebook.com/') + Page.page_id + '/posts/' + post_component
+    permalink = literal('https://facebook.com/permalink.php?story_fbid=') + post_component + '&id=' + Page.page_id
+    reversed_permalink = literal('https://facebook.com/permalink.php?id=') + Page.page_id + '&story_fbid=' + post_component
+    page_link = page_identity & normalized_link.in_([post_path, post_path + '/', permalink, reversed_permalink])
+    return case((page_link, Page.permalink), else_=None)
+
+
 def results():
     approved = exists(select(Decision.id).where(
         Decision.execution_id == Instagram.id, Decision.evidence_ref.op('~')(EVIDENCE)))
@@ -37,18 +52,10 @@ def results():
     page_identity = Page.page_id.bool_op('~')(r'^[0-9]{1,100}$') & Page.post_id.bool_op('~')(
         r'^[0-9]{1,100}_[0-9]{1,100}$') & (func.split_part(Page.post_id, '_', 1) == Page.page_id)
     page_confirmed = (Page.state == 'PUBLISHED_AT_LAST_CHECK') & page_identity
-    # Only known numeric Page/post permalink forms can be bound to this row.
-    # Unrecognized Facebook URLs remain withheld, even on the right domain.
-    normalized_link = func.replace(Page.permalink, 'https://www.facebook.com/', 'https://facebook.com/')
-    post_component = func.split_part(Page.post_id, '_', 2)
-    post_path = literal('https://facebook.com/') + Page.page_id + '/posts/' + post_component
-    permalink = literal('https://facebook.com/permalink.php?story_fbid=') + post_component + '&id=' + Page.page_id
-    reversed_permalink = literal('https://facebook.com/permalink.php?id=') + Page.page_id + '&story_fbid=' + post_component
-    page_link = page_identity & normalized_link.in_([post_path, post_path + '/', permalink, reversed_permalink])
     page = select(Page.id, Page.artifact_id,
         case((Page.kind == 'IMAGE', 'FACEBOOK_PHOTO'), else_='FACEBOOK_TEXT'), literal('facebook'),
         Page.page_id, Page.message, Page.state, Page.post_id,
-        case((page_link, Page.permalink), else_=None), Page.created_at, Page.updated_at,
+        page_result_permalink(), Page.created_at, Page.updated_at,
         page_confirmed).where(func.jsonb_typeof(Page.runtime_snapshot) == 'object',
         Page.runtime_snapshot['connection']['page_id'].astext == Page.page_id,
         Page.kind.in_(['TEXT', 'IMAGE']), Page.evidence_ref.bool_op('~')(EVIDENCE),
