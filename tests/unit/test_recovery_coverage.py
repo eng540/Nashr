@@ -101,3 +101,26 @@ def test_empty_input_never_claims_complete(roots):
 def test_invalid_lengths_rejected(roots, length):
     with pytest.raises(ValueError):
         module.coverage({'sources': [{'payload_bytes': length}]}, *roots)
+
+
+def test_inline_text_requires_actual_database_text_evidence(roots):
+    report = module.coverage({'sources': [
+        {'id': 'a', 'storage_path': 'inline://a', 'database_text_bytes': 5},
+        {'id': 'b', 'storage_path': 'manual-draft', 'database_text_bytes': 3},
+        {'id': 'c', 'storage_path': 'inline://c'},
+        {'id': 'd', 'storage_path': 'missing.pdf', 'database_text_bytes': 10},
+    ]}, *roots)
+    assert report['source_counts']['database_text_present'] == 2
+    assert report['blocking_gaps'] == 2
+
+
+def test_unsupported_remote_storage_and_local_artifact(roots):
+    source, objects = roots
+    (source / 'file').write_bytes(b'local')
+    report = module.coverage({'artifacts': [
+        {'id': 'a', 'storage_uri': 'https://example.invalid/media?token=secret'},
+        {'id': 'b', 'storage_uri': 'file'},
+    ]}, source, objects)
+    assert report['blocking_gaps'] == 1
+    assert {o['state'] for o in report['objects']} == {'invalid_reference', 'present_hash_unavailable'}
+    assert 'secret' not in str(report)
