@@ -38,7 +38,7 @@ LOGIN_PAGE_HTML = """<!DOCTYPE html>
 <style>
   body { font-family: system-ui, sans-serif; background: #0f1115; color: #e7e9ee;
          display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-  form { background: #1a1d24; padding: 2rem; border-radius: 12px; width: 320px;
+  form { background: #1a1d24; padding: 2rem; border-radius: 12px; width: min(384px, calc(100vw - 32px)); box-sizing: border-box;
          display: flex; flex-direction: column; gap: 0.9rem; }
   h1 { font-size: 1.2rem; margin: 0 0 0.5rem; }
   input { padding: 0.6rem; border-radius: 8px; border: 1px solid #333a45;
@@ -52,8 +52,10 @@ LOGIN_PAGE_HTML = """<!DOCTYPE html>
 <form method="post" action="/api/auth/login">
   <h1>Nashr - تسجيل الدخول</h1>
   __ERROR__
-  <input name="username" autocomplete="username" placeholder="اسم المستخدم" required>
-  <input name="password" type="password" autocomplete="current-password" placeholder="كلمة المرور" required>
+  <label for="login-username">اسم المستخدم</label>
+  <input id="login-username" name="username" autocomplete="username" placeholder="اسم المستخدم" required>
+  <label for="login-password">كلمة المرور</label>
+  <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="كلمة المرور" required>
   <button type="submit">دخول</button>
 </form>
 </body>
