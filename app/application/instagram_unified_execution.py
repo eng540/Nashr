@@ -1,24 +1,41 @@
 """Private Unified-login execution drafts. No media URL, grant, or provider calls.
 
-Public execution remains unavailable. Staging is deliberately not consent.
+Staging is not consent. Read-only history projects separately recorded decisions.
 """
 from sqlalchemy import select,text
-from app.infrastructure.database.models import InstagramPlanDraftModel as Review,InstagramExecutionModel as Job,InstagramConnectionModel as Connection
+from app.infrastructure.database.models import InstagramPlanDraftModel as Review,InstagramExecutionModel as Job,InstagramConnectionModel as Connection,InstagramDispatchModel as Dispatch,InstagramPublishDecisionModel as Decision
 from app.application import instagram_plan_review as review,instagram_execution as core,instagram_oauth as oauth
 
 
-def describe(job):
+def describe(job,dispatch=None,decision=None):
     binding=job.connection_binding or {}
+    from datetime import datetime,timezone
+    approved=bool(decision and decision.state=='APPROVED')
+    published=job.state in {'PUBLISHED','PUBLISHED_ID_KNOWN'}
+    expired=bool(approved and decision.expires_at<=datetime.now(timezone.utc))
+    active=bool(approved and dispatch and dispatch.state in {'PENDING','CLAIMED','WAITING_MEDIA'}
+        and decision.expires_at>datetime.now(timezone.utc) and not published)
+    gates=[] if dispatch else ['موافقة نشر مستقلة على الحساب والنص والوسيط والوقت.',
+        'إذن صريح لإتاحة نسخة الوسيط المحددة لـMeta عند التنفيذ فقط، لا من المعاينة.',
+        'إعادة تحقق من الربط وفحص البايتات والصلاحيات قبل التنفيذ.']
     return dict(id=str(job.id),artifact_id=str(job.artifact_id),state=job.state,kind=job.kind,
         account_id=job.account_id,username=binding.get('username'),login_mode=binding.get('login_mode'),
         caption=job.caption,alt_text=job.alt_text,share_to_feed=job.share_to_feed,
         media_sha256=job.media_sha256,copy_version=job.copy_version,created_at=job.created_at.isoformat(),
         container_id=job.container_id,media_id=job.media_id,permalink=job.permalink,error_code=job.error_code,
-        execution_enabled=False,media_exposure_enabled=False,approval_recorded=False,
-        remaining_gates=['موافقة نشر مستقلة على الحساب والنص والوسيط والوقت.',
-            'إذن صريح لإتاحة نسخة الوسيط المحددة لـMeta عند التنفيذ فقط، لا من المعاينة.',
-            'إعادة تحقق من الربط وفحص البايتات والصلاحيات قبل التنفيذ.',
-            'مسار تنفيذ حي ومصالحة نتائج معتمدان؛ لا تشغيل من هذه المسودة.'])
+        execution_enabled=active,media_exposure_enabled=False,approval_recorded=approved,
+        approval_expired=expired,decision_expires_at=decision.expires_at.isoformat() if decision else None,
+        decision_state=decision.state if decision else None,
+        dispatch_state=dispatch.state if dispatch else None,
+        due_at=dispatch.due_at.isoformat() if dispatch else None,
+        can_propose=job.state=='DRAFT' and dispatch is None,
+        remaining_gates=gates)
+
+async def describe_result(session,job):
+    row=(await session.execute(select(Dispatch,Decision).outerjoin(Decision,Decision.id==Dispatch.decision_id)
+        .where(Dispatch.execution_id==job.id))).one_or_none()
+    return describe(job,*(row or (None,None)))
+
 
 async def stage(session,uid,review_id):
     # The shared source/copy lock order is taken by save_draft and core.prepare.
@@ -55,8 +72,13 @@ async def stage(session,uid,review_id):
     return describe(job)
 
 async def history(session,uid):
-    rows=(await session.execute(select(Job).where(Job.artifact_id==uid).order_by(Job.created_at.desc()).limit(30))).scalars().all()
-    return {'items':[describe(r) for r in rows if (r.connection_binding or {}).get('login_mode')=='UNIFIED'],'execution_enabled':False}
+    rows=(await session.execute(select(Job,Dispatch,Decision)
+        .outerjoin(Dispatch,Dispatch.execution_id==Job.id)
+        .outerjoin(Decision,Decision.id==Dispatch.decision_id)
+        .where(Job.artifact_id==uid,Job.connection_binding['login_mode'].astext=='UNIFIED')
+        .order_by(Job.created_at.desc()).limit(30))).all()
+    items=[describe(job,dispatch,decision) for job,dispatch,decision in rows]
+    return {'items':items,'execution_enabled':any(item['execution_enabled'] for item in items)}
 
 async def validate_binding(session,job,*,allow_stale_check=False):
     binding=job.connection_binding or {}
