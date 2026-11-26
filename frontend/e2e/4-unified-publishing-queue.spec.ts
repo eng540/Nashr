@@ -1,0 +1,50 @@
+import {test,expect} from '@playwright/test';
+test('unified operations queue shows imported and editorial originals without granting execution',async({page},info)=>{
+ let writes=0;
+ await page.route('**/*',async route=>{const r=route.request(),u=new URL(r.url()),p=u.pathname;if(r.method()!=='GET'&&(p.startsWith('/api/')||p.startsWith('/schedules')))writes++;
+ if(p==='/api/publishing-queue'){const all=[{id:'art',origin:'ARTIFACT',kind:'VIDEO',title:'فيديو مستورد',content_preview:'الأصل محفوظ',state:'ATTENTION',latest_plan_id:'failed-plan',latest_plan_status:'PAUSED',plan_link_reason:'ATTENTION',prepared_copies:6,fields_validated:2,selected_platforms:['telegram','youtube'],selection_stale:true,publication_outcomes:[{platform:'telegram',attempts:3,confirmed_targets:1,unresolved_failures:1},{platform:'facebook',attempts:1,confirmed_targets:1,unresolved_failures:null,record_scope:'CONNECTOR'}],selected_without_confirmed_history:['youtube'],series:'سلسلة الخرسانة',category:'ضبط الجودة'},{id:'post',origin:'POST',kind:'TEXT',title:'منشور تحريري',content_preview:'نص معتمد',state:'PLANNED',latest_plan_id:'current-plan',latest_plan_status:'ACTIVE',plan_link_reason:'CURRENT',prepared_copies:0,fields_validated:0,selected_platforms:[],selection_stale:false}];const items=all.filter(x=>(u.searchParams.get('origin')==='ALL'||u.searchParams.get('origin')===x.origin)&&(!u.searchParams.get('q')||x.title.includes(u.searchParams.get('q')!))&&(!u.searchParams.get('series')||x.series===u.searchParams.get('series'))&&(!u.searchParams.get('category')||x.category===u.searchParams.get('category'))&&(!u.searchParams.get('platform')||(x.origin==='ARTIFACT'&&(u.searchParams.get('platform')==='NONE'?x.selected_platforms.length===0:x.selected_platforms.includes(u.searchParams.get('platform')!)))));return route.fulfill({json:{items,total:items.length,caveat:'الاعتماد ليس إذناً بالتنفيذ.'}});}
+ if(p.startsWith('/posts'))return route.fulfill({json:{items:[],total:0,sources:[],kinds:[]}});if(p==='/api/artifacts')return route.fulfill({json:{items:[],total:0}});if(p.startsWith('/schedules'))return route.fulfill({json:{items:[],total:0}});if(p==='/api/artifacts/platform-variants')return route.fulfill({json:[]});return route.continue();});
+ await page.goto('/publishing');const queue=page.getByRole('region',{name:'قائمة المحتوى الموحدة',exact:true});await expect(queue.getByText('فيديو مستورد',{exact:true})).toBeVisible();await expect(queue.getByText('منشور تحريري',{exact:true})).toBeVisible();await expect(queue.getByRole('link',{name:'فتح المادة والتجهيز والخطة والسجل'})).toHaveAttribute('href','/bank?artifact_status=APPROVED&artifact_id=art');await expect(queue.getByRole('link',{name:'مراجعة أهلية المنشور وخطته'})).toHaveAttribute('href','/publishing?selected_post_ids=post');
+ await expect(queue.getByRole('link',{name:'فتح الخطة التي تحتاج مراجعة · PAUSED'})).toHaveAttribute('href','/publishing?schedule_id=failed-plan');await expect(queue.getByRole('link',{name:'فتح الخطة القائمة · ACTIVE'})).toHaveAttribute('href','/publishing?schedule_id=current-plan');
+ await expect(queue.getByLabel('ملخص نتائج النشر').first()).toContainText('محاولات فاشلة لم يثبت تجاوزها: 1');await expect(queue).toContainText('facebook · سجل الموصل');await expect(queue).toContainText('منصات مختارة بلا نشر مثبت سابق: youtube');
+ await queue.screenshot({path:info.outputPath('queue-desktop.png')});await page.setViewportSize({width:390,height:844});await page.addStyleTag({content:'header{visibility:hidden}'});await queue.screenshot({path:info.outputPath('queue-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+ await page.getByLabel('سلسلة قائمة التوزيع').fill('سلسلة الخرسانة');await expect(queue.getByText('منشور تحريري',{exact:true})).toHaveCount(0);await page.getByLabel('تصنيف قائمة التوزيع').fill('ضبط الجودة');await page.getByLabel('وجهة قائمة التوزيع').selectOption('youtube');await expect(queue.getByText('فيديو مستورد',{exact:true})).toBeVisible();await expect(queue).toContainText('تغير الأصل، حدّث الاختيار');await page.getByLabel('وجهة قائمة التوزيع').selectOption('NONE');await expect(queue.getByText('لا توجد مواد مطابقة.')).toBeVisible();await queue.getByRole('button',{name:'مسح مرشحات التنظيم والوجهة'}).click();await expect(queue.getByText('منشور تحريري',{exact:true})).toBeVisible();
+ await page.getByLabel('مصدر قائمة المحتوى الموحدة').selectOption('ARTIFACT');await expect(queue.getByText('منشور تحريري',{exact:true})).toHaveCount(0);await page.getByLabel('بحث قائمة المحتوى الموحدة').fill('لا نتيجة');await expect(queue.getByText('لا توجد مواد مطابقة.')).toBeVisible();expect(writes).toBe(0);
+});
+
+test('search debounces, keeps stale results inert, recovers empty and failed reads without writes',async({page})=>{
+ const requests:string[]=[];let release:(()=>void)|undefined;let fail=false,writes=0;
+ await page.route('**/*',async route=>{const r=route.request(),u=new URL(r.url()),p=u.pathname;
+ if(p.startsWith('/api/')||p.startsWith('/posts')||p.startsWith('/schedules')){
+ if(r.method()!=='GET')writes++;
+ if(p==='/api/platform-operations')return route.fulfill({json:{items:[],total:0,counts:{waiting:0,published:0,attention:0,total:0}}});
+ if(p==='/api/artifacts/platform-variants')return route.fulfill({json:[]});
+ if(p==='/api/publishing-queue'){const q=u.searchParams.get('q')||'';requests.push(q);if(q==='pending')await new Promise<void>(resolve=>{release=resolve;});if(fail)return route.fulfill({status:503,json:{detail:'read unavailable'}});return route.fulfill({json:{items:q?[]:[{id:'stable',origin:'ARTIFACT',kind:'TEXT',title:'مادة محفوظة',content_preview:'نص محفوظ',state:'APPROVED',prepared_copies:0,fields_validated:0,selected_platforms:[],selection_stale:false}],total:q?0:1,caveat:'لا نشر من القراءة'}});}
+ return route.fulfill({json:{items:[],total:0,sources:[],kinds:[]}});}
+ return route.continue();});
+ await page.goto('/publishing');const queue=page.getByRole('region',{name:'قائمة المحتوى الموحدة',exact:true});await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();const before=requests.length;
+ await page.getByLabel('بحث قائمة المحتوى الموحدة').pressSequentially('pending',{delay:10});await expect.poll(()=>requests.filter(x=>x==='pending').length).toBe(1);expect(requests.length-before).toBe(1);await expect(queue).toContainText('تبقى آخر قائمة ظاهرة');await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();expect(await queue.locator('a').filter({hasText:'فتح المادة والتجهيز والخطة والسجل'}).evaluate(e=>!!e.closest('[inert]'))).toBeTruthy();release!();await expect(queue).toContainText('لا توجد مواد مطابقة.');await queue.getByRole('button',{name:'عرض كل المحتوى المعتمد'}).click();await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();
+ fail=true;await queue.getByRole('button',{name:'تحديث قائمة المحتوى'}).click();await expect(queue.getByRole('alert')).toBeVisible({timeout:15000});fail=false;await queue.getByRole('button',{name:'إعادة تحميل قائمة المحتوى'}).click();await expect(queue.getByRole('alert')).toHaveCount(0);await expect(queue.getByText('مادة محفوظة',{exact:true})).toBeVisible();expect(writes).toBe(0);
+});
+
+test('saved Meta schedules show exact operation links without execution controls',async({page},info)=>{
+ let writes=0;
+ await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
+ if(p.startsWith('/api/')||p.startsWith('/posts')||p.startsWith('/schedules')){
+ if(r.method()!=='GET')writes++;
+ if(p==='/api/publishing-queue')return route.fulfill({json:{items:[{id:'material-1',origin:'ARTIFACT',kind:'VIDEO',title:'مادة بموعد محفوظ',content_preview:'الأصل محفوظ',state:'PLANNED',prepared_copies:6,fields_validated:3,selected_platforms:['instagram','facebook'],selection_stale:false,pending_operations:[{id:'ig-exact',platform:'instagram',due_at:'2026-11-27T08:00:00+00:00'},{id:'fb-exact',platform:'facebook',due_at:'2026-11-27T09:00:00+00:00'},{id:'ft-exact',platform:'facebook_text',due_at:'2026-11-27T10:00:00+00:00'},{id:'fp-exact',platform:'facebook_photo',due_at:'2026-11-27T11:00:00+00:00'}]}],total:1,caveat:'لا نشر من القراءة'}});
+ if(p==='/api/platform-operations')return route.fulfill({json:{items:[],total:0,counts:{waiting:0,published:0,attention:0,total:0}}});
+ if(p==='/api/artifacts/platform-variants')return route.fulfill({json:[]});
+ return route.fulfill({json:{items:[],total:0,sources:[],kinds:[]}});}
+ return route.continue();});
+ await page.goto('/publishing');const queue=page.getByRole('region',{name:'قائمة المحتوى الموحدة',exact:true});
+ await expect(queue.getByText('مادة بموعد محفوظ',{exact:true})).toBeVisible();await expect(queue).toContainText('خطة محفوظة');
+ const pending=queue.getByLabel('مواعيد Meta المحفوظة');await expect(pending).toContainText('لم يبدأ إرسالها');await expect(pending.locator('time').first()).toContainText('11:00');
+ const links=pending.getByRole('link',{name:'مراجعة الموعد المحفوظ'});await expect(links).toHaveCount(4);
+ await expect(links.nth(0)).toHaveAttribute('href','/bank?artifact_status=APPROVED&artifact_id=material-1&copy_platform=instagram&instagram_job_id=ig-exact');
+ await expect(links.nth(1)).toHaveAttribute('href','/connections?reel_artifact_id=material-1&reel_job_id=fb-exact#platform-facebook');
+ await expect(links.nth(2)).toHaveAttribute('href','/bank?artifact_status=APPROVED&artifact_id=material-1&text_job_id=ft-exact');
+ await expect(links.nth(3)).toHaveAttribute('href','/bank?artifact_status=APPROVED&artifact_id=material-1&photo_job_id=fp-exact');
+ await expect(pending.getByRole('button')).toHaveCount(0);expect(writes).toBe(0);
+ await queue.getByTestId('queue-ARTIFACT-material-1').screenshot({path:info.outputPath('meta-planned-desktop.png')});await page.setViewportSize({width:390,height:844});await page.addStyleTag({content:'header{visibility:hidden}'});await queue.getByTestId('queue-ARTIFACT-material-1').screenshot({path:info.outputPath('meta-planned-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});
