@@ -11,7 +11,10 @@ Do not pass full database rows, credentials, account configuration, post bodies,
 or access tokens. The checker consumes only these fields:
 
 - `sources`: `id`, `storage_path`, `payload_bytes` (the actual byte length of
-  `file_payload`, not the payload itself).
+  `file_payload`, not the payload itself). For `inline://...` and `manual-draft`
+  sources also supply `database_text_bytes`: the verified byte length of their
+  linked Knowledge Unit `original_text`/`content`. Do not infer this from
+  `sources.size_bytes`. Without actual text evidence these remain gaps.
 - `artifacts`: `id`, `storage_uri`, optional `sha256`, and `metadata` (map the
   database column `artifact_metadata` to `metadata`). Include all artifacts,
   including unapproved/excluded/historical records. Do not export only rows
@@ -51,6 +54,7 @@ location and do not overwrite original evidence with the output path.
   does not hash, decode or validate those bytes. The isolated restore drill
   separately checks payload rehydration on synthetic fixtures.
 - Sources without payload must have a local copy or a copied S3 object.
+  Database-only inline/manual sources require positive linked text evidence.
 - Original artifact storage references, nested metadata references (including
   album/Live Photo preview snapshots), and derivative storage references are
   deduplicated. Arbitrary nested S3 strings are included. Unsupported remote
