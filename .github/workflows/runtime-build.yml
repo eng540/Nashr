@@ -1,0 +1,26 @@
+name: runtime-build
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  runtime-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+      - name: Install native renderer build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libraqm-dev libharfbuzz-dev libfribidi-dev libfreetype-dev libjpeg-dev zlib1g-dev liblcms2-dev
+      - name: Create isolated production dependency target
+        run: sudo mkdir -p /app/python-deps && sudo chown -R "$USER" /app/python-deps
+      - name: Build production target and run Arabic preflight
+        run: sh scripts/build_runtime.sh
+      - name: Verify target imports without test dependencies
+        run: |
+          PYTHONPATH=/app/python-deps python -c 'import PIL, uvicorn, app.main; assert PIL.__file__.startswith("/app/python-deps/")'
+          PYTHONPATH=/app/python-deps python scripts/check_arabic_renderer.py
