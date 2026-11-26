@@ -37,7 +37,7 @@ async def callback(request:Request,session:AsyncSession=Depends(get_session)):
         await service.finish(session,token,request.cookies.get(service.COOKIE),query.get('state',''),query.get('code',''),error=bool(query.get('error')))
     except ValueError:
         return HTMLResponse('<html lang="ar" dir="rtl"><meta name="referrer" content="no-referrer"><p>لم يكتمل ربط TikTok أو انتهت الجلسة. لم يتغير الربط السابق. راجع إعداد التطبيق وابدأ من Nashr مجدداً.</p><a href="/connections">العودة إلى Nashr</a></html>',status_code=400,headers=HEADERS)
-    return RedirectResponse('/connections',status_code=303,headers=HEADERS)
+    return RedirectResponse('/connections#platform-tiktok',status_code=303,headers=HEADERS)
 
 class Selection(BaseModel):
     model_config=ConfigDict(extra='forbid')

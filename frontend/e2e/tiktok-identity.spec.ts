@@ -12,7 +12,9 @@ test('TikTok identity requires explicit choice and no publishing',async({page},i
  if(p.startsWith('/api/connections/'))return route.fulfill({json:{configured:false,connection:null,pending:null,requirements:[],missing_configuration:[]}});
  return route.fulfill({json:{items:[]}});
  });
- await page.goto('/connections');const panel=page.getByLabel('ربط هوية TikTok',{exact:true});await panel.scrollIntoViewIfNeeded();
+ await page.setViewportSize({width:390,height:844});await page.goto('/connections#platform-tiktok');const panel=page.getByLabel('ربط هوية TikTok',{exact:true});await panel.scrollIntoViewIfNeeded();
+ await expect(panel.getByRole('status')).toContainText('الربط لم يُحفظ بعد');await expect(panel.getByLabel('هوية TikTok',{exact:true})).toBeFocused();
+ await panel.screenshot({path:info.outputPath('tiktok-pending-mobile.png')});
  const save=panel.getByRole('button',{name:'تحقق واحفظ هوية TikTok دون نشر',exact:true});await expect(save).toBeDisabled();expect(writes).toEqual([]);
  await panel.getByLabel('هوية TikTok',{exact:true}).selectOption(identity.open_id);await save.click();await expect(panel.getByText('اسم العرض: اسم عرض تجريبي',{exact:true})).toBeVisible();
  await panel.getByRole('button',{name:'تحقق من هوية TikTok دون نشر',exact:true}).click();await expect.poll(()=>writes.length).toBe(2);
