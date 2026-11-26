@@ -52,8 +52,7 @@ async def approve(uid:UUID,jid:UUID,payload:Approval,request:Request,session:Asy
 @router.get(BASE+'/result')
 async def result(uid:UUID,jid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
     owner(request);job=await selected(session,uid,jid)
-    row=(await session.execute(select(Dispatch).where(Dispatch.execution_id==jid))).scalar_one_or_none()
-    return JSONResponse({**execution.describe(job),'dispatch_state':row.state if row else None,'approval_recorded':bool(row and row.state not in {'CANCELLED'}),'execution_enabled':True},headers=HEADERS)
+    return JSONResponse(await execution.describe_result(session,job),headers=HEADERS)
 
 @router.post(BASE+'/revoke')
 async def revoke(uid:UUID,jid:UUID,request:Request,session:AsyncSession=Depends(get_session)):
