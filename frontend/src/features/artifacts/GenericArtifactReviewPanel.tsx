@@ -365,6 +365,372 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const createMediaDraft = useMutation({
     mutationFn: (id: string) => genericArtifactsApi.createTelegramMediaDraft(id),
     onSuccess: (publication, artifactId) => setMediaDrafts((current) => ({ ...current, [artifactId]: { id: publication.id, status: publication.status } })),
+import {NativeTelegramPreview} from './NativeTelegramPreview';
+import {NativeTelegramFields,blankNative,nativeError} from './NativeTelegramFields';
+import {BatchPlatformCopiesPanel} from './BatchPlatformCopiesPanel';
+import { ApprovedBatchHandoff } from "./ApprovedBatchHandoff";
+import { BatchReviewPanel } from "./BatchReviewPanel";
+import { useSearchParams } from "react-router";
+import {EditorialReviewNotes} from "./EditorialReviewNotes";
+import {ContentOrganizationPanel} from "./ContentOrganizationPanel";
+import { CentralPlatformCopiesPanel } from "./CentralPlatformCopiesPanel";
+import { TelegramBatchPreviewPanel } from "./TelegramBatchPreviewPanel";
+import { DistributionReadinessPanel } from "./DistributionReadinessPanel";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
+import { Badge, EmptyState, Input, Select } from "../../shared/components/ui";
+import { productionJobsApi, type ProductionProductOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
+import { artifactSearchText, artifactSeriesKey, isSelectableOriginal } from "../../shared/utils/artifactLibrary";
+import { postsApi } from "../../shared/api/postsApi";
+
+
+const LIBRARY_PAGE_SIZE = 12;
+const STORED_MEDIA = ["IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "ANIMATION", "VOICE", "VIDEO_NOTE", "STICKER"];
+const NATIVE_TEMPLATES: Record<string, Record<string, unknown>> = {
+  POLL: { type: "POLL", question: "سؤال الاستطلاع", options: ["الخيار الأول", "الخيار الثاني"], allows_multiple_answers: false },
+  LIVE_LOCATION: { type: "LIVE_LOCATION", latitude: 0, longitude: 0, live_period: 60 },
+  LOCATION: { type: "LOCATION", latitude: 0, longitude: 0 },
+  VENUE: { type: "VENUE", latitude: 0, longitude: 0, title: "اسم المكان", address: "العنوان" },
+  CONTACT: { type: "CONTACT", phone_number: "+000000000", first_name: "جهة اتصال تجريبية" },
+  DICE: { type: "DICE", emoji: "🎲" },
+};
+const MEDIA_LABELS: Record<string, string> = { IMAGE: "صورة", VIDEO: "فيديو", AUDIO: "ملف صوتي", DOCUMENT: "ملف", ANIMATION: "صورة متحركة", VOICE: "رسالة صوتية", VIDEO_NOTE: "رسالة فيديو دائرية", STICKER: "ملصق" };
+
+function variantLength(artifact: GenericReviewableArtifact, draft: string | undefined): number {
+  const text = draft ?? artifact.content ?? String(artifact.metadata.caption ?? "");
+  const measure = (artifact.metadata.constraints as Record<string,unknown> | undefined)?.measure;
+  if (measure === "chars") return Array.from(text).length;
+  if (measure === "x_weighted") return text.replace(/https?:\/\/\S+/g, "x".repeat(23)).length;
+  return text.length;
+}
+
+function artifactTitle(artifact: GenericReviewableArtifact): string {
+  if(artifact.organization?.title)return artifact.organization.title;
+  const title = artifact.metadata.title;
+  if (typeof title === "string" && title.trim()) return title.trim();
+  const caption = artifact.metadata.caption;
+  if (typeof caption === "string" && caption.trim()) {
+    const firstLine = caption.trim().split("\n")[0].trim();
+    return firstLine.length > 90 ? firstLine.slice(0, 90) + "…" : firstLine;
+  }
+  const filename = artifact.metadata.original_filename;
+  if (typeof filename === "string" && filename.trim()) return filename.replace(/^\d+-/, "");
+  return `مخرج ${artifact.kind}`;
+}
+
+function artifactSeries(artifact: GenericReviewableArtifact): string | null {
+  if(artifact.organization?.series)return artifact.organization.series;
+  const filename = typeof artifact.metadata.original_filename === "string" ? artifact.metadata.original_filename.replace(/^\d+-/, "") : "";
+  const episode = filename.match(/^b(\d+)v\d+/);
+  if (episode) return `وش معنى · دفعة ${episode[1]}`;
+  const womdha = filename.match(/^womdha-(\d+)/);
+  if (womdha) return `ومضة ${womdha[1]}`;
+  const intro = filename.match(/^v(\d+)-/);
+  if (intro) return `فيديو تعريفي ${intro[1]}`;
+  return null;
+}
+
+type ArtifactSortMode = "newest" | "oldest" | "title" | "kind";
+
+function TelegramMediaDraftPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
+  const media = useQuery({
+    queryKey: ["generic-artifact-media-url", artifact.id],
+    queryFn: () => genericArtifactsApi.mediaUrl(artifact.id),
+    enabled: Boolean(artifact.storage_uri) && STORED_MEDIA.includes(artifact.kind),
+    staleTime: 4 * 60 * 1000,
+  });
+  const caption = ["VIDEO_NOTE", "STICKER"].includes(artifact.kind) ? "" : typeof artifact.metadata.caption === "string" ? artifact.metadata.caption : "";
+  return (
+    <section aria-label={`معاينة مسودة تيليجرام ${artifact.id}`} className="rounded-xl border border-sky-200 bg-[#0e1621] p-3">
+      <div className="mx-auto max-w-sm rounded-2xl bg-white p-2 shadow">
+        {media.isLoading ? <p role="status" className="p-3 text-sm text-slate-500">تحميل الوسيط للمعاينة...</p> : null}
+        {media.isError ? <p role="alert" className="p-3 text-sm text-rose-700">تعذر تحميل الوسيط: {media.error?.message ?? "رابط غير متاح"}</p> : null}
+        {media.data?.url && (artifact.kind === "IMAGE" || artifact.kind === "ANIMATION" && artifact.mime_type === "image/gif") ? <img src={media.data.url} alt={caption || "معاينة الوسيط"} className="max-h-72 w-full rounded-xl object-contain" /> : null}
+        {media.data?.url && (["VIDEO", "VIDEO_NOTE"].includes(artifact.kind) || artifact.kind === "ANIMATION" && artifact.mime_type === "video/mp4") ? <video src={media.data.url} controls preload="metadata" className="max-h-72 w-full rounded-xl bg-black object-contain" /> : null}
+        {media.data?.url && ["AUDIO", "VOICE"].includes(artifact.kind) ? <audio src={media.data.url} controls className="w-full" /> : null}
+        {media.data?.url && ["DOCUMENT", "STICKER"].includes(artifact.kind) ? <p className="p-3 text-sm">مرفق:{String(artifact.metadata.original_filename ?? artifact.kind)}</p> : null}
+        {caption ? <p dir="auto" className="whitespace-pre-wrap break-words p-3 text-sm leading-6 text-slate-900">{caption}</p> : null}
+        <p dir="ltr" className="px-3 pb-2 text-left text-[11px] text-slate-400">قناة المعاينة · الآن</p>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-slate-300">محاكاة تقريبية لشكل المنشور في تيليجرام (وسيط + تعليق)؛ التنسيق النهائي يعتمد على تيليجرام نفسه.</p>
+    </section>
+  );
+}
+
+function ArtifactPublicationLedger({id}:{id:string}) {
+  const [open,setOpen]=useState(false);
+  const [offset,setOffset]=useState(0);
+  const pageSize=50;
+  const query=useQuery({queryKey:["artifact-publications",id,offset],queryFn:()=>genericArtifactsApi.publications(id,offset,pageSize),enabled:open});
+  return <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3" aria-label={`سجل نشر المخرج ${id}`}>
+    <button type="button" className="rounded border bg-white p-2 text-sm font-semibold" onClick={()=>{setOpen(true);if(open)void query.refetch();}}>عرض وتحديث سجل النشر</button>
+    {open ? <><p className="text-xs">قراءة فقط، لا تنشئ مسودة ولا تعيد الإرسال. الاعتماد ليس دليلاً على النشر؛ وPUBLISHING قد تعني نتيجة غير محسومة فلا تعاود الإرسال.</p>
+    {query.isLoading ? <p role="status">تحميل سجل النشر...</p>:null}{query.isError ? <p role="alert">{query.error.message}</p>:null}
+    {query.data?.total===0&&offset===0&&!query.data?.connector_items?.length ? <p>لا توجد سجلات نشر لهذا العنصر. لا يشمل ذلك نشراً يدوياً خارج النظام.</p>:null}
+    {offset===0&&query.data?.connector_items?.length?<p className="text-xs">نتائج الموصلات المستقلة: {query.data.connector_items.length} نتيجة في هذه القراءة، منفصلة عن سجلات النشر المرقمة أدناه.</p>:null}
+    {offset===0?query.data?.connector_items?.map(item=><article key={item.record_type+item.id} className="space-y-2 rounded border bg-white p-3 text-xs"><p className="font-semibold">{item.platform} · {item.status}</p><p>سجل الموصل المستقل · {item.confirmed?'نتيجة مثبتة':item.status==='RETIRED_UNPUBLISHED'?'عملية متروكة دون نشر، محفوظة للتوثيق':'لم يثبت اكتمال النشر'}</p><p className="break-all" dir="ltr">{item.destination} · {item.external_id||'لا معرّف نتيجة'}</p>{item.permalink?<a className="underline" href={item.permalink} target="_blank" rel="noreferrer">فتح نتيجة النشر المثبتة</a>:null}<p>{item.updated_at}</p><details><summary>النص المحفوظ وقت العملية</summary><p dir="auto" className="whitespace-pre-wrap break-words">{item.content}</p></details></article>):null}
+    {query.data?.items.map(item=><article key={item.id} className="space-y-2 rounded border bg-white p-3 text-xs">
+      <p className="font-semibold">{item.platform} · {item.status}</p><p className="break-all">الوجهة: <bdi>{item.destination}</bdi></p>
+      <p className="break-all">سجل النشر: <bdi>{item.id}</bdi></p><p className="break-all">معرفات الرسائل: <bdi>{item.external_ids.join(", ") || "لم تُثبت بعد"}</bdi></p>
+      <p>وقت القبول: <bdi>{item.published_at || "لم يُثبت بعد"}</bdi></p>
+      <details><summary className="cursor-pointer">النص المحفوظ في سجل النشر</summary><p dir="auto" className="whitespace-pre-wrap break-words py-2">{item.content}</p></details>
+      {item.schedules.map(schedule=><p key={schedule.schedule_id} className="break-all">{schedule.name} · {schedule.schedule_status} · العنصر {schedule.item_status} · المحاولات {schedule.attempts} · <bdi>{schedule.scheduled_at}</bdi>{schedule.last_error ? ` · ${schedule.last_error}`:""}</p>)}
+      {item.error_message ? <p role="alert">{item.error_message}</p>:null}
+    </article>)}
+    {query.isFetching&&query.data?<p role="status" className="text-xs">جارٍ تحديث الصفحة المعروضة، هذه آخر قراءة محفوظة.</p>:null}
+    {query.data?<nav aria-label={`صفحات سجل النشر ${id}`} className="flex flex-wrap items-center gap-2 text-xs"><button type="button" className="workspace-secondary" disabled={offset===0||query.isFetching} onClick={()=>setOffset(value=>Math.max(0,value-pageSize))}>السجلات الأحدث</button><span role="status">{query.data.items.length?`السجلات ${offset+1} إلى ${offset+query.data.items.length} من ${query.data.total}`:'لا سجلات نشر عامة في هذه الصفحة'}</span><button type="button" className="workspace-secondary" disabled={offset+query.data.items.length>=query.data.total||query.isFetching} onClick={()=>setOffset(value=>value+pageSize)}>السجلات الأقدم</button></nav>:offset>0?<button type="button" className="workspace-secondary" disabled={query.isFetching} onClick={()=>setOffset(value=>Math.max(0,value-pageSize))}>العودة إلى السجلات الأحدث</button>:null}
+    {offset>0?<p className="text-xs">نتائج الموصلات المستقلة تظهر في الصفحة الأولى فقط، ولا تدخل في عدد سجلات النشر أعلاه.</p>:null}</>:null}
+  </section>;
+}
+
+function LiveLocationControls({ artifactId }: { artifactId: string }) {
+  const query = useQuery({ queryKey: ['live-locations', artifactId], queryFn: () => genericArtifactsApi.liveLocations(artifactId) });
+  const [latitude, setLatitude] = useState('0');
+  const [longitude, setLongitude] = useState('0');
+  const create = useMutation({ mutationFn: ({id, action}: {id:string; action:string}) => genericArtifactsApi.locationOperation(id, action === 'STOP' ? {action} : {action, latitude:Number(latitude), longitude:Number(longitude)}), onSuccess: () => { void query.refetch(); } });
+  const cancel = useMutation({ mutationFn: (id:string) => genericArtifactsApi.cancelLocationOperation(id), onSuccess: () => { void query.refetch(); } });
+  const execute = useMutation({ mutationFn: (id:string) => genericArtifactsApi.executeLocationOperation(id), onSuccess: () => { void query.refetch(); } });
+  return <section className="space-y-2 rounded-xl border border-teal-200 bg-teal-50 p-3"><h4 className="font-bold">دورة الموقع الحي</h4><p className="text-xs">إحداثيات مكتوبة فقط،لا اتصال بموقع جهازك. التحديث والإيقاف يُراجعان قبل التنفيذ على نفس الرسالة. مدة محدودة،لا تتبع دائم.</p><button type="button" onClick={() => { void query.refetch(); }} className="rounded border p-2">تحديث حالة الموقع الحي</button>{query.isError ? <p role="alert">{query.error.message}</p> : null}{query.data?.length === 0 ? <p>لم يُنشر هذا الموقع بعد.</p> : null}{query.data?.map(record => <div key={record.publication_id} className="space-y-2 border-t pt-2"><p dir="ltr">Telegram {record.message_id} · {record.active ? 'ACTIVE' : 'STOPPED / EXPIRED'} · {record.expires_at}</p>{record.active ? <><label className="block">خط العرض<input aria-label="خط عرض التحديث" value={latitude} onChange={e=>setLatitude(e.target.value)} className="m-1 w-28 rounded border p-2" /></label><label className="block">خط الطول<input aria-label="خط طول التحديث" value={longitude} onChange={e=>setLongitude(e.target.value)} className="m-1 w-28 rounded border p-2" /></label><button type="button" disabled={create.isPending} onClick={()=>create.mutate({id:record.publication_id,action:'UPDATE'})} className="rounded border p-2">تجهيز تحديث الموقع للمراجعة</button><button type="button" disabled={create.isPending} onClick={()=>create.mutate({id:record.publication_id,action:'STOP'})} className="rounded border p-2">تجهيز إيقاف الموقع للمراجعة</button></> : null}{record.operations.map(operation=><div key={operation.id} className="rounded border bg-white p-2"><p>{operation.action} · {operation.status}</p><details className="min-w-0"><summary className="cursor-pointer text-xs">تفاصيل العملية التقنية</summary><pre dir="ltr" className="max-w-full whitespace-pre-wrap break-all text-xs">{JSON.stringify(operation.payload)}</pre></details>{operation.status==='DRAFT' ? <button type="button" onClick={()=>cancel.mutate(operation.id)} className="rounded border p-2">إلغاء العملية قبل التنفيذ</button> : null}{operation.status==='DRAFT' && record.active ? <button type="button" disabled={execute.isPending} onClick={()=>execute.mutate(operation.id)} className="rounded bg-teal-700 p-2 text-white">اعتماد وتنفيذ {operation.action === 'STOP' ? 'إيقاف الموقع' : 'تحديث الموقع'}</button> : null}{operation.error_message ? <p role="alert">{operation.error_message}</p>:null}</div>)}</div>)}{create.isError ? <p role="alert">{create.error.message}</p>:null}{execute.isError ? <p role="alert">{execute.error.message}</p>:null}</section>;
+}
+
+function AlbumChildPreview({ id }: { id: string }) {
+  const child = useQuery({ queryKey: ["album-child", id], queryFn: () => genericArtifactsApi.get(id) });
+  return child.data ? <TelegramMediaDraftPreview artifact={child.data} /> : <p className="text-xs">{child.isError ? "تعذر تحميل عنصر الألبوم،راجع اعتماده." : "تحميل معاينة عنصر الألبوم..."}</p>;
+}
+
+function GenericArtifactMediaPreview({ artifact }: { artifact: GenericReviewableArtifact }) {
+  const media = useQuery({
+    queryKey: ["generic-artifact-media-url", artifact.id],
+    queryFn: () => genericArtifactsApi.mediaUrl(artifact.id),
+    enabled: Boolean(artifact.storage_uri) && STORED_MEDIA.includes(artifact.kind),
+    staleTime: 4 * 60 * 1000,
+  });
+  if (!artifact.storage_uri) {
+    return <p className="rounded-lg bg-amber-50 p-3 text-sm">مرجع الوسيط غير متوفر.</p>;
+  }
+  if (media.isLoading) {
+    return <p role="status" className="rounded-lg bg-slate-50 p-3 text-sm">تحميل معاينة الوسيط...</p>;
+  }
+  if (media.isError || !media.data?.url) {
+    return <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm">تعذر تحميل معاينة الوسيط: {media.error?.message ?? "رابط المعاينة غير متاح."}</p>;
+  }
+  const title = typeof artifact.metadata.title === "string" ? artifact.metadata.title : `معاينة ${artifact.kind}`;
+  if (artifact.kind === "IMAGE" || artifact.kind === "ANIMATION" && artifact.mime_type === "image/gif") {
+    return <img src={media.data.url} alt={title} className="max-h-64 max-w-full rounded-xl border object-contain" />;
+  }
+  if (["VIDEO", "VIDEO_NOTE"].includes(artifact.kind) || artifact.kind === "ANIMATION" && artifact.mime_type === "video/mp4") {
+    return <video aria-label="معاينة الفيديو الأصلي" src={media.data.url} controls playsInline preload="metadata" className="mx-auto h-auto max-h-[min(80svh,960px)] w-auto max-w-full rounded-xl border object-contain bg-black" />;
+  }
+  if (["AUDIO", "VOICE"].includes(artifact.kind)) {
+    return <audio src={media.data.url} controls preload="metadata" className="w-full" />;
+  }
+  return <a href={media.data.url} download rel="noreferrer" className="block break-words rounded-lg bg-slate-50 p-3 text-sm text-indigo-800">تنزيل المرفق:{String(artifact.metadata.original_filename ?? artifact.kind)}</a>;
+}
+
+
+export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDesignCard?: boolean; designCardOnly?: boolean } = {}) {
+  const queryClient = useQueryClient();
+  const [libraryParams,setLibraryParams] = useSearchParams();
+  const [status, setStatus] = useState<GenericArtifactReviewStatus>(["APPROVED","REJECTED"].includes(libraryParams.get("artifact_status")??"") ? libraryParams.get("artifact_status") as GenericArtifactReviewStatus : "DRAFT");
+  const [copyRequests,setCopyRequests]=useState<Record<string,{platform:string;nonce:number}>>({});
+  const [focusedId,setFocusedState] = useState<string|null>(libraryParams.get("artifact_id"));
+  const setFocusedId=(id:string|null)=>{setFocusedState(id);const next=new URLSearchParams(libraryParams);if(id){next.set("artifact_id",id);next.set("artifact_status",status);}else next.delete("artifact_id");if(id!==focusedId){next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");}setLibraryParams(next,{preventScrollReset:true});};
+  useEffect(()=>{setFocusedState(libraryParams.get("artifact_id"));const requested=libraryParams.get("artifact_status");if(requested&&["DRAFT","APPROVED","REJECTED"].includes(requested))setStatus(requested as GenericArtifactReviewStatus);},[libraryParams]);
+  const materialNav=useRef<HTMLElement>(null);
+  useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
+  const creationTask=(["manual","upload","variant","design"].includes(libraryParams.get("library_task")??"")?libraryParams.get("library_task"):null);
+  const [creationVisit,setCreationVisit]=useState(0);
+  const chooseCreationTask=(task:string)=>{setCreationVisit(v=>v+1);setLibraryParams(current=>{const next=new URLSearchParams(current);next.set("library_task",task);return next;},{preventScrollReset:true});};
+  useEffect(()=>{if(!creationTask)return;const frame=requestAnimationFrame(()=>{const panel=document.getElementById("library-create-tools") as HTMLDetailsElement|null;if(panel)panel.open=true;const heading=document.getElementById("library-task-"+creationTask);heading?.focus({preventScroll:true});heading?.scrollIntoView({block:"start"});});return()=>cancelAnimationFrame(frame);},[creationTask,creationVisit]);
+  const [compact,setCompact] = useState(libraryParams.get("library_view")!=="expanded");
+  const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
+  const [cardProducts, setCardProducts] = useState<Record<string, string>>({});
+  const [quizDrafts, setQuizDrafts] = useState<Record<string, { id: string; status: string; external_id?: string | null }>>({});
+  const [mediaDrafts, setMediaDrafts] = useState<Record<string, { id: string; status: string }>>({});
+  const [mediaSchedules, setMediaSchedules] = useState<Record<string, { id: string; status: string; at: string }>>({});
+  const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
+  const [variantPlatform, setVariantPlatform] = useState<Record<string, string>>({});
+  const [variantNotes, setVariantNotes] = useState<Record<string, string>>({});
+  const [variantPostId, setVariantPostId] = useState("");
+  const [variantPostPlatform, setVariantPostPlatform] = useState("");
+  const [variantPostNote, setVariantPostNote] = useState("");
+  const filterValue=(key:string,fallback:string)=>libraryParams.get(key)??fallback;
+  const setLibraryFilter=(key:string,value:string,fallback:string)=>setLibraryParams(current=>{const next=new URLSearchParams(current);if(value===fallback)next.delete(key);else next.set(key,value);next.delete("artifact_id");next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");return next;},{replace:true,preventScrollReset:true});
+  const [search,setSearchText]=useState(()=>filterValue("library_q",""));
+  const searchRequested=useRef(search);
+  const setSearch=(value:string)=>{searchRequested.current=value;setSearchText(value);setLibraryFilter("library_q",value,"");};
+  const observedQuery=useRef(filterValue("library_q",""));
+  useEffect(()=>{const value=libraryParams.get("library_q")??"";if(observedQuery.current===value)return;observedQuery.current=value;if(value===searchRequested.current)return;searchRequested.current=value;setSearchText(value);},[libraryParams]);
+  const kindFilter=filterValue("library_kind","ALL");const setKindFilter=(value:string)=>setLibraryFilter("library_kind",value,"ALL");
+  const sourceFilter=filterValue("library_source","ALL");const setSourceFilter=(value:string)=>setLibraryFilter("library_source",value,"ALL");
+  const seriesFilter=filterValue("library_series","ALL");const setSeriesFilter=(value:string)=>setLibraryFilter("library_series",value,"ALL");
+  const categoryFilter=filterValue("library_category","ALL");const setCategoryFilter=(value:string)=>setLibraryFilter("library_category",value,"ALL");
+  const [catalogIds,setCatalogIds]=useState<string[]>([]);
+  const rawSort=filterValue("library_sort","newest");const sortMode:ArtifactSortMode=["newest","oldest","title","kind"].includes(rawSort)?rawSort as ArtifactSortMode:"newest";
+  const setSortMode=(value:ArtifactSortMode)=>setLibraryFilter("library_sort",value,"newest");
+  const [page, setPage] = useState(0);
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const reviewBatchRaw=libraryParams.get("review_batch");
+  const reviewBatchIds=useMemo(()=>reviewBatchRaw===null?[]:reviewBatchRaw.split(","),[reviewBatchRaw]);
+  const finishBatchReview=(ids:string[])=>{const next=new URLSearchParams(libraryParams);next.set("artifact_status","APPROVED");next.set("review_batch",ids.join(","));next.delete("artifact_id");for(const key of ["library_q","library_kind","library_source","library_series","library_category","library_sort"])next.delete(key);setSelectedMediaIds([]);setStatus("APPROVED");setFocusedState(null);setPage(0);setLibraryParams(next,{preventScrollReset:true});void refresh();};
+
+  const [copiesRevision,setCopiesRevision]=useState(0);
+  const [batchNote, setBatchNote] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const [uploadCaption, setUploadCaption] = useState("");
+  const [uploadKind, setUploadKind] = useState("");
+  const [manualKind, setManualKind] = useState("TEXT");
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualContent, setManualContent] = useState("");
+  const [quizOptions, setQuizOptions] = useState("");
+  const [quizAnswer, setQuizAnswer] = useState(0);
+  const [nativeJson, setNativeJson] = useState("");
+  const [selectedPostId, setSelectedPostId] = useState("");
+  const [postProductKey, setPostProductKey] = useState("");
+  const [activeCardJob, setActiveCardJob] = useState("");
+  const approvedPosts = useQuery({ queryKey: ["approved-posts-for-design-cards"], queryFn: () => postsApi.list({ status: "APPROVED", limit: 100 }) });
+  const products = useQuery({ queryKey: ["design-card-products"], queryFn: () => productionJobsApi.products() });
+  const recipes = useQuery({ queryKey: ["design-card-recipes"], queryFn: () => productionJobsApi.recipes() });
+  const eligibleCardProducts = (products.data ?? []).filter((product: ProductionProductOption) => {
+    const version = product.versions.find((item) => item.version === product.active_version);
+    if (!version) return false;
+    const recipe = recipes.data?.find((item: ProductionRecipeOption) => item.key === version.definition.recipe_key);
+    const pinnedRecipeVersion = version.definition.component_versions?.recipe.version;
+    const recipeVersion = recipe?.versions.find((item) => item.version === (pinnedRecipeVersion ?? recipe.active_version));
+    return ["PUBLISHED", "ARCHIVED"].includes(recipeVersion?.status ?? "") && Boolean(recipeVersion?.stages.some((stage) => stage.capability_key === "render_approved_text_card" && stage.capability_version === 1));
+  });
+  const artifacts = useQuery({
+    queryKey: ["generic-artifacts", status],
+    queryFn: () => genericArtifactsApi.listAll(status),
+    enabled: !designCardOnly,
+  });
+  const activeJob = useQuery({
+    queryKey: ["design-card-production-job", activeCardJob],
+    queryFn: () => productionJobsApi.get(activeCardJob),
+    enabled: Boolean(activeCardJob),
+    refetchInterval: (query) => {
+      const jobStatus = query.state.data?.status;
+      return jobStatus === "COMPLETED" || jobStatus === "FAILED" ? false : 1500;
+    },
+  });
+  useEffect(() => {
+    if (activeJob.data?.status === "COMPLETED" || activeJob.data?.status === "FAILED") {
+      queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
+    }
+  }, [activeJob.data?.status, queryClient]);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
+  const allArtifacts = useMemo(() => artifacts.data?.items ?? [], [artifacts.data]);
+  useEffect(()=>{if(reviewBatchRaw!==null)setSelectedMediaIds([]);},[reviewBatchRaw]);
+  useEffect(()=>{if(reviewBatchRaw!==null&&(artifacts.isFetching||artifacts.isError||reviewBatchIds.some(id=>!allArtifacts.some(i=>i.id===id&&i.review_status==="APPROVED"&&i.status==="AVAILABLE"&&i.metadata.source_type!=="PLATFORM_VARIANT"))))setSelectedMediaIds([]);},[reviewBatchRaw,reviewBatchIds,allArtifacts,artifacts.isFetching,artifacts.isError]);
+
+  useEffect(()=>{
+    if(artifacts.isFetching||artifacts.isError||!artifacts.data)return;
+    setSelectedMediaIds(current=>{
+      const next=current.filter(id=>allArtifacts.some(item=>item.id===id&&isSelectableOriginal(item)));
+      return next.length===current.length?current:next;
+    });
+  },[allArtifacts,artifacts.isFetching,artifacts.isError,artifacts.data]);
+
+  const seriesOptions = useMemo(() => [...new Set(allArtifacts.map(artifactSeriesKey))].sort((a,b) => a.localeCompare(b, "ar")), [allArtifacts]);
+  const categoryOptions=useMemo(()=>[...new Set(allArtifacts.map(i=>i.organization?.category||"غير مصنف"))].sort((a,b)=>a.localeCompare(b,"ar")),[allArtifacts]);
+  const filteredArtifacts = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const matches = allArtifacts.filter((artifact) => {
+      if (kindFilter !== "ALL" && artifact.kind !== kindFilter) return false;
+      const sourceType = typeof artifact.metadata.source_type === "string" ? artifact.metadata.source_type : "GENERATED";
+      if (sourceFilter !== "ALL" && sourceType !== sourceFilter) return false;
+      if(categoryFilter!=="ALL"&&(artifact.organization?.category||"غير مصنف")!==categoryFilter)return false;
+      if (seriesFilter !== "ALL" && artifactSeriesKey(artifact) !== seriesFilter) return false;
+      if (!needle) return true;
+      const haystack = artifactSearchText(artifact);
+      return haystack.includes(needle);
+    });
+    const sorted = [...matches];
+    if (sortMode === "oldest") sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    else if (sortMode === "title") sorted.sort((a, b) => artifactTitle(a).localeCompare(artifactTitle(b), "ar"));
+    else if (sortMode === "kind") sorted.sort((a, b) => a.kind.localeCompare(b.kind) || b.created_at.localeCompare(a.created_at));
+    else sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return sorted;
+  }, [allArtifacts, search, kindFilter, sourceFilter, seriesFilter, categoryFilter, sortMode]);
+  const pageCount = Math.max(1, Math.ceil(filteredArtifacts.length / LIBRARY_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedArtifacts = filteredArtifacts.slice(safePage * LIBRARY_PAGE_SIZE, safePage * LIBRARY_PAGE_SIZE + LIBRARY_PAGE_SIZE);
+  const focusedArtifact=focusedId?allArtifacts.find(item=>item.id===focusedId):null;
+  const focusIndex=filteredArtifacts.findIndex(item=>item.id===focusedId);
+  const displayArtifacts=focusedId?(focusedArtifact?[focusedArtifact]:[]):pagedArtifacts;
+  const returnToLibrary=()=>{if(focusIndex>=0)setPage(Math.floor(focusIndex/LIBRARY_PAGE_SIZE));setFocusedId(null);};
+  const updateFilters = (apply: () => void) => { apply(); setPage(0); setFocusedState(null); };
+  const save = useMutation({
+    mutationFn: (id: string) => {
+      const artifact = (artifacts.data?.items ?? []).find((item) => item.id === id);
+      const content = drafts[id]?.content;
+      if (artifact && artifact.content === null && content !== undefined) {
+        return genericArtifactsApi.update(id, { metadata: { ...artifact.metadata, caption: content } });
+      }
+      if (artifact?.kind === "QUIZ" && content !== undefined) {
+        const quiz = artifact.metadata.quiz && typeof artifact.metadata.quiz === "object" && !Array.isArray(artifact.metadata.quiz)
+          ? artifact.metadata.quiz as Record<string, unknown>
+          : {};
+        return genericArtifactsApi.update(id, {
+          content,
+          metadata: { ...artifact.metadata, quiz: { ...quiz, question: content } },
+        });
+      }
+      return genericArtifactsApi.update(id, { content });
+    },
+    onSuccess: (_, id) => { setDrafts(current => { const next = {...current}; delete next[id]; return next; }); return refresh(); },
+  });
+  const approve = useMutation({
+    mutationFn: (id: string) => genericArtifactsApi.approve(id, drafts[id]?.review_note),
+    onSuccess: refresh,
+  });
+  const reject = useMutation({
+    mutationFn: (id: string) => genericArtifactsApi.reject(id, drafts[id]?.review_note ?? ""),
+    onSuccess: refresh,
+  });
+  const createQuizDraft = useMutation({
+    mutationFn: (id: string) => genericArtifactsApi.createQuizDraft(id),
+    onSuccess: (publication, artifactId) => setQuizDrafts((current) => ({ ...current, [artifactId]: { id: publication.id, status: publication.status } })),
+  });
+  const ingestMedia = useMutation({
+    mutationFn: () => {
+      if (!uploadFile) throw new Error("اختر ملف صورة أو فيديو أولًا.");
+      return genericArtifactsApi.ingestReadyMedia({ file: uploadFile, caption: uploadCaption, media_kind: uploadKind || undefined });
+    },
+    onSuccess: () => {
+      setUploadFile(null);
+      if (uploadInput.current) uploadInput.current.value = "";
+      setUploadCaption("");
+      setStatus("DRAFT");
+      refresh();
+    },
+  });
+  const createManual = useMutation({
+    mutationFn: () => genericArtifactsApi.manualDraft({ kind: manualKind === "QUIZ" ? "QUIZ" : "TEXT", title: manualTitle, content: manualContent,
+      ...(NATIVE_TEMPLATES[manualKind] ? { native: (()=>{const error=nativeError(nativeJson);if(error)throw new Error(error);const parsed=JSON.parse(nativeJson);if(parsed.type!==manualKind)throw new Error("نوع البيانات لا يطابق نوع المسودة المختار.");if(parsed.last_name==="")delete parsed.last_name;return parsed;})() as Record<string, unknown> } : {}),
+      ...(manualKind === "QUIZ" ? { quiz: { question: manualContent, options: quizOptions.split("\n").map(v => v.trim()).filter(Boolean), correct_option_id: quizAnswer } } : {}) }),
+    onSuccess: () => { setStatus("DRAFT"); setManualTitle(""); setManualContent(""); refresh(); },
+  });
+  const deriveVariant = useMutation({
+    mutationFn: ({ id, platform }: { id: string; platform: string }) => genericArtifactsApi.derivePlatformVariant(id, platform),
+    onSuccess: (variant, input) => {
+      setVariantNotes((current) => ({ ...current, [input.id]: `نسخة ${String(variant.metadata.platform_label_ar ?? input.platform)} جاهزة للمراجعة؛ إن كانت موجودة فقد حُفظت تعديلاتك دون استبدالها.` }));
+      refresh();
+    },
+  });
+  const derivePostVariant = useMutation({
+    mutationFn: ({ postId, platform }: { postId: string; platform: string }) => genericArtifactsApi.derivePlatformVariantFromPost(postId, platform),
+    onSuccess: (variant, input) => {
+      setVariantPostNote(`أُنشئت نسخة ${String(variant.metadata.platform_label_ar ?? input.platform)} بحدود الطول من المنشور وهي الآن قيد المراجعة في قائمة المخرجات.`);
+      refresh();
+    },
+  });
+  const createMediaDraft = useMutation({
+    mutationFn: (id: string) => genericArtifactsApi.createTelegramMediaDraft(id),
+    onSuccess: (publication, artifactId) => setMediaDrafts((current) => ({ ...current, [artifactId]: { id: publication.id, status: publication.status } })),
   });
   const scheduleMediaDraft = useMutation({
     mutationFn: ({ id, scheduledAt }: { id: string; scheduledAt: string }) => {
@@ -821,4 +1187,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-            }
+}
