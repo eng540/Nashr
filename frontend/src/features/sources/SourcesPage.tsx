@@ -100,6 +100,7 @@ export function SourcesPage() {
   const [showOther,setShowOther]=useState(false);
   const queryClient = useQueryClient();
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -117,6 +118,7 @@ export function SourcesPage() {
     },
     onSuccess: () => {
       setUploadFile(null);
+      if (uploadInput.current) uploadInput.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["sources-library"] });
     },
   });
@@ -145,6 +147,7 @@ export function SourcesPage() {
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <label className="min-w-0 max-w-full text-sm font-semibold">ملف PDF
             <input
+              ref={uploadInput}
               aria-label="ملف المصدر الجديد"
               type="file"
               accept="application/pdf"

@@ -212,6 +212,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const [copiesRevision,setCopiesRevision]=useState(0);
   const [batchNote, setBatchNote] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
   const [uploadCaption, setUploadCaption] = useState("");
   const [uploadKind, setUploadKind] = useState("");
   const [manualKind, setManualKind] = useState("TEXT");
@@ -334,6 +335,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     },
     onSuccess: () => {
       setUploadFile(null);
+      if (uploadInput.current) uploadInput.current.value = "";
       setUploadCaption("");
       setStatus("DRAFT");
       refresh();
@@ -778,7 +780,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
       </label>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold">ملف الوسيط
-          <input aria-label="ملف الوسيط الجاهز" type="file" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal" />
+          <input ref={uploadInput} aria-label="ملف الوسيط الجاهز" type="file" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="mt-1 w-full max-w-full rounded-lg border bg-white p-2 font-normal" />
         </label>
         <label className="text-sm font-semibold">التعليق (يظهر نصًا مع الوسيط عند النشر)
           <textarea rows={5} aria-label="تعليق الوسيط الجاهز" value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 font-normal" placeholder="نص يرافق الوسيط عند النشر" />
