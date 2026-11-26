@@ -272,3 +272,35 @@ field. Source material and other platform copies remain unchanged.
 - Future start, cancellation before send, expiry, source/copy/Page drift, write-ahead claim and no automatic unknown retry remain enforced.
 - Full-frame JPEG preparation now supports Facebook as well as Instagram. Original remains unchanged. No public URL is generated for Facebook.
 - Local provider simulations are engineering evidence only. Scheduled live batch and actual Meta links are separate acceptance work.
+
+## Private full-frame video preparation, bounded local acceptance
+
+The proposed private format preparation stores PlatformCopyMedia under the original
+and target platform. It creates no new original, approval, choice or schedule.
+The operator explicitly accepts black padding, prepares, watches the saved MP4,
+then selects with the existing source/version-bound selection action. Selection
+requires a new revision-bound inspection. Original media and text remain intact.
+
+This bounded version accepts square-pixel, unrotated progressive H.264/HEVC4:2:0
+MP4/MOV with exactly one video and one audio stream,24-60fps,3-90seconds,50MB.
+It fits the whole picture inside1080x1920 without cropping or trimming, preserves
+frame rate and narration sequence, and resamples audio to stereo48kHz AAC with
+a target120kbps for Instagram or160kbps for Facebook. Measured output gates apply;
+low-complexity audio may fail the Facebook minimum and is not silently accepted.
+It does not prove remote platform acceptance or VBR mode.
+
+Facebook selected-media preview uses the existing exact-byte stage path without
+conversion, field copying or selection replacement. The older compatibility
+preparation now rejects an existing Facebook media selection rather than replacing
+it. Returning to the original is an explicit separate version-bound action.
+Selected Facebook media bytes must match their stored SHA before probing.
+
+Resource guards: one conversion per process, two encoder threads,180second
+conversion timeout,49MB output cap with size/duration failure checks. Long
+conversion runs without database row locks; the final private save locks and
+rechecks original approval, fingerprint and copy version. No provider is contacted.
+Local tests cover format outputs, stalled/failing conversion, concurrency rejection,
+source/version drift, no duplicate original counts, old/new Facebook preparation,
+selected-asset hash mismatch and existing Instagram inspection binding. Synthetic
+UI checks are separate from real ffmpeg/PostgreSQL tests and pixel review.
+This does not claim remote platform acceptance or modify today's live schedules.
