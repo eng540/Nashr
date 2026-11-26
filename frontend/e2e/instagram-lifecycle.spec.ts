@@ -3,6 +3,7 @@ test('Instagram verification stays read only and local state has explicit confir
  let enabled=false,verified=false;const writes:string[]=[];
  await page.route('**/api/connections**',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
  if(p==='/api/connections/youtube'&&route.request().method()==='GET')return route.fulfill({json:{configured:false,connection:null,pending:null}});
+ if(p==='/api/connections/tiktok-inbox'&&route.request().method()==='GET')return route.fulfill({json:{configured:false,connection:null,pending:null,execution_authorized:false,transfer_available:false,public_posting_available:false}});
  if(p==='/api/connections/tiktok')return route.fulfill({json:{configured:false,connection:null,pending:null}});
  if(p==='/api/connections/tiktok/requirements')return route.fulfill({json:{reviewed_on:'2026-11-24',modes:[],media_requirements:[],sources:[]}});
  if(p==='/api/connections/facebook')return route.fulfill({json:{configured:false,missing_configuration:[],connection:null,pending:null,requirements:[],source:'https://developers.facebook.com'}});
