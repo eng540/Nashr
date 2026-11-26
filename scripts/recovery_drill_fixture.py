@@ -65,6 +65,36 @@ with tempfile.TemporaryDirectory(prefix='nashr-fresh-recovery-') as temp:
    return ids
   source_id,legacy_id=asyncio.run(seed())
   report=drill(source,target,fixtures,BIN,OUT/'round-trip.json')
+  # Export reduced inventory from the restored isolated database only.
+  from scripts.recovery_inventory_export import export
+  from scripts.recovery_coverage import coverage
+  reduced_path=root/'reduced-inventory.json'
+  reduced=export(target,BIN,reduced_path)
+  assert reduced['snapshot']['source_rows']==2 and reduced['snapshot']['artifact_rows']==1
+  assert reduced['snapshot']['derivative_rows']==0
+  assert reduced_path.stat().st_mode & 0o777 == 0o600
+  assert 'نص المصدر الأصلي' not in reduced_path.read_text()
+  try:export(target,BIN,reduced_path)
+  except FileExistsError:overwrite_refused=True
+  else:raise AssertionError('Inventory output overwrite accepted')
+  ro_env=connection(target);ro_env['PGOPTIONS']='-c default_transaction_read_only=on'
+  try:sql(BIN,ro_env,'CREATE TABLE forbidden_export_write(id integer)')
+  except RuntimeError:readonly_enforced=True
+  else:raise AssertionError('Read-only mode did not reject write')
+  copied_objects=root/'coverage-objects/synthetic-recovery/artifacts/drill'
+  copied_objects.mkdir(parents=True)
+  (copied_objects/'video.mp4').write_bytes(media)
+  coverage_report=coverage(reduced,root,root/'coverage-objects')
+  assert coverage_report['blocking_gaps']==0 and coverage_report['object_count']==1
+  (copied_objects/'video.mp4').unlink()
+  missing_report=coverage(reduced,root,root/'coverage-objects')
+  assert missing_report['blocking_gaps']==1
+  export_checks={'source_rows':2,'artifact_rows':1,'derivative_rows':0,
+    'private_output_mode':True,'content_bodies_omitted':True,
+    'overwrite_refused':overwrite_refused,'readonly_enforced':readonly_enforced,
+    'coverage_no_detected_gaps':True,'missing_object_detected':True,
+    'live_production_export':False,'durable_backup_created':False}
+  (OUT/'inventory-export-checks.json').write_text(json.dumps(export_checks,indent=2)+'\n')
   async def rehydrate():
    engine=create_async_engine(target.replace('postgresql://','postgresql+asyncpg://'))
    try:

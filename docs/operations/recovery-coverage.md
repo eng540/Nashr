@@ -22,7 +22,35 @@ or access tokens. The checker consumes only these fields:
 - `platform_copy_media`: `id`, `storage_uri`, `sha256`. Include unselected and
   historical derivatives, not only the current selected copy.
 
-The input exporter is not implemented here. Independent source-to-export row
+## Isolated database exporter
+
+`scripts/recovery_inventory_export.py` now prepares this reduced input from a
+restored loopback database named `recovery_drill_*`. It runs one SELECT with
+PostgreSQL read-only mode enforced, selects no account/config/token tables,
+and emits no text bodies. JSON paths select only storage/child references from
+artifact metadata. The snapshot records source/artifact/derivative row counts,
+transaction snapshot and a digest of the reduced inventory. Counts cover those
+three queried tables, not an assertion that every application relationship or
+provider capability is backed up. This is not a production export command.
+
+```sh
+# ISOLATED_URL holds the disposable restored loopback PostgreSQL URL.
+python scripts/recovery_inventory_export.py \
+  --database-url-env ISOLATED_URL \
+  --pg-bin /path/to/matching/postgresql/bin \
+  --output /private/isolated-inventory.json
+```
+
+Output is created exclusively with mode0600; existing paths are refused. Storage
+references and record IDs remain private even though text bodies are omitted.
+Keep output in an approved private location. The exporter does not copy object
+bytes, decrypt tokens, follow HTTP URLs, or contact providers. Absolute historical
+source paths still need an explicit offline mapping before coverage can pass.
+The fixture harness tests this exporter on the fresh migrated/restored synthetic
+schema, checks counts and output permissions, detects missing copied media,
+rejects overwrites and verifies PostgreSQL refuses writes in read-only mode.
+
+Independent source-to-export row
 counts, snapshot identity and database-table completeness must be established
 before using this tool to assess a real recovery. An empty/partial input cannot
 certify coverage. Metadata can contain private references, so keep input private.
