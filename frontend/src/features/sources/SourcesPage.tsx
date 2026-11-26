@@ -169,6 +169,14 @@ export function SourcesPage() {
       </section>:null}
 
       {analysis?<section className="rounded-2xl border bg-white p-3" aria-label="تحليل الكتاب"><h3 ref={analysisHeading} tabIndex={-1} className="scroll-mt-24 font-bold">تحليل الكتاب واستخراج المواد</h3><p className="text-xs leading-6">أداة تحليل ضمن مساحة العمل. فتحها لا يبدأ التحليل تلقائياً. ارجع إلى الإنتاج بعد مراجعة المواد المستخرجة.</p><BookAnalysisFrame sourceId={analysisId}/></section>:null}
+      <details className="rounded-2xl border bg-white p-5" aria-label="أدوات المكتبة المتقدمة">
+        <summary className="cursor-pointer font-bold">أدوات المكتبة المتقدمة</summary>
+        <p className="mt-2 text-sm leading-7 text-slate-600">للملفات المجهزة مسبقاً فقط. لإضافة كتاب عادي استخدم رفع PDF أعلاه. فتح هذه الأدوات لا يرفع أو يغيّر شيئاً.</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <a href="/library/import" className="rounded-xl border p-4 text-sm leading-7"><strong className="block text-emerald-800 underline">استيراد حزم المكتبة ZIP</strong>حزم Engineering540، حتى 25 MiB و100 مادة للحزمة. تدخل المواد كمسودات دون نشر.</a>
+          <a href="/library/video-metadata" className="rounded-xl border p-4 text-sm leading-7"><strong className="block text-emerald-800 underline">استعادة بيانات الفيديوهات JSON</strong>ربط الأصول ونسخ المنصات بفيديوهات موجودة، حتى 2 MiB. لا رفع فيديو جديد ولا نشر.</a>
+        </div>
+      </details>
       <section className="rounded-2xl border bg-white p-5 shadow-sm" aria-label="قائمة المصادر">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-xl font-bold">{showOther?"جميع المصادر المحفوظة":"كتب PDF فقط"}</h3><label className="text-xs"><input type="checkbox" checked={showOther} onChange={e=>setShowOther(e.target.checked)}/> إظهار بقية الملفات والمصادر دون حذفها</label>
