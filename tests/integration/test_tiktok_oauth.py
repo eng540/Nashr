@@ -26,7 +26,9 @@ async def test_lifecycle_binding_replay_encryption_and_no_execution(config,monke
     async with browser() as c:
         state=await start(c)
         async with browser() as stranger:assert (await stranger.get(service.BASE+'/callback',params={'state':state,'code':'sensitive'})).status_code==400
-        assert (await c.get(service.BASE+'/callback',params={'state':state,'code':'sensitive'})).status_code==303
+        callback=await c.get(service.BASE+'/callback',params={'state':state,'code':'sensitive'})
+        assert callback.status_code==303
+        assert callback.headers['location']=='/connections#platform-tiktok'
         r=await c.get(service.BASE);assert not r.json()['connection'] and r.json()['pending']['accounts'][0]['open_id']=='test-id';assert 'private-' not in r.text
         assert (await c.get(service.BASE+'/callback',params={'state':state,'code':'replay'})).status_code==400
         assert (await c.post(service.BASE+'/select',json={'open_id':'wrong'})).status_code==409
