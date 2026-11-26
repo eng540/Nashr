@@ -1,3 +1,4 @@
+import { arabicDefinition } from "../../shared/utils/arabicDefinition";
 import { useEffect, useState } from "react";
 import { PageHeader } from "../../shared/components/ui";
 
@@ -545,7 +546,7 @@ export function ControlPlanePage() {
             const published = item.versions?.find((version) => version.status === "PUBLISHED");
             const itemDraft = item.versions?.find((version) => version.status === "DRAFT");
             return <button key={item.key} type="button" onClick={() => selectItem(item)} className={"block w-full rounded-xl border p-3 text-right " + (selectedKey === item.key ? "border-indigo-500 bg-indigo-50" : "bg-white hover:bg-slate-50")}>
-              <span className="block font-semibold">{item.name}</span>
+              <span className="block font-semibold">{arabicDefinition(item.name)}</span>
               <span className="mt-1 block text-xs text-slate-500">{item.key}</span>
               <span className="mt-2 flex flex-wrap gap-1 text-xs">
                 {published && <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800">فعال v{published.version}</span>}
@@ -558,8 +559,8 @@ export function ControlPlanePage() {
 
       <main className="min-w-0 space-y-4 rounded-2xl border bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><h3 className="text-xl font-bold">{isNew ? ({products:"إنشاء منتج",recipes:"إنشاء وصفة",identities:"إنشاء هوية تحريرية",policies:"إنشاء سياسة","output-contracts":"إنشاء عقد مخرج",prompts:"إنشاء تعليمات"}[activeSection]) : selected?.name}</h3>
-            <p className="mt-1 text-sm text-slate-500">{selected?.purpose ?? "أنشئ عنصرًا جديدًا؛ سيُنشئ الخادم مسودته الأولى وفق العقد الحالي."}</p></div>
+          <div><h3 className="text-xl font-bold">{isNew ? ({products:"إنشاء منتج",recipes:"إنشاء وصفة",identities:"إنشاء هوية تحريرية",policies:"إنشاء سياسة","output-contracts":"إنشاء عقد مخرج",prompts:"إنشاء تعليمات"}[activeSection]) : selected ? arabicDefinition(selected.name) : ""}</h3>
+            <p className="mt-1 text-sm text-slate-500">{selected ? arabicDefinition(selected.purpose) : "أنشئ عنصرًا جديدًا؛ سيُنشئ الخادم مسودته الأولى وفق العقد الحالي."}</p></div>
           {selected && <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm">الإصدار المنشور: <strong>{activeVersion ? "v" + activeVersion.version : "لا يوجد"}</strong></div>}
         </div>
 
@@ -608,6 +609,7 @@ export function ControlPlanePage() {
             })()}
         </div> : null}
 
+        {selected && <p className="text-xs text-slate-500">العناوين العربية ترجمة عرض للنصوص الافتراضية المعروفة فقط. حقول الاسم والغرض أدناه تعرض الأصل المحفوظ دون تغيير.</p>}
         {activeSection !== "prompts" && <div className="grid gap-3 md:grid-cols-2">
           <Field label="المفتاح" value={form.key} onChange={(value) => updateField("key", value)} disabled={!isNew || busy} placeholder="معرّف ثابت بحروف لاتينية وأرقام وشرطة" />
           <Field label="الاسم" value={form.name} onChange={(value) => updateField("name", value)} disabled={!isNew || busy} />
