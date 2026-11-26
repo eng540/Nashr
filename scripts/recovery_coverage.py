@@ -78,14 +78,20 @@ def coverage(data, source_root, object_root):
     if source_root.is_symlink() or object_root.is_symlink():
         raise ValueError('Inventory roots cannot be symlinks.')
     source_root, object_root = source_root.resolve(), object_root.resolve()
-    source_counts = {'payload_present': 0, 'local_only_present': 0, 'object_reference': 0, 'missing_payload_and_file': 0}
+    source_counts = {'payload_present': 0, 'local_only_present': 0, 'database_text_present': 0, 'object_reference': 0, 'missing_payload_and_file': 0}
     source_checks = []
     for source in data.get('sources', []):
         count = source.get('payload_bytes', 0)
         if isinstance(count, bool) or not isinstance(count, int) or count < 0:
             raise ValueError('Payload lengths must be nonnegative integers.')
+        text_bytes = source.get('database_text_bytes', 0)
+        if isinstance(text_bytes, bool) or not isinstance(text_bytes, int) or text_bytes < 0:
+            raise ValueError('Database text lengths must be nonnegative integers.')
+        path_value = str(source.get('storage_path', ''))
         if count > 0:
             state = 'payload_present'
+        elif text_bytes > 0 and (path_value.startswith('inline://') or path_value == 'manual-draft'):
+            state = 'database_text_present'
         elif str(source.get('storage_path', '')).startswith('s3://'):
             state = 'object_reference'
         elif safe_file(source.get('storage_path', ''), source_root):
