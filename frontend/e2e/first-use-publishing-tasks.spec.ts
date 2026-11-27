@@ -18,6 +18,6 @@ test('first user chooses distribution or Telegram texts without scrolling past b
  await page.reload();await expect(page.getByLabel('بحث المنشورات الجاهزة')).toBeVisible();
  await tasks.scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('publishing-task-choice-mobile.png')});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
- await tasks.getByRole('button',{name:/متابعة مادة وتجهيز وجهاتها/}).click();await expect(page.getByText('فيديو معتمد',{exact:true})).toBeVisible();
+ await tasks.getByRole('button',{name:/متابعة مادة وتجهيز وجهاتها/}).click();await expect(page.getByText('فيديو معتمد',{exact:true})).toBeVisible();await expect(page).not.toHaveURL(/ready_task=editorial/);
  await page.goBack();await expect(page.getByLabel('بحث المنشورات الجاهزة')).toBeVisible();await page.goto('/publishing?selected_post_ids=post');await expect(page.getByLabel('بحث المنشورات الجاهزة')).toBeVisible();await expect(page.getByTestId('schedule-panel')).toBeVisible();expect(writes).toBe(0);
 });
