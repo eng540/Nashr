@@ -341,7 +341,12 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
     }
   }, [products.isFetching, products.isSuccess, sources.isFetching, sources.isSuccess, productionMode, productionSourceId, productionSources]);
 
-  const loadBank = () => { setPage(0); setSelected([]); setHasLoaded(true); };
+  const loadBank = () => {
+    setPage(0); setSelected([]); setHasLoaded(true);
+    // State changes trigger their own query. An already loaded first page
+    // still needs a real read, including recovery from a failed refresh.
+    if (hasLoaded && page === 0 && !posts.isFetching && queryInput.trim() === query) void posts.refetch();
+  };
   const clearFilters = () => { setFilterSourceId(ALL_SOURCES); setTopicId(""); setKind(""); setStatus(""); setSort("created"); setQueryInput(""); setQuery(""); setPage(0); setSelected([]); setSearchParams({}); };
   const toggleCurrentPage = (checked: boolean) => setSelected((current) => checked ? Array.from(new Set([...current, ...currentPageIds])) : current.filter((id) => !currentPageIds.includes(id)));
   const toggleMaterialPageSelection = (checked: boolean) => setMaterialIds((current) => checked ? Array.from(new Set([...current, ...currentMaterialPageIds])) : current.filter((id) => !currentMaterialPageIds.includes(id)));
