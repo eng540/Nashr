@@ -3,6 +3,7 @@ import {FacebookTextExecutionPanel} from './FacebookTextExecutionPanel';
 import {YouTubePlanReviewPanel} from './YouTubePlanReviewPanel';
 import {InstagramPlanReviewPanel,InstagramExactOperation} from './InstagramPlanReviewPanel';
 import {useState,useEffect,useRef} from 'react';
+import {useSearchParams} from 'react-router';
 import {CopySuggestionsPanel} from './CopySuggestionsPanel';
 import {MediaInspectionHistoryPanel} from './MediaInspectionHistoryPanel';
 import {PlatformCopyMediaPanel} from './PlatformCopyMediaPanel';
@@ -19,6 +20,20 @@ export type PlatformCopyDrafts = {
 export function CentralPlatformCopiesPanel({id,kind,onPlan,request,draftCache}:{id:string;kind:string;onPlan?:()=>void;request?:{platform:string;nonce:number};draftCache?:PlatformCopyDrafts}) {
  function fileSize(bytes:unknown) {const size=Number(bytes);return size<1024?`${size} بايت`:size<1024*1024?`${(size/1024).toFixed(1)} كيبيبايت`:`${(size/1024/1024).toFixed(2)} ميبيبايت`;}
  const panelRef=useRef<HTMLDetailsElement>(null);
+ const [landingParams]=useSearchParams();
+ const operationKey=landingParams.get('artifact_id')===id
+  ? ['instagram_job_id','photo_job_id','text_job_id'].find(key=>landingParams.has(key)) : undefined;
+ const landingKey=operationKey?operationKey+':'+landingParams.get(operationKey):null;
+ const landed=useRef<string|null>(null);
+ const interrupted=useRef(false);
+ // A slow read must not take focus back after the person starts using the page.
+ useEffect(()=>{
+  interrupted.current=false;
+  const stop=()=>{interrupted.current=true;};
+  document.addEventListener('pointerdown',stop,true);
+  document.addEventListener('keydown',stop,true);
+  return()=>{document.removeEventListener('pointerdown',stop,true);document.removeEventListener('keydown',stop,true);};
+ },[landingKey]);
  const openedRead=useRef(false);
  const readEpoch=useRef(0);
  const [handoff,setHandoff]=useState('');
@@ -72,6 +87,21 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request,draftCache}:{
   if(request.platform!==active){inspect.reset();jpeg.reset();setJpegOpen(false);}
   setActive(request.platform);setHandoff('فتح السجلات المحفوظة فقط. لا تجهيز جديد أو نشر من هذا الانتقال.');load.mutate();
  },[request?.nonce]);
+ // Wait for the initial copy read so the general material entry focus has finished.
+ // Do not run again for result refreshes or after the person has moved elsewhere.
+ useEffect(()=>{
+  if(!landingKey||landed.current===landingKey||draftRef.current||(!load.isSuccess&&!load.isError))return;
+  const label=operationKey==='instagram_job_id'?'عملية Instagram المرتبطة':operationKey==='photo_job_id'?'تنفيذ صورة Facebook':'تنفيذ نص Facebook';
+  const target=panelRef.current?.querySelector<HTMLElement>(`[aria-label="${label}"]`)??panelRef.current?.querySelector<HTMLElement>('summary');
+  if(!target)return;
+  const frame=requestAnimationFrame(()=>{
+   if(interrupted.current)return;
+   landed.current=landingKey;
+   target.focus({preventScroll:true});
+   window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:'instant'});
+  });
+  return()=>cancelAnimationFrame(frame);
+ },[landingKey,operationKey,active,load.isSuccess,load.isError]);
  function edit(field:keyof CentralPlatformCopy['fields'],value:string|string[]) {inspect.reset();jpeg.reset();const current=draftRef.current??row;if(current)changeDraft({...current,fields:{...current.fields,[field]:value}});setNote('');}
  return <details onToggle={e=>{if(e.target!==e.currentTarget||!e.currentTarget.open||openedRead.current||busy||draft)return;openedRead.current=true;load.mutate();}} ref={panelRef} className="scroll-mt-24 rounded-xl border border-violet-200 bg-violet-50/50 p-3" aria-label={`نسخ المنصات ${id}`}>
   <summary className="cursor-pointer text-xs font-bold">نسخ المنصات · حقول مرتبطة بالأصل</summary>
