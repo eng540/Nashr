@@ -207,16 +207,17 @@ export function PublishingPage() {
     else {detailRequest.current++;setDetail(null);setDetailPending(null);setDetailError(null);}
     return ()=>{detailRequest.current++;};
   },[linkedScheduleId]);
+  const updateEditorialSelectionUrl=(ids:string[])=>setSearchParams(previous=>{const next=new URLSearchParams(previous);next.set("ready_task","editorial");if(ids.length)next.set("selected_post_ids",ids.join(","));else next.delete("selected_post_ids");return next;});
   const setSelection = (id: string, checked: boolean) => {
     const next = toggleSelection(selectedIds, id, checked);
     setSelectedIds(next);
-    setSearchParams(next.length ? { selected_post_ids: next.join(",") } : {});
+    updateEditorialSelectionUrl(next);
   };
   const togglePageSelection = (checked: boolean) => {
     const ids = posts.data?.items.map((post) => post.post_id) ?? [];
     setSelectedIds((current) => checked ? Array.from(new Set([...current, ...ids])) : current.filter((id) => !ids.includes(id)));
     const next = checked ? Array.from(new Set([...selectedIds, ...ids])) : selectedIds.filter((id) => !ids.includes(id));
-    setSearchParams(next.length ? { selected_post_ids: next.join(",") } : {});
+    updateEditorialSelectionUrl(next);
   };
   const openSchedule = async () => {
     if (!selectedIds.length) return;
@@ -225,7 +226,7 @@ export function PublishingPage() {
       const blocked = new Set(result.blocked.map((r) => r.post_id));
       const eligible = selectedIds.filter((id) => !blocked.has(id));
       setSelectedIds(eligible);
-      setSearchParams(eligible.length ? { selected_post_ids: eligible.join(",") } : {});
+      updateEditorialSelectionUrl(eligible);
       setScheduleOpen(Boolean(eligible.length));
       if (result.blocked.length) setMessage(`تم استبعاد ${result.blocked.length} منشور غير قابل للنشر.`);
     } catch (e) {
@@ -329,13 +330,13 @@ export function PublishingPage() {
               <label className="text-sm font-semibold">الكتاب<select aria-label="كتاب المنشورات الجاهزة" value={readySourceId} onChange={(e) => { setReadySourceId(e.target.value); setReadyKind(""); setReadyPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الكتب المتاحة</option>{(readyFilterOptions.data?.sources ?? []).map((source) => <option key={source.id} value={source.id}>{source.title}</option>)}</select></label>
               <label className="text-sm font-semibold">نوع المحتوى<select aria-label="نوع المنشورات الجاهزة" value={readyKind} onChange={(e) => { setReadyKind(e.target.value); setReadyPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الأنواع المتاحة</option>{(readyFilterOptions.data?.kinds ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
               <label className="text-sm font-semibold">الفرز<select aria-label="فرز المنشورات الجاهزة" value={readySort} onChange={(e) => { setReadySort(e.target.value as typeof readySort); setReadyPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="created">الأحدث أولًا</option><option value="title">العنوان: أ - ي</option><option value="kind">النوع</option><option value="topic">المحور</option></select></label>
-              <button type="button" onClick={() => { setReadyQuery(""); setReadySourceId(""); setReadyKind(""); setReadySort("created"); setReadyPage(0); setSelectedIds([]); setSearchParams({}); }} className="rounded-xl border px-4 py-3 text-sm font-semibold">مسح الفلاتر</button>
+              <button type="button" onClick={() => { setReadyQuery(""); setReadySourceId(""); setReadyKind(""); setReadySort("created"); setReadyPage(0); setSelectedIds([]); updateEditorialSelectionUrl([]); }} className="rounded-xl border px-4 py-3 text-sm font-semibold">مسح الفلاتر</button>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {allReadySelected
                 ? <button type="button" onClick={() => togglePageSelection(false)} className="rounded-xl border px-3 py-2 text-sm font-semibold">إلغاء تحديد الصفحة</button>
                 : <button type="button" onClick={() => togglePageSelection(true)} disabled={!readyItems.length} className="rounded-xl border px-3 py-2 text-sm font-semibold disabled:opacity-40">تحديد الصفحة</button>}
-              {selectedIds.length > 0 && <button type="button" onClick={() => { setSelectedIds([]); setSearchParams({}); }} className="rounded-xl border px-3 py-2 text-sm">مسح التحديد</button>}
+              {selectedIds.length > 0 && <button type="button" onClick={() => { setSelectedIds([]); updateEditorialSelectionUrl([]); }} className="rounded-xl border px-3 py-2 text-sm">مسح التحديد</button>}
               {selectedIds.length > 0 && <button data-testid="create-plan" type="button" onClick={() => void openSchedule()} disabled={eligibility.isPending} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء خطة ({selectedIds.length})</button>}
             </div>
           </div>
