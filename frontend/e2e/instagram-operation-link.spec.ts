@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 const id='12345678-1234-4123-8123-123456789ab1',jid='12345678-1234-4123-8123-123456789ab2';
 for(const scenario of ['exact','mismatch','failure','invalid'])test('Instagram exact operation handoff '+scenario,async({page},info)=>{
@@ -5,7 +6,7 @@ for(const scenario of ['exact','mismatch','failure','invalid'])test('Instagram e
  const item={id,kind:'IMAGE',status:'AVAILABLE',content:null,mime_type:'image/jpeg',metadata:{title:'أصل العملية'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'};
  await page.route('**/*',r=>{const p=new URL(r.request().url()).pathname;if(r.request().method()!=='GET')writes.push(p);
  if(p.endsWith('/result')){resultReads++;if(scenario==='failure')return r.fulfill({status:503,json:{detail:'synthetic unavailable'}});return r.fulfill({json:{id:jid,artifact_id:scenario==='mismatch'?'wrong':id,login_mode:'UNIFIED',state:'PUBLISHED',dispatch_state:'PUBLISHED',username:'exact_account',caption:'نص المحاولة القديمة المحددة',permalink:'https://www.instagram.com/p/Exact123/',media_sha256:'b'.repeat(64),created_at:'2026-11-23T10:00:00Z'}});}
- if(p==='/api/artifacts')return r.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return r.fulfill({json:libraryFixture(r, {items:[item],total:1,limit:100,offset:0})});
  // No current platform copy and no execution history: old result must remain reachable.
  if(p.endsWith('/platform-copies'))return r.fulfill({json:{items:[]}});
  if(p==='/posts'||p==='/sources'||p.startsWith('/api/control/'))return r.fulfill({json:[]});if(p.startsWith('/api/'))return r.fulfill({json:{items:[],total:0}});return r.continue();});
