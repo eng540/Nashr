@@ -1,9 +1,10 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('Facebook hidden inherited fields become visible, never silently removed or merged',async({page},info)=>{
  const id='12345678-1234-4123-8123-123456789abc';let saves=0;
  const original='نص أصلي لا يتغير';let copy={platform:'facebook',label:'Facebook',fields:{title:'عنوان منفصل محفوظ',description:original,tags:['وسم_محفوظ'],alt_text:'نص بديل محفوظ'},version:1,source_fingerprint:'v1',current_source_fingerprint:'v1',origin:'UNCHANGED_ORIGINAL',source_stale:false,central_approval:'APPROVED',field_status:'BLOCKED',blockers:['توجد حقول منفصلة لا يرسلها المسار الحالي.'],warnings:[],media_checks_pending:[],execution_blockers:['لا إذن تنفيذ.'],sources:[]};
  await page.route('**/*',route=>{const r=route.request(),p=new URL(r.url()).pathname;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[{id,kind:'TEXT',status:'AVAILABLE',content:original,mime_type:'text/plain',metadata:{title:'عنوان الأصل'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[{id,kind:'TEXT',status:'AVAILABLE',content:original,mime_type:'text/plain',metadata:{title:'عنوان الأصل'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}],total:1,limit:100,offset:0})});
  if(p===`/api/artifacts/${id}/platform-copies`)return route.fulfill({json:{items:[copy]}});
  if(p===`/api/artifacts/${id}/platform-copies/facebook`){expect(r.method()).toBe('PATCH');saves++;const b=r.postDataJSON();expect(b.fields).toEqual({title:'',description:original,tags:[],alt_text:''});copy={...copy,fields:b.fields,version:2,field_status:'FIELDS_VALIDATED',blockers:[],origin:'USER_EDITED'};return route.fulfill({json:copy});}
  if(r.method()!=='GET')throw new Error('Unexpected mutation '+p);
