@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('private Facebook review requires choices and never uploads or connects',async({page},info)=>{
  const id='facebook-review';let saved=false,cancelled=false;const unsafe:string[]=[];
@@ -5,7 +6,7 @@ test('private Facebook review requires choices and never uploads or connects',as
  const copy={platform:'facebook',label:'Facebook',fields:{title:'',description:'الوصف الكامل دون قص أو تعديل',tags:[],alt_text:''},version:2,source_fingerprint:'a'.repeat(64),current_source_fingerprint:'a'.repeat(64),origin:'USER_EDITED',source_stale:false,central_approval:'APPROVED',field_status:'FIELDS_VALIDATED',blockers:[],warnings:[],media_checks_pending:[],execution_blockers:[],sources:[]};
  let snapshot:any;
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p.endsWith('/platform-copies'))return route.fulfill({json:{items:[copy]}});
  if(p.endsWith('/preview')&&p.includes('/facebook/materials/')){const body=r.postDataJSON();snapshot={artifact_id:id,copy_version:2,kind:'IMAGE',fields:copy.fields,intent:body,inspection:null,blockers:['صفحة غير مرتبطة، لا نشر حي.'],preview_hash:'c'.repeat(64),can_save_draft:!!body.page_id&&body.public_page_acknowledged&&body.rights_confirmed,caveat:'تجهيز خاص فقط دون قراءة ملف أو اتصال بـMeta.'};return route.fulfill({json:snapshot});}
  if(p.endsWith('/drafts/saved/cancel')){cancelled=true;return route.fulfill({json:{state:'CANCELLED',remote_changed:false}});}
