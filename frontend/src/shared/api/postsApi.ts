@@ -50,8 +50,8 @@ export const postsApi = {
     if (publicationState) query.set("publication_state", publicationState);
     return get<PostFilterOptions>(`/posts/filter-options${query.toString() ? `?${query}` : ""}`);
   },
-  get(postId: string): Promise<Post> {
-    return get<Post>(`/posts/${postId}`);
+  get(postId: string, signal?: AbortSignal): Promise<Post> {
+    return get<Post>(`/posts/${postId}`, signal);
   },
   update(postId: string, content: string): Promise<Post> {
     return patch<Post>(`/posts/${postId}`, { content });
