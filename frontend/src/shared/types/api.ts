@@ -17,6 +17,11 @@ export interface Post {
   review_note: string | null;
   published: boolean;
   visual_artifact_id?: string | null;
+  kind?: string | null;
+  original_text?: string | null;
+  source_reference?: string | null;
+  discovery_page_start?: number | null;
+  discovery_page_end?: number | null;
 }
 
 export interface PostListResponse {
