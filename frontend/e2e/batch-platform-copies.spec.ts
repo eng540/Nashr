@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('platform-neutral batch read, missing-only preparation and same-original saved copy link',async({page},info)=>{
  const ids=['12345678-1234-4123-8123-123456789ab1','12345678-1234-4123-8123-123456789ab2'];
@@ -5,7 +6,7 @@ test('platform-neutral batch read, missing-only preparation and same-original sa
  const copy=(id:string,platform:string)=>({platform,label:platform,fields:{title:'',description:'تعديل محفوظ '+id,tags:[],alt_text:''},version:3,source_fingerprint:'v1',current_source_fingerprint:'v1',origin:'USER_EDITED',source_stale:false,central_approval:'APPROVED',field_status:platform==='telegram'?'FIELDS_VALIDATED':'BLOCKED',blockers:platform==='telegram'?[]:['يلزم عنوان'],warnings:[],media_checks_pending:[],execution_blockers:[],sources:[]});
  let prepares=0;const writes:string[]=[];
  await page.route('**/*',async r=>{const p=new URL(r.request().url()).pathname;
-  if(p==='/api/artifacts')return r.fulfill({json:{items,total:2,limit:100,offset:0}});
+  if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return r.fulfill({json:libraryFixture(r, {items,total:2,limit:100,offset:0})});
   if(p.endsWith('/platform-copies')){const id=p.split('/')[3];return r.fulfill({json:{items:id===ids[0]?[copy(id,'telegram'),copy(id,'youtube')]:[]}});}
   if(p==='/api/artifacts/platform-copies/prepare-batch'){prepares++;expect(r.request().postDataJSON()).toEqual({artifact_ids:ids});return r.fulfill({json:{prepared:2,items:[...ids].reverse().map(id=>({artifact_id:id,items:[copy(id,'telegram'),copy(id,'youtube')]}))}});}
   if(r.request().method()!=='GET')writes.push(p);
@@ -25,7 +26,7 @@ test('late batch reads and incomplete responses never describe a different selec
  const ids=['one','two'];let release:(()=>void)|undefined;let calls=0;
  const items=ids.map(id=>({id,kind:'TEXT',status:'AVAILABLE',content:id,mime_type:'text/plain',metadata:{title:id},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
  await page.route('**/*',async r=>{const p=new URL(r.request().url()).pathname;
-  if(p==='/api/artifacts')return r.fulfill({json:{items,total:2,limit:100,offset:0}});
+  if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return r.fulfill({json:libraryFixture(r, {items,total:2,limit:100,offset:0})});
   if(p.endsWith('/platform-copies')){calls++;if(calls===1)await new Promise<void>(resolve=>{release=resolve;});return r.fulfill({json:{items:[]}});}
   if(p==='/api/artifacts/platform-copies/prepare-batch')return r.fulfill({json:{prepared:1,items:[]}});
   if(p==='/api/connections')return r.fulfill({json:{telegram:{items:[]}}});if(p==='/posts'||p.startsWith('/posts/')||p==='/sources'||p.startsWith('/api/control/'))return r.fulfill({json:[]});if(p.startsWith('/api/'))return r.fulfill({json:{items:[],total:0}});return r.continue();
