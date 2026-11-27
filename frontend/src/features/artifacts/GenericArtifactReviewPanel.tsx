@@ -16,7 +16,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { genericArtifactsApi, type GenericArtifactReviewStatus, type GenericReviewableArtifact } from "../../shared/api/artifactsApi";
 import { Badge, EmptyState, Input, Select } from "../../shared/components/ui";
 import { productionJobsApi, type ProductionProductOption, type ProductionRecipeOption } from "../../shared/api/productionJobsApi";
-import { artifactSearchText, artifactSeriesKey, isSelectableOriginal } from "../../shared/utils/artifactLibrary";
+import { isSelectableOriginal } from "../../shared/utils/artifactLibrary";
+import {ApiError} from "../../shared/api/client";
 import { postsApi } from "../../shared/api/postsApi";
 
 
@@ -174,18 +175,6 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   useEffect(()=>{setFocusedState(libraryParams.get("artifact_id"));const requested=libraryParams.get("artifact_status");if(requested&&["DRAFT","APPROVED","REJECTED"].includes(requested))setStatus(requested as GenericArtifactReviewStatus);},[libraryParams]);
   const materialNav=useRef<HTMLElement>(null);
   const returnTarget=useRef<string|null>(null);
-  useEffect(()=>{
-    if(focusedId||!returnTarget.current)return;
-    const id=returnTarget.current;
-    const frame=requestAnimationFrame(()=>{
-      const target=document.getElementById(`material-open-${id}`);
-      if(!target)return;
-      returnTarget.current=null;
-      target.focus({preventScroll:true});
-      target.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});
-    });
-    return()=>cancelAnimationFrame(frame);
-  },[focusedId]);
   useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
   const creationTask=(["manual","upload","variant","design"].includes(libraryParams.get("library_task")??"")?libraryParams.get("library_task"):null);
   const [creationVisit,setCreationVisit]=useState(0);
@@ -250,8 +239,8 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     return ["PUBLISHED", "ARCHIVED"].includes(recipeVersion?.status ?? "") && Boolean(recipeVersion?.stages.some((stage) => stage.capability_key === "render_approved_text_card" && stage.capability_version === 1));
   });
   const artifacts = useQuery({
-    queryKey: ["generic-artifacts", status],
-    queryFn: () => genericArtifactsApi.listAll(status),
+    queryKey: ["generic-artifacts", status, search, kindFilter, sourceFilter, seriesFilter, categoryFilter, sortMode, page],
+    queryFn: () => genericArtifactsApi.library({review_status:status,q:search,kind:kindFilter,source:sourceFilter,series:seriesFilter,category:categoryFilter,sort:sortMode==="title"?"newest":sortMode,include_items:sortMode==="title"?"false":"true",limit:LIBRARY_PAGE_SIZE,offset:page*LIBRARY_PAGE_SIZE}),
     enabled: !designCardOnly,
   });
   const activeJob = useQuery({
@@ -269,50 +258,36 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     }
   }, [activeJob.data?.status, queryClient]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["generic-artifacts"] });
-  const allArtifacts = useMemo(() => artifacts.data?.items ?? [], [artifacts.data]);
+  // Keep the existing browser Intl Arabic order, without transferring all original content.
+  const resultIndex=useMemo(()=>{const index=[...(artifacts.data?.index??[])];return sortMode==="title"?index.sort((a,b)=>artifactTitle(a).localeCompare(artifactTitle(b),"ar")):index;},[artifacts.data,sortMode]);
+  const titlePageIds=useMemo(()=>sortMode==="title"?resultIndex.slice(page*LIBRARY_PAGE_SIZE,(page+1)*LIBRARY_PAGE_SIZE).map(i=>i.id):[],[resultIndex,page,sortMode]);
+  const requestedIds=useMemo(()=>[...new Set([...titlePageIds,...selectedMediaIds,...catalogIds,...reviewBatchIds,...(focusedId?[focusedId]:[])])],[titlePageIds,selectedMediaIds,catalogIds,reviewBatchIds,focusedId]);
+  const selectedItems=useQuery({queryKey:["generic-artifacts","exact",requestedIds],queryFn:async()=>{const items=(await Promise.all(Array.from({length:Math.ceil(requestedIds.length/100)},(_,n)=>genericArtifactsApi.libraryItems(requestedIds.slice(n*100,(n+1)*100))))).flatMap(r=>r.items);if(items.length!==requestedIds.length||new Set(items.map(i=>i.id)).size!==requestedIds.length||items.some((i,n)=>i.id!==requestedIds[n]))throw new Error("لم تتطابق المواد المقروءة مع التحديد المطلوب. أعد القراءة.");return {items};},enabled:!designCardOnly&&requestedIds.length>0});
+  const focusedMissing=Boolean(focusedId&&requestedIds.length===1&&selectedItems.error instanceof ApiError&&selectedItems.error.status===404);
+  const selectedLoaded=requestedIds.length===0||Boolean(selectedItems.data&&requestedIds.every(id=>selectedItems.data.items.some(i=>i.id===id)));
+  const selectedReady=selectedLoaded&&!selectedItems.isFetching&&!selectedItems.isError;
+  const allArtifacts=useMemo(()=>Array.from(new Map([...(artifacts.data?.index??[]),...(artifacts.data?.items??[]),...(selectedItems.data?.items??[])].map(i=>[i.id,i])).values()),[artifacts.data,selectedItems.data]);
   useEffect(()=>{if(reviewBatchRaw!==null)setSelectedMediaIds([]);},[reviewBatchRaw]);
   useEffect(()=>{if(reviewBatchRaw!==null&&(artifacts.isFetching||artifacts.isError||reviewBatchIds.some(id=>!allArtifacts.some(i=>i.id===id&&i.review_status==="APPROVED"&&i.status==="AVAILABLE"&&i.metadata.source_type!=="PLATFORM_VARIANT"))))setSelectedMediaIds([]);},[reviewBatchRaw,reviewBatchIds,allArtifacts,artifacts.isFetching,artifacts.isError]);
 
-  useEffect(()=>{
-    if(artifacts.isFetching||artifacts.isError||!artifacts.data)return;
-    setSelectedMediaIds(current=>{
-      const next=current.filter(id=>allArtifacts.some(item=>item.id===id&&isSelectableOriginal(item)));
-      return next.length===current.length?current:next;
-    });
-  },[allArtifacts,artifacts.isFetching,artifacts.isError,artifacts.data]);
+  useEffect(()=>{if(!selectedItems.data||selectedItems.isFetching||selectedItems.isError)return;setSelectedMediaIds(current=>{const next=current.filter(id=>selectedItems.data.items.some(i=>i.id===id&&isSelectableOriginal(i)));return next.length===current.length?current:next;});},[selectedItems.data,selectedItems.isFetching,selectedItems.isError]);
 
-  const seriesOptions = useMemo(() => [...new Set(allArtifacts.map(artifactSeriesKey))].sort((a,b) => a.localeCompare(b, "ar")), [allArtifacts]);
-  const categoryOptions=useMemo(()=>[...new Set(allArtifacts.map(i=>i.organization?.category||"غير مصنف"))].sort((a,b)=>a.localeCompare(b,"ar")),[allArtifacts]);
-  const filteredArtifacts = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    const matches = allArtifacts.filter((artifact) => {
-      if (kindFilter !== "ALL" && artifact.kind !== kindFilter) return false;
-      const sourceType = typeof artifact.metadata.source_type === "string" ? artifact.metadata.source_type : "GENERATED";
-      if (sourceFilter !== "ALL" && sourceType !== sourceFilter) return false;
-      if(categoryFilter!=="ALL"&&(artifact.organization?.category||"غير مصنف")!==categoryFilter)return false;
-      if (seriesFilter !== "ALL" && artifactSeriesKey(artifact) !== seriesFilter) return false;
-      if (!needle) return true;
-      const haystack = artifactSearchText(artifact);
-      return haystack.includes(needle);
-    });
-    const sorted = [...matches];
-    if (sortMode === "oldest") sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
-    else if (sortMode === "title") sorted.sort((a, b) => artifactTitle(a).localeCompare(artifactTitle(b), "ar"));
-    else if (sortMode === "kind") sorted.sort((a, b) => a.kind.localeCompare(b.kind) || b.created_at.localeCompare(a.created_at));
-    else sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
-    return sorted;
-  }, [allArtifacts, search, kindFilter, sourceFilter, seriesFilter, categoryFilter, sortMode]);
-  const pageCount = Math.max(1, Math.ceil(filteredArtifacts.length / LIBRARY_PAGE_SIZE));
+  const seriesOptions = [...(artifacts.data?.filter_options?.series??[])].sort((a,b)=>a.localeCompare(b,"ar"));
+  const categoryOptions = [...(artifacts.data?.filter_options?.categories??[])].sort((a,b)=>a.localeCompare(b,"ar"));
+  const filteredArtifacts=useMemo(()=>{const byId=new Map(allArtifacts.map(i=>[i.id,i]));return resultIndex.map(i=>byId.get(i.id)!);},[resultIndex,allArtifacts]);
+  const pageCount = Math.max(1, Math.ceil((artifacts.data?.total??0) / LIBRARY_PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
-  const pagedArtifacts = filteredArtifacts.slice(safePage * LIBRARY_PAGE_SIZE, safePage * LIBRARY_PAGE_SIZE + LIBRARY_PAGE_SIZE);
-  const focusedArtifact=focusedId?allArtifacts.find(item=>item.id===focusedId):null;
+  useEffect(()=>{if(artifacts.data&&!artifacts.isFetching&&!artifacts.isError&&page>=pageCount)setPage(pageCount-1);},[artifacts.data,artifacts.isFetching,artifacts.isError,page,pageCount]);
+  const pagedArtifacts = sortMode==="title"?titlePageIds.flatMap(id=>selectedItems.data?.items.find(i=>i.id===id)??[]):artifacts.data?.items??[];
+  const focusedArtifact=focusedId?[...(artifacts.data?.items??[]),...(selectedReady?selectedItems.data?.items??[]:[])].find(item=>item.id===focusedId&&item.review_status===status):null;
   const focusIndex=filteredArtifacts.findIndex(item=>item.id===focusedId);
   const displayArtifacts=focusedId?(focusedArtifact?[focusedArtifact]:[]):pagedArtifacts;
+  useEffect(()=>{if(focusedId||!returnTarget.current||artifacts.isFetching)return;const id=returnTarget.current;const frame=requestAnimationFrame(()=>{const target=document.getElementById(`material-open-${id}`);if(target){returnTarget.current=null;target.focus({preventScroll:true});target.scrollIntoView({block:"center",behavior:"instant"});}});return()=>cancelAnimationFrame(frame);},[focusedId,artifacts.data,artifacts.isFetching,selectedItems.data,selectedItems.isFetching]);
   const returnToLibrary=()=>{returnTarget.current=focusedId;if(focusIndex>=0)setPage(Math.floor(focusIndex/LIBRARY_PAGE_SIZE));setFocusedId(null);};
   const updateFilters = (apply: () => void) => { apply(); setPage(0); setFocusedState(null); };
   const save = useMutation({
     mutationFn: (id: string) => {
-      const artifact = (artifacts.data?.items ?? []).find((item) => item.id === id);
+      const artifact = allArtifacts.find((item) => item.id === id);
       const content = drafts[id]?.content;
       if (artifact && artifact.content === null && content !== undefined) {
         return genericArtifactsApi.update(id, { metadata: { ...artifact.metadata, caption: content } });
@@ -397,6 +372,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const eligibleSelectedCount = selectedMediaIds.length;
   const batchMediaDrafts = useMutation({
     mutationFn: async (ids: string[]) => {
+      if(!selectedReady)throw new Error("انتظر اكتمال قراءة المواد المحددة.");
       const preflight = await genericArtifactsApi.telegramBatchPreview(ids);
       if (preflight.blocked_count) throw new Error(`تعذر تجهيز الدفعة: ${preflight.blocked_count} مادة محجوبة. افتح معاينة الدفعة لقراءة الأسباب.`);
       const results: Array<{ artifactId: string; id?: string; status?: string; error?: string }> = [];
@@ -429,6 +405,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   });
   const createLivePhoto = useMutation({
     mutationFn: () => {
+      if(!selectedReady)throw new Error("انتظر اكتمال قراءة المواد المحددة.");
       const selected = allArtifacts.filter(item => selectedMediaIds.includes(item.id));
       const photo = selected.find(item => item.kind === 'IMAGE');
       const video = selected.find(item => item.kind === 'VIDEO');
@@ -438,7 +415,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     onSuccess: () => { setSelectedMediaIds([]); setStatus('DRAFT'); setSearch(''); setBatchNote('أُنشئت صورة حية للمراجعة،لا إرسال تلقائي.'); refresh(); },
   });
   const createAlbum = useMutation({
-    mutationFn: () => genericArtifactsApi.albumDraft({ artifact_ids: selectedMediaIds, title: "ألبوم Telegram للمراجعة" }),
+    mutationFn: () => {if(!selectedReady)throw new Error("انتظر اكتمال قراءة المواد المحددة.");return genericArtifactsApi.albumDraft({ artifact_ids: selectedMediaIds, title: "ألبوم Telegram للمراجعة" });},
     onSuccess: () => { setSelectedMediaIds([]); setSearch(""); setStatus("DRAFT"); setBatchNote("أُنشئ ألبوم قيد المراجعة،لا نشر تلقائي."); refresh(); },
   });
   const toggleMediaSelection = (artifactId: string, checked: boolean) => {
@@ -569,9 +546,9 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         </Select>
       </div></details>
       <details open={!compact} className="library-filters"><summary>تنظيم جماعي · تحديد الفهرسة والسلاسل والتصنيفات</summary><div className="flex flex-wrap items-center gap-2 pt-3 text-xs leading-7"><p className="text-slate-400">فهرسة المواد، مستقلة عن تحديد النشر · حتى 100 مادة</p><button type="button" className="rounded border p-2" onClick={()=>setCatalogIds(pagedArtifacts.filter(i=>i.metadata.source_type!=="PLATFORM_VARIANT").map(i=>i.id))}>تحديد صفحة الفهرسة</button> <button type="button" className="rounded border p-2" onClick={()=>setCatalogIds([])}>إلغاء تحديد الفهرسة</button><p>{catalogIds.filter(id=>allArtifacts.some(i=>i.id===id)).length} محدد للتنظيم</p></div></details>
-      {catalogIds.some(id=>allArtifacts.some(i=>i.id===id))?<ContentOrganizationPanel key={catalogIds.join(",")} items={allArtifacts.filter(i=>catalogIds.includes(i.id))}/>:null}
+      {selectedLoaded&&catalogIds.some(id=>allArtifacts.some(i=>i.id===id))?<fieldset disabled={!selectedReady}><ContentOrganizationPanel key={catalogIds.join(",")} items={allArtifacts.filter(i=>catalogIds.includes(i.id))}/></fieldset>:null}
       {status === "DRAFT" && !focusedId && !artifacts.isError ? <BatchReviewPanel key={[status,search,kindFilter,sourceFilter,seriesFilter,categoryFilter,sortMode].join("|")} items={filteredArtifacts} pageItems={pagedArtifacts} unsavedIds={Object.keys(drafts).filter(id=>drafts[id]?.content!==undefined||drafts[id]?.review_note!==undefined)} renderMedia={item=>item.storage_uri?<GenericArtifactMediaPreview artifact={item}/>:null} onApproved={finishBatchReview}/>:null}
-      {status==="APPROVED"&&reviewBatchRaw!==null?<ApprovedBatchHandoff ids={reviewBatchIds} items={allArtifacts} loading={artifacts.isFetching} failed={artifacts.isError} onContinue={ids=>{setSelectedMediaIds(ids);setBatchNote(`حُددت مواد دفعة الاعتماد نفسها وعددها ${ids.length}. اختر الوجهات أو افحص Telegram أدناه؛ لم تُحفظ وجهات ولم تُنشأ خطة.`);}} onClear={()=>{const next=new URLSearchParams(libraryParams);next.delete("review_batch");setLibraryParams(next,{preventScrollReset:true});setSelectedMediaIds([]);setBatchNote("");}}/>:null}
+      {status==="APPROVED"&&reviewBatchRaw!==null?<ApprovedBatchHandoff ids={reviewBatchIds} items={allArtifacts} loading={artifacts.isFetching||selectedItems.isFetching} failed={artifacts.isError||selectedItems.isError||!selectedReady} onContinue={ids=>{setSelectedMediaIds(ids);setBatchNote(`حُددت مواد دفعة الاعتماد نفسها وعددها ${ids.length}. اختر الوجهات أو افحص Telegram أدناه؛ لم تُحفظ وجهات ولم تُنشأ خطة.`);}} onClear={()=>{const next=new URLSearchParams(libraryParams);next.delete("review_batch");setLibraryParams(next,{preventScrollReset:true});setSelectedMediaIds([]);setBatchNote("");}}/>:null}
       {status === "APPROVED" ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
         <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
           <input
@@ -594,12 +571,12 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         <button
           type="button"
           data-testid="create-telegram-media-drafts"
-          disabled={eligibleSelectedCount === 0 || batchMediaDrafts.isPending}
+          disabled={!selectedReady || eligibleSelectedCount === 0 || batchMediaDrafts.isPending}
           onClick={() => batchMediaDrafts.mutate(selectedMediaIds)}
           className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-emerald-300"
         >{batchMediaDrafts.isPending ? "جارٍ إنشاء المسودات..." : `إنشاء مسودات Telegram للمحدد (${eligibleSelectedCount})`}</button>
-        <button type="button" disabled={selectedMediaIds.length < 2 || selectedMediaIds.length > 10 || createAlbum.isPending} onClick={() => createAlbum.mutate()} className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء ألبوم من المحدد (2-10)</button>
-        <button type="button" disabled={selectedMediaIds.length !== 2 || createLivePhoto.isPending} onClick={() => createLivePhoto.mutate()} className="rounded-xl bg-violet-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء صورة حية (صورة وفيديو)</button>
+        <button type="button" disabled={!selectedReady || selectedMediaIds.length < 2 || selectedMediaIds.length > 10 || createAlbum.isPending} onClick={() => createAlbum.mutate()} className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء ألبوم من المحدد (2-10)</button>
+        <button type="button" disabled={!selectedReady || selectedMediaIds.length !== 2 || createLivePhoto.isPending} onClick={() => createLivePhoto.mutate()} className="rounded-xl bg-violet-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء صورة حية (صورة وفيديو)</button>
         {createLivePhoto.isError ? <p role="alert">{createLivePhoto.error.message}</p> : null}
         <p className="w-full text-xs">الألبوم:2-10عناصر،حتى100MiBإجمالاً. الصورة الحية:صورة وفيديوMP4حتى10ثوانٍ و10MiB. تُراجع العناصر ولا يرسلها التحديد وحده.</p>
         {createAlbum.isError ? <p role="alert">{createAlbum.error.message}</p> : null}
@@ -608,13 +585,15 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         {batchNote ? <p role="status" className="w-full text-sm font-semibold text-emerald-800">{batchNote}</p> : null}
       </div> : null}
       {batchMediaDrafts.isError ? <p role="alert" className="text-sm text-rose-700">{batchMediaDrafts.error.message}</p> : null}
-      {status === "APPROVED" && selectedMediaIds.length > 0 ? <><BatchPlatformCopiesPanel ids={selectedMediaIds} items={allArtifacts} onPreparing={()=>setCopiesRevision(r=>r+1)}/><DistributionReadinessPanel key={copiesRevision} ids={selectedMediaIds} /><MetaBatchReviewPanel key={`meta:${copiesRevision}`} ids={selectedMediaIds} items={allArtifacts}/><TelegramBatchPreviewPanel ids={selectedMediaIds} copiesRevision={copiesRevision}/></> : null}
+      {status === "APPROVED" && selectedMediaIds.length > 0 && selectedLoaded ? <fieldset disabled={!selectedReady}><BatchPlatformCopiesPanel ids={selectedMediaIds} items={allArtifacts} onPreparing={()=>setCopiesRevision(r=>r+1)}/><DistributionReadinessPanel key={copiesRevision} ids={selectedMediaIds} /><MetaBatchReviewPanel key={`meta:${copiesRevision}`} ids={selectedMediaIds} items={allArtifacts}/><TelegramBatchPreviewPanel ids={selectedMediaIds} copiesRevision={copiesRevision}/></fieldset> : null}
     </div>
     {artifacts.isLoading ? <p role="status" className="text-sm text-slate-500">تحميل المخرجات...</p> : null}
-    {artifacts.isError ? <div role="alert" className="workspace-surface p-4 text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}<button className="workspace-secondary" onClick={()=>void artifacts.refetch()}>إعادة قراءة مكتبة المحتوى</button><p>لا نعتبر فشل القراءة حذفاً للمادة.</p></div> : null}
+    {artifacts.isError ? <div role="alert" className="workspace-surface p-4 text-sm text-rose-700">تعذر تحميل المخرجات: {artifacts.error.message}<button className="workspace-secondary" onClick={()=>{void artifacts.refetch();if(requestedIds.length)void selectedItems.refetch();}}>إعادة قراءة مكتبة المحتوى</button><p>لا نعتبر فشل القراءة حذفاً للمادة.</p></div> : null}
     {!artifacts.isLoading && !artifacts.isError && filteredArtifacts.length === 0 ? <EmptyState title={allArtifacts.length === 0 ? "لا توجد مخرجات في هذه الحالة." : "لا توجد نتائج مطابقة للبحث أو الفلاتر الحالية."} /> : null}
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-slate-50 p-3"><p className="text-sm">افتح مادة للمراجعة والنسخ والخطط والسجل.</p><button type="button" onClick={()=>{setCompact(!compact);setFocusedId(null);}} className="rounded border bg-white p-2 text-xs font-bold">{compact?'فتح محررات جميع مواد الصفحة':'إغلاق المحررات والعودة للبطاقات'}</button></div>
-    {focusedId?<section ref={materialNav} tabIndex={-1} aria-label="تنقل مساحة المادة" className="workspace-surface scroll-mt-24 space-y-3 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><button className="workspace-secondary" onClick={returnToLibrary}>العودة إلى المكتبة</button><p className="text-sm">{focusIndex>=0?`المادة ${focusIndex+1} من ${filteredArtifacts.length} في النتائج الحالية`:"مادة مرتبطة بمعرّف مستقل"}</p><div className="flex flex-wrap gap-2"><button className="workspace-secondary" disabled={focusIndex<=0} onClick={()=>setFocusedId(filteredArtifacts[focusIndex-1].id)}>المادة السابقة</button><button className="workspace-secondary" disabled={focusIndex<0||focusIndex>=filteredArtifacts.length-1} onClick={()=>setFocusedId(filteredArtifacts[focusIndex+1].id)}>المادة التالية</button></div></div><p className="workspace-muted">التنقل لا يحفظ أو يعتمد أو ينشر. تعديلات هذه الصفحة غير المحفوظة تبقى عند الرجوع داخلها، وتُفقد عند إعادة تحميل الصفحة.</p>{focusedArtifact&&drafts[focusedArtifact.id]?.content!==undefined?<p role="status" className="text-sm text-amber-900">لهذه المادة تعديل غير محفوظ.</p>:null}{!artifacts.isLoading&&!artifacts.isError&&!focusedArtifact?<div role="status"><h3 className="font-bold">لم تظهر المادة في الحالة المختارة</h3><p className="text-sm leading-7">قد تكون حالة المراجعة تغيرت أو الرابط غير مطابق. لم نحذف شيئاً. جرّب الحالة الأخرى أو ارجع إلى المكتبة.</p><bdi className="break-all text-xs">{focusedId}</bdi></div>:null}</section>:null}
+    {requestedIds.length>0&&selectedItems.isFetching?<p role="status">جارٍ تحميل المواد المحددة والمرتبطة كاملةً...</p>:null}
+    {requestedIds.length>0&&selectedItems.isError&&!focusedMissing?<div role="alert"><p>تعذر تحميل المواد المحددة أو المرتبطة. لا نستخدم بيانات مختصرة للمراجعة.</p><button onClick={()=>void selectedItems.refetch()}>إعادة تحميل المواد المحددة</button></div>:null}
+    {focusedId?<section ref={materialNav} tabIndex={-1} aria-label="تنقل مساحة المادة" className="workspace-surface scroll-mt-24 space-y-3 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><button className="workspace-secondary" onClick={returnToLibrary}>العودة إلى المكتبة</button><p className="text-sm">{focusIndex>=0?`المادة ${focusIndex+1} من ${filteredArtifacts.length} في النتائج الحالية`:"مادة مرتبطة بمعرّف مستقل"}</p><div className="flex flex-wrap gap-2"><button className="workspace-secondary" disabled={focusIndex<=0} onClick={()=>setFocusedId(filteredArtifacts[focusIndex-1].id)}>المادة السابقة</button><button className="workspace-secondary" disabled={focusIndex<0||focusIndex>=filteredArtifacts.length-1} onClick={()=>setFocusedId(filteredArtifacts[focusIndex+1].id)}>المادة التالية</button></div></div><p className="workspace-muted">التنقل لا يحفظ أو يعتمد أو ينشر. تعديلات هذه الصفحة غير المحفوظة تبقى عند الرجوع داخلها، وتُفقد عند إعادة تحميل الصفحة.</p>{focusedArtifact&&drafts[focusedArtifact.id]?.content!==undefined?<p role="status" className="text-sm text-amber-900">لهذه المادة تعديل غير محفوظ.</p>:null}{!artifacts.isLoading&&!artifacts.isError&&!selectedItems.isFetching&&(!selectedItems.isError||focusedMissing)&&!focusedArtifact?<div role="status"><h3 className="font-bold">لم تظهر المادة في الحالة المختارة</h3><p className="text-sm leading-7">قد تكون حالة المراجعة تغيرت أو الرابط غير مطابق. لم نحذف شيئاً. جرّب الحالة الأخرى أو ارجع إلى المكتبة.</p><bdi className="break-all text-xs">{focusedId}</bdi></div>:null}</section>:null}
     <div className={`grid min-w-0 items-start gap-3 ${pagedArtifacts.length>1&&!focusedId?'xl:grid-cols-2':''}`}>
       {displayArtifacts.map((artifact) => <article key={artifact.id} data-focused={focusedId===artifact.id} className="library-card min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -834,4 +813,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 }
