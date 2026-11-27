@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { NavLink, useLocation } from "react-router";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { NavLink, useLocation, useNavigationType } from "react-router";
 const navItems=[
  {to:'/bank',label:'بنك المحتوى',icon:'▤',group:'مساحة العمل'},
  {to:'/publishing',label:'النشر',icon:'↗',group:'مساحة العمل'},
@@ -11,9 +11,20 @@ const navItems=[
 const navClass=({isActive}:{isActive:boolean})=>`app-nav-link ${isActive?'is-active':''}`;
 export function AppShell({children}:{children:ReactNode}){
  const location=useLocation();
+ const navigationType=useNavigationType();
+ const mainRef=useRef<HTMLElement>(null);
+ const previousPath=useRef(location.pathname);
+ useLayoutEffect(()=>{
+  const changed=previousPath.current!==location.pathname;
+  previousPath.current=location.pathname;
+  // New workspace entry must not inherit a deep scroll from the old page.
+  // Leave history traversal, hashes and same-page filter/focus flows alone.
+  if(!changed||navigationType==='POP'||location.hash)return;
+  mainRef.current?.focus({preventScroll:true});
+  window.scrollTo({top:0,left:0,behavior:'instant'});
+ },[location.pathname,location.hash,navigationType]);
  const journey=[{to:"/sources/library",label:"1.المصادر"},{to:"/production",label:"2.الإنتاج"},{to:"/bank",label:"3.المراجعة والوجهات"},{to:"/publishing",label:"4.الجدولة والنتائج"}];
  const [menuOpen,setMenuOpen]=useState(false);
- const mainRef=useRef<HTMLElement>(null);
  const routeLabel=navItems.find(i=>i.to===location.pathname)?.label??'مساحة العمل';
  useEffect(()=>{setMenuOpen(false);document.title=routeLabel+' | نشر';},[location.pathname,routeLabel]);
  useEffect(()=>{if(!menuOpen)return;const close=(e:KeyboardEvent)=>{if(e.key==='Escape'){setMenuOpen(false);document.getElementById('navigation-toggle')?.focus();}};document.addEventListener('keydown',close);return()=>document.removeEventListener('keydown',close);},[menuOpen]);
