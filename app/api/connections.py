@@ -161,3 +161,10 @@ async def tiktok_requirements(request:Request):
     owner(request)
     from app.application.tiktok_policy import requirements
     return JSONResponse(requirements(),headers=HEADERS)
+
+
+@router.get('/api/analytics/capabilities')
+async def analytics_capabilities(request: Request, session: AsyncSession = Depends(get_session)):
+    owner(request)
+    from app.application.analytics_capabilities import capabilities
+    return JSONResponse(await capabilities(session), headers=HEADERS)
