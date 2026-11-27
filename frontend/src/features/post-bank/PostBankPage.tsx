@@ -1,3 +1,4 @@
+import {worklistReturn} from '../../shared/utils/publishingWorklist';
 import { arabicDefinition } from "../../shared/utils/arabicDefinition";
 import {ProductionHistory,ProductionOutputLink} from "./ProductionHistory";
 import {ReviewDialog} from '../../shared/components/ReviewDialog';
@@ -90,6 +91,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   const navigate = useNavigate();
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const queueReturn=worklistReturn(searchParams.get("queue_return"));
   const [status, setStatus] = useState(searchParams.get("status") ?? "");
   const [filterSourceId, setFilterSourceId] = useState(ALL_SOURCES);
   const [topicId, setTopicId] = useState("");
@@ -335,6 +337,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
         {workspaceView !== "review" ? <Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">بنك المحتوى</Link> : null}
         {workspaceView === "review" ? <a className="workspace-secondary" href="#content-library-search">البحث في مكتبة المواد</a> : null}
         {workspaceView === "review" ? <a className="workspace-secondary" href="#editorial-posts">المنشورات التحريرية والاعتماد الجماعي</a> : null}
+        {queueReturn?<Link to={queueReturn} className="workspace-secondary">العودة إلى قائمة التوزيع السابقة</Link>:null}
         <Link to="/publishing" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">مساحة النشر</Link>
       </>}
     />
