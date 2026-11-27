@@ -81,6 +81,35 @@ async def list_generic_artifacts(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/library")
+async def read_artifact_library(
+    review_status: str = Query(default="DRAFT"), q: str = Query(default="", max_length=500),
+    kind: str = Query(default="ALL", max_length=100), source: str = Query(default="ALL", max_length=100),
+    series: str = Query(default="ALL", max_length=500), category: str = Query(default="ALL", max_length=500),
+    sort: str = Query(default="newest"), limit: int = Query(default=12, ge=1, le=100),
+    offset: int = Query(default=0, ge=0), include_items: bool = Query(default=True), session: AsyncSession = Depends(get_session),
+):
+    from app.application.artifact_library import library_page
+    try:
+        return await library_page(session, review_status, q, kind, source, series, category, sort, limit, offset, include_items)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/library-items")
+async def read_artifact_library_items(ids: list[UUID] = Query(min_length=1, max_length=100), session: AsyncSession = Depends(get_session)):
+    from app.application.generic_artifact_review import _payload
+    from app.application.content_organization import for_ids
+    if len(ids) != len(set(ids)):
+        raise HTTPException(422, "Duplicate library item IDs.")
+    rows = (await session.execute(select(ArtifactModel).where(ArtifactModel.id.in_(ids), ArtifactModel.kind != "POST"))).scalars().all()
+    if len(rows) != len(ids):
+        raise HTTPException(404, "A library item is missing.")
+    labels = await for_ids(session, ids)
+    by_id = {row.id: row for row in rows}
+    return {"items": [{**_payload(by_id[uid]), "organization": labels.get(str(uid))} for uid in ids]}
+
+
 class ManualArtifactRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: str
