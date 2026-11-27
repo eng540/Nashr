@@ -4,6 +4,7 @@ import type { Post, PostListResponse } from "../types/api";
 export interface PostListParams {
   sourceId?: string;
   topicId?: string;
+  knowledgeUnitId?: string;
   status?: string;
   kind?: string;
   publicationState?: string;
@@ -31,8 +32,9 @@ export interface PostFilterOptions {
 }
 
 export const postsApi = {
-  list(params: PostListParams = {}): Promise<PostListResponse> {
+  list(params: PostListParams = {}, signal?: AbortSignal): Promise<PostListResponse> {
     const query = new URLSearchParams();
+    if (params.knowledgeUnitId) query.set("knowledge_unit_id", params.knowledgeUnitId);
     if (params.sourceId) query.set("source_id", params.sourceId);
     if (params.topicId) query.set("topic_id", params.topicId);
     if (params.status) query.set("status", params.status);
@@ -42,7 +44,7 @@ export const postsApi = {
     if (params.sort) query.set("sort", params.sort);
     query.set("limit", String(params.limit ?? 30));
     query.set("offset", String(params.offset ?? 0));
-    return get<PostListResponse>(`/posts?${query.toString()}`);
+    return get<PostListResponse>(`/posts?${query.toString()}`, signal);
   },
   filterOptions(sourceId?: string, publicationState?: string): Promise<PostFilterOptions> {
     const query = new URLSearchParams();

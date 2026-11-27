@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 
+import { SourceMaterialReview } from "./SourceMaterialReview";
 import { postForm } from "../../shared/api/client";
 import { PageHeader } from "../../shared/components/ui";
 import { productionJobsApi, type SourceSummary } from "../../shared/api/productionJobsApi";
@@ -45,12 +46,10 @@ function SourceBookMap({ sourceId }: { sourceId: string }) {
       ) : null}
       <div>
         <h4 className="text-sm font-bold">المواد ({data.count})</h4>
-        <ul className="mt-2 max-h-72 space-y-1 overflow-y-auto text-sm text-slate-700">
+        <ul className="mt-2 max-h-[48rem] space-y-2 overflow-y-auto text-sm text-slate-700">
           {data.materials.map((material) => (
-            <li key={material.id} className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-1 last:border-b-0">
-              <span className="font-semibold">{material.position}.</span>
-              <span>{material.title}</span>
-              {material.has_post ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">له منشور</span> : null}
+            <li key={material.id} className="border-b border-slate-200 pb-2 last:border-b-0">
+              <SourceMaterialReview sourceId={sourceId} material={material} />
             </li>
           ))}
         </ul>
