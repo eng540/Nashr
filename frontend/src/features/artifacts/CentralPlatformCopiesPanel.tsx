@@ -9,27 +9,53 @@ import {PlatformCopyMediaPanel} from './PlatformCopyMediaPanel';
 import {useMutation} from '@tanstack/react-query';
 import {genericArtifactsApi,type CentralPlatformCopy} from '../../shared/api/artifactsApi';
 
-export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;kind:string;onPlan?:()=>void;request?:{platform:string;nonce:number}}) {
+// Owned by the library instance, not browser storage. Keep unsaved fields only.
+export type PlatformCopyDrafts = {
+ drafts:Map<string,CentralPlatformCopy>;
+ saving:Set<string>;
+ errors:Map<string,string>;
+ changed:()=>void;
+};
+export function CentralPlatformCopiesPanel({id,kind,onPlan,request,draftCache}:{id:string;kind:string;onPlan?:()=>void;request?:{platform:string;nonce:number};draftCache?:PlatformCopyDrafts}) {
  function fileSize(bytes:unknown) {const size=Number(bytes);return size<1024?`${size} بايت`:size<1024*1024?`${(size/1024).toFixed(1)} كيبيبايت`:`${(size/1024/1024).toFixed(2)} ميبيبايت`;}
  const panelRef=useRef<HTMLDetailsElement>(null);
  const openedRead=useRef(false);
+ const readEpoch=useRef(0);
  const [handoff,setHandoff]=useState('');
  const [rows,setRows]=useState<CentralPlatformCopy[]>([]);
- const [active,setActive]=useState('telegram');
- const [draft,setDraft]=useState<CentralPlatformCopy|null>(null);
+ const [active,setActive]=useState(()=>draftCache?.drafts.get(id)?.platform??'telegram');
+ const [draft,setDraft]=useState<CentralPlatformCopy|null>(()=>draftCache?.drafts.get(id)??null);
+ const draftRef=useRef(draft);
+ function changeDraft(value:CentralPlatformCopy|null) {
+  draftRef.current=value;
+  if(value)draftCache?.drafts.set(id,value);else draftCache?.drafts.delete(id);
+  setDraft(value);draftCache?.errors.delete(id);draftCache?.changed();
+ }
  const [note,setNote]=useState('');
  const [background,setBackground]=useState('');
  const [jpegOpen,setJpegOpen]=useState(false);
  const jpeg=useMutation({mutationFn:()=>genericArtifactsApi.jpegPreview(id,active,shown!.current_source_fingerprint,shown!.version,background)});
- const load=useMutation({mutationFn:()=>{openedRead.current=true;return genericArtifactsApi.platformCopies(id);},onSuccess:data=>{setRows(data.items);setDraft(null);setNote('');}});
- const prepare=useMutation({mutationFn:()=>genericArtifactsApi.prepareCopies(id),onSuccess:data=>{setRows(data.items);setDraft(null);setNote('جُهزت السجلات الناقصة فقط. النسخ المعدلة لم تُستبدل، والأصل لم يتغير.');}});
- const save=useMutation({mutationFn:()=>genericArtifactsApi.updateCopy(id,draft!),onSuccess:copy=>{setRows(current=>current.map(row=>row.platform===copy.platform?copy:row));setDraft(null);setNote('حُفظت حقول النسخة فقط. لا مسودة نشر أو جدول أو إرسال من هذا الحفظ.');}});
+ const load=useMutation({mutationFn:async()=>{openedRead.current=true;const epoch=++readEpoch.current;const data=await genericArtifactsApi.platformCopies(id);return {...data,epoch};},onSuccess:data=>{if(data.epoch!==readEpoch.current)return;setRows(data.items);setNote('');}});
+ const prepare=useMutation({mutationFn:()=>genericArtifactsApi.prepareCopies(id),onSuccess:data=>{++readEpoch.current;setRows(data.items);setNote('جُهزت السجلات الناقصة فقط. النسخ المعدلة لم تُستبدل، والأصل لم يتغير.');}});
+ // A save keeps its lock across focused-panel unmounts, so return cannot submit twice.
+ const save=useMutation({mutationFn:(copy:CentralPlatformCopy)=>genericArtifactsApi.updateCopy(id,copy),onMutate:()=>{draftCache?.saving.add(id);draftCache?.errors.delete(id);draftCache?.changed();},onError:error=>{draftCache?.errors.set(id,error.message);draftCache?.changed();},onSettled:()=>{draftCache?.saving.delete(id);draftCache?.changed();},onSuccess:(copy,snapshot)=>{
+  ++readEpoch.current;
+  setRows(current=>current.some(row=>row.platform===copy.platform)?current.map(row=>row.platform===copy.platform?copy:row):[...current,copy]);
+  // A request can finish after navigating away. Clear only the draft it saved.
+  if(draftCache?.drafts.get(id)===snapshot)draftCache.drafts.delete(id);
+  if(draftRef.current===snapshot){draftRef.current=null;setDraft(null);}
+  draftCache?.changed();
+  setNote('حُفظت حقول النسخة فقط. لا مسودة نشر أو جدول أو إرسال من هذا الحفظ.');
+ }});
  const inspect=useMutation({mutationFn:()=>genericArtifactsApi.inspectMedia(id,active)});
  const row=rows.find(item=>item.platform===active);
+ // A previous instance may complete its save while this instance is mounted.
+ useEffect(()=>{if(draftCache&&!draftCache.saving.has(id)&&draftRef.current&&draftCache.drafts.get(id)!==draftRef.current){draftRef.current=draftCache.drafts.get(id)??null;setDraft(draftRef.current);if(!draftRef.current)load.mutate();}});
  const shown=draft??row;
- const busy=load.isPending||prepare.isPending||save.isPending||inspect.isPending||jpeg.isPending;
+ const busy=Boolean(draftCache?.saving.has(id))||load.isPending||prepare.isPending||save.isPending||inspect.isPending||jpeg.isPending;
  useEffect(()=>{
   const params=new URLSearchParams(window.location.search);
+  if(draftRef.current){if(panelRef.current)panelRef.current.open=true;load.mutate();return;}
   if(params.get('artifact_id')!==id)return;
   const platform=params.has('instagram_job_id')?'instagram':params.get('copy_platform');
   if(platform&&!['telegram','instagram','facebook','youtube','x','tiktok'].includes(platform))return;
@@ -45,25 +71,25 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
   if(draft||busy){setHandoff('احفظ تعديلات النسخة أو ألغها أولاً. لم نغيّر المنصة أو نحذف تعديلاتك.');return;}
   setActive(request.platform);setHandoff('فتح السجلات المحفوظة فقط. لا تجهيز جديد أو نشر من هذا الانتقال.');load.mutate();
  },[request?.nonce]);
- function edit(field:keyof CentralPlatformCopy['fields'],value:string|string[]) {inspect.reset();jpeg.reset();if(shown)setDraft({...shown,fields:{...shown.fields,[field]:value}});setNote('');}
+ function edit(field:keyof CentralPlatformCopy['fields'],value:string|string[]) {inspect.reset();jpeg.reset();const current=draftRef.current??row;if(current)changeDraft({...current,fields:{...current.fields,[field]:value}});setNote('');}
  return <details onToggle={e=>{if(e.target!==e.currentTarget||!e.currentTarget.open||openedRead.current||busy||draft)return;openedRead.current=true;load.mutate();}} ref={panelRef} className="scroll-mt-24 rounded-xl border border-violet-200 bg-violet-50/50 p-3" aria-label={`نسخ المنصات ${id}`}>
   <summary className="cursor-pointer text-xs font-bold">نسخ المنصات · حقول مرتبطة بالأصل</summary>
   <div className="mt-3 space-y-3 text-xs leading-6">{handoff?<p role="status" className="rounded border bg-white p-2">{handoff}</p>:null}<p>اعتماد الأصل واحد. ننسخ النص كما هو دون قص أو توليد؛ نتحقق من الحقول المعروفة ونبين ما ينقص. تعديل نسخة لا يغير الأصل أو بقية المنصات.</p>
    <div className="flex flex-wrap gap-2"><button type="button" disabled={busy||!!draft} onClick={()=>{inspect.reset();jpeg.reset();load.mutate();}} className="rounded border bg-white p-2">عرض النسخ المحفوظة</button><button type="button" disabled={busy||!!draft} onClick={()=>{inspect.reset();jpeg.reset();prepare.mutate();}} className="rounded border bg-white p-2">تجهيز النسخ الناقصة دون استبدال</button></div>
    {load.isPending?<p role="status">جارٍ قراءة النسخ المحفوظة فقط، دون تجهيز أو تغيير...</p>:null}
    {load.isSuccess&&!rows.length?<p role="status">لا توجد نسخ مركزية محفوظة لهذه المادة بعد. استخدم تجهيز النسخ الناقصة بقرار منفصل؛ لا نجهزها تلقائياً عند فتح المسار.</p>:null}
-   {rows.length?<><label className="block">المنصة<select aria-label={`منصة النسخة ${id}`} disabled={!!draft||busy} value={active} onChange={e=>{setActive(e.target.value);inspect.reset();jpeg.reset();setNote('');}} className="block w-full rounded border bg-white p-2">{rows.map(copy=><option key={copy.platform} value={copy.platform}>{copy.label} · {copy.field_status==='FIELDS_VALIDATED'?'الحقول مقبولة مبدئياً':'يلزم استكمال'}</option>)}</select></label>
+   {rows.length||draft?<><label className="block">المنصة<select aria-label={`منصة النسخة ${id}`} disabled={!!draft||busy} value={active} onChange={e=>{setActive(e.target.value);inspect.reset();jpeg.reset();setNote('');}} className="block w-full rounded border bg-white p-2">{(draft&&!rows.some(copy=>copy.platform===draft.platform)?[draft,...rows]:rows).map(copy=><option key={copy.platform} value={copy.platform}>{copy.label} · {copy.field_status==='FIELDS_VALIDATED'?'الحقول مقبولة مبدئياً':'يلزم استكمال'}</option>)}</select></label>
     {shown?<><p className="rounded bg-white p-2">{shown.origin==='UNCHANGED_ORIGINAL'?'من الأصل دون تغيير':'حقول معدلة'} · إصدار {shown.version} · {shown.central_approval==='APPROVED'?'اعتماد الأصل محفوظ':'الأصل غير معتمد'}</p>
-     {draft?<p role="status" className="text-amber-800">تعديلات غير محفوظة. الحالات أدناه تخص آخر إصدار محفوظ وتُفحص مجدداً عند الحفظ.</p>:null}
+     {draft?<p role="status" className="text-amber-800">تعديلات غير محفوظة تبقى عند التنقل داخل المكتبة فقط. مغادرة المكتبة أو إعادة تحميلها تفقدها؛ احفظها أولاً. الحالات أدناه تخص آخر إصدار محفوظ وتُفحص مجدداً عند الحفظ.</p>:null}
      {shown.blockers.map(reason=><p key={reason} className="text-amber-900">{reason}</p>)}
      {['telegram','youtube','instagram'].includes(active)?<CopySuggestionsPanel key={`${id}:${active}:${shown.version}`} id={id} copy={shown} disabled={busy||!!draft} onApplied={()=>load.mutate()}/>:null}
      {['instagram','facebook'].includes(active)&&['IMAGE','VIDEO'].includes(kind)&&shown?<PlatformCopyMediaPanel key={`${id}:${active}`} id={id} kind={kind} copy={shown} preview={jpeg.data} background={background} disabled={busy||!!draft} onChanged={()=>{jpeg.reset();setJpegOpen(false);inspect.reset();load.mutate();}}/>:null}
-     {['youtube','facebook'].includes(active)?<label className="block">{active==='facebook'?'عنوان منفصل محفوظ، لا يرسله المسار الحالي':'عنوان المنصة'}<input aria-label={`عنوان نسخة ${id}`} value={shown.fields.title} onChange={e=>edit('title',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>:null}
-     <label className="block">نص النشر / الوصف<textarea aria-label={`وصف نسخة ${id}`} dir="auto" rows={6} value={shown.fields.description} onChange={e=>edit('description',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>
-     {['youtube','facebook'].includes(active)?<label className="block">{active==='facebook'?'وسوم منفصلة محفوظة، لا يرسلها المسار الحالي':'كلمات مفتاحية، واحدة في كل سطر'}<textarea aria-label={`وسوم نسخة ${id}`} rows={2} value={shown.fields.tags.join('\n')} onChange={e=>edit('tags',e.target.value.split('\n').filter(Boolean))} className="block w-full rounded border bg-white p-2"/></label>:null}
-     {(active==='instagram'&&kind==='IMAGE'||active==='facebook')?<label className="block">{active==='facebook'?'نص بديل محفوظ، لا يرسله المسار الحالي':'نص بديل للصورة، دون اختراع وصف'}<input aria-label={`نص بديل نسخة ${id}`} value={shown.fields.alt_text} onChange={e=>edit('alt_text',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>:null}
+     {['youtube','facebook'].includes(active)?<label className="block">{active==='facebook'?'عنوان منفصل محفوظ، لا يرسله المسار الحالي':'عنوان المنصة'}<input aria-label={`عنوان نسخة ${id}`} disabled={busy} value={shown.fields.title} onChange={e=>edit('title',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>:null}
+     <label className="block">نص النشر / الوصف<textarea aria-label={`وصف نسخة ${id}`} dir="auto" rows={6} disabled={busy} value={shown.fields.description} onChange={e=>edit('description',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>
+     {['youtube','facebook'].includes(active)?<label className="block">{active==='facebook'?'وسوم منفصلة محفوظة، لا يرسلها المسار الحالي':'كلمات مفتاحية، واحدة في كل سطر'}<textarea aria-label={`وسوم نسخة ${id}`} rows={2} disabled={busy} value={shown.fields.tags.join('\n')} onChange={e=>edit('tags',e.target.value.split('\n').filter(Boolean))} className="block w-full rounded border bg-white p-2"/></label>:null}
+     {(active==='instagram'&&kind==='IMAGE'||active==='facebook')?<label className="block">{active==='facebook'?'نص بديل محفوظ، لا يرسله المسار الحالي':'نص بديل للصورة، دون اختراع وصف'}<input aria-label={`نص بديل نسخة ${id}`} disabled={busy} value={shown.fields.alt_text} onChange={e=>edit('alt_text',e.target.value)} className="block w-full rounded border bg-white p-2"/></label>:null}
      {active==='facebook'?<p>هذه الحقول محفوظة دون حذف. إذا أردت نقل عنوان أو وسم إلى نص النشر فراجعه وعدله بنفسك، أو أفرغ الحقل المنفصل صراحةً إن لم ترده. حفظ النسخة لا يوافق على نشرها، ولا يغير الأصل أو النسخ الأخرى.</p>:null}
-     <div className="flex flex-wrap gap-2"><button type="button" disabled={!draft||busy} onClick={()=>{inspect.reset();jpeg.reset();save.mutate();}} className="rounded bg-violet-700 p-2 text-white disabled:opacity-40">حفظ النسخة وفحص حقولها</button>{draft?<button type="button" disabled={busy} onClick={()=>setDraft(null)} className="rounded border p-2">تجاهل التعديلات غير المحفوظة</button>:null}</div>
+     <div className="flex flex-wrap gap-2"><button type="button" disabled={!draft||busy} onClick={()=>{inspect.reset();jpeg.reset();if(draft)save.mutate(draft);}} className="rounded bg-violet-700 p-2 text-white disabled:opacity-40">حفظ النسخة وفحص حقولها</button>{draft?<button type="button" disabled={busy} onClick={()=>changeDraft(null)} className="rounded border p-2">تجاهل التعديلات غير المحفوظة</button>:null}</div>
      {['IMAGE','VIDEO'].includes(kind)?<MediaInspectionHistoryPanel key={`${id}:${active}:${shown.version}:${shown.current_source_fingerprint}`} id={id} copy={shown} disabled={busy||!!draft}/>:null}
      {shown.source_stale?<p className="text-amber-900">الحفظ يربط هذه الحقول بالأصل الحالي بعد مراجعتك. لا يستبدل النص تلقائياً.</p>:null}
      <button type="button" disabled={busy||!!draft} onClick={()=>inspect.mutate()} className="rounded border bg-white p-2">{kind==='VIDEO'?'فحص الفيديو الأصلي (قراءة متدفقة حتى 300MB)':'فحص الملف الأصلي (قراءة حتى 50MiB)'}</button>
@@ -72,6 +98,7 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request}:{id:string;k
      {inspect.isError?<p role="alert">{inspect.error.message}</p>:null}
      <details className="rounded border bg-white p-2"><summary className="cursor-pointer">ما الذي لم يُتحقق بعد؟</summary>{[...shown.warnings,...shown.media_checks_pending,...shown.execution_blockers].map(reason=><p key={reason}>{reason}</p>)}<p>نسخة Telegram تُستخدم في معاينة الدفعة وخطتها الجديدة فقط بعد مراجعتها. تغيير النسخة يوقف الخطة السابقة. حفظ حقول أي منصة لا يأذن بالنشر. الاتصال وفحص الوسيط وخطوات التنفيذ تُراجع في مسار كل منصة على حدة.</p>{shown.sources.map(url=><a key={url} href={url} target="_blank" rel="noreferrer" className="block break-all underline">{url}</a>)}</details>
     </>:null}</>:null}
+   {draftCache?.errors.get(id)&&!save.isError?<p role="alert" className="text-rose-700">{draftCache.errors.get(id)}</p>:null}
    {load.isError||prepare.isError||save.isError?<p role="alert" className="text-rose-700">{load.error?.message??prepare.error?.message??save.error?.message}</p>:null}
    {active==='instagram'?<InstagramExactOperation key={id} id={id}/>:null}
    {active==='instagram'&&row&&!draft&&['IMAGE','VIDEO'].includes(kind)?<InstagramPlanReviewPanel key={`${id}:${row.version}:${row.current_source_fingerprint}`} id={id} kind={kind} disabled={busy}/>:null}
