@@ -69,6 +69,7 @@ export function CentralPlatformCopiesPanel({id,kind,onPlan,request,draftCache}:{
   if(!request)return;
   if(panelRef.current){panelRef.current.open=true;panelRef.current.scrollIntoView({block:'start',behavior:'smooth'});}
   if(draft||busy){setHandoff('احفظ تعديلات النسخة أو ألغها أولاً. لم نغيّر المنصة أو نحذف تعديلاتك.');return;}
+  if(request.platform!==active){inspect.reset();jpeg.reset();setJpegOpen(false);}
   setActive(request.platform);setHandoff('فتح السجلات المحفوظة فقط. لا تجهيز جديد أو نشر من هذا الانتقال.');load.mutate();
  },[request?.nonce]);
  function edit(field:keyof CentralPlatformCopy['fields'],value:string|string[]) {inspect.reset();jpeg.reset();const current=draftRef.current??row;if(current)changeDraft({...current,fields:{...current.fields,[field]:value}});setNote('');}
