@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('changed draft fields require fresh review and pending save locks exact intent',async({page},info)=>{
  let saved=0,unsafe=0,release!:()=>void;const gate=new Promise<void>(r=>{release=r});
@@ -6,7 +7,7 @@ test('changed draft fields require fresh review and pending save locks exact int
  if(p==='/api/artifacts/telegram-batch-preview')return route.fulfill({json:{destination:'synthetic-target',ready_count:1,blocked_count:0,caveat:'فحص أولي.',items:[{artifact_id:item.id,title:'مادة مؤهلة',kind:'TEXT',content:item.content,source_fingerprint:'reviewed-fingerprint',ready:true,blockers:[],publications:[],schedules:[]}]}});
  if(p==='/api/artifacts/telegram-batch-schedule'){saved++;expect(req.postDataJSON()).toMatchObject({artifact_ids:[item.id],destination:'synthetic-target',fingerprints:{'batch-ready':'reviewed-fingerprint'},timezone:'Asia/Riyadh',start_at:'2030-01-01T09:00:00.000Z',interval_minutes:60});await gate;return route.fulfill({status:201,json:{id:'synthetic-draft-plan',status:'DRAFT',items:[]}});}
  if(p.startsWith('/api/')&&req.method()!=='GET')unsafe++;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
  await page.goto('/bank?library_view=expanded');await page.getByLabel('حالة مراجعة المخرجات').selectOption('APPROVED');await page.getByLabel('تحديد كل وسائط الصفحة',{exact:true}).check();
  const panel=page.getByLabel('معاينة دفعة Telegram',{exact:true});await panel.getByRole('button',{name:'معاينة وفحص دفعة Telegram (1)',exact:true}).click();
