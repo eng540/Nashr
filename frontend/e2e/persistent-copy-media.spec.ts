@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('saved per-platform JPEG is explicit private and leaves original fields untouched',async({page},info)=>{
  let previews=0,unsafe=0,version=2,saves=0,selected:string|null=null;
@@ -5,7 +6,7 @@ test('saved per-platform JPEG is explicit private and leaves original fields unt
  const fields={title:'',description:'وصف نسخة محفوظ دون تعديل',tags:[],alt_text:''};
  const copy={platform:'instagram',label:'Instagram',fields,version:2,source_fingerprint:'a'.repeat(64),current_source_fingerprint:'a'.repeat(64),origin:'USER_EDITED',source_stale:false,central_approval:'APPROVED',field_status:'BLOCKED',blockers:['الأصل PNG لم يتغير.'],warnings:[],media_checks_pending:[],execution_blockers:[],sources:[]};
  await page.route('**/*',async route=>{const req=route.request(),p=new URL(req.url()).pathname;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p==='/api/artifacts/jpeg-source/platform-copies')return route.fulfill({json:{items:[{...copy,version,selected_media_id:selected}]}});
  if(p.endsWith('/media/jpeg')){saves++;expect(req.postDataJSON().copy_version).toBe(2);expect(req.postDataJSON().expected_sha256).toBe('b'.repeat(64));selected='saved-media';version++;return route.fulfill({json:{copy_version:version,selected_media_id:selected}});}
  if(p.endsWith('/media/selection')){expect(req.postDataJSON().copy_version).toBe(3);selected=null;version++;return route.fulfill({json:{copy_version:version,selected_media_id:null}});}
