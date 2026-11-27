@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('private inspection history reloads and separates stale evidence from permission',async({page},info)=>{
  let writes=0,reads=0;const id='history-source';
@@ -6,7 +7,7 @@ test('private inspection history reloads and separates stale evidence from permi
  const result={source_fingerprint:'a'.repeat(64),copy_version:2,status:'MEASURED_WITH_PENDING_CHECKS',measurements:{format:'MOV/MP4',width:1080,height:1920},blockers:[],pending:['VBR غير متحقق.']};
  const record={id:'inspection1',created_at:'2026-11-24T02:00:00Z',selected:true,media_id:null,sha256:'b'.repeat(64),copy_version:2,probe_version:'test',stale:false,stale_reasons:[],result,caveat:'لا يعيد السجل قراءة الملف ولا يمنح إذن نشر.'};
  await page.route('**/*',async route=>{const req=route.request(),path=new URL(req.url()).pathname;
- if(path==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(path==='/api/artifacts'||path==='/api/artifacts/library'||path==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(path.endsWith('/platform-copies'))return route.fulfill({json:{items:[copy]}});
  if(path.endsWith('/media-inspections')){if(req.method()==='POST'){writes++;expect(req.postDataJSON()).toEqual({source_fingerprint:'a'.repeat(64),copy_version:2,selected:true});return route.fulfill({json:record});}reads++;return route.fulfill({json:{items:writes?[record,{...record,id:'old',copy_version:1,stale:true,stale_reasons:['تغير إصدار نسخة المنصة.']}]:[]}});}
  if(path.endsWith('/media-url'))return route.fulfill({json:{url:null}});
