@@ -57,7 +57,9 @@ export function PublishingPage() {
   const [manualPub, setManualPub] = useState<{ id: string; date: string; url: string } | null>(null);
   const [form, setForm] = useState({ name: "خطة نشر", timezone: DEFAULT_TIMEZONE, startAt: "", interval: "60" });
 
+  const editorialVisible = section === "ready" && readyTask === "editorial";
   const posts = useQuery({
+    enabled: editorialVisible,
     queryKey: ["publishing", "eligible-posts", readyQuery, readySort, readySourceId, readyKind, readyPage],
     queryFn: () => postsApi.list({
       status: "APPROVED",
@@ -72,20 +74,23 @@ export function PublishingPage() {
     placeholderData: (previous) => previous,
   });
   const approvedImages = useQuery({
+    enabled: editorialVisible,
     queryKey: ["publishing", "approved-image-artifacts"],
     queryFn: async () => (await genericArtifactsApi.listAll("APPROVED")).items.filter(
       (artifact) => artifact.kind === "IMAGE" && artifact.status === "AVAILABLE" && Boolean(artifact.storage_uri) && ["image/png", "image/jpeg", "image/webp"].includes(artifact.mime_type ?? ""),
     ),
   });
   const readyFilterOptions = useQuery({
+    enabled: editorialVisible,
     queryKey: ["publishing", "filter-options", readySourceId],
     queryFn: () => postsApi.filterOptions(readySourceId || undefined, "ELIGIBLE"),
   });
   const schedules = useQuery({ queryKey: ["publishing", "schedules",planPage,planQuery,planStatus,searchParams.has("failures")], queryFn: ()=>schedulesApi.list({limit:PAGE_SIZE,offset:planPage*PAGE_SIZE,query:planQuery.trim(),status:planStatus,failedOnly:searchParams.has("failures")}) });
   const operationsSummary=useQuery({queryKey:['platform-operation-summary'],queryFn:()=>get<{counts:{waiting:number;published:number;attention:number;total:number}}>('/api/platform-operations?limit=1'),retry:false});
   const upcoming = useQuery({ queryKey: ["publishing", "upcoming",upcomingPage], queryFn: ()=>schedulesApi.upcoming(upcomingPage*20) });
-  const platformVariants = useQuery({ queryKey: ["publishing", "platform-variants"], queryFn: genericArtifactsApi.listPlatformVariants });
+  const platformVariants = useQuery({ queryKey: ["publishing", "platform-variants"], enabled: section === "platforms", queryFn: genericArtifactsApi.listPlatformVariants });
   const calendar = useQuery({
+    enabled: section === "calendar",
     queryKey: ["publishing", "calendar", calendarDate, calendarTimezone,calendarPage],
     queryFn: () => schedulesApi.calendar(calendarDate, calendarTimezone,calendarPage*20),
   });
@@ -297,7 +302,7 @@ export function PublishingPage() {
           ["operations", "عمليات Meta", operationsSummary.data?.counts?.total??"—", "سجل Instagram وFacebook بجميع حالاته"],
           ["plans", "خطط النشر · Telegram", schedules.isError?"—":schedules.data?.total ?? schedules.data?.items.length ?? "—", "الخطط المحفوظة وحالاتها"],
           ["calendar", "التقويم · كل المنصات", "↗", "Telegram ومواعيد Meta لليوم المختار"],
-          ["platforms", "مسودات المنصات", platformVariants.data?.length ?? "—", "تحضير يدوي فقط، بلا نشر آلي"],
+          ["platforms", "مسودات المنصات", platformVariants.isError ? "—" : platformVariants.data?.length ?? "—", "تحضير يدوي فقط، بلا نشر آلي"],
         ] as const).map(([key, label, count, hint]) => (
           <button key={key} type="button" onClick={() => switchSection(key)} aria-pressed={section===key} className="text-right">
             <div className="flex items-center justify-between gap-3"><strong>{label}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{count}</span></div>
@@ -426,6 +431,8 @@ export function PublishingPage() {
           </div>
           {platformVariants.isLoading ? (
             <Status title="جارٍ تحميل مسودات المنصات..." />
+          ) : platformVariants.isError ? (
+            <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4"><p>تعذر تحميل مسودات المنصات. لا نعتبر القائمة فارغة.</p><button type="button" onClick={()=>void platformVariants.refetch()} className="underline">إعادة تحميل مسودات المنصات</button></div>
           ) : !(platformVariants.data?.length) ? (
             <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد مسودات منصات بعد</h3><p className="mt-2 text-sm text-slate-500">اشتق نسخة منصة من مخرج معتمد أو منشور معتمد من بنك المحتوى.</p></div>
           ) : (
