@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
@@ -14,7 +15,7 @@ for(const shape of ['portrait','landscape'])test(`original ${shape} video uses r
  const r=route.request(),p=new URL(r.url()).pathname;
  if(p==='/synthetic-preview.mp4')return route.fulfill({body:bytes,contentType:'video/mp4'});
  if(p.startsWith('/api/')&&r.method()!=='GET'){writes++;throw Error('Unexpected write');}
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1})});
  if(p.endsWith('/media-url'))return route.fulfill({json:{url:'http://127.0.0.1:5173/synthetic-preview.mp4'}});
  if(p==='/sources')return route.fulfill({json:[]});
  if(p.includes('/control/'))return route.fulfill({json:[]});
