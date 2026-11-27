@@ -235,9 +235,11 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   const jobItems = useQuery({ queryKey: ["production", "job-items", jobId, jobItemsPage], queryFn: () => productionJobsApi.items(jobId!, jobItemsPage * 20, 20), enabled: Boolean(jobId) });
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { setQuery(queryInput.trim()); setPage(0); }, 300);
+    const nextQuery = queryInput.trim();
+    if (nextQuery === query) return;
+    const timer = window.setTimeout(() => { setQuery(nextQuery); setPage(0); }, 300);
     return () => window.clearTimeout(timer);
-  }, [queryInput]);
+  }, [queryInput, query]);
   useEffect(() => { setPage(0); setSelected([]); }, [filterSourceId, topicId, status, kind, sort]);
   useEffect(() => {
     if (sources.data?.length === 1 && !productionSourceId) setProductionSourceId(sources.data[0].id);
