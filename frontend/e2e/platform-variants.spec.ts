@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import { expect, test, type Page } from "@playwright/test";
 
 const sourceId = "unit-platform-variant-e2e";
@@ -40,9 +41,9 @@ const cardRecipes = [
 ];
 
 async function mockBankRoutes(page: Page, state: { derived: boolean }) {
-  await page.route(/\/api\/artifacts\?review_status=APPROVED.*/, (route) => route.fulfill({ json: [textArtifact] }));
-  await page.route(/\/api\/artifacts\?review_status=DRAFT.*/, (route) => route.fulfill({ json: state.derived ? [variantArtifact()] : [] }));
-  await page.route(/\/api\/artifacts\?review_status=REJECTED.*/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=APPROVED.*/, (route) => route.fulfill({ json: libraryFixture(route, [textArtifact])}));
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=DRAFT.*/, (route) => route.fulfill({ json: libraryFixture(route, state.derived ? [variantArtifact()] : [])}));
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=REJECTED.*/, (route) => route.fulfill({ json: libraryFixture(route, []) }));
   await page.route("**/api/control/products", (route) => route.fulfill({ json: cardProducts }));
   await page.route("**/api/control/recipes", (route) => route.fulfill({ json: cardRecipes }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
@@ -135,7 +136,7 @@ const variantListItem = {
 
 test("publishing workspace lists platform variants as preparation-only drafts without mobile overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route(/\/api\/artifacts\?review_status=APPROVED.*/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=APPROVED.*/, (route) => route.fulfill({ json: libraryFixture(route, []) }));
   await page.route(/\/api\/artifacts\/platform-variants$/, (route) => route.fulfill({ json: [variantListItem] }));
   await page.route(/\/posts\?/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } }));
   await page.route(/\/posts\/filter-options/, (route) => route.fulfill({ json: { kinds: [], topics: [], sources: [] } }));
@@ -161,7 +162,7 @@ test("approved platform variant can be recorded as manually published without mo
   const approvedVariant = { ...variantListItem, id: approvedId, review_status: "APPROVED", needs_review: false };
   const state: { recorded: { published_at: string; external_url?: string | null } | null } = { recorded: null };
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route(/\/api\/artifacts\?review_status=APPROVED.*/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=APPROVED.*/, (route) => route.fulfill({ json: libraryFixture(route, []) }));
   await page.route(/\/api\/artifacts\/platform-variants$/, (route) => route.fulfill({
     json: [state.recorded
       ? { ...approvedVariant, manual_publication: { published_at: state.recorded.published_at, external_url: state.recorded.external_url ?? null, recorded_at: "2026-10-17T12:00:00Z" } }
@@ -212,7 +213,7 @@ test("media platform variant exposes full text copy and on-demand media preview 
     source_kind_ar: "مخرج معتمد",
   };
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route(/\/api\/artifacts\?review_status=APPROVED.*/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=APPROVED.*/, (route) => route.fulfill({ json: libraryFixture(route, []) }));
   await page.route(/\/api\/artifacts\/platform-variants$/, (route) => route.fulfill({ json: [mediaVariant] }));
   await page.route(/\/api\/artifacts\/[^/]+\/media-url$/, (route) => route.fulfill({ json: { url: "https://example.com/media/episode.mp4", expires_in: 300 } }));
   await page.route(/\/posts\?/, (route) => route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } }));
