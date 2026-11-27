@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import { expect, test } from '@playwright/test';
 
 test('approved photo and motion form a separate Live Photo review draft', async ({page}, testInfo) => {
@@ -6,7 +7,7 @@ test('approved photo and motion form a separate Live Photo review draft', async 
  await page.route('**/*',async route=>{
   const u=new URL(route.request().url());
   if(u.pathname==='/api/artifacts/live-photo-draft') {requested=route.request().postDataJSON();return route.fulfill({status:201,json:{...items[0],id:'album',kind:'TEXT',content:'ألبوم',storage_uri:null,review_status:'DRAFT',metadata:{title:'ألبوم Telegram للمراجعة',telegram_live_photo:{photo_id:'a',video_id:'b'},live_photo_preview:items.map(x=>({id:x.id,kind:x.kind,filename:x.metadata.original_filename,caption:x.metadata.caption}))}}});}
-  if(u.pathname==='/api/artifacts') return route.fulfill({json:u.searchParams.get('review_status')==='APPROVED'?items: requested ? [{...items[0],id:'album',kind:'TEXT',content:'ألبوم',storage_uri:null,review_status:'DRAFT',metadata:{title:'ألبوم Telegram للمراجعة',telegram_live_photo:{photo_id:'a',video_id:'b'},live_photo_preview:items.map(x=>({id:x.id,kind:x.kind,filename:x.metadata.original_filename,caption:x.metadata.caption}))}}] : []});
+  if(u.pathname==='/api/artifacts'||u.pathname==='/api/artifacts/library'||u.pathname==='/api/artifacts/library-items') return route.fulfill({json:libraryFixture(route, (u.searchParams.get('review_status')==='APPROVED'||u.pathname.endsWith('/library-items'))?items: requested ? [{...items[0],id:'album',kind:'TEXT',content:'ألبوم',storage_uri:null,review_status:'DRAFT',metadata:{title:'ألبوم Telegram للمراجعة',telegram_live_photo:{photo_id:'a',video_id:'b'},live_photo_preview:items.map(x=>({id:x.id,kind:x.kind,filename:x.metadata.original_filename,caption:x.metadata.caption}))}}] : [])});
   if(items.some(x=>u.pathname==='/api/artifacts/'+x.id))return route.fulfill({json:items.find(x=>u.pathname==='/api/artifacts/'+x.id)});
   if(u.pathname.endsWith('/media-url'))return route.fulfill({json:{url:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="purple"/></svg>',expires_in:300}});
   if(['/posts','/sources','/api/control/products','/api/control/recipes','/api/control/identities'].some(p=>u.pathname.startsWith(p)))return route.fulfill({json:[]});
