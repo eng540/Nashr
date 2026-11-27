@@ -173,6 +173,19 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const setFocusedId=(id:string|null)=>{setFocusedState(id);const next=new URLSearchParams(libraryParams);if(id){next.set("artifact_id",id);next.set("artifact_status",status);}else next.delete("artifact_id");if(id!==focusedId){next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");}setLibraryParams(next,{preventScrollReset:true});};
   useEffect(()=>{setFocusedState(libraryParams.get("artifact_id"));const requested=libraryParams.get("artifact_status");if(requested&&["DRAFT","APPROVED","REJECTED"].includes(requested))setStatus(requested as GenericArtifactReviewStatus);},[libraryParams]);
   const materialNav=useRef<HTMLElement>(null);
+  const returnTarget=useRef<string|null>(null);
+  useEffect(()=>{
+    if(focusedId||!returnTarget.current)return;
+    const id=returnTarget.current;
+    const frame=requestAnimationFrame(()=>{
+      const target=document.getElementById(`material-open-${id}`);
+      if(!target)return;
+      returnTarget.current=null;
+      target.focus({preventScroll:true});
+      target.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[focusedId]);
   useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
   const creationTask=(["manual","upload","variant","design"].includes(libraryParams.get("library_task")??"")?libraryParams.get("library_task"):null);
   const [creationVisit,setCreationVisit]=useState(0);
@@ -295,7 +308,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const focusedArtifact=focusedId?allArtifacts.find(item=>item.id===focusedId):null;
   const focusIndex=filteredArtifacts.findIndex(item=>item.id===focusedId);
   const displayArtifacts=focusedId?(focusedArtifact?[focusedArtifact]:[]):pagedArtifacts;
-  const returnToLibrary=()=>{if(focusIndex>=0)setPage(Math.floor(focusIndex/LIBRARY_PAGE_SIZE));setFocusedId(null);};
+  const returnToLibrary=()=>{returnTarget.current=focusedId;if(focusIndex>=0)setPage(Math.floor(focusIndex/LIBRARY_PAGE_SIZE));setFocusedId(null);};
   const updateFilters = (apply: () => void) => { apply(); setPage(0); setFocusedState(null); };
   const save = useMutation({
     mutationFn: (id: string) => {
@@ -527,7 +540,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         </p>
       </div>
       <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
-        <Input className="col-span-2 xl:col-span-3" aria-label="بحث في المخرجات" value={search} onChange={(event) => updateFilters(() => setSearch(event.target.value))} placeholder="ابحث بالعنوان أو الأصل أو نسخ المنصات أو اسم الملف..." />
+        <Input id="content-library-search" className="col-span-2 scroll-mt-24 xl:col-span-3" aria-label="بحث في المخرجات" value={search} onChange={(event) => updateFilters(() => setSearch(event.target.value))} placeholder="ابحث بالعنوان أو الأصل أو نسخ المنصات أو اسم الملف..." />
       </div><details open={!compact} className="library-filters"><summary>تصفية وترتيب · النوع، المصدر، السلسلة، التصنيف</summary><div className="grid grid-cols-2 gap-2 pt-3 xl:grid-cols-3">        <Select aria-label="تصفية حسب نوع المخرج" value={kindFilter} onChange={(event) => updateFilters(() => setKindFilter(event.target.value))}>
           <option value="ALL">كل الأنواع</option>
           <option value="VIDEO">فيديو</option>
@@ -624,7 +637,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
           {artifactSeries(artifact) ? <Badge tone="sky">{artifactSeries(artifact)}</Badge> : null}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs">{({DRAFT:"قيد المراجعة",APPROVED:"معتمد",REJECTED:"مرفوض"})[artifact.review_status]??artifact.review_status}</span>
         </div>
-        {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button type="button" aria-expanded={focusedId===artifact.id} onClick={()=>focusedId===artifact.id?returnToLibrary():setFocusedId(artifact.id)} className="library-card-primary rounded-lg px-4 py-2 text-sm font-bold">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
+        {compact?<div className="space-y-2">{focusedId!==artifact.id?<p dir="auto" className="line-clamp-3 whitespace-pre-wrap text-sm leading-7 text-slate-600">{artifact.content??String(artifact.metadata.caption??'ملف محفوظ في المكتبة')}</p>:null}<button id={`material-open-${artifact.id}`} type="button" aria-expanded={focusedId===artifact.id} onClick={()=>focusedId===artifact.id?returnToLibrary():setFocusedId(artifact.id)} className="library-card-primary rounded-lg px-4 py-2 text-sm font-bold focus:outline-2 focus:outline-offset-2 focus:outline-emerald-700">{focusedId===artifact.id?'إغلاق مساحة المادة':'فتح المادة والتجهيز والتتبع'}</button></div>:null}
         {!compact||focusedId===artifact.id?<div className="space-y-3" aria-label={`مساحة المادة ${artifact.id}`}>
         {artifact.metadata.source_type!=="PLATFORM_VARIANT"?<ContentOrganizationPanel key={artifact.id+":"+(artifact.organization?.version??0)} items={[artifact]}/>:null}
         <nav aria-label="مراحل العمل على المادة" className="flex flex-wrap gap-2 rounded bg-slate-50 p-2 text-xs text-slate-600"><a href={`#original-${artifact.id}`} className="underline">1. الأصل والملاحظات</a><a href={`#review-${artifact.id}`} aria-current={status==="DRAFT"?"step":undefined} className="underline">2. قرار المراجعة</a><a href={`#destinations-${artifact.id}`} aria-current={status==="APPROVED"?"step":undefined} className="underline">3. النسخ والوجهات والخطة</a><a href={`#history-${artifact.id}`} className="underline">4. سجل النشر</a></nav><div id={`original-${artifact.id}`} className="scroll-mt-24"/>

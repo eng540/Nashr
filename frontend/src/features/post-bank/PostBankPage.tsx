@@ -333,6 +333,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
       description={workspaceView === "review" ? "كل موادك في مكان واحد. راجع الأصل، اعتمد المحتوى، ثم جهّز نسخ المنصات." : "حوّل المواد من المصادر إلى منشورات ومخرجات، ثم راجعها واعتمدها في بنك المحتوى قبل نقلها إلى مساحة النشر."}
       actions={<>
         {workspaceView !== "review" ? <Link to="/bank" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">بنك المحتوى</Link> : null}
+        {workspaceView === "review" ? <a className="workspace-secondary" href="#content-library-search">البحث في مكتبة المواد</a> : null}
         {workspaceView === "review" ? <a className="workspace-secondary" href="#editorial-posts">المنشورات التحريرية والاعتماد الجماعي</a> : null}
         <Link to="/publishing" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">مساحة النشر</Link>
       </>}
