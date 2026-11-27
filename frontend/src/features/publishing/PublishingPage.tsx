@@ -31,7 +31,7 @@ export function PublishingPage() {
   const [operationGroup,setOperationGroup]=useState<OperationGroup>(()=>operationGroupFromParams(searchParams));
   useEffect(()=>{if(section!=="plans"&&section!=="operations")return;const frame=requestAnimationFrame(()=>{const target=document.getElementById(`publishing-${section}`);target?.focus({preventScroll:true});target?.scrollIntoView({block:"start"});});return()=>cancelAnimationFrame(frame);},[section,operationGroup]);
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
-  const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
+  const [scheduleOpen, setScheduleOpen] = useState(!searchParams.has("schedule_id") && Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [visualArtifactSelections, setVisualArtifactSelections] = useState<Record<string, string>>({});
@@ -160,8 +160,7 @@ export function PublishingPage() {
     onSuccess: async (schedule) => {
       setMessage(`تم إنشاء الخطة بنجاح: ${schedule.name}`);
       setScheduleOpen(false);
-      setSection("plans");
-      setDetail(await schedulesApi.get(schedule.id));
+      choosePlan(schedule.id);
       void refresh();
     },
   });
