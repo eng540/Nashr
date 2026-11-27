@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 const ids=['12345678-1234-4123-8123-123456789ab1','12345678-1234-4123-8123-123456789ab2'];
 test('review the saved selected Meta batch together without preparing or scheduling anything',async({page})=>{
@@ -5,7 +6,7 @@ test('review the saved selected Meta batch together without preparing or schedul
  const items=ids.map((id,i)=>({id,kind:'VIDEO',status:'AVAILABLE',content:'أصل '+i,mime_type:'video/mp4',metadata:{title:'فيديو '+(i+1)},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
  await page.route('**/*',r=>{const p=new URL(r.request().url()).pathname;
  if(r.request().method()!=='GET')writes.push(p);
- if(p==='/api/artifacts')return r.fulfill({json:{items,total:2,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return r.fulfill({json:libraryFixture(r, {items,total:2,limit:100,offset:0})});
  if(p.endsWith('/distribution-readiness')){const id=p.split('/')[3];return r.fulfill({json:{artifact_id:id,source_fingerprint:'fp-'+id,selection_version:'sel-'+id,central_approval:'APPROVED',original_text:'أصل كامل '+id,selection_stale:false,targets:['instagram','facebook'].map(platform=>({platform,label:platform,selected:id===ids[0]?platform==='instagram':platform==='facebook',copy_status:'FIELDS_VALIDATED',copy_blockers:[],execution_blockers:['فحص الحساب والتنفيذ منفصل']}))}});}
  if(p.endsWith('/platform-copies'))return r.fulfill({json:{items:[{platform:p.includes(ids[0])?'instagram':'facebook',version:4,source_stale:false,field_status:'FIELDS_VALIDATED',fields:{description:'نص محفوظ كامل دون قص'}}]}});
  if(p==='/api/connections')return r.fulfill({json:{telegram:{items:[]}}});
@@ -40,7 +41,7 @@ for(const mode of ['missing','mismatch','failure','stale','incomplete'] as const
  const writes:string[]=[];
  const items=ids.map((id,i)=>({id,kind:'VIDEO',status:'AVAILABLE',content:'أصل '+i,mime_type:'video/mp4',metadata:{title:'فيديو '+(i+1)},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
  await page.route('**/*',r=>{const p=new URL(r.request().url()).pathname;if(r.request().method()!=='GET')writes.push(p);
- if(p==='/api/artifacts')return r.fulfill({json:{items,total:2,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return r.fulfill({json:libraryFixture(r, {items,total:2,limit:100,offset:0})});
  if(p.endsWith('/distribution-readiness')){const id=p.split('/')[3];if(mode==='failure'&&id===ids[1])return r.fulfill({status:503,json:{detail:'unavailable'}});return r.fulfill({json:{artifact_id:mode==='mismatch'&&id===ids[1]?ids[0]:id,central_approval:'APPROVED',selection_stale:mode==='stale',targets:(mode==='incomplete'?['instagram']:['instagram','facebook','telegram']).map(platform=>({platform,label:platform==='instagram'?'Instagram':'Telegram',selected:mode!=='missing'&&platform!=='facebook',copy_status:'BLOCKED',copy_blockers:['عائق نسخة واضح'],execution_blockers:['لا تنفيذ']}))}});}
  if(p.endsWith('/platform-copies'))return r.fulfill({json:{items:[]}});
  if(p==='/api/connections')return r.fulfill({json:{telegram:{items:[]}}});if(p==='/posts'||p.startsWith('/posts/')||p==='/sources'||p.startsWith('/api/control/'))return r.fulfill({json:[]});if(p.startsWith('/api/'))return r.fulfill({json:{items:[],total:0}});return r.continue();});
@@ -55,7 +56,7 @@ test('late response and local times do not follow a changed selected batch',asyn
  let release:()=>void=()=>{};let reads=0;
  const items=ids.map((id,i)=>({id,kind:'VIDEO',status:'AVAILABLE',content:'أصل '+i,mime_type:'video/mp4',metadata:{title:'فيديو '+(i+1)},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
  await page.route('**/*',async r=>{const p=new URL(r.request().url()).pathname;
- if(p==='/api/artifacts')return r.fulfill({json:{items,total:2,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return r.fulfill({json:libraryFixture(r, {items,total:2,limit:100,offset:0})});
  if(p.endsWith('/distribution-readiness')){reads++;const id=p.split('/')[3];if(reads===1)await new Promise<void>(resolve=>{release=resolve;});return r.fulfill({json:{artifact_id:id,central_approval:'APPROVED',targets:['instagram','facebook'].map(platform=>({platform,label:platform,selected:false,copy_blockers:[],execution_blockers:[]})),selection_stale:false}});}
  if(p.endsWith('/platform-copies'))return r.fulfill({json:{items:[]}});if(p==='/api/connections')return r.fulfill({json:{telegram:{items:[]}}});if(p==='/posts'||p.startsWith('/posts/')||p==='/sources'||p.startsWith('/api/control/'))return r.fulfill({json:[]});if(p.startsWith('/api/'))return r.fulfill({json:{items:[],total:0}});return r.continue();});
  await page.goto('/bank?artifact_status=APPROVED');await page.getByLabel('تحديد المخرج '+ids[0],{exact:true}).check();const panel=page.getByLabel('مراجعة دفعة Meta',{exact:true});await panel.getByRole('button').click();await expect.poll(()=>reads).toBe(1);await page.getByLabel('تحديد المخرج '+ids[1],{exact:true}).check();release();await expect(panel.getByRole('status')).toHaveCount(0);await expect(panel.getByRole('article')).toHaveCount(0);await panel.getByRole('button').click();await expect(panel.getByRole('article')).toHaveCount(2);

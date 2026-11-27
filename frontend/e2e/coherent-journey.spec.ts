@@ -1,9 +1,10 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('sources to review to results share a clear shell and preserve review gates',async({page},info)=>{
  let writes=0;const id='00000000-0000-4000-8000-000000000059';
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;if(r.method()!=='GET')writes++;
  if(p==='/sources')return route.fulfill({json:[{id:'pdf',filename:'كتاب طويل بعنوان هندسي.pdf',book_title:'كتاب هندسي',mime_type:'application/pdf',status:'STORED',material_count:0},{id:'video',filename:'video.mp4',book_title:'ملف فيديو',mime_type:'video/mp4',status:'STORED',material_count:1}]});
- if(p==='/api/artifacts')return route.fulfill({json:{items:[{id,kind:'VIDEO',review_status:'DRAFT',status:'AVAILABLE',content:null,mime_type:'video/mp4',storage_uri:null,metadata:{caption:'مادة للمراجعة لا تنشر تلقائياً',source_type:'MEDIA_BANK_UPLOAD',review_notes:['راجع السلامة والمصدر قبل الاعتماد']}}],total:1}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[{id,kind:'VIDEO',review_status:'DRAFT',status:'AVAILABLE',content:null,mime_type:'video/mp4',storage_uri:null,metadata:{caption:'مادة للمراجعة لا تنشر تلقائياً',source_type:'MEDIA_BANK_UPLOAD',review_notes:['راجع السلامة والمصدر قبل الاعتماد']}}],total:1})});
  if(p.endsWith('/distribution-readiness'))return route.fulfill({json:{artifact_id:id,selection_version:'1',central_approval:'DRAFT',targets:[{platform:'telegram',label:'Telegram',selected:false,copy_status:'BLOCKED',copy_blockers:['راجع الاعتماد'],execution_blockers:[]}]}});
  if(p.includes('/control/'))return route.fulfill({json:[]});
  if(p==='/api/artifacts/platform-variants')return route.fulfill({json:[]});

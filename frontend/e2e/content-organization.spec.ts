@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('explicit catalog labels organize originals without publishing or editing their content',async({page},info)=>{
  const items=['one','two'].map(id=>({id,source_knowledge_unit_id:'u',kind:'TEXT',status:'AVAILABLE',content:'الأصل الكامل '+id,storage_uri:null,mime_type:'text/plain',metadata:{title:'مادة '+id,original_filename:'b3v4-'+id},organization:null as null|{title:string;series:string;category:string;version:number;updated_at:string},review_status:'DRAFT',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
@@ -7,7 +8,7 @@ test('explicit catalog labels organize originals without publishing or editing t
   writes.push(p);const b=r.postDataJSON();expect(b.artifact_ids).toEqual(['one','two']);expect(b.fields).toEqual({series:'حملة صريحة'});expect(b.versions).toEqual({one:0,two:0});
   items.forEach(i=>i.organization={title:'',series:'حملة صريحة',category:'',version:1,updated_at:'2026-11-24T10:00:00Z'});return route.fulfill({json:{updated:2,content_changed:false,schedules_changed:false}});
  }
- if(p==='/api/artifacts')return route.fulfill({json:{items,total:2,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items,total:2,limit:100,offset:0})});
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
  await page.setViewportSize({width:390,height:844});await page.goto('/bank');
  await page.getByText('تنظيم جماعي · تحديد الفهرسة والسلاسل والتصنيفات',{exact:true}).click();await page.getByRole('button',{name:'تحديد صفحة الفهرسة',exact:true}).click();const batch=page.getByLabel('تنظيم الدفعة',{exact:true});await batch.locator('summary').click();

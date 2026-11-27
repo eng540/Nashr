@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('manual TikTok handoff exports saved copy without upload or publication',async({page},info)=>{
  const writes:string[]=[];let downloads=0;
@@ -7,7 +8,7 @@ test('manual TikTok handoff exports saved copy without upload or publication',as
  if(!p.startsWith('/api/')){if(['/posts','/sources'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();}
  if(p.startsWith('/api/control/'))return route.fulfill({json:[]});
  if(r.method()!=='GET'){writes.push(p);throw new Error('Unexpected write '+p);}
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p==='/api/artifacts/manual-video/platform-copies')return route.fulfill({json:{items:[copy]}});
  if(p.endsWith('/manual-bundle')){downloads++;expect(new URL(r.url()).searchParams.get('copy_version')).toBe('3');return route.fulfill({contentType:'application/zip',headers:{'Content-Disposition':'attachment; filename="manual.zip"'},body:'synthetic-download-fixture'});}
  if(p.endsWith('/media-inspections'))return route.fulfill({json:{items:[]}});

@@ -1,8 +1,9 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('Unified publication requires exact separate checks and shows result without duplicate writes',async({page},info)=>{
  let proposed=0,approved=0;
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[{id:'vid',kind:'VIDEO',source_knowledge_unit_id:'u',content:null,storage_uri:'s3://private/a.mp4',status:'AVAILABLE',mime_type:'video/mp4',review_status:'APPROVED',metadata:{title:'فيديو حقيقي'},created_at:'2026-11-24T10:00:00Z'}],total:1}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[{id:'vid',kind:'VIDEO',source_knowledge_unit_id:'u',content:null,storage_uri:'s3://private/a.mp4',status:'AVAILABLE',mime_type:'video/mp4',review_status:'APPROVED',metadata:{title:'فيديو حقيقي'},created_at:'2026-11-24T10:00:00Z'}],total:1})});
  if(p.endsWith('/platform-copies'))return route.fulfill({json:{items:[{platform:'instagram',label:'Instagram',fields:{title:'',description:'تعليق محدد للنشر',tags:[],alt_text:''},version:1,source_fingerprint:'a'.repeat(64),current_source_fingerprint:'a'.repeat(64),origin:'USER_EDITED',source_stale:false,central_approval:'APPROVED',field_status:'FIELDS_VALIDATED',blockers:[],warnings:[],media_checks_pending:[],execution_blockers:[],sources:[]}]}});
  if(p.endsWith('/execution-drafts'))return route.fulfill({json:{items:[{id:'exec',state:'DRAFT',caption:'تعليق محدد للنشر',username:'creator',remaining_gates:[]}]}});
  if(p.endsWith('/drafts'))return route.fulfill({json:{items:[]}});

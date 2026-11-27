@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('central approval and untouched preview with explicit non-executing platform choice',async({page},info)=>{
  let saves=0;let unsafe=0;
@@ -5,7 +6,7 @@ test('central approval and untouched preview with explicit non-executing platfor
  const readiness={artifact_id:'central',source_fingerprint:'version1',central_approval:'APPROVED',original_text:item.content,selection_stale:false,targets:['telegram','instagram','x','youtube','facebook','tiktok'].map(platform=>({platform,label:platform,selected:false,copy_status:platform==='telegram'?'ORIGINAL_ELIGIBLE':'BLOCKED',copy_blockers:platform==='telegram'?[]:['يلزم التحقق من متطلبات المنصة'],execution_blockers:['لا إذن تنفيذ من الاختيار']}))};
  await page.route('**/*',async route=>{const request=route.request();const p=new URL(request.url()).pathname;
  if(p.startsWith('/api/')&&request.method()!=='GET'&&p!=='/api/artifacts/distribution-selection')unsafe++;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p==='/api/artifacts/central/distribution-readiness')return route.fulfill({json:readiness});
  if(p==='/api/artifacts/distribution-selection'){saves++;const input=request.postDataJSON();expect(input.artifact_ids).toEqual(['central']);expect(input.fingerprints).toEqual({central:'version1'});expect(input.platforms).toEqual(['telegram']);return route.fulfill({json:{saved:1,items:[readiness]}});}
  if(['/posts','/sources','/api/control/'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
@@ -29,7 +30,7 @@ test('batch add and remove preserve individual choices and expose mixed counts',
  const readiness=(id:string)=>({artifact_id:id,source_fingerprint:'source-'+id,selection_version:'selection-'+id+'-'+version,central_approval:'APPROVED',original_text:'أصل '+id,selection_stale:false,targets:['telegram','instagram','x','youtube','facebook','tiktok'].map(platform=>({platform,label:platform,selected:selections[id].includes(platform),copy_status:'BLOCKED',copy_blockers:['يلزم تحقق'],execution_blockers:['لا إذن تنفيذ']}))});
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
  if(p==='/api/connections')return route.fulfill({json:{telegram:{items:[]}}});
- if(p==='/api/artifacts')return route.fulfill({json:{items,total:2,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items,total:2,limit:100,offset:0})});
  if(p.endsWith('/distribution-readiness'))return route.fulfill({json:readiness(p.split('/')[3])});
  if(p==='/api/artifacts/distribution-selection'){
   const body=r.postDataJSON();calls.push(body);expect(body.selection_versions).toEqual({one:'selection-one-'+version,two:'selection-two-'+version});

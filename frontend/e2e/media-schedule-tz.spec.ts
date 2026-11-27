@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import { expect, test } from "@playwright/test";
 
 // Runs the media scheduling UI in a NON-Riyadh browser timezone to prove the
@@ -17,8 +18,8 @@ test("media draft schedule converts the Riyadh input to UTC independent of brows
     created_at: "2026-10-17T00:00:00Z", updated_at: "2026-10-17T00:00:00Z",
   };
 
-  await page.route(/\/api\/artifacts\?review_status=APPROVED/, (route) => route.fulfill({ json: [imageArtifact] }));
-  await page.route(/\/api\/artifacts\?review_status=(DRAFT|REJECTED)/, (route) => route.fulfill({ json: [] }));
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=APPROVED/, (route) => route.fulfill({ json: libraryFixture(route,[imageArtifact]) }));
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=(DRAFT|REJECTED)/, (route) => route.fulfill({ json: libraryFixture(route,[]) }));
   await page.route(new RegExp("/api/artifacts/" + imageId + "/media-url$"), (route) => route.fulfill({
     json: { url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jv9sAAAAASUVORK5CYII=", expires_in: 300 },
   }));

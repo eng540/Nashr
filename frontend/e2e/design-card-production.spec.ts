@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import { expect, test } from "@playwright/test";
 
 test("approved text can create a card, receive independent visual approval, and enter current Publishing", async ({ page }) => {
@@ -58,14 +59,14 @@ test("approved text can create a card, receive independent visual approval, and 
       configuration: { width: 1080, height: 1350, font_family: "naskh", background_mode: "solid" },
     }] }],
   }] }));
-  await page.route(/\/api\/artifacts\?review_status=APPROVED/, (route) => route.fulfill({
-    json: [textArtifact, ...(imageCreated && imageStatus === "APPROVED" ? [imageArtifact()] : [])],
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=APPROVED/, (route) => route.fulfill({
+    json: libraryFixture(route, [textArtifact, ...(imageCreated && imageStatus === "APPROVED" ? [imageArtifact()] : [])])
   }));
-  await page.route(/\/api\/artifacts\?review_status=DRAFT/, (route) => route.fulfill({
-    json: imageCreated && imageStatus === "DRAFT" ? [imageArtifact()] : [],
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=DRAFT/, (route) => route.fulfill({
+    json: libraryFixture(route, imageCreated && imageStatus === "DRAFT" ? [imageArtifact()] : [])
   }));
-  await page.route(/\/api\/artifacts\?review_status=REJECTED/, (route) => route.fulfill({
-    json: imageCreated && imageStatus === "REJECTED" ? [imageArtifact()] : [],
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=REJECTED/, (route) => route.fulfill({
+    json: libraryFixture(route, imageCreated && imageStatus === "REJECTED" ? [imageArtifact()] : [])
   }));
   await page.route(new RegExp("/api/artifacts/" + imageId + "/media-url$"), (route) => route.fulfill({
     json: { url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jv9sAAAAASUVORK5CYII=", expires_in: 300 },
@@ -106,7 +107,7 @@ test("approved text can create a card, receive independent visual approval, and 
     await route.fulfill({ json: post() });
   });
   await page.route(/\/(?:api\/)?schedules(?:\/[^?]*)?(?:\?.*)?$/, (route) => route.fulfill({ json: { items: [], total: 0 } }));
-  await page.route(/^https?:\/\/[^/]+\/(?:api\/)?sources(\/[^?]*)?(\?.*)?$/, (route) => route.fulfill({ json: [] }));
+  await page.route(/^https?:\/\/[^/]+\/(?:api\/)?sources(\/[^?]*)?(\?.*)?$/, (route) => route.fulfill({ json: libraryFixture(route, []) }));
   await page.route("**/api/control/identities", (route) => route.fulfill({ json: [] }));
 
   await page.goto("/bank?library_view=expanded");

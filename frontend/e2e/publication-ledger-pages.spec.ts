@@ -1,10 +1,11 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('older publication records stay reachable with explicit read-only pagination and error recovery',async({page},info)=>{
  const reads:number[]=[];let fail=true,writes=0;
  const item={id:'ledger-original',kind:'TEXT',status:'AVAILABLE',content:'أصل محفوظ',metadata:{title:'مادة سجل'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'};
  const row=(n:number)=>({id:'publication-'+n,platform:'telegram',destination:'synthetic-target',status:'PUBLISHED',content:'نص محفوظ '+n,external_ids:['message-'+n],published_at:'2026-11-23T20:00:00Z',schedules:[]});
  await page.route('**/*',async route=>{const r=route.request(),u=new URL(r.url()),p=u.pathname;if(r.method()!=='GET')writes++;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p==='/api/artifacts/ledger-original/publications'){const offset=Number(u.searchParams.get('offset'));expect(u.searchParams.get('limit')).toBe('50');reads.push(offset);if(offset===50&&fail)return route.fulfill({status:503,json:{detail:'تعذر قراءة الصفحة القديمة'}});return route.fulfill({json:{total:51,offset,limit:50,connector_items:[{id:'ig-one',record_type:'INSTAGRAM_EXECUTION',platform:'instagram',destination:'synthetic-account',status:'PUBLISHED',content:'سجل موصل مستقل',external_id:'789',permalink:null,confirmed:true,updated_at:'2026-11-23T20:00:00Z'}],items:offset===0?Array.from({length:50},(_,n)=>row(n+1)):[row(51)]}});}
  if(p.startsWith('/api/'))return route.fulfill({json:p.includes('/control/')?[]:{items:[],total:0}});if(['/posts','/sources'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();});
  await page.goto('/bank?artifact_status=APPROVED&library_view=expanded');const ledger=page.getByLabel('سجل نشر المخرج ledger-original',{exact:true});await ledger.getByRole('button',{name:'عرض وتحديث سجل النشر',exact:true}).click();await expect(ledger.getByText('message-1',{exact:true})).toBeVisible();await expect(ledger.getByText('السجلات 1 إلى 50 من 51',{exact:true})).toBeVisible();await expect(ledger.getByText('سجل الموصل المستقل',{exact:false})).toHaveCount(1);

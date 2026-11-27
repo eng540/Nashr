@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('Facebook exact text needs separate public approval and can cancel before send',async({page},info)=>{
  const id='12345678-1234-4123-8123-123456789abc',jid='abcdef12-1234-4123-8123-123456789abc';const writes:string[]=[];let job:any=null;
@@ -12,7 +13,7 @@ test('Facebook exact text needs separate public approval and can cancel before s
   return route.fulfill({json:job});
  }
  if(req.method()!=='GET')throw new Error('Unexpected write '+p);
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p===`/api/artifacts/${id}/platform-copies`)return route.fulfill({json:{items:copies}});
  if(p==='/sources'||p.startsWith('/api/control/')||p==='/posts')return route.fulfill({json:[]});
  if(p.startsWith('/api/'))return route.fulfill({json:{items:[],total:0}});return route.continue();
@@ -30,7 +31,7 @@ test('Facebook exact text needs separate public approval and can cancel before s
 test('saved text operation opens exact original and never accepts another original job',async({page})=>{
  const id='12345678-1234-4123-8123-123456789abc',jid='abcdef12-1234-4123-8123-123456789abc';let wrong=false;const writes:string[]=[];
  await page.route('**/*',route=>{const req=route.request(),p=new URL(req.url()).pathname;if(req.method()!=='GET')writes.push(p);
- if(p==='/api/artifacts')return route.fulfill({json:{items:[{id,kind:'TEXT',status:'AVAILABLE',content:'الأصل',mime_type:'text/plain',metadata:{title:'الأصل المختار'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[{id,kind:'TEXT',status:'AVAILABLE',content:'الأصل',mime_type:'text/plain',metadata:{title:'الأصل المختار'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}],total:1,limit:100,offset:0})});
  if(p===`/api/artifacts/${id}/platform-copies`)return route.fulfill({json:{items:[{platform:'facebook',label:'Facebook',fields:{title:'',description:'النص المحفوظ',tags:[],alt_text:''},version:1,source_fingerprint:'v1',current_source_fingerprint:'v1',source_stale:false,central_approval:'APPROVED',field_status:'FIELDS_VALIDATED',blockers:[],warnings:[],media_checks_pending:[],execution_blockers:[],sources:[]}]}});
  if(p.endsWith('/text-posts/'+jid))return route.fulfill({json:{id:jid,artifact_id:wrong?'00000000-0000-4000-8000-000000000001':id,state:'APPROVED',snapshot:{message:'النص المحفوظ',connection:{page_id:'123',page_name:'الصفحة المعتمدة'}},snapshot_hash:'a'.repeat(64),post_id:null,permalink:null,error_code:null}});
  if(p==='/sources'||p.startsWith('/posts')||p.startsWith('/api/control/'))return route.fulfill({json:[]});if(p.startsWith('/api/'))return route.fulfill({json:{items:[],total:0}});return route.continue();

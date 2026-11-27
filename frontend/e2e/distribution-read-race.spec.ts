@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 
 test('late readiness for an earlier selection cannot become the current batch or feed save',async({page})=>{
@@ -7,7 +8,7 @@ test('late readiness for an earlier selection cannot become the current batch or
  const readiness=(id:string)=>({artifact_id:id,source_fingerprint:'source-'+id,selection_version:'selection-'+id,central_approval:'APPROVED',original_text:'أصل '+id,selection_stale:false,targets:[{platform:'telegram',label:'telegram',selected:false,copy_status:'ORIGINAL_ELIGIBLE',copy_blockers:[],execution_blockers:['لا إذن تنفيذ']}]});
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
   if(r.method()!=='GET')writes++;
-  if(p==='/api/artifacts')return route.fulfill({json:{items,total:2,limit:100,offset:0}});
+  if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items,total:2,limit:100,offset:0})});
   if(p.endsWith('/distribution-readiness')){const id=p.split('/')[3];if(id==='one'){requested=true;await gate;}return route.fulfill({json:readiness(id)});}
   if(p.startsWith('/api/'))return route.fulfill({json:p.includes('/control/')?[]:{items:[],total:0,telegram:{items:[]}}});
   if(['/posts','/sources'].some(x=>p.startsWith(x)))return route.fulfill({json:[]});return route.continue();
@@ -36,7 +37,7 @@ test('late save stays attached to submitted originals while the selection change
  const items=ids.map(id=>({id,kind:'TEXT',status:'AVAILABLE',content:'أصل '+id,storage_uri:null,mime_type:'text/plain',metadata:{title:'مادة '+id},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}));
  const readiness=(id:string)=>({artifact_id:id,source_fingerprint:'source-'+id,selection_version:'selection-'+id,central_approval:'APPROVED',original_text:'أصل '+id,selection_stale:false,targets:[{platform:'telegram',label:'telegram',selected:false,copy_status:'ORIGINAL_ELIGIBLE',copy_blockers:[],execution_blockers:['لا إذن تنفيذ']}]});
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
-  if(p==='/api/artifacts')return route.fulfill({json:{items,total:2,limit:100,offset:0}});
+  if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items,total:2,limit:100,offset:0})});
   if(p.endsWith('/distribution-readiness'))return route.fulfill({json:readiness(p.split('/')[3])});
   if(p==='/api/artifacts/distribution-selection'){submitted=r.postDataJSON();await gate;return route.fulfill({json:{saved:1,items:[readiness('one')]}});}
   if(p.startsWith('/api/'))return route.fulfill({json:p.includes('/control/')?[]:{items:[],total:0,telegram:{items:[]}}});

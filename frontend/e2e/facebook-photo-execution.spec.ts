@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('Facebook exact photo needs separate public approval and can cancel before send',async({page},info)=>{
  const id='12345678-1234-4123-8123-123456789abc',jid='abcdef12-1234-4123-8123-123456789abc';const writes:string[]=[];let job:any=null;
@@ -12,7 +13,7 @@ test('Facebook exact photo needs separate public approval and can cancel before 
   return route.fulfill({json:job});
  }
  if(req.method()!=='GET')throw new Error('Unexpected write '+p);
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p===`/api/artifacts/${id}/platform-copies`)return route.fulfill({json:{items:copies}});
  if(p==='/sources'||p.startsWith('/api/control/')||p==='/posts')return route.fulfill({json:[]});
  if(p.startsWith('/api/'))return route.fulfill({json:{items:[],total:0}});return route.continue();

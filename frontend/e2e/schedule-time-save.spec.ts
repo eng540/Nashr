@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('schedule time changes require explicit save and survive a failed save',async({page},info)=>{
  let updates=0;let fail=true;
@@ -7,7 +8,7 @@ test('schedule time changes require explicit save and survive a failed save',asy
  if(p==='/schedules/plan')return route.fulfill({json:detail});
  if(p==='/schedules')return route.fulfill({json:{items:[detail]}});
  if(p==='/schedules/upcoming'||p==='/schedules/calendar')return route.fulfill({json:{items:[]}});
- if(p==='/api/artifacts')return route.fulfill({json:{items:[],total:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[],total:0})});
  if(p==='/api/artifacts/platform-variants')return route.fulfill({json:[]});
  if(p.startsWith('/posts'))return route.fulfill({json:{items:[],total:0,kinds:[],topics:[],sources:[]}});
  return route.continue();});

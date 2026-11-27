@@ -1,10 +1,11 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('inspect original measurements without changing readiness or sending',async({page},info)=>{
  let reads=0,unsafe=0;
  const item={id:'probe-source',source_knowledge_unit_id:'u',kind:'VIDEO',status:'AVAILABLE',content:null,storage_uri:'s3://synthetic/artifacts/probe.jpg',mime_type:'video/mp4',metadata:{title:'فحص الأصل',caption:'الوصف المعتمد'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'};
  const copy={platform:'instagram',label:'Instagram',fields:{title:'',description:'الوصف المعتمد',tags:[],alt_text:''},version:1,source_fingerprint:'v1',current_source_fingerprint:'v1',origin:'UNCHANGED_ORIGINAL',source_stale:false,central_approval:'APPROVED',field_status:'FIELDS_VALIDATED',blockers:[],warnings:[],media_checks_pending:['فحص الوسائط النهائي معلق.'],execution_blockers:['لا إذن تنفيذ.'],sources:[]};
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p.endsWith('/media-url'))return route.fulfill({json:{url:null}});
  if(p.endsWith('/platform-copies'))return route.fulfill({json:{items:[copy]}});
  if(p.endsWith('/inspect-media')){reads++;return route.fulfill({json:{source_fingerprint:'v1',copy_version:1,status:'MEASURED_WITH_PENDING_CHECKS',measurements:{width:640,height:800,size_bytes:12345,format:'MOV/MP4',header_evidence:{closed_gop:'REFRESH_BOUNDARIES_VERIFIED',rate_control:'UNVERIFIED'}},blockers:[],pending:['الحساب والصلاحيات وقبول المنصة لم تُفحص.']}});}

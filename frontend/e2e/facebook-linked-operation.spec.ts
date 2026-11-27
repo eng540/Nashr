@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 const id='12345678-1234-4123-8123-123456789abc',jid='abcdef12-1234-4123-8123-123456789abc';
 for(const photo of [false,true])test('Facebook linked '+(photo?'photo':'text')+' read is explicit, retryable and late-safe',async({page},info)=>{
@@ -6,7 +7,7 @@ for(const photo of [false,true])test('Facebook linked '+(photo?'photo':'text')+'
  await page.route('**/*',async r=>{const p=new URL(r.request().url()).pathname;
  if(p.endsWith('/'+segment+'-posts/'+jid)){calls++;if(hold)await new Promise<void>(resolve=>release=resolve);if(failing)return r.fulfill({status:503,json:{detail:'synthetic unavailable'}});return r.fulfill({json:job(true)});}
  if(r.request().method()!=='GET'){writes.push(p);if(p.endsWith('/preview'))return r.fulfill({json:job(false)});throw new Error('Unexpected write');}
- if(p==='/api/artifacts')return r.fulfill({json:{items:[{id,kind,status:'AVAILABLE',content:'أصل محفوظ',mime_type:photo?'image/jpeg':'text/plain',metadata:{title:'أصل المحاولة'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return r.fulfill({json:libraryFixture(r, {items:[{id,kind,status:'AVAILABLE',content:'أصل محفوظ',mime_type:photo?'image/jpeg':'text/plain',metadata:{title:'أصل المحاولة'},review_status:'APPROVED',created_at:'2026-11-23T10:00:00Z',updated_at:'2026-11-23T10:00:00Z'}],total:1,limit:100,offset:0})});
  if(p.endsWith('/platform-copies'))return r.fulfill({json:{items:[{platform:'facebook',label:'Facebook',fields:{title:'',description:'نص محفوظ',tags:[],alt_text:''},version:1,source_fingerprint:'v1',current_source_fingerprint:'v1',source_stale:false,central_approval:'APPROVED',field_status:'FIELDS_VALIDATED',blockers:[],warnings:[],media_checks_pending:[],execution_blockers:[],sources:[]}]}});
  if(p==='/sources'||p.startsWith('/posts')||p.startsWith('/api/control/'))return r.fulfill({json:[]});if(p.startsWith('/api/'))return r.fulfill({json:{items:[],total:0}});return r.continue();});
  const url=`/bank?artifact_status=APPROVED&artifact_id=${id}&${photo?'photo':'text'}_job_id=${jid}`;await page.setViewportSize({width:390,height:844});await page.goto(url);const panel=page.getByLabel(photo?'تنفيذ صورة Facebook':'تنفيذ نص Facebook',{exact:true}),preview=panel.getByRole('button',{name:photo?'معاينة صورة Facebook والنص والصفحة دون نشر':'معاينة نص Facebook والصفحة دون نشر',exact:true});
