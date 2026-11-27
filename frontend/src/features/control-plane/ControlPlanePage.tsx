@@ -1,5 +1,5 @@
 import { arabicDefinition } from "../../shared/utils/arabicDefinition";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "../../shared/components/ui";
 
 type SectionKey = "products" | "recipes" | "identities" | "policies" | "output-contracts" | "prompts";
@@ -266,6 +266,7 @@ function SelectField({ label, value, onChange, options, disabled = false }: {
 }
 
 export function ControlPlanePage() {
+  const readGeneration = useRef(0);
   const [activeSection, setActiveSection] = useState<SectionKey>("products");
   const [itemsBySection, setItemsBySection] = useState<Record<SectionKey, ControlItem[]>>({
     products: [], recipes: [], identities: [], policies: [], "output-contracts": [], prompts: [],
@@ -295,6 +296,7 @@ export function ControlPlanePage() {
   const publishedPrompts = itemsBySection.prompts.filter((item) => item.active_version != null);
 
   async function reload(sectionToSelect = activeSection, keyToSelect: string | null = selectedKey, versionToSelect: number | null = selectedVersionNumber) {
+    const generation = ++readGeneration.current;
     setLoading(true);
     try {
       const entries = await Promise.all(sections.map(async (entry) => [entry.key, await request<ControlItem[]>(entry.endpoint)] as const));
@@ -319,6 +321,7 @@ export function ControlPlanePage() {
           // Keep the list response usable if optional lineage detail is unavailable.
         }
       }
+      if (generation !== readGeneration.current) return;
       setItemsBySection(next);
       const found = keyToSelect ? next[sectionToSelect].find((item) => item.key === keyToSelect) : undefined;
       const version = found?.versions?.find((candidate) => candidate.version === versionToSelect) ?? (found ? latestVersion(found) : undefined);
@@ -328,13 +331,18 @@ export function ControlPlanePage() {
       setStages(stagesFromVersion(version).length ? stagesFromVersion(version) : [{ key: "produce", capability_key: "produce_post", capability_version: "1", configuration: "", generation_prompt: "" }]);
       setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر تحميل إعدادات التحكم.");
+      if (generation === readGeneration.current) {
+        setError(cause instanceof Error ? cause.message : "تعذر تحميل إعدادات التحكم.");
+      }
     } finally {
-      setLoading(false);
+      if (generation === readGeneration.current) setLoading(false);
     }
   }
 
-  useEffect(() => { void reload("products", null, null); }, []);
+  useEffect(() => {
+    void reload("products", null, null);
+    return () => { readGeneration.current += 1; };
+  }, []);
 
   function selectSection(next: SectionKey) {
     setActiveSection(next);
