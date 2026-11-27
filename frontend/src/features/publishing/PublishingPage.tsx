@@ -333,16 +333,17 @@ export function PublishingPage() {
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {allReadySelected
-                ? <button type="button" onClick={() => togglePageSelection(false)} className="rounded-xl border px-3 py-2 text-sm font-semibold">إلغاء تحديد الصفحة</button>
-                : <button type="button" onClick={() => togglePageSelection(true)} disabled={!readyItems.length} className="rounded-xl border px-3 py-2 text-sm font-semibold disabled:opacity-40">تحديد الصفحة</button>}
+                ? <button type="button" disabled={posts.isPlaceholderData} onClick={() => togglePageSelection(false)} className="rounded-xl border px-3 py-2 text-sm font-semibold">إلغاء تحديد الصفحة</button>
+                : <button type="button" onClick={() => togglePageSelection(true)} disabled={!readyItems.length||posts.isPlaceholderData} className="rounded-xl border px-3 py-2 text-sm font-semibold disabled:opacity-40">تحديد الصفحة</button>}
               {selectedIds.length > 0 && <button type="button" onClick={() => { setSelectedIds([]); updateEditorialSelectionUrl([]); }} className="rounded-xl border px-3 py-2 text-sm">مسح التحديد</button>}
               {selectedIds.length > 0 && <button data-testid="create-plan" type="button" onClick={() => void openSchedule()} disabled={eligibility.isPending} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء خطة ({selectedIds.length})</button>}
             </div>
           </div>
 
+          {posts.isPlaceholderData?<p role="status" className="rounded-xl border bg-white p-3 text-sm">جارٍ تحميل نتائج المرشحات الحالية. القائمة السابقة للعرض فقط حتى اكتمال القراءة.</p>:null}
           {posts.isLoading?<Status title="جاري تحميل المنشورات الجاهزة"/>:posts.isError?<div role="alert" className="rounded-xl border bg-white p-4"><p>تعذر تحميل المنشورات التحريرية. تبقى الخطط والتقويم والقائمة الموحدة مستقلة.</p><button type="button" onClick={()=>void posts.refetch()} className="underline">إعادة تحميل المنشورات</button></div>:readyItems.length === 0
             ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد منشورات جاهزة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير عبارة البحث، أو عد إلى بنك المحتوى لاعتماد منشورات جديدة.</p></div>
-            : <div className="space-y-3">{readyItems.map((post) => {
+            : <div inert={posts.isPlaceholderData} className="space-y-3">{readyItems.map((post) => {
               const matchingImages = (approvedImages.data ?? []).filter((image) => image.source_knowledge_unit_id === post.knowledge_unit_id);
               return <article key={post.post_id} className="rounded-2xl border bg-white p-4 shadow-sm" data-testid={`ready-post-${post.post_id}`}>
                 <label className="flex cursor-pointer items-start gap-3">
