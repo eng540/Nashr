@@ -180,7 +180,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
   const creationTask=(["manual","upload","variant","design"].includes(libraryParams.get("library_task")??"")?libraryParams.get("library_task"):null);
   const [creationVisit,setCreationVisit]=useState(0);
-  const chooseCreationTask=(task:string)=>{setCreationVisit(v=>v+1);setLibraryParams(current=>{const next=new URLSearchParams(current);next.set("library_task",task);return next;},{preventScrollReset:true});};
+  const chooseCreationTask=(task:string)=>{setCreationVisit(v=>v+1);const next=new URLSearchParams(window.location.search);next.set("library_task",task);setLibraryParams(next,{preventScrollReset:true});};
   useEffect(()=>{if(!creationTask)return;const frame=requestAnimationFrame(()=>{const panel=document.getElementById("library-create-tools") as HTMLDetailsElement|null;if(panel)panel.open=true;const heading=document.getElementById("library-task-"+creationTask);heading?.focus({preventScroll:true});heading?.scrollIntoView({block:"start"});});return()=>cancelAnimationFrame(frame);},[creationTask,creationVisit]);
   const [compact,setCompact] = useState(libraryParams.get("library_view")!=="expanded");
   const [drafts, setDrafts] = useState<Record<string, { content?: string; review_note?: string }>>({});
@@ -504,7 +504,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
         <p className="mt-1 text-sm text-slate-500">تصفّح المواد، ثم افتح مادة لمراجعة أصلها وتجهيز وجهاتها.</p>
       </div>
       <label className="text-sm font-semibold">الحالة
-        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => {const next=new URLSearchParams(libraryParams);next.delete("artifact_id");next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");next.set("artifact_status",event.target.value);setFocusedState(null);setStatus(event.target.value as GenericArtifactReviewStatus);setLibraryParams(next,{preventScrollReset:true});}} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
+        <select aria-label="حالة مراجعة المخرجات" value={status} onChange={(event) => {const next=new URLSearchParams(window.location.search);next.delete("artifact_id");next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");next.set("artifact_status",event.target.value);setFocusedState(null);setStatus(event.target.value as GenericArtifactReviewStatus);setLibraryParams(next,{preventScrollReset:true});}} className="mr-2 max-w-full rounded-lg border p-2 font-normal">
           <option value="DRAFT">قيد المراجعة</option>
           <option value="APPROVED">معتمد</option>
           <option value="REJECTED">مرفوض</option>
