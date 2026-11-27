@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('explicit JPEG preview preserves fields and is download only',async({page},info)=>{
  let previews=0,unsafe=0;
@@ -5,7 +6,7 @@ test('explicit JPEG preview preserves fields and is download only',async({page},
  const fields={title:'',description:'وصف نسخة محفوظ دون تعديل',tags:[],alt_text:''};
  const copy={platform:'instagram',label:'Instagram',fields,version:2,source_fingerprint:'a'.repeat(64),current_source_fingerprint:'a'.repeat(64),origin:'USER_EDITED',source_stale:false,central_approval:'APPROVED',field_status:'BLOCKED',blockers:['الأصل PNG لم يتغير.'],warnings:[],media_checks_pending:[],execution_blockers:[],sources:[]};
  await page.route('**/*',async route=>{const req=route.request(),p=new URL(req.url()).pathname;
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p==='/api/artifacts/jpeg-source/platform-copies')return route.fulfill({json:{items:[copy]}});
  if(p.endsWith('/jpeg-preview')){previews++;expect(req.postDataJSON()).toEqual({source_fingerprint:'a'.repeat(64),copy_version:2,background:'#ffffff'});return route.fulfill({json:{data_url:'data:image/svg+xml;base64,'+Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="800"><rect width="640" height="800" fill="#e9d5ff"/><circle cx="320" cy="400" r="180" fill="#7c3aed"/></svg>').toString('base64'),measurements:{width:640,height:800,size_bytes:2500},copy_version:2,blockers:[],pending:['لا إذن نشر من التحويل.']}});}
  if(p.startsWith('/api/')&&req.method()!=='GET')unsafe++;
