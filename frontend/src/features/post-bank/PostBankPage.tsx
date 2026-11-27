@@ -163,7 +163,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
   const [productionModeChoice, setProductionModeChoice] = useState<"PRODUCT" | "PRODUCT_WITH_INSTRUCTIONS" | "CUSTOM">(() => pendingRequestFromStorage()?.production_mode ?? "PRODUCT");
   const [directInputText, setDirectInputText] = useState(() => pendingRequestFromStorage()?.input_text ?? "");
   const [directInputTitle, setDirectInputTitle] = useState(() => pendingRequestFromStorage()?.input_title ?? "");
-  const [customInputMode, setCustomInputMode] = useState<"TEXT" | "LIBRARY">("TEXT");
+  const [customInputMode, setCustomInputMode] = useState<"TEXT" | "LIBRARY">(() => { const pending = pendingRequestFromStorage(); return pending?.production_mode === "CUSTOM" && pending.source_id && !pending.input_text ? "LIBRARY" : "TEXT"; });
   const [customRecipeKey, setCustomRecipeKey] = useState(() => pendingRequestFromStorage()?.recipe_key ?? "");
   const [productInputMode, setProductInputMode] = useState<"LIBRARY" | "TEXT">(() => pendingRequestFromStorage()?.input_text ? "TEXT" : "LIBRARY");
   const [productionKind, setProductionKind] = useState("");
