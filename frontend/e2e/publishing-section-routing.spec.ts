@@ -1,0 +1,14 @@
+import {test,expect} from '@playwright/test';
+for(const width of [390,1280])test(`publishing routes Telegram and Meta to separate visible sections at ${width}px without writes`,async({page},info)=>{
+ const writes:string[]=[];
+ await page.route('**/*',r=>{const u=new URL(r.request().url()),p=u.pathname;if(r.request().method()!=='GET')writes.push(p);
+ if(p==='/api/platform-operations')return r.fulfill({json:{total:20,counts:{waiting:0,published:20,attention:0,total:20},items:Array.from({length:20},(_,i)=>({id:`meta-${i}`,artifact_id:'material',platform:'instagram',due_at:null,timezone:'Asia/Riyadh',state:'PUBLISHED',execution_state:'PUBLISHED',title:`سجل Meta محفوظ ${i}`,destination:'synthetic',permalink:null}))}});
+ if(p==='/schedules')return r.fulfill({json:{total:1,items:[{id:'plan',name:'خطة Telegram محفوظة',platform:'telegram',destination_label:'قناة خاصة',status:'PAUSED',timezone:'Asia/Riyadh',total_items:1,failed_items:0,published_items:0}]}});
+ if(p==='/sources'||p==='/api/artifacts/platform-variants'||p.startsWith('/api/control/'))return r.fulfill({json:[]});
+ if(p.startsWith('/api/')||p.startsWith('/schedules/')||p.startsWith('/posts'))return r.fulfill({json:{items:[],total:0,sources:[],kinds:[]}});return r.continue();});
+ await page.setViewportSize({width,height:900});await page.goto('/publishing?view=plans');
+ const plans=page.getByTestId('publishing-plans');await expect(plans).toBeInViewport();await expect(plans).toBeFocused();await expect(plans).toContainText('خطة Telegram محفوظة');await expect(page.getByLabel('عمليات Instagram وFacebook',{exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:/نشر Meta المؤكد/}).click();await expect(page).toHaveURL(/view=operations/);const meta=page.getByTestId('publishing-operations');await expect(meta).toBeInViewport();await expect(meta).toBeFocused();await expect(meta.getByLabel('حالة عمليات Meta')).toHaveValue('published');await expect(meta).toContainText('سجل Meta محفوظ 19');await expect(plans).toHaveCount(0);
+ await page.getByRole('button',{name:/عمليات تحتاج مراجعة/}).click();await expect(meta).toBeFocused();await expect(meta).toBeInViewport();await expect(meta.getByLabel('حالة عمليات Meta')).toHaveValue('attention');await page.goBack();await expect(meta.getByLabel('حالة عمليات Meta')).toHaveValue('published');await page.reload();await expect(meta).toBeVisible();await expect(meta.getByLabel('حالة عمليات Meta')).toHaveValue('published');
+ await page.getByRole('button',{name:/خطط النشر/}).first().click();await expect(plans).toBeInViewport();await expect(plans).toBeFocused();await expect(meta).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:info.outputPath(`telegram-section-${width}.png`)});expect(writes).toEqual([]);
+});

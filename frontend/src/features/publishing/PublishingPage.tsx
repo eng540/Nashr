@@ -17,16 +17,19 @@ const DEFAULT_TIMEZONE = "Asia/Aden";
 const DISPLAY_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
 const stateLabel=(value:string)=>({DRAFT:"مسودة",ACTIVE:"نشطة",PAUSED:"متوقفة مؤقتاً",COMPLETED:"مكتملة",CANCELLED:"ملغاة",PUBLISHED:"منشور",PENDING:"بانتظار التنفيذ",FAILED:"تعذر التنفيذ",PROCESSING:"قيد التنفيذ"} as Record<string,string>)[value]??value;
 const PAGE_SIZE = 20;
-type Section = "ready" | "plans" | "calendar" | "platforms";
+type Section = "ready" | "plans" | "operations" | "calendar" | "platforms";
+const sectionFromParams=(params:URLSearchParams):Section=>params.has("schedule_id")?"plans":["ready","plans","operations","calendar","platforms"].includes(params.get("view")??"")?params.get("view") as Section:params.get("connections")==="instagram"?"platforms":"ready";
+const operationGroupFromParams=(params:URLSearchParams):OperationGroup=>["waiting","published","attention","other"].includes(params.get("state_group")??"")?params.get("state_group") as OperationGroup:"all";
 
 export function PublishingPage() {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [section, setSection] = useState<Section>(searchParams.get("connections")==="instagram"?"platforms":searchParams.get("schedule_id")||searchParams.get("view")==="plans"?"plans":searchParams.get("view")==="calendar"?"calendar":searchParams.get("view")==="platforms"?"platforms":"ready");
+  const [section, setSection] = useState<Section>(()=>sectionFromParams(searchParams));
   const [readyTask,setReadyTask]=useState<"distribution"|"editorial">(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial"?"editorial":"distribution");
   useEffect(()=>{setReadyTask(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial"?"editorial":"distribution");},[searchParams]);
-  useEffect(()=>{const view=searchParams.get("view");setSection(searchParams.has("schedule_id")?"plans":view==="plans"||view==="calendar"||view==="platforms"?view:"ready");},[searchParams]);
-  const [operationGroup,setOperationGroup]=useState<OperationGroup>('all');
+  useEffect(()=>{setSection(sectionFromParams(searchParams));setOperationGroup(operationGroupFromParams(searchParams));},[searchParams]);
+  const [operationGroup,setOperationGroup]=useState<OperationGroup>(()=>operationGroupFromParams(searchParams));
+  useEffect(()=>{if(section!=="plans"&&section!=="operations")return;const frame=requestAnimationFrame(()=>{const target=document.getElementById(`publishing-${section}`);target?.focus({preventScroll:true});target?.scrollIntoView({block:"start"});});return()=>cancelAnimationFrame(frame);},[section,operationGroup]);
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
   const [scheduleOpen, setScheduleOpen] = useState(Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
@@ -263,9 +266,10 @@ export function PublishingPage() {
   const visiblePlans = schedules.data?.items??[];
   useEffect(()=>{if(schedules.data&&planPage>=planPageCount)setPlanPage(planPageCount-1);},[schedules.data,planPage,planPageCount]);
 
-  const switchSection = (next: Section) => {
+  const switchSection = (next: Section, group:OperationGroup="all") => {
+    if(next==="operations")setOperationGroup(group);
     setSection(next);
-    setSearchParams(previous=>{const params=new URLSearchParams(previous);params.set("view",next);if(next!=="plans")params.delete("schedule_id");return params;});
+    setSearchParams(previous=>{const params=new URLSearchParams(previous);params.set("view",next);if(next==="operations")params.set("state_group",group);else params.delete("state_group");if(next!=="plans")params.delete("schedule_id");return params;});
     if (next !== "plans") {detailRequest.current++;setDetail(null);setDetailPending(null);setDetailError(null);}
   };
 
@@ -281,20 +285,21 @@ export function PublishingPage() {
       />
 
       <div className="workspace-stats publishing-stats" aria-label="ملخص النشر">
-        <button className="workspace-stat" onClick={()=>{setOperationGroup('waiting');switchSection('plans');}}><small>عمليات Meta القادمة أو الجارية</small><strong>{operationsSummary.data?.counts?.waiting??'—'}</strong><span>Instagram وFacebook · قرارات معتمدة</span></button>
-        <button className="workspace-stat" onClick={()=>{setOperationGroup('published');switchSection('plans');}}><small>نشر Meta المؤكد</small><strong>{operationsSummary.data?.counts?.published??'—'}</strong><span>نتائج محفوظة من المنصة</span></button>
-        <button className="workspace-stat" onClick={()=>{setOperationGroup('attention');switchSection('plans');}}><small>عمليات تحتاج مراجعة</small><strong>{operationsSummary.data?.counts?.attention??'—'}</strong><span>لا نعيد إرسال نتيجة غير محسومة</span></button>
+        <button className="workspace-stat" onClick={()=>{switchSection('operations','waiting');}}><small>عمليات Meta القادمة أو الجارية</small><strong>{operationsSummary.data?.counts?.waiting??'—'}</strong><span>Instagram وFacebook · قرارات معتمدة</span></button>
+        <button className="workspace-stat" onClick={()=>{switchSection('operations','published');}}><small>نشر Meta المؤكد</small><strong>{operationsSummary.data?.counts?.published??'—'}</strong><span>نتائج محفوظة من المنصة</span></button>
+        <button className="workspace-stat" onClick={()=>{switchSection('operations','attention');}}><small>عمليات تحتاج مراجعة</small><strong>{operationsSummary.data?.counts?.attention??'—'}</strong><span>لا نعيد إرسال نتيجة غير محسومة</span></button>
         <button className="workspace-stat" onClick={()=>switchSection('calendar')}><small>قادم خطط Telegram</small><strong>{upcoming.isError?'—':upcoming.data?.total??upcoming.data?.items.length??'—'}</strong><span>قائمة منفصلة، لا تشمل Meta</span></button>
       </div>
       {operationsSummary.isError?<p role="alert" className="service-alert">تعذر تحميل ملخص Meta. لا نستنتج أن العدد صفر. <button onClick={()=>void operationsSummary.refetch()}>إعادة المحاولة</button></p>:null}
       <nav aria-label="أقسام مساحة النشر" className="workspace-tabs">
         {([
           ["ready", "المحتوى والتجهيز", "↗", "قائمة موحدة، ثم أدوات جدولة النصوص"],
-          ["plans", "خطط النشر", schedules.isError?"—":schedules.data?.total ?? schedules.data?.items.length ?? "—", "الخطط المحفوظة وحالاتها"],
+          ["operations", "عمليات Meta", operationsSummary.data?.counts?.total??"—", "سجل Instagram وFacebook بجميع حالاته"],
+          ["plans", "خطط النشر · Telegram", schedules.isError?"—":schedules.data?.total ?? schedules.data?.items.length ?? "—", "الخطط المحفوظة وحالاتها"],
           ["calendar", "التقويم · كل المنصات", "↗", "Telegram ومواعيد Meta لليوم المختار"],
           ["platforms", "مسودات المنصات", platformVariants.data?.length ?? "—", "تحضير يدوي فقط، بلا نشر آلي"],
         ] as const).map(([key, label, count, hint]) => (
-          <button key={key} type="button" onClick={() => {if(key==='plans')setOperationGroup('all');switchSection(key);}} aria-pressed={section===key} className="text-right">
+          <button key={key} type="button" onClick={() => switchSection(key)} aria-pressed={section===key} className="text-right">
             <div className="flex items-center justify-between gap-3"><strong>{label}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{count}</span></div>
             <span className="sr-only">{hint}</span>
           </button>
@@ -366,11 +371,11 @@ export function PublishingPage() {
         </section>
       )}
 
-      {section === "plans" && <PlatformOperations key={operationGroup} initialGroup={operationGroup}/>}
+      {section === "operations" && <section id="publishing-operations" data-testid="publishing-operations" tabIndex={-1} className="scroll-mt-24 outline-none"><PlatformOperations key={operationGroup} initialGroup={operationGroup}/></section>}
       {section === "plans" && (
-        <section className="space-y-4" data-testid="publishing-plans">
+        <section id="publishing-plans" data-testid="publishing-plans" tabIndex={-1} className="space-y-4 scroll-mt-24 outline-none">
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-bold">خطط النشر</h3><p className="mt-1 text-sm text-slate-500">راجع الخطط حسب الحالة وافتح الخطة المطلوبة فقط. البحث والحالة ومرشح التعثر يشملون كل الخطط المحفوظة، مع عرض النتائج على صفحات. عنوان الخطة الأصلي محفوظ.</p></div><button type="button" onClick={() => void refresh()} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث</button></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-bold">خطط نشر Telegram</h3><p className="mt-1 text-sm text-slate-500">راجع الخطط حسب الحالة وافتح الخطة المطلوبة فقط. البحث والحالة ومرشح التعثر يشملون كل الخطط المحفوظة، مع عرض النتائج على صفحات. عنوان الخطة الأصلي محفوظ.</p></div><button type="button" onClick={() => void refresh()} className="rounded-xl border px-4 py-2 text-sm font-semibold">تحديث</button></div>
             <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]"><label className="text-sm font-semibold"><span className="sr-only">بحث الخطط</span><input aria-label="بحث الخطط" value={planQuery} onChange={(e) => { setPlanQuery(e.target.value); setPlanPage(0); }} placeholder="ابحث باسم الخطة أو محتواها أو المنطقة الزمنية..." className="mt-2 w-full rounded-xl border p-3 font-normal"/></label><label className="text-sm font-semibold">الحالة<select aria-label="حالة الخطة" value={planStatus} onChange={(e) => { setPlanStatus(e.target.value); setPlanPage(0); }} className="mt-2 w-full rounded-xl border p-3 font-normal"><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="ACTIVE">نشطة</option><option value="PAUSED">متوقفة</option><option value="COMPLETED">مكتملة</option><option value="CANCELLED">ملغاة</option></select></label></div>
           </div>
           {searchParams.has("failures")?<p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">مرشح نشط: الخطط التي تضم عناصر تعثر تنفيذها فقط. <a href="/publishing?view=plans" className="underline">إلغاء مرشح التعثر</a></p>:null}
