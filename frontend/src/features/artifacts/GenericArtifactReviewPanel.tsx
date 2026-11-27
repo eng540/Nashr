@@ -195,7 +195,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   const [variantPostPlatform, setVariantPostPlatform] = useState("");
   const [variantPostNote, setVariantPostNote] = useState("");
   const filterValue=(key:string,fallback:string)=>libraryParams.get(key)??fallback;
-  const setLibraryFilter=(key:string,value:string,fallback:string)=>setLibraryParams(current=>{const next=new URLSearchParams(current);if(value===fallback)next.delete(key);else next.set(key,value);next.delete("artifact_id");next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");return next;},{replace:true,preventScrollReset:true});
+  const setLibraryFilter=(key:string,value:string,fallback:string)=>{const next=new URLSearchParams(window.location.search);if(value===fallback)next.delete(key);else next.set(key,value);next.delete("artifact_id");next.delete("instagram_job_id");next.delete("text_job_id");next.delete("photo_job_id");setLibraryParams(next,{replace:true,preventScrollReset:true});};
   const [search,setSearchText]=useState(()=>filterValue("library_q",""));
   const searchRequested=useRef(search);
   const setSearch=(value:string)=>{searchRequested.current=value;setSearchText(value);setLibraryFilter("library_q",value,"");};
@@ -815,4 +815,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-}
+      }
