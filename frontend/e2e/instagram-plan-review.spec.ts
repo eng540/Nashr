@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('Instagram review shows exact copy, explicit Reel choice and non-runnable saved draft',async({page},info)=>{
  const id='instagram-review';let saves=0,previews=0,cancelled=false;let staged=false;let executionCancelled=false;const unsafe:string[]=[];
@@ -7,7 +8,7 @@ test('Instagram review shows exact copy, explicit Reel choice and non-runnable s
  await page.route('**/*',async route=>{const r=route.request(),p=new URL(r.url()).pathname;
  if(p.endsWith('/execution-drafts')){if(r.method()==='POST'){expect(r.postDataJSON()).toEqual({review_id:'direct-review'});staged=true;return route.fulfill({json:{execution_enabled:false,approval_recorded:false}});}return route.fulfill({json:{items:staged?[{id:'exec',state:executionCancelled?'CANCELLED':'DRAFT',caption:copy.fields.description,username:'review_account',remaining_gates:['موافقة نشر مستقلة وإذن إتاحة الوسيط لـMeta مطلوبان.']}]:[],execution_enabled:false}});}
  if(p.endsWith('/execution-drafts/exec/cancel')){executionCancelled=true;return route.fulfill({json:{state:'CANCELLED'}});}
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p.endsWith('/platform-copies'))return route.fulfill({json:{items:[copy]}});
  if(p.endsWith('/preview')&&p.includes('/instagram/materials/')){previews++;return route.fulfill({json:{...preview,...(r.postDataJSON().login_mode?{login_mode:r.postDataJSON().login_mode,account:r.postDataJSON().login_mode==='FACEBOOK_PAGE_LOGIN'?{...preview.account,page_id:'456',page_name:'صفحة هندسية مختارة'}:preview.account}:{}),share_to_feed:r.postDataJSON().share_to_feed,timing_intent:r.postDataJSON().planned_at?{planned_at:'2026-11-25T11:30:00+00:00',local_time:'2026-11-25T14:30:00+03:00',timezone:'Asia/Riyadh',scheduled:false}:null}});}
  if(p.endsWith('/drafts/saved/cancel')){cancelled=true;return route.fulfill({json:{state:'CANCELLED',remote_changed:false}});}
