@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('stored editorial notes are visible without edits or approval',async({page},info)=>{
  const id='00000000-0000-4000-8000-000000000059';const writes:string[]=[];
@@ -5,7 +6,7 @@ test('stored editorial notes are visible without edits or approval',async({page}
  await page.route('**/api/**',async route=>{
  const r=route.request(),p=new URL(r.url()).pathname;if(!p.startsWith('/api/'))return route.continue();
  if(r.method()!=='GET')throw Error('Unexpected mutation '+p);
- if(p==='/api/artifacts')return route.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return route.fulfill({json:libraryFixture(route, {items:[item],total:1,limit:100,offset:0})});
  if(p==='/api/artifacts/'+id+'/media-url')return route.fulfill({status:404,json:{detail:'synthetic no media'}});
  if(p.endsWith('/publications'))return route.fulfill({json:{items:[],total:0}});
  if(p.endsWith('/readiness'))return route.fulfill({json:{targets:[],central_approval:'DRAFT'}});
