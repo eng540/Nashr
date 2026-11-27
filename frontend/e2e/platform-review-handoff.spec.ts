@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import {test,expect} from '@playwright/test';
 test('readiness opens saved copy without writes, preserves edits, routes the same video to Reel review',async({page},info)=>{
  const id='12345678-1234-4123-8123-123456789abc';const writes:string[]=[];let reads=0;
@@ -5,7 +6,7 @@ test('readiness opens saved copy without writes, preserves edits, routes the sam
  const copies=['telegram','instagram','youtube','facebook','tiktok','x'].map(platform=>({platform,label:platform,fields:{title:'عنوان محفوظ',description:'وصف محفوظ كامل',tags:[],alt_text:''},version:1,source_fingerprint:'v1',current_source_fingerprint:'v1',origin:'UNCHANGED_ORIGINAL',source_stale:false,central_approval:'APPROVED',field_status:'FIELDS_VALIDATED',blockers:[],warnings:[],media_checks_pending:['فحص الوسيط مستقل'],execution_blockers:['لا إذن تنفيذ'],sources:[]}));
  const readiness={artifact_id:id,source_fingerprint:'v1',central_approval:'APPROVED',original_text:'وصف محفوظ كامل',selection_stale:false,targets:copies.map(c=>({platform:c.platform,label:c.label,selected:false,copy_status:'FIELDS_VALIDATED',copy_blockers:[],execution_blockers:['يلزم فحص حساب ووسيط مستقل']}))};
  await page.route('**/*',r=>{const p=new URL(r.request().url()).pathname;if(r.request().method()!=='GET')writes.push(p);
- if(p==='/api/artifacts')return r.fulfill({json:{items:[item],total:1,limit:100,offset:0}});
+ if(p==='/api/artifacts'||p==='/api/artifacts/library'||p==='/api/artifacts/library-items')return r.fulfill({json:libraryFixture(r, {items:[item],total:1,limit:100,offset:0})});
  if(p===`/api/artifacts/${id}/platform-copies`){reads++;return r.fulfill({json:{items:copies}});}
  if(p===`/api/artifacts/${id}/distribution-readiness`)return r.fulfill({json:readiness});
  if(p==='/api/connections')return r.fulfill({json:{telegram:{items:[],credential_storage_ready:true},platforms:[{key:'facebook',label:'Facebook',state:'CONNECTION_ONLY',requirements:'ربط مستقل'}]}});
