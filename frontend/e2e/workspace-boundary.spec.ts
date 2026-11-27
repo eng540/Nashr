@@ -1,3 +1,4 @@
+import {libraryFixture} from './libraryFixture';
 import { test, expect } from "@playwright/test";
 
 test("Post Bank hands selection to Publishing through URL state only", async ({ page }) => {
@@ -15,16 +16,16 @@ test("Post Bank hands selection to Publishing through URL state only", async ({ 
 test("generic text artifact review shows a live reader preview that preserves paragraphs", async ({ page }) => {
   const artifactId = "e2e-text-artifact";
   const original = "المطلع الأول.\\n\\nفقرة ثانية تتنفس بمسافة واضحة.\\nسطر ثانٍ داخل الفقرة.";
-  await page.route("**/api/artifacts*", async (route) => {
+  await page.route("**/api/artifacts{,/**}*", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname !== "/api/artifacts" || url.searchParams.get("review_status") !== "DRAFT") {
+    if (!["/api/artifacts","/api/artifacts/library"].includes(url.pathname) || url.searchParams.get("review_status") !== "DRAFT") {
       await route.continue();
       return;
     }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([{
+      body: JSON.stringify(libraryFixture(route,[{
         id: artifactId,
         source_knowledge_unit_id: "e2e-source-material",
         kind: "TEXT",
@@ -40,7 +41,7 @@ test("generic text artifact review shows a live reader preview that preserves pa
         reviewed_at: null,
         created_at: "2026-10-15T00:00:00Z",
         updated_at: "2026-10-15T00:00:00Z",
-      }]),
+      }])),
     });
   });
 
@@ -97,10 +98,10 @@ test("approved text Artifact can start a card job only through a published card 
       }],
     }]),
   }));
-  await page.route("**/api/artifacts?review_status=APPROVED*", async (route) => route.fulfill({
+  await page.route(/\/api\/artifacts(?:\/library)?\?review_status=APPROVED.*/, async (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify([{
+    body: JSON.stringify(libraryFixture(route,[{
       id: artifactId,
       source_knowledge_unit_id: "e2e-source-material",
       kind: "TEXT",
@@ -116,7 +117,7 @@ test("approved text Artifact can start a card job only through a published card 
       reviewed_at: "2026-10-15T00:00:00Z",
       created_at: "2026-10-15T00:00:00Z",
       updated_at: "2026-10-15T00:00:00Z",
-    }]),
+    }])),
   }));
   await page.route("**/production-jobs/e2e-card-job", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ job_id: "e2e-card-job", status: "COMPLETED", progress_percent: 100, total_items: 1, completed_items: 1, failed_items: 0, pending_items: 0, running_items: 0, error_message: null, error_code: null }) }));
   await page.route("**/production-jobs", async (route) => {
