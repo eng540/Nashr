@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigationType } from "react-router";
 const navItems=[
+ {to:'/agent',label:'وكيل ناشر',icon:'✦',group:'مساحة العمل'},
  {to:'/bank',label:'بنك المحتوى',icon:'▤',group:'مساحة العمل'},
  {to:'/publishing',label:'النشر',icon:'↗',group:'مساحة العمل'},
  {to:'/connections',label:'الحسابات والاتصالات',icon:'◎',group:'مساحة العمل'},
