@@ -260,6 +260,8 @@ def create_app() -> FastAPI:
     application.include_router(tiktok_inbox_connections_router)
     application.include_router(instagram_connections_router)
     application.include_router(instagram_execution_router)
+    from app.api.instagram_batch_reviews import router as instagram_batch_reviews_router
+    application.include_router(instagram_batch_reviews_router)
     application.include_router(instagram_page_connections_router)
     application.include_router(instagram_direct_connections_router)
     application.include_router(youtube_connections_router)
