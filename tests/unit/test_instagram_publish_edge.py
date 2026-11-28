@@ -85,3 +85,29 @@ async def test_read_only_selected_account_verification_never_expands_scope(failu
             data=await p.verify_account(app_access_token='synthetic-app-token',expected_app_id='123')
             assert data['account_id']=='100' and data['client_business_id']=='555' and data['execution_authorized'] is False
     assert len(seen)<=3 and all(r.url.host=='graph.facebook.com' for r in seen)
+
+@pytest.mark.asyncio
+async def test_claimed_publish_edge_is_one_post_no_hidden_status_read():
+    seen=[]
+    async def handler(request):
+        seen.append((request.method,request.url.path,request.content))
+        assert request.method=='POST'
+        return httpx.Response(200,json={'id':'300'})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler))as c:
+        result=await InstagramPublisher(client=c,token='synthetic',account_id='100').publish_claimed_container('200')
+    assert result=='300' and seen==[('POST','/v27.0/100/media_publish',b'creation_id=200')]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind',['timeout','server','malformed','invalid-id'])
+async def test_claimed_publish_unknown_never_retries(kind):
+    seen=[]
+    async def handler(request):
+        seen.append(request)
+        if kind=='timeout':raise httpx.ReadTimeout('untrusted secret diagnostics',request=request)
+        if kind=='server':return httpx.Response(500,json={'error':{'code':2}})
+        if kind=='malformed':return httpx.Response(200,content=b'not-json')
+        return httpx.Response(200,json={'id':'not-id'})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler))as c:
+        with pytest.raises(InstagramProviderError)as error:
+            await InstagramPublisher(client=c,token='synthetic',account_id='100').publish_claimed_container('200')
+    assert error.value.outcome_unknown and len(seen)==1 and 'secret'not in str(error.value)
