@@ -395,7 +395,7 @@ export function PublishingPage() {
       {section === "plans" && detail && (
         <section className="rounded-2xl border-2 border-indigo-200 bg-white p-5 shadow-sm" id="selected-plan-detail" tabIndex={-1} data-testid="schedule-detail" style={{scrollMarginTop:90}}>
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><p className="text-xs font-semibold text-indigo-600">تفاصيل الخطة</p><h3 className="mt-1 text-xl font-bold">{detail.name}</h3><p className="text-sm text-slate-500">{stateLabel(detail.status)} · {detail.timezone} · {detail.total_items} عناصر</p></div>
+            <div><p className="text-xs font-semibold text-indigo-600">تفاصيل الخطة</p><h3 className="mt-1 text-xl font-bold">{detail.name}</h3><p aria-label="وجهة الخطة المحددة" className="mt-2 break-words text-sm font-semibold [overflow-wrap:anywhere]">{detail.platform === "telegram" ? "Telegram" : "منصة غير موضحة"} · {detail.destination_label?.trim() ? <bdi>{detail.destination_label}</bdi> : "لا توجد وجهة محفوظة موضحة لهذه الخطة"}</p><p className="text-sm text-slate-500">{stateLabel(detail.status)} · {detail.timezone} · {detail.total_items} عناصر</p></div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={()=>void openDetail(detail.id)} className="rounded-lg border px-3 py-2 text-sm">تحديث تفاصيل الخطة</button>
               {(detail.status === "DRAFT" || detail.status === "PAUSED") && <button type="button" onClick={() => void action.mutateAsync({ type: "activate", id: detail.id })} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white">تفعيل النشر الآلي</button>}
