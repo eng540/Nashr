@@ -62,9 +62,10 @@ async def validate(session,job,decision_id,*,at=None):
     return decision
 
 async def revoke(session,decision_id):
-    decision=(await session.execute(select(Decision).where(Decision.id==decision_id).with_for_update())).scalar_one_or_none()
-    if not decision:raise ValueError('Decision not found')
-    decision.state='REVOKED'
-    for row in (await session.execute(select(Grant).where(Grant.decision_id==decision_id))).scalars():row.state='REVOKED'
-    for row in (await session.execute(select(Dispatch).where(Dispatch.decision_id==decision_id,Dispatch.state=='PENDING'))).scalars():row.state='CANCELLED'
-    await session.commit()
+    # Resolve only identity here. The command owns a fresh shared transaction.
+    row=await session.scalar(select(Dispatch).where(Dispatch.decision_id==decision_id))
+    if not row:raise ValueError('Exact scheduled dispatch required for Stop')
+    did=row.id
+    await session.rollback()
+    from app.application import instagram_production_fence as fence
+    return await fence.stop_dispatch(session,did,request_key='individual-stop:'+str(did))
