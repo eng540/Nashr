@@ -1,0 +1,35 @@
+import {test,expect} from '@playwright/test';
+// Uses the local FastAPI + PostgreSQL E2E service. No route mocks or external providers.
+test('real central approval preserves original and copy edits while saving destinations without execution',async({page,request},info)=>{
+ const original='مادة هندسية عربية محلية كاملة.\nالسطر الثاني محفوظ دون قص أو توليد.';
+ const created=await request.post('http://127.0.0.1:8000/api/artifacts/manual-draft',{data:{kind:'TEXT',title:'فحص رحلة محلي دون نشر',content:original}});
+ expect(created.status()).toBe(201);const artifact=await created.json();const id=artifact.id;
+ await page.setViewportSize({width:390,height:844});
+ await page.goto(`/bank?artifact_id=${id}&artifact_status=DRAFT`);
+ const approve=page.getByRole('button',{name:'اعتماد المادة فقط، دون نشر',exact:true});
+ await expect(approve).toBeVisible();await approve.click();
+ await expect.poll(async()=>{const r=await request.get(`http://127.0.0.1:8000/api/artifacts/${id}`);return (await r.json()).review_status;}).toBe('APPROVED');
+ await expect(page).toHaveURL(new RegExp(`artifact_status=APPROVED`));
+ await expect(page.getByLabel(`مساحة المادة ${id}`,{exact:true})).toBeVisible();
+ await page.getByText('نسخ المنصات · حقول مرتبطة بالأصل',{exact:true}).click();
+ const copies=page.getByLabel(`نسخ المنصات ${id}`,{exact:true});
+ const description=copies.getByLabel(`وصف نسخة ${id}`,{exact:true});await expect(description).toHaveValue(original);
+ const edited=original+'\nإضافة تحريرية لنسخة Telegram فقط.';await description.fill(edited);
+ await copies.getByRole('button',{name:'حفظ النسخة وفحص حقولها',exact:true}).click();
+ await expect(copies.getByRole('status').filter({hasText:'حُفظت حقول النسخة فقط'})).toBeVisible();
+ await copies.getByRole('button',{name:'تجهيز النسخ الناقصة دون استبدال',exact:true}).click();
+ await expect(copies.getByRole('status').filter({hasText:'النسخ المعدلة لم تُستبدل'})).toBeVisible();await expect(description).toHaveValue(edited);
+ const readiness=page.getByLabel(`جاهزية توزيع ${id}`,{exact:true});
+ await readiness.getByRole('button',{name:'فحص جاهزية واختيار المنصات (1)',exact:true}).click();
+ await readiness.getByLabel('Telegram',{exact:true}).check();await readiness.getByLabel('YouTube',{exact:true}).check();
+ await readiness.getByRole('button',{name:'حفظ اختيار الوجهات فقط',exact:true}).click();
+ await expect(readiness.getByRole('status')).toContainText('لم تُنشأ مسودات أو جداول');
+ const source=(await (await request.get(`http://127.0.0.1:8000/api/artifacts/${id}`)).json());expect(source.content).toBe(original);
+ const result=await (await request.get(`http://127.0.0.1:8000/api/artifacts/${id}/distribution-readiness`)).json();
+ expect(result.targets.filter((t:any)=>t.selected).map((t:any)=>t.platform)).toEqual(['telegram','youtube']);expect(result.targets.every((t:any)=>t.execution_status==='NOT_AUTHORIZED')).toBe(true);
+ const saved=await (await request.get(`http://127.0.0.1:8000/api/artifacts/${id}/platform-copies`)).json();expect(saved.items).toHaveLength(6);
+ expect(saved.items.find((c:any)=>c.platform==='telegram').fields.description).toBe(edited);expect(saved.items.filter((c:any)=>c.platform!=='telegram').every((c:any)=>c.fields.description===original)).toBe(true);
+ const ledger=await (await request.get(`http://127.0.0.1:8000/api/artifacts/${id}/publications`)).json();expect(ledger.items).toEqual([]);expect(ledger.connector_items).toEqual([]);
+ await readiness.screenshot({path:info.outputPath('real-central-readiness-mobile.png')});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+ await page.setViewportSize({width:1280,height:900});await copies.scrollIntoViewIfNeeded();await copies.screenshot({path:info.outputPath('real-central-copies-desktop.png')});
+});
