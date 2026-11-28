@@ -26,12 +26,17 @@ export function PublishingPage() {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [section, setSection] = useState<Section>(()=>sectionFromParams(searchParams));
-  const [readyTask,setReadyTask]=useState<"distribution"|"editorial">(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial"?"editorial":"distribution");
-  useEffect(()=>{setReadyTask(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial"?"editorial":"distribution");},[searchParams]);
+  const [readyTask,setReadyTask]=useState<"distribution"|"editorial">(searchParams.get("ready_task")!=="distribution"&&(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial")?"editorial":"distribution");
+  useEffect(()=>{setReadyTask(searchParams.get("ready_task")!=="distribution"&&(searchParams.has("selected_post_ids")||searchParams.get("ready_task")==="editorial")?"editorial":"distribution");},[searchParams]);
   useEffect(()=>{setSection(sectionFromParams(searchParams));setOperationGroup(operationGroupFromParams(searchParams));},[searchParams]);
   const [operationGroup,setOperationGroup]=useState<OperationGroup>(()=>operationGroupFromParams(searchParams));
   useEffect(()=>{if(section!=="plans"&&section!=="operations")return;const frame=requestAnimationFrame(()=>{const target=document.getElementById(`publishing-${section}`);target?.focus({preventScroll:true});target?.scrollIntoView({block:"start"});});return()=>cancelAnimationFrame(frame);},[section,operationGroup]);
   const [selectedIds, setSelectedIds] = useState<string[]>(() => selectionFromQuery(searchParams.get("selected_post_ids")));
+  const selectedIdsParam = searchParams.get("selected_post_ids");
+  useEffect(() => {
+    const next = selectionFromQuery(selectedIdsParam);
+    setSelectedIds(current => current.join(",") === next.join(",") ? current : next);
+  }, [selectedIdsParam]);
   const [scheduleOpen, setScheduleOpen] = useState(!searchParams.has("schedule_id") && Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
   const [previewContent, setPreviewContent] = useState<string | null>(null);
@@ -123,7 +128,13 @@ export function PublishingPage() {
     queryFn: () => schedulesApi.calendar(calendarDate, calendarTimezone,calendarPage*20),
   });
 
-  const eligibility = useMutation({ mutationFn: () => schedulesApi.eligibility(selectedIds) });
+  // A read started for an older selection or navigation cannot reopen its form.
+  const eligibilityRequest = useRef(0);
+  useEffect(() => {
+    eligibilityRequest.current++;
+    return () => { eligibilityRequest.current++; };
+  }, [searchParams, section, readyTask, selectedIds]);
+  const eligibility = useMutation({ mutationFn: (ids: string[]) => schedulesApi.eligibility(ids) });
   const recordManual = useMutation({
     mutationFn: (input: { id: string; published_at: string; external_url: string | null }) =>
       genericArtifactsApi.recordManualPublication(input.id, { published_at: input.published_at, external_url: input.external_url }),
@@ -248,17 +259,22 @@ export function PublishingPage() {
     updateEditorialSelectionUrl(next);
   };
   const openSchedule = async () => {
-    if (!selectedIds.length) return;
+    if (!selectedIds.length || section !== "ready" || readyTask !== "editorial") return;
+    const request = ++eligibilityRequest.current;
+    const requestSearch = window.location.search;
+    const requestedIds = [...selectedIds];
+    const isCurrent = () => request === eligibilityRequest.current && window.location.search === requestSearch;
     try {
-      const result = await eligibility.mutateAsync();
+      const result = await eligibility.mutateAsync(requestedIds);
+      if (!isCurrent()) return;
       const blocked = new Set(result.blocked.map((r) => r.post_id));
-      const eligible = selectedIds.filter((id) => !blocked.has(id));
+      const eligible = requestedIds.filter((id) => !blocked.has(id));
       setSelectedIds(eligible);
       updateEditorialSelectionUrl(eligible);
       setScheduleOpen(Boolean(eligible.length));
       if (result.blocked.length) setMessage(`تم استبعاد ${result.blocked.length} منشور غير قابل للنشر.`);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "تعذر فحص أهلية النشر.");
+      if (isCurrent()) setMessage(e instanceof Error ? e.message : "تعذر فحص أهلية النشر.");
     }
   };
   const updateItemTime = async (itemId: string, value: string) => {
@@ -347,7 +363,7 @@ export function PublishingPage() {
 
       {section === "ready" && (
         <section className="space-y-4" data-testid="publishing-ready">
-          <nav aria-label="ماذا تريد أن تفعل بالمحتوى؟" className="workspace-surface p-4 space-y-3"><h2 className="font-bold">ماذا تريد أن تفعل؟</h2><div className="grid gap-3 sm:grid-cols-2">{([["distribution","متابعة مادة وتجهيز وجهاتها","كل المواد المعتمدة: نصوص وصور وفيديو، مع الخطوة التالية وسجل النشر."],["editorial","جدولة نصوص Telegram","اختر المنشورات التحريرية المؤهلة، ثم راجع المواعيد قبل حفظ خطة."]] as const).map(([key,title,hint])=><button key={key} type="button" aria-pressed={readyTask===key} className="workspace-secondary text-right" onClick={()=>{setReadyTask(key);setSearchParams(previous=>{const next=new URLSearchParams(previous);if(key==="editorial")next.set("ready_task","editorial");else next.delete("ready_task");return next;});}}><strong className="block">{title}</strong><span className="block mt-1 text-xs leading-6 font-normal">{hint}</span></button>)}</div><p className="text-xs leading-6 text-slate-600">الصور والفيديو لها مراجعة وتجهيز داخل المادة. هذا الاختيار يغيّر ما تعرضه الصفحة فقط، ولا يحفظ خطة أو يرسل محتوى.</p></nav>
+          <nav aria-label="ماذا تريد أن تفعل بالمحتوى؟" className="workspace-surface p-4 space-y-3"><h2 className="font-bold">ماذا تريد أن تفعل؟</h2><div className="grid gap-3 sm:grid-cols-2">{([["distribution","متابعة مادة وتجهيز وجهاتها","كل المواد المعتمدة: نصوص وصور وفيديو، مع الخطوة التالية وسجل النشر."],["editorial","جدولة نصوص Telegram","اختر المنشورات التحريرية المؤهلة، ثم راجع المواعيد قبل حفظ خطة."]] as const).map(([key,title,hint])=><button key={key} type="button" aria-pressed={readyTask===key} className="workspace-secondary text-right" onClick={()=>{setReadyTask(key);setSearchParams(previous=>{const next=new URLSearchParams(previous);next.set("ready_task",key);return next;});}}><strong className="block">{title}</strong><span className="block mt-1 text-xs leading-6 font-normal">{hint}</span></button>)}</div><p className="text-xs leading-6 text-slate-600">الصور والفيديو لها مراجعة وتجهيز داخل المادة. هذا الاختيار يغيّر ما تعرضه الصفحة فقط، ولا يحفظ خطة أو يرسل محتوى.</p></nav>
           {readyTask==="distribution"?<UnifiedPublishingQueue/>:<>
 
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -367,10 +383,11 @@ export function PublishingPage() {
                 ? <button type="button" disabled={posts.isPlaceholderData} onClick={() => togglePageSelection(false)} className="rounded-xl border px-3 py-2 text-sm font-semibold">إلغاء تحديد الصفحة</button>
                 : <button type="button" onClick={() => togglePageSelection(true)} disabled={!readyItems.length||posts.isPlaceholderData} className="rounded-xl border px-3 py-2 text-sm font-semibold disabled:opacity-40">تحديد الصفحة</button>}
               {selectedIds.length > 0 && <button type="button" onClick={() => { setSelectedIds([]); updateEditorialSelectionUrl([]); }} className="rounded-xl border px-3 py-2 text-sm">مسح التحديد</button>}
-              {selectedIds.length > 0 && <button data-testid="create-plan" type="button" onClick={() => void openSchedule()} disabled={eligibility.isPending} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">إنشاء خطة ({selectedIds.length})</button>}
+              {selectedIds.length > 0 && <button data-testid="create-plan" type="button" onClick={() => void openSchedule()} disabled={eligibility.isPending} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">{eligibility.isPending ? "جارٍ فحص الأهلية..." : `إنشاء خطة (${selectedIds.length})`}</button>}
             </div>
           </div>
 
+          {eligibility.isPending ? <p role="status" className="rounded-xl border bg-white p-3 text-sm">جارٍ فحص أهلية التحديد الحالي. تغيير التحديد أو مغادرة هذا العرض يلغي نتيجة الفحص؛ اضغط «إنشاء خطة» مجدداً للتحديد الجديد.</p> : null}
           {posts.isPlaceholderData?<p role="status" className="rounded-xl border bg-white p-3 text-sm">جارٍ تحميل نتائج المرشحات الحالية. القائمة السابقة للعرض فقط حتى اكتمال القراءة.</p>:null}
           {posts.isLoading?<Status title="جاري تحميل المنشورات الجاهزة"/>:posts.isError?<div role="alert" className="rounded-xl border bg-white p-4"><p>تعذر تحميل المنشورات التحريرية. تبقى الخطط والتقويم والقائمة الموحدة مستقلة.</p><button type="button" onClick={()=>void posts.refetch()} className="underline">إعادة تحميل المنشورات</button></div>:readyItems.length === 0
             ? <div className="rounded-2xl border border-dashed bg-white p-10 text-center"><h3 className="font-bold">لا توجد منشورات جاهزة</h3><p className="mt-2 text-sm text-slate-500">جرّب تغيير عبارة البحث، أو عد إلى بنك المحتوى لاعتماد منشورات جديدة.</p></div>
