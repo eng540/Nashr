@@ -53,6 +53,7 @@ async def _valid(session,job,provider,media_sha256):
 async def create_container(session,job_id,*,provider,media_url,media_sha256,authorized=False,media_disclosure_authorized=False,public_publish_authorized=False):
     if authorized is not True:raise ValueError('Explicit publishing authority required; preview does not authorize media access')
     job=await _locked(session,job_id)
+    if job.connection_binding.get('login_mode')=='UNIFIED':raise ValueError('Unified operations require the production fence')
     if job.connection_binding and (media_disclosure_authorized is not True or public_publish_authorized is not True):raise ValueError('Explicit public publication and provider media disclosure authority required')
     if job.state!='DRAFT':raise ValueError('Container creation already attempted; never repeat unknown outcomes')
     await _valid(session,job,provider,media_sha256)
@@ -67,6 +68,7 @@ async def create_container(session,job_id,*,provider,media_url,media_sha256,auth
 async def publish(session,job_id,*,provider,media_sha256,authorized=False,public_publish_authorized=False):
     if authorized is not True:raise ValueError('Explicit publishing authority required')
     job=await _locked(session,job_id)
+    if job.connection_binding.get('login_mode')=='UNIFIED':raise ValueError('Unified operations require the production fence')
     if job.connection_binding and public_publish_authorized is not True:raise ValueError('Explicit public publication authority required')
     if job.state not in {'CONTAINER_CREATED','WAITING_MEDIA'}:raise ValueError('Cannot repeat a publishing attempt')
     await _valid(session,job,provider,media_sha256)
@@ -86,6 +88,7 @@ async def publish(session,job_id,*,provider,media_sha256,authorized=False,public
 
 async def reconcile(session,job_id,*,provider):
     job=await _locked(session,job_id)
+    if job.connection_binding.get('login_mode')=='UNIFIED':raise ValueError('Unified operations require the production fence')
     if job.state in {'CREATING','PUBLISHING'}:raise ValueError('An active or crashed claim needs operator reconciliation; no overlapping provider action')
     if job.connection_binding:await validate_provider_binding(session,job,provider)
     if provider.account_id!=job.account_id:raise ValueError('Pinned account mismatch')
@@ -104,6 +107,10 @@ async def reconcile(session,job_id,*,provider):
 async def cancel_draft(session,job_id):
     """Cancel only an unclaimed draft; never imply a provider action was undone."""
     job=await _locked(session,job_id)
+    if job.connection_binding.get('login_mode')=='UNIFIED':
+        from app.infrastructure.database.models import InstagramDispatchModel as Dispatch
+        if await session.scalar(select(Dispatch.id).where(Dispatch.execution_id==job.id)):
+            raise ValueError('Scheduled Unified draft requires fenced Stop')
     if job.state!='DRAFT':raise ValueError('Only an unclaimed draft can be cancelled; provider attempts require reconciliation')
     job.state='CANCELLED';job.updated_at=now();await session.commit();return job
 
@@ -117,6 +124,7 @@ async def mark_interrupted_claim_unknown(session,job_id,*,expected_state,expecte
     if operator_confirmed_stopped is not True:raise ValueError('Operator must establish that the worker stopped; age alone is not evidence')
     if expected_state not in {'CREATING','PUBLISHING'}:raise ValueError('Only an interrupted provider mutation claim can be marked unknown')
     job=await _locked(session,job_id)
+    if job.connection_binding.get('login_mode')=='UNIFIED':raise ValueError('Unified operations require the production fence')
     if job.state!=expected_state or job.updated_at!=expected_updated_at:raise ValueError('Claim changed; reread before reconciliation')
     job.state='CREATE_UNKNOWN' if expected_state=='CREATING' else 'PUBLISH_UNKNOWN'
     job.error_code='INSTAGRAM_INTERRUPTED_CLAIM_UNKNOWN';job.updated_at=now();await session.commit();return job
