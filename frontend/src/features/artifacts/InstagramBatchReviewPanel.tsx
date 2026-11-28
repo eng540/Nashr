@@ -25,7 +25,7 @@ export function InstagramBatchReviewPanel({ids,items}:{ids:string[];items:Generi
  return <section aria-label="مسودة مراجعة دفعة Instagram" className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-3">
   <h4 className="font-bold">مسودة مراجعة Instagram للدفعة نفسها</h4>
   <p className="text-xs leading-7">نحفظ مراجعة خاصة للأصول والنسخ والوجهات والوسيط والحساب والمواعيد والسجل. لا ينشئ الحفظ عمليات تنفيذ أو جدولاً أو موافقة نشر، ولا يكشف وسيطاً لـMeta. مسار تفعيل الدفعة غير متاح بعد. Facebook وبقية الوجهات خارج هذه المسودة وتبقى اختياراتها كما هي.</p>
-  {!valid?<p role="alert" className="text-xs text-amber-900">هذا المسار لواحدة إلى20صورة أو فيديو أصلياً معتمداً فقط. لا نحذف العناصر غير المؤهلة من تحديدك تلقائياً.</p>:null}
+  {!valid?<p className="text-xs text-amber-900">هذا المسار لواحدة إلى20صورة أو فيديو أصلياً معتمداً فقط. لا نحذف العناصر غير المؤهلة من تحديدك تلقائياً.</p>:null}
   <fieldset disabled={pending} className="space-y-3"><div className="grid gap-2 sm:grid-cols-3">
   <label className="text-xs">بداية المراجعة<input aria-label="بداية مسودة Instagram" type="datetime-local" value={start} onChange={e=>{setStart(e.target.value);changed();}} className="block w-full min-w-0 rounded border p-2"/></label>
   <label className="text-xs">منطقة IANA<input aria-label="منطقة مسودة Instagram" placeholder="Asia/Riyadh" value={zone} onChange={e=>{setZone(e.target.value);changed();}} className="block w-full min-w-0 rounded border p-2"/></label>
