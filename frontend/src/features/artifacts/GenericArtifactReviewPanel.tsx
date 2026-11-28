@@ -4,7 +4,7 @@ import {NativeTelegramFields,blankNative,nativeError} from './NativeTelegramFiel
 import {BatchPlatformCopiesPanel} from './BatchPlatformCopiesPanel';
 import { ApprovedBatchHandoff } from "./ApprovedBatchHandoff";
 import { BatchReviewPanel } from "./BatchReviewPanel";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {EditorialReviewNotes} from "./EditorialReviewNotes";
 import {ContentOrganizationPanel} from "./ContentOrganizationPanel";
 import { CentralPlatformCopiesPanel, type PlatformCopyDrafts } from "./CentralPlatformCopiesPanel";
@@ -111,7 +111,12 @@ function ArtifactPublicationLedger({id}:{id:string}) {
       <p className="break-all">سجل النشر: <bdi>{item.id}</bdi></p><p className="break-all">معرفات الرسائل: <bdi>{item.external_ids.join(", ") || "لم تُثبت بعد"}</bdi></p>
       <p>وقت القبول: <bdi>{item.published_at || "لم يُثبت بعد"}</bdi></p>
       <details><summary className="cursor-pointer">النص المحفوظ في سجل النشر</summary><p dir="auto" className="whitespace-pre-wrap break-words py-2">{item.content}</p></details>
-      {item.schedules.map(schedule=><p key={schedule.schedule_id} className="break-all">{schedule.name} · {schedule.schedule_status} · العنصر {schedule.item_status} · المحاولات {schedule.attempts} · <bdi>{schedule.scheduled_at}</bdi>{schedule.last_error ? ` · ${schedule.last_error}`:""}</p>)}
+      {item.schedules.map(schedule=><div key={schedule.schedule_id} className="min-w-0 space-y-1 rounded border border-slate-200 p-2">
+        <Link to={`/publishing?view=plans&schedule_id=${encodeURIComponent(schedule.schedule_id)}`} aria-label={`فتح الخطة: ${schedule.name}`} className="inline-flex min-h-11 max-w-full items-center break-words py-2 font-semibold text-blue-700 underline">فتح الخطة: {schedule.name}</Link>
+        <p className="break-words">حالة الخطة: <bdi>{schedule.schedule_status}</bdi> · حالة العنصر: <bdi>{schedule.item_status}</bdi></p>
+        <p>المحاولات: {schedule.attempts}</p><p className="break-all">الموعد: <bdi>{schedule.scheduled_at}</bdi></p>
+        {schedule.last_error ? <p className="break-words text-rose-700">{schedule.last_error}</p>:null}
+      </div>)}
       {item.error_message ? <p role="alert">{item.error_message}</p>:null}
     </article>)}
     {query.isFetching&&query.data?<p role="status" className="text-xs">جارٍ تحديث الصفحة المعروضة، هذه آخر قراءة محفوظة.</p>:null}
@@ -832,4 +837,4 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     {jobStatus}
     {mutationError}
   </section>;
-}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              }
