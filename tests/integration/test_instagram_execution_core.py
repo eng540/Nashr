@@ -38,6 +38,7 @@ class Provider:
     def __init__(self):self.calls=[]
     async def create_container(self,**kw):self.calls.append('create');return '200'
     async def publish_container(self,id):self.calls.append('publish');return '300'
+    async def publish_claimed_container(self,id):self.calls.append('publish');return '300'
     async def container_status(self,id):self.calls.append('status');return ContainerState(id,'FINISHED')
     async def published_media(self,id):self.calls.append('media');return {'media_id':id,'permalink':'https://www.instagram.com/p/synthetic/','account_id':'100'}
 
