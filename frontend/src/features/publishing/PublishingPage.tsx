@@ -633,4 +633,4 @@ function Pagination({ page, pageCount, onChange, loading, label }: { page: numbe
 
 function Status({ title, detail, error = false }: { title: string; detail?: string; error?: boolean }) {
   return <div role={error ? "alert" : "status"} className="rounded-2xl border bg-white p-8"><h2 className="font-bold">{title}</h2>{detail && <p className="mt-2 text-sm text-slate-600">{detail}</p>}</div>;
-        }
+}
