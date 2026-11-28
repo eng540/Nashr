@@ -1112,3 +1112,14 @@ class InstagramPrivateBatchReviewModel(Base):
     snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
     state:Mapped[str]=mapped_column(String(20),nullable=False)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class InstagramPrivateBatchPreparationModel(Base):
+    """Dormant private preparation receipt, never a publication decision."""
+    __tablename__='instagram_private_batch_preparations'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    review_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_private_batch_reviews.id'),nullable=False,unique=True)
+    request_key:Mapped[str]=mapped_column(String(100),nullable=False,unique=True)
+    snapshot_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    items:Mapped[list]=mapped_column(JSONB,nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
