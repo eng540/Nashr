@@ -251,9 +251,27 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
     placeholderData: (previous) => previous,
   });
   const bookMap = useQuery({ queryKey: ["production", "book-map", productionSourceId, resolvedLineFilter.product_key, resolvedLineFilter.product_version, resolvedLineFilter.identity_key, resolvedLineFilter.identity_version, resolvedLineFilter.recipe_key, resolvedLineFilter.recipe_version], queryFn: () => productionJobsApi.bookMap(productionSourceId, lineFilter), enabled: Boolean(productionSourceId) });
-  const [jobItemsPage, setJobItemsPage] = useState(0);
+  const rawJobPage = searchParams.get("job_page");
+  const requestedJobPage = rawJobPage && /^[1-9]\d{0,5}$/.test(rawJobPage) ? Number(rawJobPage) - 1 : 0;
+  const jobItemsPage = requestedJobPage;
+  const setJobItemsPage = (value: number) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous);
+    if (value > 0) next.set("job_page", String(value + 1)); else next.delete("job_page");
+    return next;
+  });
   const job = useQuery({ queryKey: ["production", "job", jobId], queryFn: () => productionJobsApi.get(jobId!), enabled: Boolean(jobId), refetchInterval: (q) => q.state.error || !q.state.data || ["COMPLETED", "FAILED"].includes(q.state.data.status) ? false : 1500 });
   const jobItems = useQuery({ queryKey: ["production", "job-items", jobId, jobItemsPage], queryFn: () => productionJobsApi.items(jobId!, jobItemsPage * 20, 20), enabled: Boolean(jobId) });
+  useEffect(() => {
+    if (!jobId || !jobItems.isSuccess || jobItems.isFetching) return;
+    const finalPage = Math.max(0, Math.ceil(jobItems.data.total / 20) - 1);
+    const resolvedPage = Math.min(jobItemsPage, finalPage);
+    const canonical = resolvedPage > 0 ? String(resolvedPage + 1) : null;
+    if (rawJobPage !== canonical) setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (canonical) next.set("job_page", canonical); else next.delete("job_page");
+      return next;
+    }, { replace: true });
+  }, [jobId, rawJobPage, jobItemsPage, jobItems.isSuccess, jobItems.isFetching, jobItems.data, setSearchParams]);
 
   useEffect(() => {
     const nextQuery = queryInput.trim();
@@ -314,7 +332,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
     mutationFn: (request: CreateProductionRequest) => productionJobsApi.create(request),
     onSuccess: (data, request) => {
       clearPendingClaim(request.idempotency_key);
-      setJobId(data.job_id); setSearchParams(previous => { const next=new URLSearchParams(previous);next.set("job_id",data.job_id);return next; }); setJobItemsPage(0); setWorkspaceView("job"); setMessage("بدأت مطالبة الإنتاج."); void client.invalidateQueries({ queryKey: ["post-bank"] });
+      setJobId(data.job_id); setSearchParams(previous => { const next=new URLSearchParams(previous);next.set("job_id",data.job_id);next.delete("job_page");return next; }); setWorkspaceView("job"); setMessage("بدأت مطالبة الإنتاج."); void client.invalidateQueries({ queryKey: ["post-bank"] });
       void client.invalidateQueries({ queryKey: ["production", "sources"] });
       void client.invalidateQueries({ queryKey: ["production", "book-map", productionSourceId] });
     },
@@ -566,7 +584,7 @@ export function PostBankPage({ initialView }: { initialView?: "production" | "jo
             {item.post_id ? <Link reloadDocument className="mt-2 block text-sm underline" to={`/bank?post_id=${encodeURIComponent(item.post_id)}`}>فتح المنشور في بنك المحتوى</Link> : item.artifact_id ? <ProductionOutputLink id={item.artifact_id}/> : null}{item.post_id && <p className="mt-1 break-all text-xs text-emerald-700">معرّف المنشور التحريري: {item.post_id}</p>}
             {item.error_message && <p className="mt-1 whitespace-pre-wrap text-xs text-rose-700">{item.error_code || "PRODUCTION_ERROR"}: {item.error_message}</p>}
           </article>)}</div>}
-          {(jobItems.data?.total ?? 0) > 20 && <div className="mt-3 flex items-center justify-between"><button type="button" onClick={() => setJobItemsPage((value) => Math.max(0, value - 1))} disabled={jobItemsPage === 0} className="rounded-lg border px-3 py-1 text-xs disabled:opacity-40">السابق</button><span className="text-xs text-slate-500">صفحة {jobItemsPage + 1} من {Math.ceil((jobItems.data?.total ?? 0) / 20)}</span><button type="button" onClick={() => setJobItemsPage((value) => Math.min(Math.ceil((jobItems.data?.total ?? 0) / 20) - 1, value + 1))} disabled={jobItemsPage >= Math.ceil((jobItems.data?.total ?? 0) / 20) - 1} className="rounded-lg border px-3 py-1 text-xs disabled:opacity-40">التالي</button></div>}
+          {(jobItems.data?.total ?? 0) > 20 && <div className="mt-3 flex items-center justify-between"><button type="button" onClick={() => setJobItemsPage(Math.max(0, jobItemsPage - 1))} disabled={jobItemsPage === 0} className="rounded-lg border px-3 py-1 text-xs disabled:opacity-40">السابق</button><span className="text-xs text-slate-500">صفحة {jobItemsPage + 1} من {Math.ceil((jobItems.data?.total ?? 0) / 20)}</span><button type="button" onClick={() => setJobItemsPage(Math.min(Math.ceil((jobItems.data?.total ?? 0) / 20) - 1, jobItemsPage + 1))} disabled={jobItemsPage >= Math.ceil((jobItems.data?.total ?? 0) / 20) - 1} className="rounded-lg border px-3 py-1 text-xs disabled:opacity-40">التالي</button></div>}
         </div>
       </div>}
     </section>}
