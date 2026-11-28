@@ -1,0 +1,26 @@
+import { test, expect } from '@playwright/test';
+test.use({timezoneId:'Asia/Riyadh'});
+for(const width of [320,390,1280])test(`calendar context survives reload, plan round trip and browser history at ${width}px`,async({page},info)=>{
+ const writes:string[]=[], reads:string[]=[];
+ await page.route('**/*',r=>{const request=r.request(),u=new URL(request.url()),p=u.pathname;if(request.method()!=='GET'){writes.push(p);return r.abort();}
+ if(p==='/schedules/calendar'){reads.push(u.search);return r.fulfill({json:{date:u.searchParams.get('date'),timezone:u.searchParams.get('timezone'),items:[{id:'row',schedule_id:'exact',schedule_name:'خطة محفوظة',title:'مادة اليوم المحدد',status:'PENDING',scheduled_at:'2032-01-02T20:00:00Z',timezone:'Asia/Riyadh'}],total:1}});}
+ if(p==='/api/platform-operations'){if(u.searchParams.has('date'))reads.push(u.search);return r.fulfill({json:{items:[],total:0,counts:{waiting:0,published:0,attention:0,total:0}}});}
+ if(p==='/schedules/exact')return r.fulfill({json:{id:'exact',name:'خطة محفوظة محددة',status:'COMPLETED',platform:'telegram',destination_label:'قناة محفوظة',timezone:'Asia/Riyadh',items:[]}});
+ if(p.startsWith('/api/')||p.startsWith('/posts')||p.startsWith('/schedules'))return r.fulfill({json:{items:[],total:0}});return r.continue();});
+ await page.setViewportSize({width,height:844});await page.goto('/publishing?view=calendar&audit_keep=preserved');
+ const date=page.getByLabel('تاريخ التقويم',{exact:true}),zone=page.getByLabel('منطقة عرض تقويم اليوم',{exact:true});
+ await date.fill('2032-01-02');await zone.fill('Pacific/Honolulu');await page.getByRole('button',{name:'تطبيق منطقة العرض',exact:true}).click();
+ await expect(page).toHaveURL(/calendar_timezone=Pacific%2FHonolulu/);await expect.poll(()=>reads.filter(r=>r.includes('date=2032-01-02')&&r.includes('timezone=Pacific%2FHonolulu')).length).toBeGreaterThanOrEqual(2);
+ await page.reload();await expect(date).toHaveValue('2032-01-02');await expect(zone).toHaveValue('Pacific/Honolulu');
+ await page.getByTestId('publishing-calendar').screenshot({path:info.outputPath('calendar-context-'+width+'.png'),style:'header,a[href$="#main-content"]{visibility:hidden}'});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+ await page.getByLabel('تقويم Telegram المقسم',{exact:true}).getByRole('button',{name:/مادة اليوم المحدد/}).click();await expect(page.getByTestId('schedule-detail')).toContainText('خطة محفوظة محددة');
+ await page.goBack();await expect(date).toHaveValue('2032-01-02');await expect(zone).toHaveValue('Pacific/Honolulu');
+ await page.goForward();await expect(page.getByTestId('schedule-detail')).toBeVisible();await page.getByRole('button',{name:/التقويم · كل المنصات/}).click();await expect(date).toHaveValue('2032-01-02');await expect(zone).toHaveValue('Pacific/Honolulu');
+ await zone.fill('invalid-zone');await page.getByRole('button',{name:'تطبيق منطقة العرض',exact:true}).click();await expect(page.getByRole('alert').filter({hasText:'منطقة زمنية غير صالحة'})).toBeVisible();await expect(page).toHaveURL(/calendar_timezone=Pacific%2FHonolulu/);
+ await zone.fill('Asia/Riyadh');await page.getByRole('button',{name:'تطبيق منطقة العرض',exact:true}).click();await expect(page).toHaveURL(/calendar_timezone=Asia%2FRiyadh/);await page.goBack();await expect(page).toHaveURL(/calendar_timezone=Pacific%2FHonolulu/);await expect(zone).toHaveValue('Pacific/Honolulu');await expect(date).toHaveValue('2032-01-02');
+ const today=await page.evaluate(()=>{const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Pacific/Honolulu',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());return ['year','month','day'].map(type=>parts.find(part=>part.type===type)!.value).join('-');});await page.getByRole('button',{name:'اليوم في منطقة العرض',exact:true}).click();await expect.poll(()=>new URL(page.url()).searchParams.get('calendar_date')).toBe(today);await expect(date).toHaveValue(today);await expect(page).toHaveURL(/calendar_timezone=Pacific%2FHonolulu/);expect(new URL(page.url()).searchParams.get('audit_keep')).toBe('preserved');expect(writes).toEqual([]);
+});
+test('invalid URL context is visible and never sent as an invalid query',async({page},info)=>{
+ const reads:string[]=[];await page.route('**/*',r=>{const u=new URL(r.request().url()),p=u.pathname;if(p==='/schedules/calendar'||p==='/api/platform-operations'){reads.push(u.search);return r.fulfill({json:{items:[],total:0}});}if(p.startsWith('/api/')||p.startsWith('/posts')||p.startsWith('/schedules'))return r.fulfill({json:{items:[],total:0}});return r.continue();});
+ await page.goto('/publishing?view=calendar&calendar_date=2032-02-30&calendar_timezone=invalid-zone');await expect(page.getByRole('alert').filter({hasText:'من الرابط'})).toBeVisible();await expect(page.getByLabel('منطقة عرض تقويم اليوم',{exact:true})).toHaveValue('Asia/Riyadh');expect(reads.some(r=>r.includes('invalid-zone')||r.includes('2032-02-30'))).toBe(false);await page.setViewportSize({width:390,height:844});await page.getByTestId('publishing-calendar').screenshot({path:info.outputPath('calendar-context-invalid.png'),style:'header,a[href$="#main-content"]{visibility:hidden}'});
+});
