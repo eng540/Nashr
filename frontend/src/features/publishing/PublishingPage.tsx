@@ -36,7 +36,17 @@ export function PublishingPage() {
   const [message, setMessage] = useState("");
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const previewRequest = useRef(0);
-  const closePreview = () => { previewRequest.current++; setPreviewContent(null); };
+  const previewPanel = useRef<HTMLDivElement>(null);
+  const previewTrigger = useRef<HTMLButtonElement | null>(null);
+  const [previewItemId, setPreviewItemId] = useState<string | null>(null);
+  const [previewPending, setPreviewPending] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const closePreview = () => { previewRequest.current++; setPreviewContent(null); setPreviewItemId(null); setPreviewPending(false); setPreviewError(""); };
+  useEffect(() => {
+    if (!previewItemId || previewPending) return;
+    const frame = requestAnimationFrame(() => { previewPanel.current?.focus({preventScroll:true}); previewPanel.current?.scrollIntoView({block:"center"}); });
+    return () => cancelAnimationFrame(frame);
+  }, [previewContent, previewError, previewPending, previewItemId]);
   useEffect(() => {
     closePreview();
     return () => { previewRequest.current++; };
@@ -262,14 +272,15 @@ export function PublishingPage() {
       setMessage(e instanceof Error ? e.message : "تعذر تحديث الوقت.");
     }
   };
-  const preview = async (postId: string) => {
+  const preview = async (postId: string, itemId: string, trigger: HTMLButtonElement) => {
     const request = ++previewRequest.current;
+    previewTrigger.current = trigger; setPreviewItemId(itemId); setPreviewPending(true); setPreviewError("");
     setPreviewContent(null);
     try {
       const p = await schedulesApi.telegramPreview(postId);
-      if (request === previewRequest.current) setPreviewContent(p.content);
+      if (request === previewRequest.current) { setPreviewContent(p.content); setPreviewPending(false); }
     } catch (e) {
-      if (request === previewRequest.current) setMessage(e instanceof Error ? e.message : "تعذر تحميل معاينة Telegram.");
+      if (request === previewRequest.current) { setPreviewError(e instanceof Error ? e.message : "تعذر تحميل معاينة Telegram."); setPreviewPending(false); }
     }
   };
 
@@ -333,7 +344,6 @@ export function PublishingPage() {
       </nav>
 
       {message && <div role="status" className="whitespace-pre-wrap rounded-xl border bg-indigo-50 p-4 text-sm">{message}</div>}
-      {previewContent !== null && <div className="rounded-2xl border bg-white p-4 shadow-sm"><TelegramPreview content={previewContent} onClose={closePreview} /></div>}
 
       {section === "ready" && (
         <section className="space-y-4" data-testid="publishing-ready">
@@ -425,7 +435,9 @@ export function PublishingPage() {
               {detail.failed_items > 0 && <button type="button" onClick={() => action.mutate({ type: "retry", id: detail.id })} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">إعادة محاولة الفاشل</button>}
             </div>
           </div>
-          <div className="mt-4 space-y-2">{detail.items.map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{item.position}. {item.title}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{stateLabel(item.status)}</span></div><p className="mt-1 text-sm text-slate-600">{item.content_preview}</p><div className="mt-2 flex flex-wrap gap-2"><input aria-label={`وقت نشر ${item.title}`} type="datetime-local" value={itemTimes[item.id] ?? utcISOStringToLocalDateTime(item.scheduled_at, detail.timezone)} onChange={(e) => setItemTimes(current=>({...current,[item.id]:e.target.value}))} disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING"} className="rounded-lg border p-2 text-sm"/><button type="button" disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING" || !itemTimes[item.id] || itemTimes[item.id]===utcISOStringToLocalDateTime(item.scheduled_at,detail.timezone)} onClick={()=>void updateItemTime(item.id,itemTimes[item.id])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">حفظ الموعد</button>{item.post_id?<button type="button" onClick={() => void preview(item.post_id)} className="rounded-lg border px-3 py-2 text-sm">معاينة Telegram</button>:item.artifact_id?<Link to={`/bank?artifact_status=APPROVED&artifact_id=${encodeURIComponent(item.artifact_id)}`} className="rounded-lg border px-3 py-2 text-sm">فتح المادة ونسخها وسجلها</Link>:null}{item.status === "FAILED" && <button type="button" onClick={() => void schedulesApi.retryItem(detail.id, item.id).then((r) => { setDetail(r.schedule); void refresh(); })} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold">إعادة المحاولة</button>}</div>{item.publication_external_id && <p className="mt-2 text-xs text-emerald-700">معرّفات Telegram: {(item.publication_external_ids?.length ? item.publication_external_ids : [item.publication_external_id]).join(", ")}</p>}{item.last_error && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{item.last_error}</p>}</div>)}</div>
+          <div className="mt-4 space-y-2">{detail.items.map((item) => <div key={item.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><strong>{item.position}. {item.title}</strong><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{stateLabel(item.status)}</span></div><p className="mt-1 text-sm text-slate-600">{item.content_preview}</p><div className="mt-2 flex flex-wrap gap-2"><input aria-label={`وقت نشر ${item.title}`} type="datetime-local" value={itemTimes[item.id] ?? utcISOStringToLocalDateTime(item.scheduled_at, detail.timezone)} onChange={(e) => setItemTimes(current=>({...current,[item.id]:e.target.value}))} disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING"} className="rounded-lg border p-2 text-sm"/><button type="button" disabled={!["DRAFT","PAUSED"].includes(detail.status) || item.status!=="PENDING" || !itemTimes[item.id] || itemTimes[item.id]===utcISOStringToLocalDateTime(item.scheduled_at,detail.timezone)} onClick={()=>void updateItemTime(item.id,itemTimes[item.id])} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">حفظ الموعد</button>{item.post_id?<button type="button" onClick={(event) => void preview(item.post_id, item.id, event.currentTarget)} className="rounded-lg border px-3 py-2 text-sm">معاينة Telegram</button>:item.artifact_id?<Link to={`/bank?artifact_status=APPROVED&artifact_id=${encodeURIComponent(item.artifact_id)}`} className="rounded-lg border px-3 py-2 text-sm">فتح المادة ونسخها وسجلها</Link>:null}{item.status === "FAILED" && <button type="button" onClick={() => void schedulesApi.retryItem(detail.id, item.id).then((r) => { setDetail(r.schedule); void refresh(); })} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold">إعادة المحاولة</button>}</div>{item.post_id && previewItemId === item.id && <div ref={previewPanel} tabIndex={-1} aria-label={`معاينة المادة: ${item.title}`} className="mt-3 rounded-xl outline-none focus:ring-2 focus:ring-indigo-300" aria-busy={previewPending}>
+              {previewPending ? <p role="status" className="rounded-xl border bg-slate-50 p-4">جارٍ تحميل معاينة Telegram لهذه المادة...</p> : previewError ? <div role="alert" className="rounded-xl border bg-rose-50 p-4"><p>{previewError}</p><button type="button" className="mt-2 underline" onClick={(event)=>void preview(item.post_id!,item.id,previewTrigger.current ?? event.currentTarget)}>إعادة تحميل معاينة هذه المادة</button><button type="button" className="ms-3 underline" onClick={()=>{closePreview();previewTrigger.current?.focus();}}>إغلاق المعاينة</button></div> : previewContent !== null ? <TelegramPreview content={previewContent} onClose={()=>{closePreview();previewTrigger.current?.focus();}} /> : null}
+            </div>}{item.publication_external_id && <p className="mt-2 text-xs text-emerald-700">معرّفات Telegram: {(item.publication_external_ids?.length ? item.publication_external_ids : [item.publication_external_id]).join(", ")}</p>}{item.last_error && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{item.last_error}</p>}</div>)}</div>
         </section>
       )}
 
