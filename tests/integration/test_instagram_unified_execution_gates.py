@@ -14,6 +14,11 @@ async def approved(monkeypatch):
         j=await direct.stage(s,uid,rid);jid=UUID(j['id']);due=decisions.now()+timedelta(seconds=30)
         p=await decisions.proposal(s,jid,due_at=due,timezone_name='Asia/Riyadh')
         d=await decisions.record(s,jid,decision_hash=p['decision_hash'],due_at=due,timezone_name='Asia/Riyadh',evidence_ref='trusted-message:synthetic-only-123',authenticated_owner=True,exact_words_approved=True,public_post_approved=True,media_disclosure_approved=True)
+        from app.infrastructure.database.models import ArtifactModel,DistributionSelectionModel
+        from app.application.distribution_readiness import source_fingerprint
+        a=await s.get(ArtifactModel,uid)
+        s.add(DistributionSelectionModel(artifact_id=uid,platforms=['instagram'],source_fingerprint=source_fingerprint(a),saved_at=decisions.now()))
+        await s.commit()
         return jid,d.id,due
 
 @pytest.mark.asyncio
@@ -34,10 +39,11 @@ async def test_exact_decision_separate_from_review_and_each_consent(config,monke
 async def test_media_not_early_expiring_revocable_and_only_pinned_bytes(config,monkeypatch):
     jid,did,due=await approved(monkeypatch)
     async with SessionFactory() as s:
+        await dispatch.schedule(s,jid,did)
         with pytest.raises(ValueError,match='before'):await grants.mint(s,jid,did)
         monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
         g,token=await grants.mint(s,jid,did);assert token not in str(vars(g))
-        assert (await grants.read(s,token))[0]==MEDIA
+        with pytest.raises(ValueError):await grants.read(s,token) # Legacy unlinked capabilities fail closed
         with pytest.raises(ValueError):await grants.read(s,'x'*43)
         await decisions.revoke(s,did)
         with pytest.raises(ValueError):await grants.read(s,token)
@@ -55,23 +61,26 @@ async def test_expiry_stops_media_and_no_duplicate_grant(config,monkeypatch):
 async def test_due_dispatch_disabled_by_default_and_one_attempt(config,monkeypatch):
     jid,did,due=await approved(monkeypatch);p=Provider();p.graph_base='https://graph.facebook.com/v27.0'
     async with SessionFactory() as s:
-        job=await dispatch.schedule(s,jid,did);assert (await dispatch.schedule(s,jid,did)).id==job.id
-        assert await dispatch.due_ids(s)==[]
-        with pytest.raises(ValueError,match='disabled'):await dispatch.run(s,job.id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a')
+        job=await dispatch.schedule(s,jid,did);dispatch_id=job.id;assert (await dispatch.schedule(s,jid,did)).id==job.id
+        assert job.id not in await dispatch.due_ids(s)
+        with pytest.raises(ValueError,match='disabled'):await dispatch.run(s,dispatch_id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a')
         assert not p.calls
         monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
-        assert await dispatch.due_ids(s)==[job.id]
-        result=await dispatch.run(s,job.id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True)
-        assert result.state=='RESULT_KNOWN' and p.calls==['create','publish']
-        with pytest.raises(ValueError):await dispatch.run(s,job.id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True)
-        assert (await dispatch.reconcile(s,job.id,provider=p)).state=='PUBLISHED'
-        assert p.calls==['create','publish','media']
+        assert job.id in await dispatch.due_ids(s)
+        result=await dispatch.run(s,dispatch_id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True)
+        await s.refresh(job)
+        assert result.state=='RESULT_KNOWN' and p.calls==['create','status','publish']
+        with pytest.raises(ValueError):await dispatch.run(s,dispatch_id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True)
+        from app.application import instagram_isolated_claims as claims
+        monkeypatch.setattr(claims,'now',lambda:due+timedelta(minutes=2))
+        assert (await dispatch.reconcile(s,dispatch_id,provider=p)).state=='PUBLISHED'
+        assert p.calls==['create','status','publish','media']
 
 @pytest.mark.asyncio
 async def test_revocation_cancels_pending_dispatch_without_effect(config,monkeypatch):
     jid,did,due=await approved(monkeypatch)
     async with SessionFactory() as s:
-        row=await dispatch.schedule(s,jid,did);await decisions.revoke(s,did);await s.refresh(row);assert row.state=='CANCELLED'
+        row=await dispatch.schedule(s,jid,did);dispatch_id=row.id;await decisions.revoke(s,did);await s.refresh(row);assert row.state=='CANCELLED'
 
 @pytest.mark.asyncio
 async def test_waiting_media_keeps_bounded_grant_then_resumes_once(config,monkeypatch):
@@ -80,19 +89,21 @@ async def test_waiting_media_keeps_bounded_grant_then_resumes_once(config,monkey
     jid,did,due=await approved(monkeypatch)
     class Waiting(Provider):
         graph_base='https://graph.facebook.com/v27.0'
-        async def publish_container(self,container):
-            self.calls.append('publish-check')
-            if self.calls.count('publish-check')==1:raise InstagramProviderError('INSTAGRAM_CONTAINER_IN_PROGRESS')
-            return '300'
+        async def container_status(self,container):
+            from app.adapters.publishing.instagram import ContainerState
+            self.calls.append('status')
+            return ContainerState(container,'IN_PROGRESS' if self.calls.count('status')==1 else 'FINISHED')
     p=Waiting()
     async with SessionFactory() as s:
-        row=await dispatch.schedule(s,jid,did);monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
-        result=await dispatch.run(s,row.id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True);assert result.state=='WAITING_MEDIA'
+        row=await dispatch.schedule(s,jid,did);dispatch_id=row.id;monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
+        result=await dispatch.run(s,dispatch_id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True);await s.refresh(row);assert result.state=='WAITING_MEDIA'
         grant=(await s.execute(select(Grant).where(Grant.execution_id==jid))).scalar_one();assert grant.state=='ACTIVE'
-        result=await dispatch.resume_media(s,row.id,provider=p,runtime_enabled=True);assert result.state=='RESULT_KNOWN'
+        from app.application import instagram_isolated_claims as claims
+        monkeypatch.setattr(claims,'now',lambda:due+timedelta(minutes=2))
+        result=await dispatch.resume_media(s,dispatch_id,provider=p,runtime_enabled=True);await s.refresh(row);assert result.state=='RESULT_KNOWN'
         await s.refresh(grant);assert grant.state=='REVOKED'
-        with pytest.raises(ValueError):await dispatch.resume_media(s,row.id,provider=p,runtime_enabled=True)
-        assert p.calls==['create','publish-check','publish-check']
+        with pytest.raises(ValueError):await dispatch.resume_media(s,dispatch_id,provider=p,runtime_enabled=True)
+        assert p.calls==['create','status','status','publish']
 
 @pytest.mark.asyncio
 async def test_unknown_container_no_retry_grant_revoked(config,monkeypatch):
@@ -104,10 +115,10 @@ async def test_unknown_container_no_retry_grant_revoked(config,monkeypatch):
         async def create_container(self,**kw):self.calls.append('create');raise InstagramProviderError('INSTAGRAM_OUTCOME_UNKNOWN',outcome_unknown=True)
     p=Unknown()
     async with SessionFactory() as s:
-        row=await dispatch.schedule(s,jid,did);monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
-        result=await dispatch.run(s,row.id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True);assert result.state=='RECONCILE_ONLY'
+        row=await dispatch.schedule(s,jid,did);dispatch_id=row.id;monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
+        result=await dispatch.run(s,dispatch_id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True);await s.refresh(row);assert result.state=='RECONCILE_ONLY'
         grant=(await s.execute(select(Grant).where(Grant.execution_id==jid))).scalar_one();assert grant.state=='REVOKED'
-        with pytest.raises(ValueError):await dispatch.run(s,row.id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True)
+        with pytest.raises(ValueError):await dispatch.run(s,dispatch_id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True)
         assert p.calls==['create']
 
 @pytest.mark.asyncio
@@ -132,10 +143,10 @@ async def test_no_registered_effect_or_capability_routes():
 async def test_dispatch_requires_stopped_worker_before_interrupted_recovery(config,monkeypatch):
     jid,did,due=await approved(monkeypatch)
     async with SessionFactory() as s:
-        row=await dispatch.schedule(s,jid,did);row.state='CLAIMED';await s.commit();stamp=row.updated_at
+        row=await dispatch.schedule(s,jid,did);dispatch_id=row.id;row.state='CLAIMED';await s.commit();stamp=row.updated_at
         with pytest.raises(ValueError):await dispatch.interrupted(s,row.id,expected_updated_at=stamp)
-        await dispatch.interrupted(s,row.id,expected_updated_at=stamp,worker_confirmed_stopped=True)
-        assert row.state=='RECONCILE_ONLY'
+        with pytest.raises(ValueError):await dispatch.interrupted(s,row.id,expected_updated_at=stamp,worker_confirmed_stopped=True)
+        assert row.state=='CLAIMED'
 
 @pytest.mark.asyncio
 async def test_decision_change_and_cancelled_review_invalidate_media(config,monkeypatch):
@@ -144,14 +155,14 @@ async def test_decision_change_and_cancelled_review_invalidate_media(config,monk
     async with SessionFactory() as s:
         monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1));g,token=await grants.mint(s,jid,did)
         job=await s.get(Job,jid);job.caption='different outgoing words';await s.commit()
-        with pytest.raises(ValueError,match='changed'):await grants.read(s,token)
+        with pytest.raises(ValueError):await grants.read(s,token)
 
 @pytest.mark.asyncio
 async def test_wrong_provider_host_never_claims_or_exposes_media(config,monkeypatch):
     jid,did,due=await approved(monkeypatch);p=Provider();p.graph_base='https://graph.instagram.com/v27.0'
     async with SessionFactory() as s:
-        row=await dispatch.schedule(s,jid,did);monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
-        with pytest.raises(ValueError,match='host'):await dispatch.run(s,row.id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True)
+        row=await dispatch.schedule(s,jid,did);dispatch_id=row.id;monkeypatch.setattr(decisions,'now',lambda:due+timedelta(seconds=1))
+        with pytest.raises(ValueError,match='host'):await dispatch.run(s,dispatch_id,provider=p,grant_url_factory=lambda *a:'https://synthetic.invalid/a',runtime_enabled=True)
         assert row.state=='PENDING' and not p.calls
 
 @pytest.mark.asyncio

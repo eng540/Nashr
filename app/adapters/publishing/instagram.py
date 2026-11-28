@@ -14,8 +14,8 @@ ID=re.compile(r'^[0-9]{1,100}$')
 STATES={'IN_PROGRESS','FINISHED','ERROR','EXPIRED','PUBLISHED'}
 
 class InstagramProviderError(RuntimeError):
-    def __init__(self,code,*,outcome_unknown=False):
-        self.code=code;self.outcome_unknown=outcome_unknown
+    def __init__(self,code,*,outcome_unknown=False,retry_after_seconds=None):
+        self.code=code;self.outcome_unknown=outcome_unknown;self.retry_after_seconds=retry_after_seconds
         super().__init__(code)
 
 @dataclass(frozen=True)
@@ -35,6 +35,14 @@ class InstagramPublisher:
             response=await self.client.request(method,self.graph_base+path,headers={'Authorization':'Bearer '+self.token},params=params,data=data,follow_redirects=False)
         except httpx.HTTPError:
             raise InstagramProviderError('INSTAGRAM_OUTCOME_UNKNOWN' if mutation else 'INSTAGRAM_READ_FAILED',outcome_unknown=mutation) from None
+        if not mutation and response.status_code==429:
+            from datetime import datetime,timezone
+            from email.utils import parsedate_to_datetime
+            value=response.headers.get('Retry-After','');seconds=60
+            try:
+                seconds=int(value) if value.isdigit() else int((parsedate_to_datetime(value)-datetime.now(timezone.utc)).total_seconds())+1
+            except (ValueError,TypeError,OverflowError):pass
+            raise InstagramProviderError('INSTAGRAM_RATE_LIMITED',retry_after_seconds=max(60,min(86400,seconds)))
         try:body=response.json()
         except (ValueError,TypeError):
             raise InstagramProviderError('INSTAGRAM_OUTCOME_UNKNOWN' if mutation else 'INSTAGRAM_INVALID_RESPONSE',outcome_unknown=mutation) from None
@@ -95,6 +103,19 @@ class InstagramPublisher:
         status=await self.container_status(container_id)
         if status.status=='PUBLISHED':raise InstagramProviderError('INSTAGRAM_ALREADY_PUBLISHED_RECONCILE')
         if status.status!='FINISHED':raise InstagramProviderError('INSTAGRAM_CONTAINER_'+status.status)
+        body=await self._request('POST','/'+self.account_id+'/media_publish',data={'creation_id':container_id})
+        media_id=str(body.get('id',''))
+        if not ID.fullmatch(media_id):raise InstagramProviderError('INSTAGRAM_OUTCOME_UNKNOWN',outcome_unknown=True)
+        return media_id
+
+    async def publish_claimed_container(self,container_id):
+        """POST only, for the future fenced worker after a durable PUBLISH claim.
+
+        No status read, polling or retry. Calling this is never proof of authority;
+        the server-owned command must have committed its exact unique claim.
+        Existing runtime continues to use publish_container until reviewed wiring.
+        """
+        if not ID.fullmatch(container_id):raise ValueError('Invalid container identity')
         body=await self._request('POST','/'+self.account_id+'/media_publish',data={'creation_id':container_id})
         media_id=str(body.get('id',''))
         if not ID.fullmatch(media_id):raise InstagramProviderError('INSTAGRAM_OUTCOME_UNKNOWN',outcome_unknown=True)

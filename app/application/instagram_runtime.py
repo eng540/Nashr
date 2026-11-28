@@ -40,9 +40,7 @@ async def process_approved():
                         if row.state=='BLOCKED':row.state='RESULT_KNOWN';await s.commit()
                         await dispatch.reconcile(s,did,provider=provider)
             except Exception:
-                # Never retry a provider mutation from an uncertain claim.
-                await s.rollback();row=await s.get(Dispatch,did,populate_existing=True)
-                if row and row.state in {'PENDING','WAITING_MEDIA','RESULT_KNOWN'}:
-                    job=await s.get(Job,row.execution_id,populate_existing=True)
-                    row.state='RESULT_KNOWN' if job and job.state=='PUBLISHED_ID_KNOWN' and job.media_id else 'BLOCKED'
-                    row.updated_at=decisions.now();await s.commit()
+                # Claims, not scheduler error handlers, own durable outcomes.
+                # Backoff/contention/Stop must never overwrite an active writer
+                # or turn a transient status read into a new publishing attempt.
+                await s.rollback()

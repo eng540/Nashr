@@ -128,7 +128,7 @@ async def test_instagram_processing_expiry_blocks_without_provider_or_renewal(co
     monkeypatch.setattr(execution,'refresh_due_binding',forbidden);monkeypatch.setattr(execution,'verified_provider',forbidden)
     await runtime.process_approved()
     async with SessionFactory() as s:
-        row=await s.get(Dispatch,row.id);assert row.state=='BLOCKED'
+        row=await s.get(Dispatch,row.id);assert row.state=='WAITING_MEDIA' # Scheduler cannot rewrite exact claim truth on expiry
         with pytest.raises(ValueError):await grants.read(s,token)
 
 

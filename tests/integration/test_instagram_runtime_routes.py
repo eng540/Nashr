@@ -41,9 +41,9 @@ async def test_capability_anonymous_but_not_without_exact_secret(config,monkeypa
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://test') as c:
         assert (await c.get('/instagram-media')).status_code==404
         assert (await c.get('/instagram-media',params={'capability':'wrong'})).status_code==404
-        r=await c.get('/instagram-media',params={'capability':token});assert r.status_code==200 and r.content==MEDIA
-        assert r.headers['cache-control']=='no-store' and token not in str(r.headers)
-    async with SessionFactory() as s:await decisions.revoke(s,did)
+        r=await c.get('/instagram-media',params={'capability':token});assert r.status_code==404 # Unlinked legacy grant cannot disclose bytes
+    async with SessionFactory() as s:
+        with pytest.raises(ValueError):await decisions.revoke(s,did) # No dispatch authority/link
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://test') as c:
         assert (await c.get('/instagram-media',params={'capability':token})).status_code==404
 
