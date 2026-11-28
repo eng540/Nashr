@@ -9,7 +9,9 @@ test('real central approval preserves original and copy edits while saving desti
  const approve=page.getByRole('button',{name:'اعتماد المادة فقط، دون نشر',exact:true});
  await expect(approve).toBeVisible();await approve.click();
  await expect.poll(async()=>{const r=await request.get(`http://127.0.0.1:8000/api/artifacts/${id}`);return (await r.json()).review_status;}).toBe('APPROVED');
- await page.goto(`/bank?artifact_status=APPROVED&artifact_id=${id}&copy_platform=telegram`);
+ await expect(page).toHaveURL(new RegExp(`artifact_status=APPROVED`));
+ await expect(page.getByLabel(`مساحة المادة ${id}`,{exact:true})).toBeVisible();
+ await page.getByText('نسخ المنصات · حقول مرتبطة بالأصل',{exact:true}).click();
  const copies=page.getByLabel(`نسخ المنصات ${id}`,{exact:true});
  const description=copies.getByLabel(`وصف نسخة ${id}`,{exact:true});await expect(description).toHaveValue(original);
  const edited=original+'\nإضافة تحريرية لنسخة Telegram فقط.';await description.fill(edited);
