@@ -1123,3 +1123,103 @@ class InstagramPrivateBatchPreparationModel(Base):
     snapshot_hash:Mapped[str]=mapped_column(String(64),nullable=False)
     items:Mapped[list]=mapped_column(JSONB,nullable=False)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class InstagramIsolatedControlModel(Base):
+    """Unregistered protocol experiment, not consumed by publishing runtime."""
+    __tablename__='instagram_isolated_controls'
+    dispatch_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True)
+    generation:Mapped[int]=mapped_column(Integer,nullable=False)
+    version:Mapped[int]=mapped_column(Integer,nullable=False)
+    revoked:Mapped[bool]=mapped_column(Boolean,nullable=False)
+    pins_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    connection_generation:Mapped[str]=mapped_column(String(64),nullable=False)
+    decision_expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    grant_expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    grant_active:Mapped[bool]=mapped_column(Boolean,nullable=False)
+    reconcile_after:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+
+
+class InstagramIsolatedClaimModel(Base):
+    __tablename__='instagram_isolated_claims'
+    __table_args__=(UniqueConstraint('dispatch_id','write_step',name='uq_ig_isolated_write_step'),
+        CheckConstraint("kind IN ('WRITE','READ')",name='ck_ig_isolated_claim_kind'),
+        CheckConstraint("state IN ('ACTIVE','COMPLETED','STOPPED_WITHOUT_WRITE','UNKNOWN','SUPERSEDED')",name='ck_ig_isolated_claim_state'),)
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    dispatch_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_isolated_controls.dispatch_id'),nullable=False)
+    request_key:Mapped[str]=mapped_column(String(100),unique=True,nullable=False)
+    request_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    token_hash:Mapped[str]=mapped_column(String(64),unique=True,nullable=False)
+    kind:Mapped[str]=mapped_column(String(10),nullable=False)
+    write_step:Mapped[str|None]=mapped_column(String(30),nullable=True)
+    state:Mapped[str]=mapped_column(String(30),nullable=False)
+    generation:Mapped[int]=mapped_column(Integer,nullable=False)
+    control_version:Mapped[int]=mapped_column(Integer,nullable=False)
+    version:Mapped[int]=mapped_column(Integer,nullable=False)
+    worker_id:Mapped[str]=mapped_column(String(100),nullable=False)
+    result:Mapped[dict]=mapped_column(JSONB,nullable=False,default=dict)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+Index('uq_ig_isolated_active_write',InstagramIsolatedClaimModel.dispatch_id,unique=True,
+    postgresql_where=(InstagramIsolatedClaimModel.kind=='WRITE')&(InstagramIsolatedClaimModel.state=='ACTIVE'))
+Index('uq_ig_isolated_active_read',InstagramIsolatedClaimModel.dispatch_id,unique=True,
+    postgresql_where=(InstagramIsolatedClaimModel.kind=='READ')&(InstagramIsolatedClaimModel.state=='ACTIVE'))
+
+
+class InstagramIsolatedStopModel(Base):
+    __tablename__='instagram_isolated_stops'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    request_key:Mapped[str]=mapped_column(String(100),nullable=False,unique=True)
+    scope_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    scope:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class InstagramIsolatedStopEventModel(Base):
+    __tablename__='instagram_isolated_stop_events'
+    __table_args__=(UniqueConstraint('stop_id','dispatch_id','sequence',name='uq_ig_isolated_stop_sequence'),)
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    stop_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_isolated_stops.id'),nullable=False)
+    dispatch_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_isolated_controls.dispatch_id'),nullable=False)
+    claim_id:Mapped[UUID|None]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_isolated_claims.id'),nullable=True)
+    sequence:Mapped[int]=mapped_column(Integer,nullable=False)
+    outcome:Mapped[str]=mapped_column(String(40),nullable=False)
+    evidence:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class InstagramProductionFenceModel(Base):
+    """Unregistered exact production linkage, never inferred from synthetic controls."""
+    __tablename__='instagram_production_fences'
+    dispatch_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_dispatches.id'),ForeignKey('instagram_isolated_controls.dispatch_id'),primary_key=True)
+    execution_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_executions.id'),nullable=False,unique=True)
+    decision_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_publish_decisions.id'),nullable=False,unique=True)
+    grant_id:Mapped[UUID|None]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_media_grants.id'),nullable=True,unique=True)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class InstagramProductionReadModel(Base):
+    """Immutable bounded status observation, never authority by itself."""
+    __tablename__='instagram_production_reads'
+    claim_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_isolated_claims.id'),primary_key=True)
+    dispatch_id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),ForeignKey('instagram_production_fences.dispatch_id'),nullable=False)
+    control_version:Mapped[int]=mapped_column(Integer,nullable=False)
+    container_id:Mapped[str]=mapped_column(String(100),nullable=False)
+    status:Mapped[str]=mapped_column(String(30),nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class NashrAgentTaskModel(Base):
+    """Owner-confirmed bounded internal plan, no external effects or AI calls."""
+    __tablename__='nashr_agent_tasks'
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    request_key:Mapped[str]=mapped_column(String(100),nullable=False,unique=True)
+    request_text:Mapped[str]=mapped_column(Text,nullable=False)
+    plan_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    plan:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    state:Mapped[str]=mapped_column(String(30),nullable=False)
+    cursor:Mapped[int]=mapped_column(Integer,nullable=False,default=0)
+    results:Mapped[list]=mapped_column(JSONB,nullable=False,default=list)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
