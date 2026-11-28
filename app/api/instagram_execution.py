@@ -59,8 +59,9 @@ async def revoke(uid:UUID,jid:UUID,request:Request,session:AsyncSession=Depends(
     mutation_owner(request);await selected(session,uid,jid)
     row=(await session.execute(select(Dispatch).where(Dispatch.execution_id==jid))).scalar_one_or_none()
     if not row:raise HTTPException(404,'لا قرار نشر لهذه المسودة.')
-    await decisions.revoke(session,row.decision_id)
-    return JSONResponse({'revoked':True,'already_published_content_removed':False},headers=HEADERS)
+    try:receipt=await decisions.revoke(session,row.decision_id)
+    except ValueError:raise HTTPException(409,'تعذر تأكيد الإيقاف؛ أعد قراءة النتيجة.') from None
+    return JSONResponse({'revoked':True,'already_published_content_removed':False,'stop_receipt':receipt},headers=HEADERS)
 
 @router.get('/instagram-media',include_in_schema=False)
 async def media(request:Request,session:AsyncSession=Depends(get_session)):
