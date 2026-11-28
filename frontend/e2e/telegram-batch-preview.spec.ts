@@ -18,7 +18,11 @@ test('batch preflight shows actual destination, full text and blockers without w
  await panel.locator('summary').click();await expect(panel.getByText(item.content,{exact:true})).toBeVisible();
  await expect(panel.getByText('Telegram مستبعد من الوجهات المحفوظة لهذه المادة.',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'إنشاء مسودات Telegram للمحدد (1)',exact:true}).click();
+ await expect(page.getByRole('alert')).toHaveCount(1);
  await expect(page.getByRole('alert')).toContainText('تعذر تجهيز الدفعة');
+ const instagram=page.getByLabel('مسودة مراجعة دفعة Instagram',{exact:true});
+ await expect(instagram.getByText('هذا المسار لواحدة إلى20',{exact:false})).toBeVisible();
+ await expect(instagram.getByRole('alert')).toHaveCount(0);
  expect(previews).toBe(2);expect(unsafe).toBe(0);
  await panel.screenshot({path:info.outputPath('batch-desktop.png')});
  await page.setViewportSize({width:390,height:844});await panel.screenshot({path:info.outputPath('batch-mobile.png')});
