@@ -38,6 +38,14 @@ export function PublishingPage() {
     setSelectedIds(current => current.join(",") === next.join(",") ? current : next);
   }, [selectedIdsParam]);
   const [scheduleOpen, setScheduleOpen] = useState(!searchParams.has("schedule_id") && Boolean(searchParams.get("selected_post_ids")));
+  const [scheduleSelection, setScheduleSelection] = useState(() => selectedIds.join(","));
+  const scheduleContextCurrent = section === "ready" && readyTask === "editorial" && selectedIds.length > 0 && scheduleSelection === selectedIds.join(",");
+  useEffect(() => {
+    if (!scheduleContextCurrent && scheduleOpen) {
+      setScheduleOpen(false);
+      setMessage("أُغلق نموذج الخطة لأن التحديد أو العرض تغيّر. اضغط «إنشاء خطة» لفحص التحديد الحالي مجدداً.");
+    }
+  }, [scheduleContextCurrent, scheduleOpen]);
   const [message, setMessage] = useState("");
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const previewRequest = useRef(0);
@@ -185,12 +193,15 @@ export function PublishingPage() {
   },[form.startAt,form.timezone,form.interval,selectedIds.length]);
   const createSchedule = useMutation({
     mutationFn: () => {
+      const currentParams = new URLSearchParams(window.location.search);
+      const currentIds = selectionFromQuery(currentParams.get("selected_post_ids"));
+      if (!scheduleOpen || !scheduleContextCurrent || sectionFromParams(currentParams) !== "ready" || currentParams.get("ready_task") === "distribution" || currentIds.join(",") !== scheduleSelection) throw new Error("تغير التحديد أو العرض. افحص أهلية التحديد الحالي قبل حفظ الخطة.");
       if (generatedTimes.error) throw new Error(generatedTimes.error);
       if (!form.startAt) throw new Error("حدد وقت بداية صالح.");
       return schedulesApi.create({
         name: form.name.trim(),
         timezone: form.timezone.trim(),
-        post_ids: selectedIds,
+        post_ids: selectionFromQuery(scheduleSelection),
         start_at: localDateTimeToUtcISOString(form.startAt, form.timezone.trim()),
         interval_minutes: Number(form.interval),
         idempotency_key: crypto.randomUUID(),
@@ -271,6 +282,7 @@ export function PublishingPage() {
       const eligible = requestedIds.filter((id) => !blocked.has(id));
       setSelectedIds(eligible);
       updateEditorialSelectionUrl(eligible);
+      setScheduleSelection(eligible.join(","));
       setScheduleOpen(Boolean(eligible.length));
       if (result.blocked.length) setMessage(`تم استبعاد ${result.blocked.length} منشور غير قابل للنشر.`);
     } catch (e) {
@@ -510,7 +522,7 @@ export function PublishingPage() {
         </section>
       )}
 
-      {scheduleOpen && <form data-testid="schedule-panel" className="rounded-2xl border-2 border-indigo-200 bg-white p-5 shadow-sm" onSubmit={(e) => { e.preventDefault(); createSchedule.mutate(); }}><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">إنشاء خطة نشر</h3><p className="mt-1 text-sm text-slate-500">{selectedIds.length} منشور جاهز للخطة.</p></div><button type="button" onClick={() => setScheduleOpen(false)} className="rounded-lg border px-3 py-2 text-sm">إغلاق</button></div><div className="mt-4 grid gap-4 sm:grid-cols-2"><label>اسم الخطة<input aria-label="اسم الخطة" value={form.name} onChange={(e) => setForm({...form, name: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>المنطقة الزمنية<input aria-label="المنطقة الزمنية" value={form.timezone} onChange={(e) => setForm({...form, timezone: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>وقت البداية<input aria-label="وقت البداية" type="datetime-local" value={form.startAt} onChange={(e) => setForm({...form, startAt: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>الفاصل بالدقائق<input aria-label="الفاصل بالدقائق" type="number" min="1" max="10080" step="1" value={form.interval} onChange={(e) => setForm({...form, interval: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label></div><div className="mt-4 rounded-xl border bg-slate-50 p-3 text-xs leading-6" aria-label="معاينة مواعيد الخطة"><p>المواعيد قبل الحفظ · {form.timezone}</p><p>الفاصل دقائق فعلية بين المواد؛ قد يتغير عرض الساعة عند التوقيت الصيفي. الحفظ ينشئ مسودة دون تفعيل.</p>{generatedTimes.error?<p role="alert" className="text-rose-700">{generatedTimes.error}</p>:generatedTimes.items.length?<ol className="max-h-64 list-inside list-decimal overflow-auto">{generatedTimes.items.map((time,index)=><li key={selectedIds[index]} className="break-words">{readyItems.find(p=>p.post_id===selectedIds[index])?.title||selectedIds[index]} · <bdi>{utcISOStringToLocalDateTime(time,form.timezone.trim())} ({form.timezone})</bdi> · <bdi>{time}</bdi></li>)}</ol>:<p>حدد البداية لعرض موعد كل مادة بترتيب التحديد.</p>}</div><div className="mt-5 flex gap-2"><button data-testid="submit-schedule" type="submit" disabled={createSchedule.isPending||Boolean(generatedTimes.error)||!generatedTimes.items.length} className="rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white">حفظ الخطة</button><button type="button" onClick={() => setScheduleOpen(false)} className="rounded-xl border px-5 py-3">إلغاء</button></div></form>}
+      {scheduleOpen && scheduleContextCurrent && <form data-testid="schedule-panel" className="rounded-2xl border-2 border-indigo-200 bg-white p-5 shadow-sm" onSubmit={(e) => { e.preventDefault(); createSchedule.mutate(); }}><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">إنشاء خطة نشر</h3><p className="mt-1 text-sm text-slate-500">{selectedIds.length} منشور جاهز للخطة.</p></div><button type="button" onClick={() => setScheduleOpen(false)} className="rounded-lg border px-3 py-2 text-sm">إغلاق</button></div><div className="mt-4 grid gap-4 sm:grid-cols-2"><label>اسم الخطة<input aria-label="اسم الخطة" value={form.name} onChange={(e) => setForm({...form, name: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>المنطقة الزمنية<input aria-label="المنطقة الزمنية" value={form.timezone} onChange={(e) => setForm({...form, timezone: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>وقت البداية<input aria-label="وقت البداية" type="datetime-local" value={form.startAt} onChange={(e) => setForm({...form, startAt: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label><label>الفاصل بالدقائق<input aria-label="الفاصل بالدقائق" type="number" min="1" max="10080" step="1" value={form.interval} onChange={(e) => setForm({...form, interval: e.target.value})} className="mt-2 w-full rounded-xl border p-3"/></label></div><div className="mt-4 rounded-xl border bg-slate-50 p-3 text-xs leading-6" aria-label="معاينة مواعيد الخطة"><p>المواعيد قبل الحفظ · {form.timezone}</p><p>الفاصل دقائق فعلية بين المواد؛ قد يتغير عرض الساعة عند التوقيت الصيفي. الحفظ ينشئ مسودة دون تفعيل.</p>{generatedTimes.error?<p role="alert" className="text-rose-700">{generatedTimes.error}</p>:generatedTimes.items.length?<ol className="max-h-64 list-inside list-decimal overflow-auto">{generatedTimes.items.map((time,index)=><li key={selectedIds[index]} className="break-words">{readyItems.find(p=>p.post_id===selectedIds[index])?.title||selectedIds[index]} · <bdi>{utcISOStringToLocalDateTime(time,form.timezone.trim())} ({form.timezone})</bdi> · <bdi>{time}</bdi></li>)}</ol>:<p>حدد البداية لعرض موعد كل مادة بترتيب التحديد.</p>}</div><div className="mt-5 flex gap-2"><button data-testid="submit-schedule" type="submit" disabled={createSchedule.isPending||Boolean(generatedTimes.error)||!generatedTimes.items.length} className="rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white">حفظ الخطة</button><button type="button" onClick={() => setScheduleOpen(false)} className="rounded-xl border px-5 py-3">إلغاء</button></div></form>}
     </section>
   );
 }
