@@ -177,7 +177,7 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
   useEffect(()=>{setFocusedState(libraryParams.get("artifact_id"));const requested=libraryParams.get("artifact_status");if(requested&&["DRAFT","APPROVED","REJECTED"].includes(requested))setStatus(requested as GenericArtifactReviewStatus);},[libraryParams]);
   const materialNav=useRef<HTMLElement>(null);
   const returnTarget=useRef<string|null>(null);
-  useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId]);
+  useEffect(()=>{if(!focusedId)return;const frame=requestAnimationFrame(()=>{materialNav.current?.focus({preventScroll:true});if(materialNav.current)window.scrollTo({top:Math.max(0,materialNav.current.getBoundingClientRect().top+window.scrollY-96),left:0,behavior:"instant"});});return()=>cancelAnimationFrame(frame);},[focusedId,status]);
   const creationTask=(["manual","upload","variant","design"].includes(libraryParams.get("library_task")??"")?libraryParams.get("library_task"):null);
   const [creationVisit,setCreationVisit]=useState(0);
   const chooseCreationTask=(task:string)=>{setCreationVisit(v=>v+1);const next=new URLSearchParams(window.location.search);next.set("library_task",task);setLibraryParams(next,{preventScrollReset:true});};
@@ -307,9 +307,26 @@ export function GenericArtifactReviewPanel({ designCardOnly = false }: { showDes
     },
     onSuccess: (_, id) => { setDrafts(current => { const next = {...current}; delete next[id]; return next; }); return refresh(); },
   });
+  const approvalScope=useRef({key:''});
+  const approvalKey=libraryParams.toString()+'|'+focusedId+'|'+status;
+  if(approvalScope.current.key!==approvalKey)approvalScope.current={key:approvalKey};
+  const approvalMounted=useRef(true);
+  useEffect(()=>{approvalMounted.current=true;return()=>{approvalMounted.current=false;approvalScope.current={key:''};};},[]);
   const approve = useMutation({
-    mutationFn: (id: string) => genericArtifactsApi.approve(id, drafts[id]?.review_note),
-    onSuccess: refresh,
+    mutationFn: async (id: string) => {
+      const result=await genericArtifactsApi.approve(id, drafts[id]?.review_note);
+      if(result.id!==id||result.review_status!=='APPROVED')throw new Error('لم تتطابق نتيجة الاعتماد مع المادة. حدّث الحالة وتحقق قبل المحاولة مجدداً.');
+      return result;
+    },
+    onMutate:(id:string)=>({scope:approvalScope.current,focused:focusedId===id,url:window.location.href}),
+    onSuccess: (_,id,request) => {
+      if(approvalMounted.current&&request?.focused&&approvalScope.current===request.scope&&window.location.href===request.url){
+        const next=new URLSearchParams(window.location.search);next.set('artifact_status','APPROVED');next.set('artifact_id',id);
+        for(const key of ['instagram_job_id','text_job_id','photo_job_id','copy_platform','review_batch'])next.delete(key);
+        setStatus('APPROVED');setFocusedState(id);setSelectedMediaIds([]);setLibraryParams(next,{preventScrollReset:true});
+      }
+      return refresh();
+    },
   });
   const reject = useMutation({
     mutationFn: (id: string) => genericArtifactsApi.reject(id, drafts[id]?.review_note ?? ""),
