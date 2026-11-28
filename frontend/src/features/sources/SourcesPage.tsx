@@ -20,10 +20,14 @@ function sourceStatusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
-function SourceBookMap({ sourceId }: { sourceId: string }) {
+function SourceBookMap({ sourceId, materialId }: { sourceId: string; materialId?: string }) {
   const bookMap = useQuery({
-    queryKey: ["source-book-map", sourceId],
-    queryFn: () => productionJobsApi.bookMap(sourceId),
+    queryKey: ["source-book-map", sourceId, materialId ?? "browse"],
+    queryFn: async () => {
+      const result = await productionJobsApi.bookMap(sourceId);
+      if (materialId && result.source_id !== sourceId) throw new Error("لم تتطابق بنية الكتاب مع المصدر المحدد.");
+      return result;
+    },
   });
   if (bookMap.isLoading) return <p role="status" className="mt-3 text-sm text-slate-500">جارٍ تحميل بنية الكتاب...</p>;
   if (bookMap.isError) return <div role="alert" className="mt-3 text-sm text-rose-700">تعذر تحميل بنية الكتاب: {bookMap.error.message}<button type="button" onClick={() => bookMap.refetch()} className="mr-3 rounded-lg border px-3 py-2">إعادة تحميل بنية الكتاب</button></div>;
@@ -31,6 +35,7 @@ function SourceBookMap({ sourceId }: { sourceId: string }) {
   if (!data) return null;
   return (
     <div className="mt-3 space-y-3 rounded-xl border bg-slate-50 p-4" data-testid={`book-map-${sourceId}`}>
+      {materialId && !data.materials.some(material => material.id === materialId) ? <p role="alert">المادة المحددة غير موجودة في هذا المصدر. لم نفتح مادة بديلة.</p> : null}
       {data.topics.length > 0 ? (
         <div>
           <h4 className="text-sm font-bold">المحاور ({data.topics.length})</h4>
@@ -49,7 +54,7 @@ function SourceBookMap({ sourceId }: { sourceId: string }) {
         <ul className="mt-2 max-h-[48rem] space-y-2 overflow-y-auto text-sm text-slate-700">
           {data.materials.map((material) => (
             <li key={material.id} className="border-b border-slate-200 pb-2 last:border-b-0">
-              <SourceMaterialReview sourceId={sourceId} material={material} />
+              <SourceMaterialReview sourceId={sourceId} material={material} focused={material.id === materialId} />
             </li>
           ))}
         </ul>
@@ -101,7 +106,10 @@ export function SourcesPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const linkedSourceId = !analysis ? params.get("source_id") : null;
+  const linkedMaterialId = linkedSourceId ? params.get("material_id") ?? undefined : undefined;
+  const [expandedId, setExpandedId] = useState<string | null>(linkedSourceId);
+  useEffect(() => { if (linkedSourceId) setExpandedId(linkedSourceId); }, [linkedSourceId, linkedMaterialId]);
 
   const sources = useQuery({
     queryKey: ["sources-library"],
@@ -123,9 +131,9 @@ export function SourcesPage() {
   });
 
   const items = (sources.data ?? []).filter((source: SourceSummary) => {
-    if (!showOther && source.mime_type!=="application/pdf") return false;
+    if (!showOther && source.mime_type!=="application/pdf" && source.id !== linkedSourceId) return false;
     const haystack = `${source.book_title} ${source.filename}`.toLowerCase();
-    return haystack.includes(query.trim().toLowerCase());
+    return source.id === linkedSourceId || haystack.includes(query.trim().toLowerCase());
   });
 
   return (
@@ -192,6 +200,7 @@ export function SourcesPage() {
         </div>
         {sources.isLoading ? <p role="status" className="mt-4 text-sm text-slate-500">جارٍ تحميل المصادر...</p> : null}
         {sources.isError ? <div role="alert" className="mt-4 text-sm text-rose-700">تعذر تحميل المصادر: {sources.error.message}<button type="button" onClick={() => sources.refetch()} className="mr-3 rounded-lg border px-3 py-2">إعادة تحميل المصادر</button></div> : null}
+        {linkedSourceId && sources.isSuccess && !sources.data?.some(source => source.id === linkedSourceId) ? <p role="alert" className="mt-3">المصدر المحدد غير موجود في القائمة المحفوظة. لم نفتح مصدرًا بديلاً.</p> : null}
         {sources.isSuccess && items.length === 0 ? (
           <div className="mt-4 rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">
             {query.trim() ? "لا توجد مصادر تطابق البحث." : "لا توجد مصادر بعد. ابدأ برفع ملف PDF من الأعلى."}
@@ -223,7 +232,8 @@ export function SourcesPage() {
                 </button>:null}
                 {source.mime_type==="application/pdf"?<button type="button" onClick={()=>openAnalysis(source.id)} className="rounded-lg border px-3 py-2 text-sm">فتح تحليل هذا الكتاب</button>:null}<Link to={`/production?source_id=${encodeURIComponent(source.id)}${source.mime_type!=="application/pdf"?"&other_sources=1":""}`} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">الإنتاج من هذا المصدر</Link>
               </div>
-              {expandedId === source.id ? <SourceBookMap sourceId={source.id} /> : null}
+              {expandedId === source.id && source.mime_type === "application/pdf" ? <SourceBookMap sourceId={source.id} materialId={linkedSourceId === source.id ? linkedMaterialId : undefined} /> : null}
+              {linkedSourceId === source.id && source.mime_type !== "application/pdf" ? <p role="status" className="mt-3 text-sm">المصدر المحدد ليس كتاب PDF؛ لا تتوفر له بنية كتاب لفتح المادة. النص والمرجع المحفوظان باقِيان في مراجعة المنشور.</p> : null}
             </article>
           ))}
         </div>
