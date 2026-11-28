@@ -107,6 +107,8 @@ async def run_schedule_trigger() -> None:
                     raise
                 except Exception:
                     logger.warning("event=PLATFORM_EXECUTION_TRIGGER_FAILED worker=%s",worker.__module__)
+            from app.application.nashr_agent import process_tasks as process_agent_tasks
+            await process_agent_tasks()
             processed = await process_due_schedule_items(limit=20)
             if processed:
                 logger.info("event=SCHEDULE_TRIGGER_PROCESSED count=%s", processed)
@@ -261,6 +263,8 @@ def create_app() -> FastAPI:
     application.include_router(instagram_connections_router)
     application.include_router(instagram_execution_router)
     from app.api.instagram_batch_reviews import router as instagram_batch_reviews_router
+    from app.api.nashr_agent import router as nashr_agent_router
+    application.include_router(nashr_agent_router)
     application.include_router(instagram_batch_reviews_router)
     application.include_router(instagram_page_connections_router)
     application.include_router(instagram_direct_connections_router)
