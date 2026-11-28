@@ -6,6 +6,7 @@ import { genericArtifactsApi, type PlatformVariantDraft } from "../../shared/api
 import { schedulesApi, type ScheduleDetail } from "../../shared/api/schedulesApi";
 import { toggleSelection, selectionFromQuery } from "../../shared/utils/selection";
 import { localDateTimeToUtcISOString, utcISOStringToLocalDateTime, dateInTimezone, scheduleTimePreview } from "../../shared/utils/timezone";
+import { calendarContext } from "../../shared/utils/calendarContext";
 import { TelegramPreview } from "../../shared/components/TelegramPreview";
 
 import {get} from "../../shared/api/client";
@@ -34,6 +35,12 @@ export function PublishingPage() {
   const [scheduleOpen, setScheduleOpen] = useState(!searchParams.has("schedule_id") && Boolean(searchParams.get("selected_post_ids")));
   const [message, setMessage] = useState("");
   const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const previewRequest = useRef(0);
+  const closePreview = () => { previewRequest.current++; setPreviewContent(null); };
+  useEffect(() => {
+    closePreview();
+    return () => { previewRequest.current++; };
+  }, [section, searchParams.get("schedule_id")]);
   const [visualArtifactSelections, setVisualArtifactSelections] = useState<Record<string, string>>({});
   const [visualPreviewUrls, setVisualPreviewUrls] = useState<Record<string, string>>({});
   const detailRequest=useRef(0);
@@ -50,10 +57,21 @@ export function PublishingPage() {
   const [planStatus, setPlanStatus] = useState("");
   const [planPage, setPlanPage] = useState(0);
   const [calendarPage,setCalendarPage]=useState(0),[upcomingPage,setUpcomingPage]=useState(0);
-  const [calendarTimezone, setCalendarTimezone] = useState(DISPLAY_TIMEZONE);
-  const [calendarTimezoneInput, setCalendarTimezoneInput] = useState(DISPLAY_TIMEZONE);
+  const savedCalendar = calendarContext(searchParams, DISPLAY_TIMEZONE);
+  const calendarTimezone = savedCalendar.timezone;
+  const calendarDate = savedCalendar.date;
+  const [calendarTimezoneInput, setCalendarTimezoneInput] = useState(calendarTimezone);
   const [calendarZoneError, setCalendarZoneError] = useState("");
-  const [calendarDate, setCalendarDate] = useState(() => dateInTimezone(DISPLAY_TIMEZONE));
+  useEffect(() => { setCalendarTimezoneInput(calendarTimezone); setCalendarZoneError(""); }, [calendarTimezone]);
+  useEffect(() => { setCalendarPage(0); }, [calendarTimezone, calendarDate]);
+  const updateCalendarContext = (date: string, timezone: string) => {
+    setCalendarPage(0);
+    // A section change can commit history before this render's params update.
+    // Compose from the event-time URL so a fast date edit keeps that section.
+    const next = new URLSearchParams(window.location.search);
+    next.set("calendar_date", date); next.set("calendar_timezone", timezone);
+    setSearchParams(next);
+  };
   const [manualPub, setManualPub] = useState<{ id: string; date: string; url: string } | null>(null);
   const [form, setForm] = useState({ name: "خطة نشر", timezone: DEFAULT_TIMEZONE, startAt: "", interval: "60" });
 
@@ -188,6 +206,7 @@ export function PublishingPage() {
     },
   });
   const openDetail = async (id: string) => {
+    closePreview();
     const request=++detailRequest.current;
     setDetail(null);setDetailError(null);setDetailPending(id);setSection("plans");
     try {
@@ -244,11 +263,13 @@ export function PublishingPage() {
     }
   };
   const preview = async (postId: string) => {
+    const request = ++previewRequest.current;
+    setPreviewContent(null);
     try {
       const p = await schedulesApi.telegramPreview(postId);
-      setPreviewContent(p.content);
+      if (request === previewRequest.current) setPreviewContent(p.content);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "تعذر تحميل معاينة Telegram.");
+      if (request === previewRequest.current) setMessage(e instanceof Error ? e.message : "تعذر تحميل معاينة Telegram.");
     }
   };
 
@@ -312,7 +333,7 @@ export function PublishingPage() {
       </nav>
 
       {message && <div role="status" className="whitespace-pre-wrap rounded-xl border bg-indigo-50 p-4 text-sm">{message}</div>}
-      {previewContent !== null && <div className="rounded-2xl border bg-white p-4 shadow-sm"><TelegramPreview content={previewContent} onClose={() => setPreviewContent(null)} /></div>}
+      {previewContent !== null && <div className="rounded-2xl border bg-white p-4 shadow-sm"><TelegramPreview content={previewContent} onClose={closePreview} /></div>}
 
       {section === "ready" && (
         <section className="space-y-4" data-testid="publishing-ready">
@@ -410,10 +431,11 @@ export function PublishingPage() {
 
       {section === "calendar" && (
         <section className="space-y-4" data-testid="publishing-calendar">
+          {savedCalendar.invalid ? <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">تعذر استخدام تاريخ أو منطقة التقويم من الرابط. المعروض الآن: {calendarDate} · <bdi>{calendarTimezone}</bdi>. اختر اليوم والمنطقة لحفظهما في الرابط.</p> : null}
           <div className="rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-xl font-bold">التقويم</h3><p className="mt-1 text-sm text-slate-500">راجع ما سيُنشر حسب اليوم قبل التنفيذ.</p></div><label className="text-sm font-semibold">اليوم<input aria-label="تاريخ التقويم" type="date" value={calendarDate} onChange={(e) => {setCalendarPage(0);setCalendarDate(e.target.value);}} className="mr-2 rounded-lg border p-2 font-normal"/></label></div>
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-xl font-bold">التقويم</h3><p className="mt-1 text-sm text-slate-500">راجع ما سيُنشر حسب اليوم قبل التنفيذ.</p></div><label className="text-sm font-semibold">اليوم<input aria-label="تاريخ التقويم" type="date" value={calendarDate} onChange={(e) => {if(e.target.value)updateCalendarContext(e.target.value,calendarTimezone);}} className="mr-2 rounded-lg border p-2 font-normal"/></label></div>
           </div>
-          <form className="flex flex-wrap items-end gap-3 rounded-2xl border bg-white p-5 text-sm" onSubmit={e=>{e.preventDefault();try{dateInTimezone(calendarTimezoneInput.trim());setCalendarPage(0);setCalendarTimezone(calendarTimezoneInput.trim());setCalendarZoneError('');}catch{setCalendarZoneError('منطقة زمنية غير صالحة. استخدم اسماً مثل Asia/Riyadh.');}}}><label className="min-w-0">منطقة عرض تقويم اليوم<input aria-label="منطقة عرض تقويم اليوم" dir="ltr" className="mt-1 block w-full rounded border p-2" value={calendarTimezoneInput} onChange={e=>setCalendarTimezoneInput(e.target.value)}/></label><button className="rounded border p-2" type="submit">تطبيق منطقة العرض</button><button className="rounded border p-2" type="button" onClick={()=>{setCalendarPage(0);setCalendarDate(dateInTimezone(calendarTimezone));}}>اليوم في منطقة العرض</button><p className="w-full text-xs text-slate-500">تغيير العرض لا يغير منطقة أي خطة أو مواعيدها. القادم يعرض كل خطة بمنطقتها المحفوظة.</p>{calendarZoneError?<p role="alert">{calendarZoneError}</p>:null}</form>
+          <form className="flex flex-wrap items-end gap-3 rounded-2xl border bg-white p-5 text-sm" onSubmit={e=>{e.preventDefault();try{dateInTimezone(calendarTimezoneInput.trim());updateCalendarContext(calendarDate,calendarTimezoneInput.trim());setCalendarZoneError('');}catch{setCalendarZoneError('منطقة زمنية غير صالحة. استخدم اسماً مثل Asia/Riyadh.');}}}><label className="min-w-0">منطقة عرض تقويم اليوم<input aria-label="منطقة عرض تقويم اليوم" dir="ltr" className="mt-1 block w-full rounded border p-2" value={calendarTimezoneInput} onChange={e=>setCalendarTimezoneInput(e.target.value)}/></label><button className="rounded border p-2" type="submit">تطبيق منطقة العرض</button><button className="rounded border p-2" type="button" onClick={()=>{updateCalendarContext(dateInTimezone(calendarTimezone),calendarTimezone);}}>اليوم في منطقة العرض</button><p className="w-full text-xs text-slate-500">تغيير العرض لا يغير منطقة أي خطة أو مواعيدها. القادم يعرض كل خطة بمنطقتها المحفوظة.</p>{calendarZoneError?<p role="alert">{calendarZoneError}</p>:null}</form>
           <div aria-label="قادم Telegram المقسم" className="rounded-2xl border bg-white p-5 shadow-sm"><h3 className="font-bold">قادم خطط Telegram خلال 7 أيام</h3>{upcoming.isLoading?<p role="status">جارٍ تحميل القادم...</p>:upcoming.isError?<p role="alert" className="mt-4 text-rose-700">تعذر تحميل القادم. أعد المحاولة، لا نستنتج أن القائمة فارغة. <button onClick={()=>void upcoming.refetch()}>إعادة تحميل القادم</button></p>:!(upcoming.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد عناصر Telegram في هذه القائمة. عمليات Instagram وFacebook تظهر في خطط النشر.</p> : <div className="mt-4 space-y-2">{upcoming.data!.items.map((i) => <button key={i.id} type="button" onClick={() => choosePlan(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span className="text-xs text-slate-500">{new Date(i.scheduled_at).toLocaleString("ar", { timeZone: i.timezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}{upcoming.data&&!upcoming.isError?<nav aria-label="صفحات القادم Telegram" className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm"><button disabled={upcomingPage===0||upcoming.isFetching} onClick={()=>setUpcomingPage(p=>p-1)}>السابق</button><span>{upcoming.data.total??upcoming.data.items.length} عملية مطابقة · صفحة {upcomingPage+1} من {Math.max(1,Math.ceil((upcoming.data.total??upcoming.data.items.length)/20))}</span><button disabled={upcoming.isFetching||(upcomingPage+1)*20>=(upcoming.data.total??upcoming.data.items.length)} onClick={()=>setUpcomingPage(p=>p+1)}>التالي</button></nav>:null}</div>
           <div aria-label="تقويم Telegram المقسم" className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">تقويم Telegram لليوم</h3><span className="text-xs text-slate-500">{calendar.data?.timezone ?? calendarTimezone}</span></div>{calendar.isLoading?<p role="status">جارٍ تحميل تقويم Telegram...</p>:calendar.isError?<p role="alert" className="mt-4 text-rose-700">تعذر تحميل التقويم. أعد المحاولة، لا نستنتج عدم وجود مواد. <button onClick={()=>void calendar.refetch()}>إعادة تحميل التقويم</button></p>:!(calendar.data?.items.length) ? <p className="mt-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">لا توجد عناصر Telegram لهذا اليوم. راجع عمليات Meta في القسم المستقل أدناه.</p> : <div className="mt-4 space-y-2">{calendar.data!.items.map((i) => <button key={i.id} type="button" onClick={() => choosePlan(i.schedule_id)} className="w-full rounded-xl border p-3 text-right hover:border-indigo-300"><div className="flex flex-wrap justify-between gap-2"><strong>{i.title}</strong><span>{new Date(i.scheduled_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit", timeZone: calendar.data?.timezone ?? calendarTimezone })}</span></div><p className="mt-1 text-xs text-slate-500">{i.schedule_name} · {i.status}</p></button>)}</div>}{calendar.data&&!calendar.isError?<nav aria-label="صفحات تقويم اليوم Telegram" className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm"><button disabled={calendarPage===0||calendar.isFetching} onClick={()=>setCalendarPage(p=>p-1)}>السابق</button><span>{calendar.data.total??calendar.data.items.length} عملية مطابقة · صفحة {calendarPage+1} من {Math.max(1,Math.ceil((calendar.data.total??calendar.data.items.length)/20))}</span><button disabled={calendar.isFetching||(calendarPage+1)*20>=(calendar.data.total??calendar.data.items.length)} onClick={()=>setCalendarPage(p=>p+1)}>التالي</button></nav>:null}</div>
           <PlatformOperations key={calendarDate+':'+calendarTimezone} date={calendarDate} timezone={calendarTimezone}/>
