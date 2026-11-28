@@ -95,7 +95,7 @@ async def test_direct_core_requires_separate_public_and_media_disclosure(config,
     uid,rid=await setup(monkeypatch);p=Provider();p.graph_base='https://graph.facebook.com/v27.0'
     async with SessionFactory() as s:
         j=await direct.stage(s,uid,rid)
-        with pytest.raises(ValueError,match='disclosure'):await core.create_container(s,UUID(j['id']),provider=p,media_url='https://synthetic.example/a.jpg',media_sha256=DIGEST,authorized=True,**flags)
+        with pytest.raises(ValueError,match='fence'):await core.create_container(s,UUID(j['id']),provider=p,media_url='https://synthetic.example/a.jpg',media_sha256=DIGEST,authorized=True,**flags)
         assert not p.calls
 
 
