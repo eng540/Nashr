@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { postsApi } from "../../shared/api/postsApi";
@@ -41,9 +41,16 @@ function SavedMaterialPosts({ sourceId, materialId }: { sourceId: string; materi
   </section>;
 }
 
-export function SourceMaterialReview({ sourceId, material }: { sourceId: string; material: BookMapMaterial }) {
-  const [open, setOpen] = useState(false);
-  return <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="min-w-0 rounded-lg border bg-white p-3" data-testid={`source-material-${material.id}`}>
+export function SourceMaterialReview({ sourceId, material, focused = false }: { sourceId: string; material: BookMapMaterial; focused?: boolean }) {
+  const [open, setOpen] = useState(focused);
+  const target = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (!focused) return;
+    setOpen(true);
+    const frame = requestAnimationFrame(() => { target.current?.focus({preventScroll:true}); target.current?.scrollIntoView({block:"center"}); });
+    return () => cancelAnimationFrame(frame);
+  }, [focused, sourceId, material.id]);
+  return <details ref={target} tabIndex={focused ? -1 : undefined} open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="min-w-0 rounded-lg border bg-white p-3" data-testid={`source-material-${material.id}`}>
     <summary className="cursor-pointer font-semibold">{material.position}. {material.title} · عرض المادة ومنشوراتها</summary>
     {open ? <div className="mt-3 space-y-2">
       <p className="text-xs text-slate-600">النص والمرجع المحفوظان عند الاستخراج، وليسا تحققاً من صحة المحتوى أو حداثة المصدر. لا يُعدّلان نص المنشور.</p>
