@@ -4,7 +4,8 @@ for(const width of [390,1280])for(const change of ['section','task','selection',
  await page.setViewportSize({width,height:844});
  await page.route('**/*',r=>{const p=new URL(r.request().url()).pathname;if(r.request().method()!=='GET'){writes++;return r.fulfill({status:500,json:{detail:'Unexpected write'}});}if(p==='/schedules/eligibility'){reads++;return r.fulfill({json:{eligible:['one','two'],blocked:[]}});}if(p==='/posts')return r.fulfill({json:{items:[{post_id:'one',title:'المادة الأولى',status:'APPROVED'},{post_id:'two',title:'المادة الثانية',status:'APPROVED'}],total:2}});if(p==='/sources'||p.startsWith('/api/control/'))return r.fulfill({json:[]});if(p.startsWith('/api/')||p.startsWith('/posts/')||p.startsWith('/schedules'))return r.fulfill({json:{items:[],total:0,sources:[],kinds:[]}});return r.continue();});
  await page.goto('/publishing?view=ready&ready_task=editorial'+(change==='handoff'?'&selected_post_ids=one':''));
- if(change!=='handoff'){await page.getByTestId('ready-post-one').getByRole('checkbox').check();await page.getByTestId('create-plan').click();}
+ if(change!=='handoff')await page.getByTestId('ready-post-one').getByRole('checkbox').check();
+ await page.getByTestId('create-plan').click();
  await expect(page.getByTestId('schedule-panel')).toBeVisible();await page.getByLabel('وقت البداية',{exact:true}).fill('2026-12-01T12:00');await expect(page.getByTestId('submit-schedule')).toBeEnabled();
  if(change==='section')await page.getByRole('button',{name:/خطط النشر · Telegram/}).click();
  if(change==='task')await page.getByRole('button',{name:/متابعة مادة وتجهيز وجهاتها/}).click();

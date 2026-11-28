@@ -37,7 +37,7 @@ export function PublishingPage() {
     const next = selectionFromQuery(selectedIdsParam);
     setSelectedIds(current => current.join(",") === next.join(",") ? current : next);
   }, [selectedIdsParam]);
-  const [scheduleOpen, setScheduleOpen] = useState(!searchParams.has("schedule_id") && Boolean(searchParams.get("selected_post_ids")));
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleSelection, setScheduleSelection] = useState(() => selectedIds.join(","));
   const scheduleContextCurrent = section === "ready" && readyTask === "editorial" && selectedIds.length > 0 && scheduleSelection === selectedIds.join(",");
   useEffect(() => {
