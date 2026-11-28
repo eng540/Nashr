@@ -1099,3 +1099,16 @@ class InstagramBatchDraftModel(Base):
     evidence_ref:Mapped[str|None]=mapped_column(Text,nullable=True)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
     approved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+
+
+class InstagramPrivateBatchReviewModel(Base):
+    """Review snapshots only. Never consumed by dispatch or atomic approval."""
+    __tablename__='instagram_private_batch_reviews'
+    __table_args__=(CheckConstraint("state IN ('DRAFT','CANCELLED')",name='ck_instagram_private_batch_review_state'),)
+    id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
+    request_key:Mapped[str]=mapped_column(String(100),nullable=False,unique=True)
+    request_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    snapshot_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+    snapshot:Mapped[dict]=mapped_column(JSONB,nullable=False)
+    state:Mapped[str]=mapped_column(String(20),nullable=False)
+    created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
